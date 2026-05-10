@@ -6,9 +6,13 @@ das Verhalten der reinen Funktionen ab; dieser Plan deckt die
 End-to-End-Strecke ab, die Tests nicht treffen können (echtes Docker,
 Auth-Pass-Through, Shell-Ergonomie).
 
-Stand: M1 Tasks 1–6, alle Stage-A/B/C-Tests am 2026-05-10 auf macOS
-(Apple Silicon, Docker Desktop) end-to-end durchlaufen. Beim Walkthrough
-gefundene und gefixte Bugs:
+Stand: M1 Tasks 1–6 am 2026-05-10 end-to-end auf macOS (Apple Silicon,
+Docker Desktop) durchlaufen — Stage A/B/C komplett. Task 7
+(`add-service` / `add-language`) ist über Stage B abgedeckt; die
+Mutationen brauchen keinen Docker. Stage A/B sind zusätzlich durch 51
+Vitest-Cases unter `packages/cli/test/` deterministisch abgesichert.
+
+Bugs, die der erste Walkthrough gefunden und behoben hat:
 
 - Compose-Project-Name-Split zwischen `monoceros start` (docker compose,
   Project = `devcontainer`) und `monoceros run/shell` (`@devcontainers/cli`,
@@ -22,9 +26,6 @@ gefundene und gefixte Bugs:
 - `monoceros run` hat `@devcontainers/cli`-Banner und JSON-Outcome
   vermischt mit der Inner-Command-Ausgabe ausgespuckt. `up`-Step ist
   jetzt stumm im Erfolgsfall.
-
-Stage-A/B (kein Docker) ist außerdem durch 40 Vitest-Cases unter
-`packages/cli/test/` deterministisch abgesichert.
 
 ## Stages
 
@@ -101,7 +102,7 @@ Schnelle Sanity-Checks, kein Filesystem-Effekt.
 | A.2 | Versionsangabe stimmt          | `monoceros --version`          | `0.1.0-dev`                                                                                            | Task 1    |
 | A.3 | `create`-Args sichtbar         | `monoceros create --help`      | Args: `name` (positional), `--languages`, `--services`, `--postgres-url`                               | Task 1, 3 |
 | A.4 | `logs`-Args sichtbar           | `monoceros logs --help`        | Args: `--project`, `--service`, `--follow`                                                             | Task 1, 6 |
-| A.5 | Stub-Commands leben noch nicht | `monoceros add-service --help` | Hilfetext + (Aufruf ohne Args) Hinweis "not yet implemented"                                           | Task 1    |
+| A.5 | `add-service`-Args sichtbar    | `monoceros add-service --help` | Args: `service` (positional), `--project`, `--yes`/`-y`                                                | Task 1, 7 |
 
 **Fail-Bedeutung:** wenn A.1 nicht alle 9 zeigt, ist die
 Subcommand-Registrierung in `packages/cli/src/main.ts` kaputt.
@@ -115,20 +116,26 @@ dazu.
 mkdir -p .local/play && cd .local/play
 ```
 
-| ID   | Was                             | Befehl                                                                               | Erwartet                                                                                                                                                                                               | Deckt     |
-| ---- | ------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
-| B.1  | Bare-Solution (Image-Mode)      | `monoceros create demo`                                                              | Verzeichnis `demo/` mit `.devcontainer/devcontainer.json` (`image: …typescript-node…`, kein `dockerComposeFile`), `.devcontainer/post-create.sh` (executable), `.monoceros/stack.json`, `README.md`    | Task 2, 3 |
-| B.2  | Sprach-Feature                  | `monoceros create demo-py --languages=python`                                        | `devcontainer.json` enthält `features: { "ghcr.io/devcontainers/features/python:1": {} }`                                                                                                              | Task 3    |
-| B.3  | Compose-Mode mit Services       | `monoceros create demo-svc --services=postgres,redis`                                | `devcontainer.json` ohne `image`, dafür `dockerComposeFile: "compose.yaml"` + `service: workspace` + `workspaceFolder: /workspaces/demo-svc`. `compose.yaml` mit `workspace`, `postgres:18`, `redis:8` | Task 3    |
-| B.4  | External Postgres               | `monoceros create demo-ext --services=postgres --postgres-url=postgres://example/db` | `stack.json` hat `services: []` und `externalServices.postgres: "postgres://…"`. Keine `compose.yaml`                                                                                                  | Task 3    |
-| B.5  | Idempotenz                      | `monoceros create demo` ein zweites Mal                                              | Info-Message "already initialized", Exit 0, keine Datei-Änderung                                                                                                                                       | Task 3    |
-| B.6  | Konflikt                        | `monoceros create demo --languages=python` (vorher ohne)                             | Error, Exit 1, Hinweis auf `add-service` / `add-language`                                                                                                                                              | Task 3    |
-| B.7  | Whitelist                       | `monoceros create x --languages=cobol`                                               | Error "Unknown language: cobol. Known: …"                                                                                                                                                              | Task 3    |
-| B.8  | Path-Traversal blocked          | `monoceros create ../escape`                                                         | Error "Invalid solution name"                                                                                                                                                                          | Task 3    |
-| B.9  | Status ohne Solution            | (Workbench-Root, also außerhalb von Solutions) `monoceros status`                    | Error "No .devcontainer/ found at or above …"                                                                                                                                                          | Task 6    |
-| B.10 | Status ohne Compose             | `cd .local/play/demo && monoceros status`                                            | Error "No compose.yaml … require services configured via add-service. Use monoceros shell …"                                                                                                           | Task 6    |
-| B.11 | Run ohne `--`                   | `monoceros run` (irgendwo)                                                           | Error "No command provided. Usage: monoceros run … -- \<cmd\>"                                                                                                                                         | Task 5    |
-| B.12 | Run mit `--` außerhalb Solution | (Workbench-Root) `monoceros run -- ls`                                               | Error "No .devcontainer/ found …" (nicht "no command")                                                                                                                                                 | Task 5    |
+| ID   | Was                             | Befehl                                                                               | Erwartet                                                                                                                                                                                                  | Deckt     |
+| ---- | ------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| B.1  | Bare-Solution (Image-Mode)      | `monoceros create demo`                                                              | Verzeichnis `demo/` mit `.devcontainer/devcontainer.json` (`image: …typescript-node…`, kein `dockerComposeFile`), `.devcontainer/post-create.sh` (executable), `.monoceros/stack.json`, `README.md`       | Task 2, 3 |
+| B.2  | Sprach-Feature                  | `monoceros create demo-py --languages=python`                                        | `devcontainer.json` enthält `features: { "ghcr.io/devcontainers/features/python:1": {} }`                                                                                                                 | Task 3    |
+| B.3  | Compose-Mode mit Services       | `monoceros create demo-svc --services=postgres,redis`                                | `devcontainer.json` ohne `image`, dafür `dockerComposeFile: "compose.yaml"` + `service: workspace` + `workspaceFolder: /workspaces/demo-svc`. `compose.yaml` mit `workspace`, `postgres:18`, `redis:8`    | Task 3    |
+| B.4  | External Postgres               | `monoceros create demo-ext --services=postgres --postgres-url=postgres://example/db` | `stack.json` hat `services: []` und `externalServices.postgres: "postgres://…"`. Keine `compose.yaml`                                                                                                     | Task 3    |
+| B.5  | Idempotenz                      | `monoceros create demo` ein zweites Mal                                              | Info-Message "already initialized", Exit 0, keine Datei-Änderung                                                                                                                                          | Task 3    |
+| B.6  | Konflikt                        | `monoceros create demo --languages=python` (vorher ohne)                             | Error, Exit 1, Hinweis auf `add-service` / `add-language`                                                                                                                                                 | Task 3    |
+| B.7  | Whitelist                       | `monoceros create x --languages=cobol`                                               | Error "Unknown language: cobol. Known: …"                                                                                                                                                                 | Task 3    |
+| B.8  | Path-Traversal blocked          | `monoceros create ../escape`                                                         | Error "Invalid solution name"                                                                                                                                                                             | Task 3    |
+| B.9  | Status ohne Solution            | (Workbench-Root, also außerhalb von Solutions) `monoceros status`                    | Error "No .devcontainer/ found at or above …"                                                                                                                                                             | Task 6    |
+| B.10 | Status ohne Compose             | `cd .local/play/demo && monoceros status`                                            | Error "No compose.yaml … require services configured via add-service. Use monoceros shell …"                                                                                                              | Task 6    |
+| B.11 | Run ohne `--`                   | `monoceros run` (irgendwo)                                                           | Error "No command provided. Usage: monoceros run … -- \<cmd\>"                                                                                                                                            | Task 5    |
+| B.12 | Run mit `--` außerhalb Solution | (Workbench-Root) `monoceros run -- ls`                                               | Error "No .devcontainer/ found …" (nicht "no command")                                                                                                                                                    | Task 5    |
+| B.13 | add-language fügt Feature an    | in einer bare Solution: `monoceros add-language python --yes`                        | Diff-Preview zeigt `+ "ghcr.io/devcontainers/features/python:1": {}`, danach "✔ Updated solution"; `devcontainer.json` enthält `features`-Eintrag, `stack.json.languages` = `["python"]`                  | Task 7    |
+| B.14 | add-language idempotent         | Wiederholung von B.13                                                                | "No changes — solution is already in the desired state.", Exit 0, Files unverändert                                                                                                                       | Task 7    |
+| B.15 | add-language Whitelist          | `monoceros add-language cobol`                                                       | Error "Unknown language: cobol …", Exit 1                                                                                                                                                                 | Task 7    |
+| B.16 | add-service Image→Compose       | in einer bare Solution: `monoceros add-service postgres --yes`                       | Diff: `devcontainer.json` switcht von `image:` auf `dockerComposeFile`+`service:workspace`+`runServices:[postgres]`; `compose.yaml` neu mit `workspace`+`postgres:18`; `stack.json.services`=`[postgres]` | Task 7    |
+| B.17 | add-service idempotent          | Wiederholung von B.16                                                                | "No changes — solution is already in the desired state.", Exit 0                                                                                                                                          | Task 7    |
+| B.18 | add-service ohne `--yes`        | `monoceros add-service redis` (Prompt mit `n` beantworten)                           | Diff angezeigt, dann Prompt "Apply these changes?", Antwort `n` → "Aborted by user. No files were written.", Exit 1, Solution unverändert                                                                 | Task 7    |
 
 **Fail-Bedeutung:**
 
@@ -139,6 +146,10 @@ mkdir -p .local/play && cd .local/play
 - B.7/B.8 fehlerhaft → `validateOptions` lässt was durch, das nicht
   durchsollte
 - B.9–B.12 fehlerhaft → Cwd-Awareness oder Compose-Resolution bricht
+- B.13–B.18 fehlerhaft → Mutator-Logik in
+  `packages/cli/src/modify/index.ts` ist kaputt; das Re-Generate-vom-Stack
+  -Modell ist die zentrale Idempotenz-Garantie und sollte nie in-place
+  patchen
 
 Aufräumen Stage B (vom Workbench-Root):
 

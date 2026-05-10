@@ -136,9 +136,21 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
    vier. 11 Vitest-Cases (resolve + 4 Action-Builder + Service-Filter +
    Exit-Code + `--project`-Override). E2E-Smoke verifiziert die
    Error-Pfade.
-7. **`monoceros add-service` / `add-language`** — modifiziert
-   `compose.yaml` bzw. `devcontainer.json` einer existierenden Solution.
-   Idempotent, mit Diff-Preview vor Schreiben.
+7. ✅ **`monoceros add-service` / `add-language`** — gemeinsamer Mutator
+   in [`packages/cli/src/modify/`](../packages/cli/src/modify/index.ts).
+   Strategie: Stack lesen → Sprache/Service in den Optionen ergänzen →
+   `devcontainer.json`, `compose.yaml`, `stack.json` komplett aus den
+   `buildXxx`-Helfern in `create/scaffold.ts` neu generieren →
+   Unified-Diff (`diff`-npm-Paket) gegen den Bestand zeigen → bestätigen
+   → schreiben. Idempotent durch Konstruktion: gleiche Optionen
+   ergeben byte-identische Files. `--yes` skippt den Prompt für Skripte.
+   Image→Compose-Übergang fällt umsonst raus (erste `add-service` auf
+   eine bare Solution baut `compose.yaml` und switcht
+   `devcontainer.json` automatisch). `createdAt` aus der existierenden
+   `stack.json` bleibt erhalten, `monocerosCliVersion` wird auf den
+   aktuellen Wert gehoben. 11 Vitest-Cases (Add-Pfade, Idempotenz,
+   Whitelist, Createdat-Preserve, Abort-Pfad, Diff-Output) plus
+   E2E-Smoke verifiziert.
 8. **Eigenes Runtime-Image** — `images/runtime/Dockerfile` auf Basis
    des Archivs (`apps/runner/docker/runtime/`). Inhalt: Linux-Basis,
    Node ≥20, pnpm, Claude-Code-CLI, sudo + non-root User,
