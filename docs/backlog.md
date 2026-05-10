@@ -392,6 +392,24 @@ Items die jetzt nicht eingeplant sind, aber bewusst getrackt:
   Passthrough plus optionale `serviceOverrides`-Sektion in
   `.monoceros/stack.json`. Erste echte Anwendung steuert das Design
   realistischer als Spekulation.
+- **Git-Bootstrap in generierten Solutions** — `monoceros create`
+  legt heute `.devcontainer/`, `.monoceros/stack.json`, `README.md`
+  an, aber keine `.gitignore` und kein initialisiertes Git-Repo.
+  Konvention laut Devcontainer-Spec ist, dass `.devcontainer/` und
+  `.monoceros/stack.json` versioniert mitgehen — damit „Reopen in
+  Container" beim Klonen funktioniert. Folge-Items:
+  - `.gitignore`-Template mit `node_modules/`, `dist/`, `.env*`,
+    `.monoceros/backups/` (sobald Backups kommen).
+  - optional `git init` als Teil von `monoceros create`, evtl.
+    `--no-git`-Opt-out für Sub-Repos.
+  - falls Findings-Backlog (M2) versioniert mitgeht: explizit
+    dokumentieren welche `.monoceros/`-Subordner committen vs. ignore.
+
+  Sinnvoll im Rahmen von M2 oder direkt danach, wenn die GitHub-/Jira-
+  Anbindung steht — dann ist der Workflow rund um „Solution-Repo
+  anlegen, pushen, im Team teilen" gefestigt und das Bootstrap kann
+  die Konventionen mit reinpacken.
+
 - **Persistenz-Strategie für Service-Daten** — heute liegen
   Postgres/MySQL/Redis-Daten in Docker-Named-Volumes
   (`<solution>_devcontainer_<svc>-data`). Sicher gegen
