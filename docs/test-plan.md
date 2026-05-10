@@ -6,7 +6,25 @@ das Verhalten der reinen Funktionen ab; dieser Plan deckt die
 End-to-End-Strecke ab, die Tests nicht treffen können (echtes Docker,
 Auth-Pass-Through, Shell-Ergonomie).
 
-Stand: M1 Tasks 1–6.
+Stand: M1 Tasks 1–6, alle Stage-A/B/C-Tests am 2026-05-10 auf macOS
+(Apple Silicon, Docker Desktop) end-to-end durchlaufen. Beim Walkthrough
+gefundene und gefixte Bugs:
+
+- Compose-Project-Name-Split zwischen `monoceros start` (docker compose,
+  Project = `devcontainer`) und `monoceros run/shell` (`@devcontainers/cli`,
+  Project = `<solution>_devcontainer`). Behoben durch konsistentes
+  `-p <solution>_devcontainer` in den Compose-Passthroughs.
+- Postgres 18 verlangt Volume-Mount auf `/var/lib/postgresql` statt
+  `/var/lib/postgresql/data`.
+- `monoceros start` hat Container ohne `devcontainer`-Labels angelegt,
+  sodass `monoceros run/shell` "Dev container not found" warfen.
+  Behoben durch Umstellung auf `devcontainer up` (mit `runServices`).
+- `monoceros run` hat `@devcontainers/cli`-Banner und JSON-Outcome
+  vermischt mit der Inner-Command-Ausgabe ausgespuckt. `up`-Step ist
+  jetzt stumm im Erfolgsfall.
+
+Stage-A/B (kein Docker) ist außerdem durch 40 Vitest-Cases unter
+`packages/cli/test/` deterministisch abgesichert.
 
 ## Stages
 
