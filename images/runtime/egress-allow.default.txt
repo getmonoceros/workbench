@@ -34,3 +34,13 @@ security.debian.org
 # --- Common language ecosystems (broad allow; trim if not needed) ---
 pypi.org
 files.pythonhosted.org
+
+# --- VS Code Dev Containers ---
+# Marketplace + Extension-Download-CDN, damit "Reopen in Container"
+# Extensions in den Container ziehen kann. Ohne diese Hosts hängt der
+# Configure-Step bei "Installing extensions..." in einem TCP-Timeout.
+marketplace.visualstudio.com
+www.vscode-unpkg.net
+vscode-unpkg.net
+update.code.visualstudio.com
+vscode.download.prss.microsoft.com
