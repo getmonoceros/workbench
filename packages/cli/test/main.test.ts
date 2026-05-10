@@ -18,6 +18,7 @@ describe('monoceros main command', () => {
       'logs',
       'start',
       'stop',
+      'down',
       'status',
       'add-service',
       'add-language',

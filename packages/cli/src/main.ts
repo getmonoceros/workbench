@@ -2,6 +2,7 @@ import { defineCommand } from 'citty';
 import { addLanguageCommand } from './commands/add-language.js';
 import { addServiceCommand } from './commands/add-service.js';
 import { createCommand } from './commands/create.js';
+import { downCommand } from './commands/down.js';
 import { logsCommand } from './commands/logs.js';
 import { runCommand } from './commands/run.js';
 import { shellCommand } from './commands/shell.js';
@@ -24,6 +25,7 @@ export const main = defineCommand({
     logs: logsCommand,
     start: startCommand,
     stop: stopCommand,
+    down: downCommand,
     status: statusCommand,
     'add-service': addServiceCommand,
     'add-language': addLanguageCommand,

@@ -76,7 +76,7 @@ Verifikation:
 
 ```sh
 monoceros --version        # 0.1.0-dev
-monoceros --help           # Listing aller 9 Subcommands
+monoceros --help           # Listing aller 10 Subcommands
 ```
 
 Aufräumen erübrigt sich — der Alias ist mit der Shell weg.
@@ -101,15 +101,15 @@ mkdir -p .local/play && cd .local/play
 
 Schnelle Sanity-Checks, kein Filesystem-Effekt.
 
-| ID  | Was                            | Befehl                         | Erwartet                                                                                               | Deckt     |
-| --- | ------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------ | --------- |
-| A.1 | Alle 9 Subcommands registriert | `monoceros --help`             | Listing mit `create`, `shell`, `run`, `logs`, `start`, `stop`, `status`, `add-service`, `add-language` | Task 1    |
-| A.2 | Versionsangabe stimmt          | `monoceros --version`          | `0.1.0-dev`                                                                                            | Task 1    |
-| A.3 | `create`-Args sichtbar         | `monoceros create --help`      | Args: `name` (positional), `--languages`, `--services`, `--postgres-url`                               | Task 1, 3 |
-| A.4 | `logs`-Args sichtbar           | `monoceros logs --help`        | Args: `--project`, `--service`, `--follow`                                                             | Task 1, 6 |
-| A.5 | `add-service`-Args sichtbar    | `monoceros add-service --help` | Args: `service` (positional), `--project`, `--yes`/`-y`                                                | Task 1, 7 |
+| ID  | Was                             | Befehl                         | Erwartet                                                                                                       | Deckt     |
+| --- | ------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------- | --------- |
+| A.1 | Alle 10 Subcommands registriert | `monoceros --help`             | Listing mit `create`, `shell`, `run`, `logs`, `start`, `stop`, `down`, `status`, `add-service`, `add-language` | Task 1    |
+| A.2 | Versionsangabe stimmt           | `monoceros --version`          | `0.1.0-dev`                                                                                                    | Task 1    |
+| A.3 | `create`-Args sichtbar          | `monoceros create --help`      | Args: `name` (positional), `--languages`, `--services`, `--postgres-url`                                       | Task 1, 3 |
+| A.4 | `logs`-Args sichtbar            | `monoceros logs --help`        | Args: `--project`, `--service`, `--follow`                                                                     | Task 1, 6 |
+| A.5 | `add-service`-Args sichtbar     | `monoceros add-service --help` | Args: `service` (positional), `--project`, `--yes`/`-y`                                                        | Task 1, 7 |
 
-**Fail-Bedeutung:** wenn A.1 nicht alle 9 zeigt, ist die
+**Fail-Bedeutung:** wenn A.1 nicht alle 10 zeigt, ist die
 Subcommand-Registrierung in `packages/cli/src/main.ts` kaputt.
 
 ## Stage B — Scaffolding (kein Docker)
@@ -215,9 +215,9 @@ aktivieren willst (z. B. CI/Headless). Begründung in
 ### Aufräumen Stage C (vom Workbench-Root):
 
 ```sh
-# in der Solution: Volumes weg
+# Container + Network + Volumes weg
 cd .local/play/demo
-docker compose -f .devcontainer/compose.yaml down -v
+monoceros down --volumes
 
 # zurück und alles wegwerfen
 cd ../../..

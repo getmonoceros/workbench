@@ -113,6 +113,30 @@ export async function runStart(opts: StartOptions = {}): Promise<number> {
   return spawnFn(['up', '--workspace-folder', root], root);
 }
 
+export interface DownOptions {
+  cwd?: string;
+  project?: string;
+  // When true, also drop named volumes (postgres-data etc.). Default
+  // is false — `down` removes containers and the project network so a
+  // subsequent `start` recreates the workspace from the current image,
+  // but service data survives.
+  volumes?: boolean;
+  spawn?: ComposeSpawn;
+}
+
+// `monoceros down` removes containers + network for the project so a
+// fresh `start` picks up image changes (after `pnpm image:rebuild`,
+// after edits to compose.yaml, …). `stop` alone leaves the container
+// in place and `devcontainer up` will reuse it.
+export async function runDown(opts: DownOptions = {}): Promise<number> {
+  const cwd = opts.cwd ?? process.cwd();
+  const { root, composeFile, projectName } = resolveCompose(cwd, opts.project);
+  const spawnFn = opts.spawn ?? spawnDockerCompose;
+  const args = ['-f', composeFile, '-p', projectName, 'down'];
+  if (opts.volumes) args.push('-v');
+  return spawnFn(args, root);
+}
+
 export function runStop(opts: ComposeActionOptions = {}): Promise<number> {
   return runComposeAction(
     (service) => ['stop', ...(service ? [service] : [])],
