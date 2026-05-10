@@ -90,6 +90,10 @@ interface DevcontainerImageMode {
   image: string;
   remoteUser: string;
   mounts: string[];
+  // Required so the runtime image's entrypoint can configure iptables
+  // egress rules. Without it the entrypoint logs a warning and falls
+  // through to unrestricted egress (no silent fail-open). See ADR 0002.
+  runArgs: string[];
   forwardPorts: number[];
   postCreateCommand: string;
   features?: Record<string, Record<string, unknown>>;
@@ -124,6 +128,8 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     Object.keys(features).length > 0 ? { features } : undefined;
 
   if (needsCompose(opts)) {
+    // Compose-mode handles NET_ADMIN via cap_add on the workspace
+    // service in compose.yaml — no runArgs needed here.
     return {
       name: opts.name,
       dockerComposeFile: 'compose.yaml',
@@ -144,6 +150,7 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     mounts: [
       'source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,consistency=cached',
     ],
+    runArgs: ['--cap-add=NET_ADMIN'],
     forwardPorts: [3000, 4000],
     postCreateCommand: '.devcontainer/post-create.sh',
     ...(featuresField ?? {}),
@@ -158,7 +165,12 @@ export function buildComposeYaml(opts: CreateOptions): string {
   lines.push('  workspace:');
   lines.push(`    image: ${BASE_IMAGE}`);
   lines.push("    command: 'sleep infinity'");
-  lines.push('    user: node');
+  // No `user:` directive here — the runtime image's entrypoint runs as
+  // root to set up iptables, then drops to the `node` user via gosu
+  // before exec'ing the command. NET_ADMIN is required for that
+  // iptables setup; see ADR 0002.
+  lines.push('    cap_add:');
+  lines.push('      - NET_ADMIN');
   lines.push('    volumes:');
   lines.push(`      - ..:/workspaces/${opts.name}:cached`);
   lines.push('      - ${HOME}/.claude:/home/node/.claude');

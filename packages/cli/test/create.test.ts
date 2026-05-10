@@ -42,7 +42,8 @@ describe('runCreate', () => {
         'utf8',
       ),
     );
-    expect(devcontainer.image).toMatch(/typescript-node/);
+    expect(devcontainer.image).toBe('monoceros-runtime:dev');
+    expect(devcontainer.runArgs).toEqual(['--cap-add=NET_ADMIN']);
     expect(devcontainer.dockerComposeFile).toBeUndefined();
     expect(devcontainer.features).toBeUndefined();
     expect(devcontainer.mounts).toContain(
@@ -53,7 +54,10 @@ describe('runCreate', () => {
       path.join(target, '.devcontainer', 'post-create.sh'),
       'utf8',
     );
-    expect(postCreate).toContain('@anthropic-ai/claude-code');
+    // Claude CLI is preinstalled in the runtime image, so post-create
+    // no longer installs it. pnpm install stays for Node solutions.
+    expect(postCreate).not.toContain('@anthropic-ai/claude-code');
+    expect(postCreate).toContain('pnpm install');
 
     const stat = await fs.stat(
       path.join(target, '.devcontainer', 'post-create.sh'),
@@ -122,6 +126,11 @@ describe('runCreate', () => {
       'utf8',
     );
     expect(compose).toContain('workspace:');
+    expect(compose).toContain('image: monoceros-runtime:dev');
+    expect(compose).toContain('cap_add:');
+    expect(compose).toContain('- NET_ADMIN');
+    // No `user: node` line — the entrypoint drops to node via gosu.
+    expect(compose).not.toMatch(/^\s*user:\s+node/m);
     expect(compose).toContain('postgres:');
     expect(compose).toContain('image: postgres:18');
     expect(compose).toContain('postgres-data:');

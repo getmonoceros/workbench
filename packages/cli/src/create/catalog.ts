@@ -3,8 +3,13 @@
 // reviewable; unknown values are rejected up front rather than passed
 // through to devcontainer / compose.
 
-export const BASE_IMAGE =
-  'mcr.microsoft.com/devcontainers/typescript-node:22-bookworm';
+// Monoceros runtime image — thin layer on top of Microsoft's
+// typescript-node base, adding the Claude Code CLI and an
+// iptables-based egress allowlist. Built locally via
+// `cd images/runtime && docker build -t monoceros-runtime:dev .`
+// (see images/runtime/README.md). Once GHCR-published (Task 8c) we
+// switch this to `ghcr.io/kamann/monoceros-runtime:<tag>`.
+export const BASE_IMAGE = 'monoceros-runtime:dev';
 
 export interface LanguageEntry {
   id: string;

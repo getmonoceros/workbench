@@ -1,10 +1,11 @@
 {
   "name": "monoceros-default",
-  "image": "mcr.microsoft.com/devcontainers/typescript-node:22-bookworm",
+  "image": "monoceros-runtime:dev",
   "remoteUser": "node",
   "mounts": [
     "source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,consistency=cached"
   ],
+  "runArgs": ["--cap-add=NET_ADMIN"],
   "forwardPorts": [3000, 4000],
   "postCreateCommand": ".devcontainer/post-create.sh"
 }

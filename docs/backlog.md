@@ -181,11 +181,21 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
    Lokal smoke-getestet: erlaubte Hosts erreichbar, nicht-erlaubte
    blockiert, Override-Datei greift, alle drei Modi funktionieren.
 
-   **8b — Default-Template umstellen.** `templates/default/.devcontainer/devcontainer.json`
-   zeigt auf `monoceros-runtime:dev` (lokales Tag), `compose.yaml`
-   bekommt `cap_add: [NET_ADMIN]` für den `workspace`-Service.
-   `post-create.sh` schrumpft, weil Claude-CLI bereits im Image ist.
-   Test-Plan-Stage-C komplett gegen das neue Image durchlaufen.
+   ✅ **8b — Default-Template umstellen.**
+   [`BASE_IMAGE`](../packages/cli/src/create/catalog.ts) ist jetzt
+   `monoceros-runtime:dev`. Generierte Image-Mode-`devcontainer.json`
+   bekommt `runArgs: ["--cap-add=NET_ADMIN"]`, generierte
+   Compose-Mode-`compose.yaml` bekommt `cap_add: [NET_ADMIN]` auf den
+   `workspace`-Service und kein `user: node` mehr (das Image-Entrypoint
+   dropt selbst via `gosu` vom root auf `node`).
+   [`post-create.sh`](../templates/default/.devcontainer/post-create.sh)
+   schrumpft auf nur noch `pnpm install` (Claude-CLI ist im Image).
+   Tests aktualisiert (51 grün); E2E lokal durchgespielt mit
+   `monoceros create demo --languages=python --services=postgres &&
+monoceros start && monoceros run -- claude --version`. Egress
+   verifiziert: `api.anthropic.com:443` und `postgres:5432` erreichbar,
+   `example.com:443` und `cloudflare.com:443` blockiert. Test-Plan-C.10
+   deckt das ab.
 
    **8c — Publish (später, vor Public-Release / Multi-Builder).**
    Multi-Arch via `docker buildx` (amd64 + arm64),
