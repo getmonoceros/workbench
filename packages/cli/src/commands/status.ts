@@ -1,13 +1,31 @@
 import { defineCommand } from 'citty';
-import { notImplemented } from './_stub.js';
+import { runStatus } from '../devcontainer/compose.js';
+import { dispatch } from './_dispatch.js';
 
 export const statusCommand = defineCommand({
   meta: {
     name: 'status',
     description:
-      'Show whether the devcontainer and compose services are running.',
+      'Show whether the compose services for the current solution are running.',
   },
-  run() {
-    notImplemented('status');
+  args: {
+    project: {
+      type: 'string',
+      description:
+        'Override the auto-detected project (path, absolute or relative to cwd).',
+    },
+    service: {
+      type: 'string',
+      description:
+        'Restrict to a single compose service (e.g. postgres). Defaults to all.',
+    },
+  },
+  run({ args }) {
+    return dispatch(() =>
+      runStatus({
+        project: typeof args.project === 'string' ? args.project : undefined,
+        service: typeof args.service === 'string' ? args.service : undefined,
+      }),
+    );
   },
 });

@@ -1,0 +1,182 @@
+import { promises as fs } from 'node:fs';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  resolveCompose,
+  runLogs,
+  runStart,
+  runStatus,
+  runStop,
+} from '../src/devcontainer/compose.js';
+
+describe('resolveCompose', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'monoceros-compose-resolve-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('throws when no .devcontainer/ is found at or above cwd', () => {
+    expect(() => resolveCompose(root, undefined)).toThrow(
+      /No \.devcontainer\/ found/,
+    );
+  });
+
+  it('throws with a guiding message when compose.yaml is missing', async () => {
+    const solution = path.join(root, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    expect(() => resolveCompose(solution, undefined)).toThrow(
+      /No compose\.yaml at/,
+    );
+  });
+
+  it('returns the solution root and absolute compose path', async () => {
+    const solution = path.join(root, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    await fs.writeFile(
+      path.join(solution, '.devcontainer', 'compose.yaml'),
+      'services: {}\n',
+    );
+    expect(resolveCompose(solution, undefined)).toEqual({
+      root: solution,
+      composeFile: path.join(solution, '.devcontainer', 'compose.yaml'),
+    });
+  });
+});
+
+describe('compose actions', () => {
+  let root: string;
+  let solution: string;
+  let composeFile: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'monoceros-compose-action-'));
+    solution = path.join(root, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    composeFile = path.join(solution, '.devcontainer', 'compose.yaml');
+    await fs.writeFile(composeFile, 'services: {}\n');
+  });
+
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('runStart issues `up -d` against the compose file', async () => {
+    const calls: { args: string[]; cwd: string }[] = [];
+    const exitCode = await runStart({
+      cwd: solution,
+      spawn: async (args, cwd) => {
+        calls.push({ args, cwd });
+        return 0;
+      },
+    });
+    expect(exitCode).toBe(0);
+    expect(calls).toEqual([
+      { args: ['-f', composeFile, 'up', '-d'], cwd: solution },
+    ]);
+  });
+
+  it('runStop issues `stop` and preserves volumes', async () => {
+    const calls: string[][] = [];
+    await runStop({
+      cwd: solution,
+      spawn: async (args) => {
+        calls.push(args);
+        return 0;
+      },
+    });
+    expect(calls).toEqual([['-f', composeFile, 'stop']]);
+  });
+
+  it('runStatus issues `ps`', async () => {
+    const calls: string[][] = [];
+    await runStatus({
+      cwd: solution,
+      spawn: async (args) => {
+        calls.push(args);
+        return 0;
+      },
+    });
+    expect(calls).toEqual([['-f', composeFile, 'ps']]);
+  });
+
+  it('runLogs follows by default', async () => {
+    const calls: string[][] = [];
+    await runLogs({
+      cwd: solution,
+      spawn: async (args) => {
+        calls.push(args);
+        return 0;
+      },
+    });
+    expect(calls).toEqual([['-f', composeFile, 'logs', '-f']]);
+  });
+
+  it('runLogs with follow=false omits -f', async () => {
+    const calls: string[][] = [];
+    await runLogs({
+      cwd: solution,
+      follow: false,
+      spawn: async (args) => {
+        calls.push(args);
+        return 0;
+      },
+    });
+    expect(calls).toEqual([['-f', composeFile, 'logs']]);
+  });
+
+  it('appends --service when filtering', async () => {
+    const calls: string[][] = [];
+    await runStart({
+      cwd: solution,
+      service: 'postgres',
+      spawn: async (args) => {
+        calls.push(args);
+        return 0;
+      },
+    });
+    await runLogs({
+      cwd: solution,
+      service: 'redis',
+      follow: false,
+      spawn: async (args) => {
+        calls.push(args);
+        return 0;
+      },
+    });
+    expect(calls).toEqual([
+      ['-f', composeFile, 'up', '-d', 'postgres'],
+      ['-f', composeFile, 'logs', 'redis'],
+    ]);
+  });
+
+  it('propagates exit codes from docker compose', async () => {
+    const exitCode = await runStatus({
+      cwd: solution,
+      spawn: async () => 5,
+    });
+    expect(exitCode).toBe(5);
+  });
+
+  it('honors --project when locating the solution', async () => {
+    const elsewhere = path.join(root, 'elsewhere');
+    await fs.mkdir(elsewhere, { recursive: true });
+    const calls: { cwd: string; args: string[] }[] = [];
+    await runStatus({
+      cwd: elsewhere,
+      project: path.relative(elsewhere, solution),
+      spawn: async (args, cwd) => {
+        calls.push({ args, cwd });
+        return 0;
+      },
+    });
+    expect(calls[0]?.cwd).toBe(solution);
+    expect(calls[0]?.args).toContain(composeFile);
+  });
+});

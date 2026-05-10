@@ -1,12 +1,19 @@
 import { defineCommand } from 'citty';
-import { notImplemented } from './_stub.js';
+import { runLogs } from '../devcontainer/compose.js';
+import { dispatch } from './_dispatch.js';
 
 export const logsCommand = defineCommand({
   meta: {
     name: 'logs',
-    description: 'Tail logs from the devcontainer or a compose service.',
+    description:
+      'Tail logs from the compose services. Pass --no-follow for a one-shot dump.',
   },
   args: {
+    project: {
+      type: 'string',
+      description:
+        'Override the auto-detected project (path, absolute or relative to cwd).',
+    },
     service: {
       type: 'string',
       description:
@@ -14,12 +21,19 @@ export const logsCommand = defineCommand({
     },
     follow: {
       type: 'boolean',
-      description: 'Follow log output.',
+      description:
+        'Follow log output (default: true). Use --no-follow to disable.',
       alias: ['f'],
-      default: false,
+      default: true,
     },
   },
-  run() {
-    notImplemented('logs');
+  run({ args }) {
+    return dispatch(() =>
+      runLogs({
+        project: typeof args.project === 'string' ? args.project : undefined,
+        service: typeof args.service === 'string' ? args.service : undefined,
+        follow: args.follow,
+      }),
+    );
   },
 });

@@ -122,8 +122,20 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
    `--` aus `rawArgs`; fehlt `--` oder ist die Slice leer, exitet das
    Command mit klarem Usage-Hinweis. 9 Vitest-Cases (parser + orchestrator)
    plus E2E-Smoke der Error-Pfade.
-6. **`monoceros logs / start / stop / status`** — direkt auf Compose
-   bzw. Docker-Daemon. Mit `--service=postgres` filterbar.
+6. ✅ **`monoceros logs / start / stop / status`** — Compose-Passthrough
+   in [`packages/cli/src/devcontainer/compose.ts`](../packages/cli/src/devcontainer/compose.ts).
+   `resolveCompose` lokalisiert die Solution + `compose.yaml` und gibt
+   bei Single-Image-Solutions (kein Compose) einen Hinweis auf
+   `add-service` / `shell` aus statt blind zu rufen. `runStart` →
+   `docker compose -f … up -d`, `runStop` → `… stop` (Volumes bleiben),
+   `runStatus` → `… ps`, `runLogs` → `… logs -f` (Default; `--no-follow`
+   für One-Shot). `--service=<name>` filtert pro Befehl. Geteilter
+   `dispatch()`-Helper in
+   [`commands/_dispatch.ts`](../packages/cli/src/commands/_dispatch.ts)
+   übernimmt Exit-Code-Propagation und Error-Logging einmal für alle
+   vier. 11 Vitest-Cases (resolve + 4 Action-Builder + Service-Filter +
+   Exit-Code + `--project`-Override). E2E-Smoke verifiziert die
+   Error-Pfade.
 7. **`monoceros add-service` / `add-language`** — modifiziert
    `compose.yaml` bzw. `devcontainer.json` einer existierenden Solution.
    Idempotent, mit Diff-Preview vor Schreiben.
