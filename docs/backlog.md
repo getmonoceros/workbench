@@ -361,6 +361,22 @@ Items die jetzt nicht eingeplant sind, aber bewusst getrackt:
   ergänzen, parallel zu Claude Code.
 - **Pre-Push-Hook reaktivieren** — sobald Tests existieren, `npm test`
   als pre-push wieder aktivieren.
+- **Service-Init-Konfiguration** — die `SERVICE_CATALOG`-Einträge in
+  [`catalog.ts`](../packages/cli/src/create/catalog.ts) liefern heute
+  feste Init-Werte: postgres mit Locale `en_US.utf8` und FTS-Default
+  `english`, mysql mit Default-Charset, redis ohne Memory-Limits. Für
+  95% der Anwendungen reicht App-Layer-Handling
+  (`ORDER BY x COLLATE "de_DE"`, `to_tsvector('german', …)`,
+  `maxmemory` zur Laufzeit). Wenn ein konkreter Bedarf kommt
+  (FTS-Indizes ohne expliziten Config-Namen, locale-pinned Tests,
+  …), ist der Weg klar: postgres unterstützt
+  `POSTGRES_INITDB_ARGS=--locale=de_DE.utf8` + `LANG=de_DE.utf8` als
+  Env, mysql nimmt `MYSQL_INITDB_ARGS`, redis hat eine `command:`-
+  override-Convention. Statt curated CLI-Flags pro Service-Eigenheit
+  wahrscheinlich generisch ein `--service-env <svc>=<key>=<value>`-
+  Passthrough plus optionale `serviceOverrides`-Sektion in
+  `.monoceros/stack.json`. Erste echte Anwendung steuert das Design
+  realistischer als Spekulation.
 - **HTTPS-Content-Filter** — Egress-Whitelist (Task 8) blockiert nur
   _wohin_ Pakete gehen, nicht _was_. Eine HTTPS-Inspecting-Proxy-Komponente
   (mitmproxy o. Ä.) im Container-Netz kann zusätzlich Payloads
