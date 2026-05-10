@@ -122,20 +122,25 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
    `--` aus `rawArgs`; fehlt `--` oder ist die Slice leer, exitet das
    Command mit klarem Usage-Hinweis. 9 Vitest-Cases (parser + orchestrator)
    plus E2E-Smoke der Error-Pfade.
-6. ✅ **`monoceros logs / start / stop / status`** — Compose-Passthrough
-   in [`packages/cli/src/devcontainer/compose.ts`](../packages/cli/src/devcontainer/compose.ts).
+6. ✅ **`monoceros logs / start / stop / status`** —
+   [`packages/cli/src/devcontainer/compose.ts`](../packages/cli/src/devcontainer/compose.ts).
    `resolveCompose` lokalisiert die Solution + `compose.yaml` und gibt
    bei Single-Image-Solutions (kein Compose) einen Hinweis auf
    `add-service` / `shell` aus statt blind zu rufen. `runStart` →
-   `docker compose -f … up -d`, `runStop` → `… stop` (Volumes bleiben),
-   `runStatus` → `… ps`, `runLogs` → `… logs -f` (Default; `--no-follow`
-   für One-Shot). `--service=<name>` filtert pro Befehl. Geteilter
-   `dispatch()`-Helper in
+   `devcontainer up --workspace-folder <root>` (damit der Workspace-
+   Container die `devcontainer.local_folder`-Labels bekommt, die
+   anschließendes `monoceros run/shell` für die `exec`-Lookup braucht;
+   `runServices` aus `devcontainer.json` zieht die Backing-Services mit
+   hoch). `runStop` → `docker compose -p <solution>_devcontainer stop`
+   (Volumes bleiben), `runStatus` → `… ps`, `runLogs` → `… logs -f`
+   (Default; `--no-follow` für One-Shot). `--service=<name>` filtert
+   stop/status/logs. Project-Name `-p <solution>_devcontainer` wird
+   konsistent gesetzt, damit beide Pfade (compose-Passthrough und
+   `devcontainer up` via `monoceros run/shell`) auf demselben Stack
+   arbeiten. Geteilter `dispatch()`-Helper in
    [`commands/_dispatch.ts`](../packages/cli/src/commands/_dispatch.ts)
    übernimmt Exit-Code-Propagation und Error-Logging einmal für alle
-   vier. 11 Vitest-Cases (resolve + 4 Action-Builder + Service-Filter +
-   Exit-Code + `--project`-Override). E2E-Smoke verifiziert die
-   Error-Pfade.
+   vier. 12 Vitest-Cases plus manueller E2E-Walkthrough.
 7. ✅ **`monoceros add-service` / `add-language`** — gemeinsamer Mutator
    in [`packages/cli/src/modify/`](../packages/cli/src/modify/index.ts).
    Strategie: Stack lesen → Sprache/Service in den Optionen ergänzen →
@@ -151,13 +156,38 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
    aktuellen Wert gehoben. 11 Vitest-Cases (Add-Pfade, Idempotenz,
    Whitelist, Createdat-Preserve, Abort-Pfad, Diff-Output) plus
    E2E-Smoke verifiziert.
-8. **Eigenes Runtime-Image** — `images/runtime/Dockerfile` auf Basis
-   des Archivs (`apps/runner/docker/runtime/`). Inhalt: Linux-Basis,
-   Node ≥20, pnpm, Claude-Code-CLI, sudo + non-root User,
-   Egress-Whitelist übernommen, Template-Block raus. Bauen + lokal
-   testen, Default-Template umstellen, publishen
-   (`ghcr.io/kamann/monoceros-runtime:dev`, Multi-Arch amd64 + arm64,
-   `:latest` + `:YYYY-MM-DD`-Tag).
+8. **Eigenes Runtime-Image mit Egress-Whitelist** — Kernmotivation: für
+   den Use-Case „Claude Code läuft längere Zeit unbeobachtet" ist die
+   Container-Isolation alleine nicht genug. Egress-Whitelist via
+   iptables verhindert Daten-Exfiltration (kompromittierter Agent),
+   typo-squatted-npm-Phone-Home und ungewollte Telemetrie. Das ist die
+   _eigentliche_ Sicherheits-Differenzierung der Workbench, nicht nur
+   nice-to-have.
+
+   **8a — Dockerfile bauen + lokal testen.**
+   `images/runtime/Dockerfile` + `entrypoint.sh` aus dem Archiv
+   ([`apps/runner/docker/runtime/`](../../monoceros-for-solution-builder_archive-2026-05-10/apps/runner/docker/runtime/))
+   adaptieren: Auth/Enrollment-Logik raus, Devcontainer-spezifische
+   Anpassungen rein. Inhalt: Linux-Basis, Node ≥20, pnpm,
+   Claude-Code-CLI vorinstalliert, non-root `node`-User mit
+   passwordless sudo, iptables-basierte Egress-Whitelist (`api.anthropic.com`,
+   npm-Registry, GitHub, ghcr, DNS, intra-Compose-Hosts) — gesetzt im
+   Entrypoint via `cap_add: [NET_ADMIN]`. Per-Solution-Override über
+   `.monoceros/egress-allow.txt` (zusätzliche Hosts). Lokal mit
+   `docker build` + `docker run` smoke-testen.
+
+   **8b — Default-Template umstellen.** `templates/default/.devcontainer/devcontainer.json`
+   zeigt auf `monoceros-runtime:dev` (lokales Tag), `compose.yaml`
+   bekommt `cap_add: [NET_ADMIN]` für den `workspace`-Service.
+   `post-create.sh` schrumpft, weil Claude-CLI bereits im Image ist.
+   Test-Plan-Stage-C komplett gegen das neue Image durchlaufen.
+
+   **8c — Publish (später, vor Public-Release / Multi-Builder).**
+   Multi-Arch via `docker buildx` (amd64 + arm64),
+   `ghcr.io/kamann/monoceros-runtime:dev` + `:YYYY-MM-DD`-Tag,
+   GitHub-Actions-Workflow für reproducible builds. Default-Template
+   zeigt nach Push auf den GHCR-Tag.
+
 9. **Verifikation auf drei Pfaden** — Test, dass dasselbe Projekt
    funktioniert in: (a) VS Code Dev Containers, (b) Cursor, (c)
    Claude Code via direkter Docker-Anbindung. Wenn (c) wackelt, ist
@@ -173,7 +203,8 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
   geht in unter 60s durch, Container ist drin, Claude funktioniert
 - Postgres im Compose-Setup läuft, ist von innen erreichbar
 - Reset (`docker compose down -v`) räumt sauber auf
-- Image ist publik verfügbar, README erklärt einmal das Setup
+- Eigenes Runtime-Image mit aktiver Egress-Whitelist, lokal verfügbar
+  (8a + 8b). Public-Push (8c) optional bis zum Public-Release
 
 ### Bewusst nicht in M1
 
@@ -315,6 +346,20 @@ Items die jetzt nicht eingeplant sind, aber bewusst getrackt:
   ergänzen, parallel zu Claude Code.
 - **Pre-Push-Hook reaktivieren** — sobald Tests existieren, `npm test`
   als pre-push wieder aktivieren.
+- **HTTPS-Content-Filter** — Egress-Whitelist (Task 8) blockiert nur
+  _wohin_ Pakete gehen, nicht _was_. Eine HTTPS-Inspecting-Proxy-Komponente
+  (mitmproxy o. Ä.) im Container-Netz kann zusätzlich Payloads
+  inspizieren und Patterns blockieren (z. B. ausgehende `.env`-Inhalte,
+  AWS-Keys, OpenAI-API-Keys). Eigene Architektur-Entscheidung — wo
+  läuft der Proxy, wie verteilen wir das CA-Zert in den Container, wie
+  kalibrieren wir Falsch-Positive. Erst sinnvoll, wenn Egress-Whitelist
+  steht und sich als Praxis bewährt hat.
+- **MCP-Server-Whitelist + Audit-Trail** — wenn die Iteration-Pipeline
+  (M2) MCP-Server zulässt, brauchen wir Kontrolle: Liste erlaubter MCP-
+  Binaries pro Solution, Audit-Log welche Tools/Args sie aufrufen,
+  optional Confirmation-Hook für sensible Operations
+  (`fs.write`, `network.fetch`). Orthogonal zum Image-Hardening,
+  passt eher als Layer in die Plugin-Architektur.
 - **E2E-Test-Suite für Stage C** — `packages/cli/test-e2e/` mit
   Vitest-Cases für `monoceros start/status/logs/run/stop` gegen einen
   echten Docker-Daemon. Hinter Env-Flag (`MONOCEROS_E2E=1`) gated, in
