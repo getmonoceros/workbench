@@ -98,10 +98,20 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
    Refuse. 9 Vitest-Cases gegen tmp-dirs decken bare/languages/services/
    external-postgres/idempotent/conflict/non-empty/whitelist/name-validation
    ab.
-4. **`monoceros shell` implementieren** — wrappt
-   [`@devcontainers/cli`](https://github.com/devcontainers/cli) (`devcontainer up`
-   - `devcontainer exec bash`). Cwd-Awareness: sucht aufwärts nach
-     `.devcontainer/`. Container starten wenn nötig.
+4. ✅ **`monoceros shell` implementieren** — wrappt
+   [`@devcontainers/cli`](https://github.com/devcontainers/cli) v0.86.1
+   (als dep ins `@monoceros/cli` aufgenommen). `runShell` in
+   [`packages/cli/src/devcontainer/shell.ts`](../packages/cli/src/devcontainer/shell.ts)
+   ruft `devcontainer up --workspace-folder <root>` und anschließend
+   `devcontainer exec --workspace-folder <root> bash` mit
+   `stdio: 'inherit'`. Cwd-Awareness via
+   [`findSolutionRoot`](../packages/cli/src/devcontainer/locate.ts)
+   (walkt aufwärts nach `.devcontainer/`); `--project=<path>` als
+   Override (relativ zur cwd oder absolut). Binary-Resolution über
+   `createRequire` auf `@devcontainers/cli/package.json` → `node <bin>`,
+   funktioniert unabhängig vom PATH. Up-Failure short-circuited mit
+   propagiertem Exit-Code. 7 Vitest-Cases (Discovery + Orchestrator)
+   gegen tmp-dirs mit injected Spawn-Fake.
 5. **`monoceros run -- <cmd>`** — analog zu `shell`, aber non-interactive,
    führt Befehl aus und kommt zurück. Exit-Code propagiert.
 6. **`monoceros logs / start / stop / status`** — direkt auf Compose

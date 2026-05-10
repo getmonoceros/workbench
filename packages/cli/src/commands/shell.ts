@@ -1,5 +1,6 @@
 import { defineCommand } from 'citty';
-import { notImplemented } from './_stub.js';
+import { consola } from 'consola';
+import { runShell } from '../devcontainer/shell.js';
 
 export const shellCommand = defineCommand({
   meta: {
@@ -11,10 +12,18 @@ export const shellCommand = defineCommand({
     project: {
       type: 'string',
       description:
-        'Override the auto-detected project (path or name). Defaults to walking upwards from cwd.',
+        'Override the auto-detected project (path, absolute or relative to cwd). Defaults to walking upwards from cwd.',
     },
   },
-  run() {
-    notImplemented('shell');
+  async run({ args }) {
+    try {
+      const exitCode = await runShell({
+        project: typeof args.project === 'string' ? args.project : undefined,
+      });
+      process.exit(exitCode);
+    } catch (err) {
+      consola.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
   },
 });
