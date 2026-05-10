@@ -64,11 +64,14 @@ Pipeline kommt dann mit M2 obendrauf.
 2. **Image publishen** — `ghcr.io/kamann/monoceros-runtime:dev` oder
    ähnlich. Tagging-Strategie: `:latest` + `:YYYY-MM-DD` für
    Reproduzierbarkeit. Multi-Arch (amd64 + arm64) wegen Apple Silicon.
-3. **CLI-Skeleton** — `packages/cli/` mit
-   [commander](https://github.com/tj/commander.js) oder
-   [clipanion](https://mael.dev/clipanion/) (Versions-Stand via
-   Context7). Subcommands als Stubs: `create`, `shell`, `run`, `logs`,
-   `start`, `stop`, `status`, `add-service`, `add-language`.
+3. ✅ **CLI-Skeleton** — `packages/cli/` als `@monoceros/cli` mit
+   [citty](https://github.com/unjs/citty) (entschieden gegen commander
+   und clipanion: weniger Boilerplate, Inferenz aus `args`, jedes
+   Command als Objekt direkt testbar). Alle neun Subcommands als Stubs
+   registriert (`create`, `shell`, `run`, `logs`, `start`, `stop`,
+   `status`, `add-service`, `add-language`), warnen via consola und
+   exiten mit Code 2. Vitest-Smoke-Test prüft Metadaten + alle Commands.
+   Root-Skript `pnpm cli` als Workspace-Wrapper.
 4. **Default-Template** — `templates/default/.devcontainer/devcontainer.json`
    mit Bind-Mount von `~/.claude/`, postCreate-Script für
    `pnpm install`, Port-Forwards (3000/4000 als Default). Compose-File
