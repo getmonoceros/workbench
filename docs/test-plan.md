@@ -141,17 +141,17 @@ monoceros create demo --languages=python --services=postgres
 cd demo
 ```
 
-| ID  | Was                                   | Befehl                                                                                                                                                                                      | Erwartet                                                                                                                                                                                                                      | Deckt     |
-| --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| C.1 | Compose-Lifecycle starten             | `monoceros start`                                                                                                                                                                           | `devcontainer up --workspace-folder …` läuft (nicht `docker compose up`). Image-Pull beim Erstaufruf, dann Build-Layer für Features (z. B. python), `postCreateCommand` läuft am Ende und installiert die Claude-CLI. Exit 0. | Task 6    |
-| C.2 | Status zeigt Container                | `monoceros status`                                                                                                                                                                          | Tabelle: `workspace` und `postgres` jeweils mit State `running`                                                                                                                                                               | Task 6    |
-| C.3 | Logs filterbar                        | `monoceros logs --service=postgres --no-follow`                                                                                                                                             | Postgres-Init-Log endet mit "database system is ready to accept connections"                                                                                                                                                  | Task 6    |
-| C.4 | One-off-Run im Container              | `monoceros run -- node --version`                                                                                                                                                           | `devcontainer up` ist idempotent (Container ist seit C.1 hochgefahren), `devcontainer exec` findet ihn per Label, gibt Node-Version aus, Exit 0                                                                               | Task 5    |
-| C.5 | Exit-Code-Propagation                 | `monoceros run -- bash -c 'exit 7'; echo $?`                                                                                                                                                | Letzte Zeile: `7`                                                                                                                                                                                                             | Task 5    |
-| C.6 | Postgres aus dem Container erreichbar | `monoceros run -- bash -c 'apt-get update >/dev/null && apt-get install -y postgresql-client >/dev/null && PGPASSWORD=monoceros psql -h postgres -U monoceros -d monoceros -c "select 1;"'` | Spalte `?column?` mit Wert `1`. Beweist: Compose-Netzwerk funktioniert, Service-Discovery via Hostname `postgres` greift.                                                                                                     | Task 3, 6 |
-| C.7 | Interaktive Shell                     | `monoceros shell`                                                                                                                                                                           | Drinnen: Prompt im Container, `whoami` → `node`, `pwd` → `/workspaces/demo`                                                                                                                                                   | Task 4    |
-| C.8 | Auth-Pass-Through (Vorabprobe)        | im `monoceros shell`: `claude --version` und dann `claude` (kurz Hello sagen, exit)                                                                                                         | `claude` ist auth'd ohne Login-Prompt — die `~/.claude`-Bind-Mount-Auth aus dem Host greift. _Voller Auth-Smoke ist Task 10, das hier ist eine Vorab-Sichtprobe._                                                             | Task 2, 4 |
-| C.9 | Stop preserviert Volumes              | `monoceros stop` dann `monoceros start` dann C.6 erneut                                                                                                                                     | C.6 funktioniert wieder, ohne erneuten Init. Zeigt: `stop` (nicht `down`) lässt Volumes leben.                                                                                                                                | Task 6    |
+| ID  | Was                                   | Befehl                                                                                              | Erwartet                                                                                                                                                                                                                      | Deckt     |
+| --- | ------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| C.1 | Compose-Lifecycle starten             | `monoceros start`                                                                                   | `devcontainer up --workspace-folder …` läuft (nicht `docker compose up`). Image-Pull beim Erstaufruf, dann Build-Layer für Features (z. B. python), `postCreateCommand` läuft am Ende und installiert die Claude-CLI. Exit 0. | Task 6    |
+| C.2 | Status zeigt Container                | `monoceros status`                                                                                  | Tabelle: `workspace` und `postgres` jeweils mit State `running`                                                                                                                                                               | Task 6    |
+| C.3 | Logs filterbar                        | `monoceros logs --service=postgres --no-follow`                                                     | Postgres-Init-Log endet mit "database system is ready to accept connections"                                                                                                                                                  | Task 6    |
+| C.4 | One-off-Run im Container              | `monoceros run -- node --version`                                                                   | `devcontainer up` ist idempotent (Container ist seit C.1 hochgefahren), `devcontainer exec` findet ihn per Label, gibt Node-Version aus, Exit 0                                                                               | Task 5    |
+| C.5 | Exit-Code-Propagation                 | `monoceros run -- bash -c 'exit 7'; echo $?`                                                        | Letzte Zeile: `7`                                                                                                                                                                                                             | Task 5    |
+| C.6 | Postgres aus dem Container erreichbar | `monoceros run -- bash -c '(echo > /dev/tcp/postgres/5432) && echo "TCP reachable: postgres:5432"'` | Output: `TCP reachable: postgres:5432`. Beweist: DNS für Hostname `postgres` löst innerhalb des Compose-Default-Networks auf, Port 5432 nimmt Verbindungen an. Voller SQL-Roundtrip optional unten.                           | Task 3, 6 |
+| C.7 | Interaktive Shell                     | `monoceros shell`                                                                                   | Drinnen: Prompt im Container, `whoami` → `node`, `pwd` → `/workspaces/demo`                                                                                                                                                   | Task 4    |
+| C.8 | Auth-Pass-Through (Vorabprobe)        | im `monoceros shell`: `claude --version` und dann `claude` (kurz Hello sagen, exit)                 | `claude` ist auth'd ohne Login-Prompt — die `~/.claude`-Bind-Mount-Auth aus dem Host greift. _Voller Auth-Smoke ist Task 10, das hier ist eine Vorab-Sichtprobe._                                                             | Task 2, 4 |
+| C.9 | Stop preserviert Volumes              | `monoceros stop` dann `monoceros start` dann C.6 erneut                                             | C.6 funktioniert wieder, ohne erneuten Init. Zeigt: `stop` (nicht `down`) lässt Volumes leben.                                                                                                                                | Task 6    |
 
 **Fail-Bedeutung:**
 
@@ -162,11 +162,30 @@ cd demo
   (kommt Task 8), sollte also kein Block sein
 - C.6 fehlerhaft → Compose-Netzwerk falsch konfiguriert; prüf
   `compose.yaml` ob `workspace` und `postgres` im selben Default-Network
-  sind (sind sie, weil Compose das implizit erzeugt)
+  sind (sind sie, weil Compose das implizit erzeugt). Häufige Ursache
+  für ein Hängen statt Fehler: postgres ist noch im Init und horcht
+  noch nicht auf 5432.
 - C.8 verlangt erneutes Login → Bind-Mount-Pfad falsch oder Permissions
   auf `~/.claude` blocken den `node`-User
 
-Aufräumen Stage C (vom Workbench-Root):
+### Optional: voller SQL-Roundtrip (C.6 vertieft)
+
+Der TCP-Check beweist Compose-Networking. Wenn du auch Auth + DB-Engine
+verifizieren willst, läuft folgendes durch — `sudo` ist im Base-Image
+passwordless für den `node`-User vorkonfiguriert, `apt`-Pakete sind im
+laufenden Container transient (verschwinden bei Container-Neuanlage):
+
+```sh
+monoceros run -- bash -c '
+  sudo apt-get update -qq >/dev/null &&
+  sudo apt-get install -y -qq postgresql-client >/dev/null &&
+  PGPASSWORD=monoceros psql -h postgres -U monoceros -d monoceros -c "select 1;"
+'
+```
+
+Erwartet: Tabelle mit `?column?` und Wert `1`.
+
+### Aufräumen Stage C (vom Workbench-Root):
 
 ```sh
 # in der Solution: Volumes weg
