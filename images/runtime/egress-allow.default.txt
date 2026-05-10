@@ -1,0 +1,36 @@
+# Monoceros runtime — default egress allowlist.
+#
+# One hostname per line. Lines starting with `#` and blank lines are
+# ignored. Hostnames are resolved at container start; the resulting A
+# records become explicit ACCEPT rules in the OUTPUT chain. Anything
+# not listed here is dropped by the default policy.
+#
+# IPv6 is blocked unconditionally — modern Docker setups still run IPv4
+# only inside the container by default and we don't want to leave a
+# parallel egress path open through ip6tables.
+#
+# Per-solution overrides go into `.monoceros/egress-allow.txt` inside
+# the workspace and are appended to this list at runtime.
+
+# --- Anthropic / Claude Code ---
+api.anthropic.com
+statsig.anthropic.com
+
+# --- npm registry ---
+registry.npmjs.org
+
+# --- GitHub (git clone, gh CLI, raw files, container registry) ---
+github.com
+api.github.com
+codeload.github.com
+raw.githubusercontent.com
+objects.githubusercontent.com
+ghcr.io
+
+# --- Debian package archives (sudo apt-get update inside the container) ---
+deb.debian.org
+security.debian.org
+
+# --- Common language ecosystems (broad allow; trim if not needed) ---
+pypi.org
+files.pythonhosted.org

@@ -164,17 +164,22 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
    _eigentliche_ Sicherheits-Differenzierung der Workbench, nicht nur
    nice-to-have.
 
-   **8a — Dockerfile bauen + lokal testen.**
-   `images/runtime/Dockerfile` + `entrypoint.sh` aus dem Archiv
-   ([`apps/runner/docker/runtime/`](../../monoceros-for-solution-builder_archive-2026-05-10/apps/runner/docker/runtime/))
-   adaptieren: Auth/Enrollment-Logik raus, Devcontainer-spezifische
-   Anpassungen rein. Inhalt: Linux-Basis, Node ≥20, pnpm,
-   Claude-Code-CLI vorinstalliert, non-root `node`-User mit
-   passwordless sudo, iptables-basierte Egress-Whitelist (`api.anthropic.com`,
-   npm-Registry, GitHub, ghcr, DNS, intra-Compose-Hosts) — gesetzt im
-   Entrypoint via `cap_add: [NET_ADMIN]`. Per-Solution-Override über
-   `.monoceros/egress-allow.txt` (zusätzliche Hosts). Lokal mit
-   `docker build` + `docker run` smoke-testen.
+   ✅ **8a — Dockerfile bauen + lokal testen.** Schmale Schicht über
+   `mcr.microsoft.com/devcontainers/typescript-node:22-bookworm` in
+   [`images/runtime/`](../images/runtime/) (statt Full-Rebuild aus dem
+   Archiv — die alte Runtime hatte keine Egress-Logik, nur die
+   Base-Image-Konventionen waren übernommbar). Entrypoint setzt
+   `iptables`-Rules in der `OUTPUT`-Chain auf Basis der
+   [Default-Allowlist](../images/runtime/egress-allow.default.txt)
+   (Anthropic, npm, GitHub, ghcr, Debian-Repos, PyPI), plus optionale
+   `.monoceros/egress-allow.txt` aus dem Workspace. Default-Policy
+   `DROP`, IPv6 komplett geblockt, anschließend Drop auf `node`-User
+   via `gosu`. Drei Modi via `MONOCEROS_EGRESS`-Env (`enforce`/`warn`/`off`).
+   Ohne `NET_ADMIN`-Cap loggt der Entrypoint Warnung und fällt auf
+   unrestricted Egress zurück (kein silent fail-open). Architektur-
+   Entscheidung in [ADR 0002](adr/0002-egress-whitelist-runtime-image.md).
+   Lokal smoke-getestet: erlaubte Hosts erreichbar, nicht-erlaubte
+   blockiert, Override-Datei greift, alle drei Modi funktionieren.
 
    **8b — Default-Template umstellen.** `templates/default/.devcontainer/devcontainer.json`
    zeigt auf `monoceros-runtime:dev` (lokales Tag), `compose.yaml`
