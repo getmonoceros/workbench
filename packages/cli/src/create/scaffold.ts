@@ -99,6 +99,10 @@ interface DevcontainerComposeMode {
   name: string;
   dockerComposeFile: string;
   service: string;
+  // Without runServices, `devcontainer up` only brings up the named service.
+  // Listing the auxiliary services here ensures postgres/redis/… come up
+  // alongside the workspace container.
+  runServices?: string[];
   workspaceFolder: string;
   remoteUser: string;
   forwardPorts: number[];
@@ -124,6 +128,7 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
       name: opts.name,
       dockerComposeFile: 'compose.yaml',
       service: 'workspace',
+      ...(opts.services.length > 0 ? { runServices: opts.services } : {}),
       workspaceFolder: `/workspaces/${opts.name}`,
       remoteUser: 'node',
       forwardPorts: [3000, 4000],

@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { consola } from 'consola';
+import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 import { findSolutionRoot } from './locate.js';
 
 export type ComposeSpawn = (args: string[], cwd: string) => Promise<number>;
@@ -72,11 +74,43 @@ async function runComposeAction(
   return spawnFn(['-f', composeFile, '-p', projectName, ...subArgs], root);
 }
 
-export function runStart(opts: ComposeActionOptions = {}): Promise<number> {
-  return runComposeAction(
-    (service) => ['up', '-d', ...(service ? [service] : [])],
-    opts,
-  );
+export interface StartOptions {
+  cwd?: string;
+  project?: string;
+  spawn?: DevcontainerSpawn;
+  logger?: { info: (message: string) => void };
+}
+
+// `monoceros start` delegates to `devcontainer up` rather than to
+// `docker compose up -d`. The detour through @devcontainers/cli matters
+// because:
+//   - it labels the workspace container with `devcontainer.local_folder`
+//     so subsequent `devcontainer exec` (from `monoceros run/shell`) can
+//     find the container by workspace path,
+//   - it applies devcontainer features (which docker compose ignores), and
+//   - it triggers the postCreateCommand once.
+// The auxiliary services come up alongside because the generated
+// devcontainer.json lists them under `runServices`.
+export async function runStart(opts: StartOptions = {}): Promise<number> {
+  const cwd = opts.cwd ?? process.cwd();
+  const startDir = opts.project ? path.resolve(cwd, opts.project) : cwd;
+  const root = findSolutionRoot(startDir);
+  if (!root) {
+    throw new Error(
+      `No .devcontainer/ found at or above ${startDir}. Run \`monoceros create\` first or change into a solution directory.`,
+    );
+  }
+  const composeFile = path.join(root, '.devcontainer', 'compose.yaml');
+  if (!existsSync(composeFile)) {
+    throw new Error(
+      `No compose.yaml at ${composeFile}. \`monoceros start\` is only meaningful with services configured via \`monoceros add-service\`. Use \`monoceros shell\` to enter an image-mode container directly.`,
+    );
+  }
+  const logger = opts.logger ?? { info: (msg) => consola.info(msg) };
+  const spawnFn = opts.spawn ?? spawnDevcontainer;
+
+  logger.info(`Bringing devcontainer up at ${root}…`);
+  return spawnFn(['up', '--workspace-folder', root], root);
 }
 
 export function runStop(opts: ComposeActionOptions = {}): Promise<number> {

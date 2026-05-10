@@ -111,6 +111,7 @@ describe('runCreate', () => {
     expect(devcontainer).toMatchObject({
       dockerComposeFile: 'compose.yaml',
       service: 'workspace',
+      runServices: ['postgres'],
       workspaceFolder: '/workspaces/demo',
     });
     expect(devcontainer.image).toBeUndefined();

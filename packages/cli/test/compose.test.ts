@@ -69,10 +69,11 @@ describe('compose actions', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it('runStart issues `up -d` against the compose file', async () => {
+  it('runStart delegates to `devcontainer up` with the workspace folder', async () => {
     const calls: { args: string[]; cwd: string }[] = [];
     const exitCode = await runStart({
       cwd: solution,
+      logger: { info: () => {} },
       spawn: async (args, cwd) => {
         calls.push({ args, cwd });
         return 0;
@@ -81,10 +82,22 @@ describe('compose actions', () => {
     expect(exitCode).toBe(0);
     expect(calls).toEqual([
       {
-        args: ['-f', composeFile, '-p', projectName, 'up', '-d'],
+        args: ['up', '--workspace-folder', solution],
         cwd: solution,
       },
     ]);
+  });
+
+  it('runStart refuses without compose.yaml', async () => {
+    const bare = path.join(root, 'image-only');
+    await fs.mkdir(path.join(bare, '.devcontainer'), { recursive: true });
+    await expect(
+      runStart({
+        cwd: bare,
+        logger: { info: () => {} },
+        spawn: async () => 0,
+      }),
+    ).rejects.toThrow(/only meaningful with services/);
   });
 
   it('runStop issues `stop` and preserves volumes', async () => {
@@ -138,9 +151,9 @@ describe('compose actions', () => {
     expect(calls).toEqual([['-f', composeFile, '-p', projectName, 'logs']]);
   });
 
-  it('appends --service when filtering', async () => {
+  it('appends --service when filtering stop/status/logs', async () => {
     const calls: string[][] = [];
-    await runStart({
+    await runStop({
       cwd: solution,
       service: 'postgres',
       spawn: async (args) => {
@@ -158,7 +171,7 @@ describe('compose actions', () => {
       },
     });
     expect(calls).toEqual([
-      ['-f', composeFile, '-p', projectName, 'up', '-d', 'postgres'],
+      ['-f', composeFile, '-p', projectName, 'stop', 'postgres'],
       ['-f', composeFile, '-p', projectName, 'logs', 'redis'],
     ]);
   });
