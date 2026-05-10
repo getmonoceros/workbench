@@ -145,7 +145,7 @@ Container, persistiert Findings/Concerns/Risks als Markdown-Files unter
 5. **`packages/plugin`** — Claude-Code-Plugin-Manifest. Slash-Commands:
    `/iterate <prompt>` (ruft Orchestrator), `/findings [--status=open]`,
    `/triage` (interaktiv pro Item: jetzt/später/verworfen), `/defer
-   "<text>"` (manuelles Capture).
+"<text>"` (manuelles Capture).
 6. **CLI-Bridge** — `monoceros iterate "<prompt>"` als CLI-Variante des
    Slash-Commands für Builder ohne Claude-Code-UI. Selber Code-Pfad,
    andere Trigger-Schicht.

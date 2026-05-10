@@ -27,3 +27,6 @@ pnpm-debug.log*
 
 # pnpm
 .pnpm-store/
+
+# TypeScript
+*.tsbuildinfo

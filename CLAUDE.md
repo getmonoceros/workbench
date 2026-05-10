@@ -45,6 +45,7 @@ Builder.
 ## Was aus dem Archiv übernommen wird (geplant)
 
 Direkt 1:1:
+
 - Iteration-Prompts unter
   [`../monoceros-for-solution-builder_archive-2026-05-10/apps/api/src/lib/iteration-prompts/`](../monoceros-for-solution-builder_archive-2026-05-10/apps/api/src/lib/iteration-prompts/)
   — werden Stack-agnostisch umgeschrieben (lesen Code statt vorzuschreiben)
@@ -58,6 +59,7 @@ Direkt 1:1:
 - husky + lint-staged + prettier-Setup (aus dem älteren Archiv)
 
 Was **nicht** mitgeht:
+
 - Studio-Frontend (`apps/studio`)
 - Fastify-API als zentraler Service (`apps/api`)
 - Runner als Server mit Reverse-Proxy + Auth (`apps/runner`)
