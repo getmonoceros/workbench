@@ -392,6 +392,25 @@ Items die jetzt nicht eingeplant sind, aber bewusst getrackt:
   Passthrough plus optionale `serviceOverrides`-Sektion in
   `.monoceros/stack.json`. Erste echte Anwendung steuert das Design
   realistischer als Spekulation.
+- **Persistenz-Strategie für Service-Daten** — heute liegen
+  Postgres/MySQL/Redis-Daten in Docker-Named-Volumes
+  (`<solution>_devcontainer_<svc>-data`). Sicher gegen
+  `monoceros stop`/`down`, aber **nicht im Workspace** — Daten
+  überleben `down --volumes`, `docker volume prune` oder Docker-
+  Desktop-Reset nicht. Drei Wege wenn das relevant wird:
+  - **Backup/Restore-CLI**: `monoceros db:dump` /
+    `monoceros db:restore` (`pg_dump`/`pg_restore`), Backups landen
+    versioniert im Workspace (`.monoceros/backups/`). Default-Lösung,
+    weil performance-neutral.
+  - **Bind-Mount-Variante** opt-in per `monoceros create --postgres-storage=bind`:
+    Daten liegen in `<solution>/.monoceros/data/postgres/`. Portabel,
+    aber auf macOS-Docker-Desktop deutlich langsamer (Bind-Mount mit
+    vielen kleinen Files) und UID-Mismatch zwischen Host und
+    postgres-User kann zicken.
+  - **Multi-Service generalisieren**: gleiche Optionen für mysql/redis,
+    nicht nur postgres.
+    Heute keine Priorität — Test-Data ist meist weggeworfen, ernsthafte
+    Daten gehören in Migrations + Seeds, nicht in raw pgdata.
 - **Audit-Log Egress** — niederschwelliger Vorläufer zum Enforcement:
   alle Egress-Verbindungen aus dem Container mitschreiben (Hostname,
   Port, Process-ID, evtl. Argv) ohne sie zu blockieren. Macht
