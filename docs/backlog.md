@@ -80,12 +80,24 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
    nicht vorhanden, ruft `pnpm install` nur wenn `package.json`
    existiert). Compose-File bewusst noch nicht enthalten — kommt erst
    wenn `monoceros create` einen Service auswählt.
-3. **`monoceros create` implementieren** — Flags für `--languages`,
-   `--services`, `--postgres-url` (External-DB-Escape-Hatch). Schreibt
-   `.devcontainer/`, `.monoceros/stack.json` (Audit-Trail welche Optionen
-   gewählt wurden), `README.md`-Stub. Devcontainer-Features für die
-   Sprachen (`ghcr.io/devcontainers/features/python:1` etc.) aus
-   Whitelist auswählen. Idempotent.
+3. ✅ **`monoceros create` implementieren** — `runCreate` als reine
+   Funktion in `packages/cli/src/create/`, vom Subcommand aufgerufen.
+   Whitelist-Kataloge in [`catalog.ts`](../packages/cli/src/create/catalog.ts):
+   Sprachen via Devcontainer-Features
+   (`python|java|go|rust|dotnet`, `node` ist im Base-Image), Services
+   als Compose-Stanzas (`postgres:18`, `mysql:8`, `redis:8`). Schreibt
+   `.devcontainer/devcontainer.json` (Image-Mode ohne Services,
+   Compose-Mode mit `dockerComposeFile`/`service`/`workspaceFolder`
+   sobald Services aktiv), kopiert `post-create.sh` aus dem
+   Default-Template, generiert `.devcontainer/compose.yaml` nur bei
+   Bedarf, schreibt `.monoceros/stack.json` (Audit-Trail) und
+   `README.md`-Stub. `--postgres-url` skippt den Compose-Postgres und
+   landet als `externalServices.postgres` im stack.json. Idempotent:
+   gleiche Optionen → no-op, abweichende Optionen → Refuse mit Hinweis
+   auf `add-service`/`add-language`, non-empty Dir ohne stack.json →
+   Refuse. 9 Vitest-Cases gegen tmp-dirs decken bare/languages/services/
+   external-postgres/idempotent/conflict/non-empty/whitelist/name-validation
+   ab.
 4. **`monoceros shell` implementieren** — wrappt
    [`@devcontainers/cli`](https://github.com/devcontainers/cli) (`devcontainer up`
    - `devcontainer exec bash`). Cwd-Awareness: sucht aufwärts nach

@@ -1,5 +1,7 @@
 import { defineCommand } from 'citty';
-import { notImplemented } from './_stub.js';
+import { consola } from 'consola';
+import { runCreate } from '../create/index.js';
+import { CLI_VERSION } from '../version.js';
 
 export const createCommand = defineCommand({
   meta: {
@@ -29,7 +31,31 @@ export const createCommand = defineCommand({
         'External Postgres URL escape-hatch — skips the compose service and uses the provided URL instead.',
     },
   },
-  run() {
-    notImplemented('create');
+  async run({ args }) {
+    try {
+      await runCreate(
+        {
+          name: args.name,
+          languages: parseList(args.languages),
+          services: parseList(args.services),
+          postgresUrl:
+            typeof args['postgres-url'] === 'string'
+              ? args['postgres-url']
+              : undefined,
+        },
+        { cliVersion: CLI_VERSION },
+      );
+    } catch (err) {
+      consola.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
   },
 });
+
+function parseList(value: unknown): string[] {
+  if (typeof value !== 'string' || value.length === 0) return [];
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
