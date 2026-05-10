@@ -13,8 +13,9 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --build",
-    "test": "pnpm -r run test"
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "cli": "pnpm --filter @monoceros/cli start"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",

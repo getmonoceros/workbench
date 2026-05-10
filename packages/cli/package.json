@@ -1,0 +1,25 @@
+{
+  "name": "@monoceros/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Monoceros workbench CLI — devcontainer lifecycle and (later) iteration pipeline.",
+  "bin": {
+    "monoceros": "./src/bin.ts"
+  },
+  "scripts": {
+    "start": "tsx src/bin.ts",
+    "typecheck": "tsc --build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "citty": "^0.2.2",
+    "consola": "^3.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

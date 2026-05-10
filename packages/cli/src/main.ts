@@ -1,0 +1,30 @@
+import { defineCommand } from 'citty';
+import { addLanguageCommand } from './commands/add-language.js';
+import { addServiceCommand } from './commands/add-service.js';
+import { createCommand } from './commands/create.js';
+import { logsCommand } from './commands/logs.js';
+import { runCommand } from './commands/run.js';
+import { shellCommand } from './commands/shell.js';
+import { startCommand } from './commands/start.js';
+import { statusCommand } from './commands/status.js';
+import { stopCommand } from './commands/stop.js';
+
+export const main = defineCommand({
+  meta: {
+    name: 'monoceros',
+    version: '0.0.0',
+    description:
+      'Monoceros workbench — local, sandboxed AI-coding environment for solution builders.',
+  },
+  subCommands: {
+    create: createCommand,
+    shell: shellCommand,
+    run: runCommand,
+    logs: logsCommand,
+    start: startCommand,
+    stop: stopCommand,
+    status: statusCommand,
+    'add-service': addServiceCommand,
+    'add-language': addLanguageCommand,
+  },
+});
