@@ -46,6 +46,7 @@ describe('resolveCompose', () => {
     expect(resolveCompose(solution, undefined)).toEqual({
       root: solution,
       composeFile: path.join(solution, '.devcontainer', 'compose.yaml'),
+      projectName: 'demo_devcontainer',
     });
   });
 });
@@ -54,6 +55,7 @@ describe('compose actions', () => {
   let root: string;
   let solution: string;
   let composeFile: string;
+  const projectName = 'demo_devcontainer';
 
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), 'monoceros-compose-action-'));
@@ -78,7 +80,10 @@ describe('compose actions', () => {
     });
     expect(exitCode).toBe(0);
     expect(calls).toEqual([
-      { args: ['-f', composeFile, 'up', '-d'], cwd: solution },
+      {
+        args: ['-f', composeFile, '-p', projectName, 'up', '-d'],
+        cwd: solution,
+      },
     ]);
   });
 
@@ -91,7 +96,7 @@ describe('compose actions', () => {
         return 0;
       },
     });
-    expect(calls).toEqual([['-f', composeFile, 'stop']]);
+    expect(calls).toEqual([['-f', composeFile, '-p', projectName, 'stop']]);
   });
 
   it('runStatus issues `ps`', async () => {
@@ -103,7 +108,7 @@ describe('compose actions', () => {
         return 0;
       },
     });
-    expect(calls).toEqual([['-f', composeFile, 'ps']]);
+    expect(calls).toEqual([['-f', composeFile, '-p', projectName, 'ps']]);
   });
 
   it('runLogs follows by default', async () => {
@@ -115,7 +120,9 @@ describe('compose actions', () => {
         return 0;
       },
     });
-    expect(calls).toEqual([['-f', composeFile, 'logs', '-f']]);
+    expect(calls).toEqual([
+      ['-f', composeFile, '-p', projectName, 'logs', '-f'],
+    ]);
   });
 
   it('runLogs with follow=false omits -f', async () => {
@@ -128,7 +135,7 @@ describe('compose actions', () => {
         return 0;
       },
     });
-    expect(calls).toEqual([['-f', composeFile, 'logs']]);
+    expect(calls).toEqual([['-f', composeFile, '-p', projectName, 'logs']]);
   });
 
   it('appends --service when filtering', async () => {
@@ -151,8 +158,8 @@ describe('compose actions', () => {
       },
     });
     expect(calls).toEqual([
-      ['-f', composeFile, 'up', '-d', 'postgres'],
-      ['-f', composeFile, 'logs', 'redis'],
+      ['-f', composeFile, '-p', projectName, 'up', '-d', 'postgres'],
+      ['-f', composeFile, '-p', projectName, 'logs', 'redis'],
     ]);
   });
 

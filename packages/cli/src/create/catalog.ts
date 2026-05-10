@@ -39,7 +39,11 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
       POSTGRES_PASSWORD: 'monoceros',
       POSTGRES_DB: 'monoceros',
     },
-    volume: { name: 'postgres-data', mount: '/var/lib/postgresql/data' },
+    // Postgres 18+ stores data under /var/lib/postgresql/<major>/, so the
+    // recommended volume mount is the parent directory; pre-18 used
+    // /var/lib/postgresql/data directly. See
+    // https://github.com/docker-library/postgres/pull/1259.
+    volume: { name: 'postgres-data', mount: '/var/lib/postgresql' },
   },
   mysql: {
     id: 'mysql',

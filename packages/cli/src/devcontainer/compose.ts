@@ -22,6 +22,16 @@ export const spawnDockerCompose: ComposeSpawn = (args, cwd) => {
 interface ResolvedCompose {
   root: string;
   composeFile: string;
+  projectName: string;
+}
+
+// Match the project name `@devcontainers/cli` derives when it brings a
+// compose-mode devcontainer up: `<solution-folder-basename>_devcontainer`.
+// Aligning here means `monoceros start/stop/status/logs` and the implicit
+// `devcontainer up` from `monoceros run/shell` act on the same compose
+// project — without it docker would create two parallel stacks.
+export function composeProjectName(root: string): string {
+  return `${path.basename(root)}_devcontainer`;
 }
 
 export function resolveCompose(
@@ -41,7 +51,7 @@ export function resolveCompose(
       `No compose.yaml at ${composeFile}. \`start\` / \`stop\` / \`status\` / \`logs\` require services configured via \`monoceros add-service\`. Use \`monoceros shell\` to enter the container directly.`,
     );
   }
-  return { root, composeFile };
+  return { root, composeFile, projectName: composeProjectName(root) };
 }
 
 export interface ComposeActionOptions {
@@ -56,10 +66,10 @@ async function runComposeAction(
   opts: ComposeActionOptions,
 ): Promise<number> {
   const cwd = opts.cwd ?? process.cwd();
-  const { root, composeFile } = resolveCompose(cwd, opts.project);
+  const { root, composeFile, projectName } = resolveCompose(cwd, opts.project);
   const spawnFn = opts.spawn ?? spawnDockerCompose;
   const subArgs = buildSubArgs(opts.service);
-  return spawnFn(['-f', composeFile, ...subArgs], root);
+  return spawnFn(['-f', composeFile, '-p', projectName, ...subArgs], root);
 }
 
 export function runStart(opts: ComposeActionOptions = {}): Promise<number> {
