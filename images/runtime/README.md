@@ -13,10 +13,15 @@ zwei Dinge hinzu:
 
 ## Build
 
+Vom Workspace-Root aus:
+
 ```sh
-cd images/runtime
-docker build -t monoceros-runtime:dev .
+pnpm image:build      # erstmaliger / inkrementeller Build
+pnpm image:rebuild    # gleiches mit --no-cache (z. B. nach iptables-Updates)
 ```
+
+Beides ruft `docker build … images/runtime` auf — funktioniert von
+jeder cwd aus, weil pnpm das Skript am Workspace-Root verankert.
 
 ## Egress-Modi
 

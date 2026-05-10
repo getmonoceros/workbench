@@ -40,13 +40,13 @@ Drei Stufen, in absteigender Reihenfolge der Erreichbarkeit:
 
 ## Voraussetzungen
 
-| Was                                                                                        | Wozu                                             |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| Node ≥ 20, pnpm 11                                                                         | Das Workbench-Repo selbst                        |
-| `pnpm install` einmalig im Repo gelaufen                                                   | Setup vor allem anderen                          |
-| Docker Desktop (oder Docker Engine + Compose v2)                                           | Nur für Stage C                                  |
-| Runtime-Image lokal gebaut: `cd images/runtime && docker build -t monoceros-runtime:dev .` | Wird vom Default-Template referenziert (Stage C) |
-| `claude login` auf dem Host (Subscription oder API-Key)                                    | Für die Auth-Probe in C.8                        |
+| Was                                                                                          | Wozu                                             |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Node ≥ 20, pnpm 11                                                                           | Das Workbench-Repo selbst                        |
+| `pnpm install` einmalig im Repo gelaufen                                                     | Setup vor allem anderen                          |
+| Docker Desktop (oder Docker Engine + Compose v2)                                             | Nur für Stage C                                  |
+| Runtime-Image lokal gebaut: `pnpm image:build` (alias `pnpm image:rebuild` für `--no-cache`) | Wird vom Default-Template referenziert (Stage C) |
+| `claude login` auf dem Host (Subscription oder API-Key)                                      | Für die Auth-Probe in C.8                        |
 
 ## Setup: `monoceros` lokal aufrufbar machen
 

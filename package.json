@@ -15,7 +15,9 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test",
-    "cli": "pnpm --filter @monoceros/cli start"
+    "cli": "pnpm --filter @monoceros/cli start",
+    "image:build": "docker build -t monoceros-runtime:dev images/runtime",
+    "image:rebuild": "docker build --no-cache -t monoceros-runtime:dev images/runtime"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
