@@ -9,28 +9,28 @@ Konzeptioneller Überbau: [`konzept.md`](konzept.md).
 
 ---
 
-## M0 — Bootstrap
+## ✅ M0 — Bootstrap
 
 **Ziel:** Das Repo ist arbeitsfähig — pnpm-Workspace, Linting,
 Formatting, Husky, Basis-CI-Hygiene. Vor dem ersten Code-Commit von M1
-abgeschlossen.
+abgeschlossen. **Abgeschlossen 2026-05-10.**
 
 ### Tasks
 
-1. **pnpm-Workspace einrichten** — `pnpm-workspace.yaml` mit
+1. ✅ **pnpm-Workspace einrichten** — `pnpm-workspace.yaml` mit
    `packages/*` und `templates/*`. Root `package.json` mit
    `"type": "module"`, `"private": true`, Node-Engine ≥20.
-2. **TypeScript-Basis** — `tsconfig.base.json` im Root mit strikter
+2. ✅ **TypeScript-Basis** — `tsconfig.base.json` im Root mit strikter
    Konfig (strict, noUncheckedIndexedAccess, noImplicitOverride).
-3. **Prettier + ESLint** — Versionen über Context7 prüfen, nicht aus
+3. ✅ **Prettier + ESLint** — Versionen über Context7 prüfen, nicht aus
    Archiv kopieren. Flat-Config-Style. eslint-config-prettier zur
    Konflikt-Vermeidung.
-4. **Husky + lint-staged** — `pre-commit` führt `lint-staged` aus.
+4. ✅ **Husky + lint-staged** — `pre-commit` führt `lint-staged` aus.
    Gleiche Regeln wie im älteren Archiv: TS/JS/JSX → eslint --fix +
    prettier --write, JSON/MD/CSS/YAML → prettier --write.
-5. **Vitest-Basis** — Root-Config, einzelne Pakete ziehen sie via
+5. ✅ **Vitest-Basis** — Root-Config, einzelne Pakete ziehen sie via
    `extends`. Mindestens ein Smoke-Test pro Paket.
-6. **`.editorconfig` + `.gitignore` + `.gitattributes`** — aus dem
+6. ✅ **`.editorconfig` + `.gitignore` + `.gitattributes`** — aus dem
    Archiv übernehmen, wo sinnvoll. Zeilenenden auf LF, UTF-8.
 7. **CI-Skeleton** — _erst wenn das Repo public oder remote-pushed
    wird._ GitHub-Actions-Workflow für Lint + Typecheck + Test. Im
@@ -38,10 +38,10 @@ abgeschlossen.
 
 ### Definition of Done
 
-- `pnpm install` läuft sauber
-- `pnpm format:check` ist grün auf den Konzept-Dokumenten
-- Ein leerer Commit triggert die husky pre-commit-Hooks ohne Fehler
-- `pnpm typecheck` läuft (auch wenn noch keine Pakete TS-Code haben)
+- ✅ `pnpm install` läuft sauber
+- ✅ `pnpm format:check` ist grün auf den Konzept-Dokumenten
+- ✅ Ein leerer Commit triggert die husky pre-commit-Hooks ohne Fehler
+- ✅ `pnpm typecheck` läuft (auch wenn noch keine Pakete TS-Code haben)
 
 ---
 
