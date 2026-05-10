@@ -1,5 +1,6 @@
 import { defineCommand } from 'citty';
-import { notImplemented } from './_stub.js';
+import { consola } from 'consola';
+import { extractInnerCommand, runInContainer } from '../devcontainer/run.js';
 
 export const runCommand = defineCommand({
   meta: {
@@ -11,10 +12,26 @@ export const runCommand = defineCommand({
     project: {
       type: 'string',
       description:
-        'Override the auto-detected project (path or name). Defaults to walking upwards from cwd.',
+        'Override the auto-detected project (path, absolute or relative to cwd). Defaults to walking upwards from cwd.',
     },
   },
-  run() {
-    notImplemented('run');
+  async run({ args, rawArgs }) {
+    const command = extractInnerCommand(rawArgs);
+    if (command.length === 0) {
+      consola.error(
+        'No command provided. Usage: `monoceros run [--project=<path>] -- <cmd> [args…]`.',
+      );
+      process.exit(1);
+    }
+    try {
+      const exitCode = await runInContainer({
+        project: typeof args.project === 'string' ? args.project : undefined,
+        command,
+      });
+      process.exit(exitCode);
+    } catch (err) {
+      consola.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
   },
 });

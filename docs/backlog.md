@@ -112,8 +112,16 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
    funktioniert unabhängig vom PATH. Up-Failure short-circuited mit
    propagiertem Exit-Code. 7 Vitest-Cases (Discovery + Orchestrator)
    gegen tmp-dirs mit injected Spawn-Fake.
-5. **`monoceros run -- <cmd>`** — analog zu `shell`, aber non-interactive,
-   führt Befehl aus und kommt zurück. Exit-Code propagiert.
+5. ✅ **`monoceros run -- <cmd>`** — analog zu `shell`, non-interactive.
+   `runInContainer` in
+   [`packages/cli/src/devcontainer/run.ts`](../packages/cli/src/devcontainer/run.ts)
+   nutzt denselben `up`-then-`exec`-Pfad wie `runShell`, leitet aber das
+   Inner-Command verbatim an `devcontainer exec` weiter. Inner-Exit-Code
+   wird durchpropagiert. citty würde `-la` als Flag interpretieren, also
+   ist `--` Pflicht: `extractInnerCommand` zieht alles nach dem ersten
+   `--` aus `rawArgs`; fehlt `--` oder ist die Slice leer, exitet das
+   Command mit klarem Usage-Hinweis. 9 Vitest-Cases (parser + orchestrator)
+   plus E2E-Smoke der Error-Pfade.
 6. **`monoceros logs / start / stop / status`** — direkt auf Compose
    bzw. Docker-Daemon. Mit `--service=postgres` filterbar.
 7. **`monoceros add-service` / `add-language`** — modifiziert
