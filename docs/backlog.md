@@ -156,13 +156,19 @@ am Ende, sobald CLI und Template stabil sind. Begründung in
    aktuellen Wert gehoben. 11 Vitest-Cases (Add-Pfade, Idempotenz,
    Whitelist, Createdat-Preserve, Abort-Pfad, Diff-Output) plus
    E2E-Smoke verifiziert.
-8. **Eigenes Runtime-Image mit Egress-Whitelist** — Kernmotivation: für
-   den Use-Case „Claude Code läuft längere Zeit unbeobachtet" ist die
-   Container-Isolation alleine nicht genug. Egress-Whitelist via
-   iptables verhindert Daten-Exfiltration (kompromittierter Agent),
-   typo-squatted-npm-Phone-Home und ungewollte Telemetrie. Das ist die
-   _eigentliche_ Sicherheits-Differenzierung der Workbench, nicht nur
-   nice-to-have.
+8. **Eigenes Runtime-Image** — schmale Schicht über Microsoft-Base mit
+   Claude-CLI preinstalled + Egress-Toolchain (iptables, gosu, Allowlist-
+   Mechanik). Egress-Enforcement steht im Image bereit, ist aber seit
+   2026-05-10 **per Default deaktiviert** (`MONOCEROS_EGRESS=off`):
+   die Hostname-Snapshot-Mechanik kollidiert in der Praxis mit VS-Code-
+   Dev-Containers (rotierende Microsoft-CDNs) und mit der Claude-Code-
+   VS-Code-Extension (eigener Subprocess-Stack über
+   `@anthropic-ai/claude-agent-sdk`, nicht über `/usr/local/bin/claude`).
+   Begründung und Migrationspfad in
+   [ADR 0002](adr/0002-egress-whitelist-runtime-image.md). Echter
+   Schutzbedarf für unbeobachteten Claude kommt über separate Items
+   („Audit-Log Egress" + „HTTPS-Forward-Proxy-Sidecar", siehe
+   "Vorgemerkt für später").
 
    ✅ **8a — Dockerfile bauen + lokal testen.** Schmale Schicht über
    `mcr.microsoft.com/devcontainers/typescript-node:22-bookworm` in
@@ -386,6 +392,21 @@ Items die jetzt nicht eingeplant sind, aber bewusst getrackt:
   Passthrough plus optionale `serviceOverrides`-Sektion in
   `.monoceros/stack.json`. Erste echte Anwendung steuert das Design
   realistischer als Spekulation.
+- **Audit-Log Egress** — niederschwelliger Vorläufer zum Enforcement:
+  alle Egress-Verbindungen aus dem Container mitschreiben (Hostname,
+  Port, Process-ID, evtl. Argv) ohne sie zu blockieren. Macht
+  sichtbar, was Claude und seine Tools _tatsächlich_ rauspusten, ohne
+  den Workflow zu brechen. Mögliche Mechaniken: iptables-LOG-Target
+  auf alle OUTPUT-Pakete, Captured-DNS via eigenem Resolver, oder
+  eBPF-Probes. Liefert Material für die spätere Allowlist-Definition.
+- **HTTPS-Forward-Proxy-Sidecar** — die strukturell richtige Lösung
+  für Egress-Enforcement, die der ursprüngliche iptables-Ansatz nicht
+  liefern konnte. Eigener Compose-Service, der pro Request neu
+  Hostnames auflöst und Allowlist-Entscheidungen pro CONNECT trifft.
+  Damit kein CDN-IP-Drift-Problem mehr. Komplexer Umbau — passende
+  Aufgabe wenn der Schutzbedarf konkret zurückkommt (Multi-User,
+  Public-Release, unbeobachtete Agent-Sessions). Trifft auch den
+  vorigen „HTTPS-Content-Filter"-Punkt mit ab.
 - **HTTPS-Content-Filter** — Egress-Whitelist (Task 8) blockiert nur
   _wohin_ Pakete gehen, nicht _was_. Eine HTTPS-Inspecting-Proxy-Komponente
   (mitmproxy o. Ä.) im Container-Netz kann zusätzlich Payloads

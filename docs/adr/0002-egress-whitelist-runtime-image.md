@@ -1,7 +1,48 @@
 # ADR 0002 — Egress-Whitelist im Runtime-Image (iptables, hostname-Snapshot beim Start)
 
-- Status: accepted
+- Status: deferred (Mechanik im Image, aber **Default = off** seit 2026-05-10)
 - Datum: 2026-05-10
+
+## Update 2026-05-10 — Warum jetzt deferred
+
+Die Mechanik (iptables-Allowlist über Hostname-Snapshot beim Start) ist
+im Image enthalten und für statische Targets verifiziert. In der
+Praxis bricht sie an zwei Stellen, die unsere primären Workflows
+ausmachen:
+
+1. **VS Code Dev Containers**: VS Code Server zieht Extensions
+   (Marketplace + rotierende `*.vscode-unpkg.net`-CDN-IPs) und
+   Settings-Sync-Daten. Hostname-Snapshot fängt CDN-Rotation nicht
+   ab — Folge: minutenlange TCP-Timeouts beim ersten Reopen,
+   teilweise schlagende Extension-Installs. Selbst mit erweiterter
+   Allowlist greift der Filter nicht zuverlässig.
+2. **VS Code Claude-Code-Extension**: ruft _nicht_ das
+   `/usr/local/bin/claude`-Binary, sondern hat eigenen Stack via
+   `@anthropic-ai/claude-agent-sdk` mit eigenen Subprocess-Spawns.
+   Damit greift weder ein UID-basierter Filter (Extension läuft als
+   `node`, wie alles andere im VS Code Server) noch ein Wrapper-um-
+   die-CLI.
+
+**Konsequenz:** Default-Mode des Entrypoints wechselt auf `off`. Die
+Mechanik bleibt im Image (für CI / Headless / explizit per `enforce`
+opt-in), aber neue Solutions sind nicht mehr per Default
+egress-gefiltert. Damit funktioniert der VS-Code-Workflow ungestört.
+
+**Was als nächstes:** zwei Optionen werden im Backlog getrackt:
+
+- **Audit-Log** statt Block: niederschwellig — DNS- und/oder
+  iptables-LOG-Target schreibt mit, was rausgeht. Keine Aktion auf den
+  Datenverkehr, nur Observability. Liefert Material für später.
+- **HTTPS-Forward-Proxy-Sidecar**: die strukturell richtige Lösung,
+  weil sie Hostnames pro Request neu auflöst und unabhängig vom
+  Aufrufer-Kontext greift. Wird relevant wenn der Schutzbedarf wieder
+  hochkommt (Multi-User, public release).
+
+Die ursprüngliche Entscheidung unten bleibt als Doku stehen — sie
+beschreibt korrekt was im Image lebt. Sie ist nur nicht mehr der
+Default.
+
+---
 
 ## Kontext
 

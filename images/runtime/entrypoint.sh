@@ -17,7 +17,13 @@ set -euo pipefail
 
 DEFAULT_LIST=/etc/monoceros/egress-allow.default.txt
 RUNTIME_USER="${MONOCEROS_RUNTIME_USER:-node}"
-MODE="${MONOCEROS_EGRESS:-enforce}"
+# Default ist `off` — hostname-basierte iptables-Allowlist hat sich in
+# der Praxis nicht mit VS Code Dev Containers vertragen (rotierende
+# CDN-IPs, Extension-Subprocesses im falschen UID-Kontext). Mechanik
+# bleibt im Image für gezielte Use-Cases (CI, unattended Claude), wird
+# aber nicht mehr standardmäßig aktiviert. Siehe ADR 0002 für den
+# vollen Kontext.
+MODE="${MONOCEROS_EGRESS:-off}"
 
 log() { echo "[monoceros-egress] $*" >&2; }
 
