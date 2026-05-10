@@ -222,7 +222,7 @@ rm -rf .local/play
 
 Manuelle Verifikation, dass die generierten Solutions in den drei
 realistischen Nutzungspfaden funktionieren. Voraussetzung: eine
-Solution mit Services existiert (`monoceros create demo --services=postgres`).
+Solution mit Services existiert (`monoceros create demo --languages=python --services=postgres`, analog zur Stage-C-Setup-Solution).
 
 ### D.1 — VS Code Dev Containers Standalone
 
