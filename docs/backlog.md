@@ -55,16 +55,14 @@ Schon nutzbar als Produkt _ohne_ M2: ein Builder kann manuell mit
 Claude Code in einer abgesicherten Umgebung arbeiten — die strukturierte
 Pipeline kommt dann mit M2 obendrauf.
 
+**Bauplan (Reihenfolge):** CLI und Default-Template zuerst gegen ein
+öffentliches Devcontainer-Base-Image; eigenes Runtime-Image kommt erst
+am Ende, sobald CLI und Template stabil sind. Begründung in
+[ADR 0001](adr/0001-m1-bauplan-cli-zuerst.md).
+
 ### Tasks
 
-1. **Runtime-Image bauen** — `images/runtime/Dockerfile` auf Basis des
-   Archivs (`apps/runner/Dockerfile` o.ä.). Inhalt: Linux-Basis, Node
-   ≥20, pnpm, Claude-Code-CLI, sudo + non-root User, Egress-Whitelist
-   übernommen. Bauen + lokal testen.
-2. **Image publishen** — `ghcr.io/kamann/monoceros-runtime:dev` oder
-   ähnlich. Tagging-Strategie: `:latest` + `:YYYY-MM-DD` für
-   Reproduzierbarkeit. Multi-Arch (amd64 + arm64) wegen Apple Silicon.
-3. ✅ **CLI-Skeleton** — `packages/cli/` als `@monoceros/cli` mit
+1. ✅ **CLI-Skeleton** — `packages/cli/` als `@monoceros/cli` mit
    [citty](https://github.com/unjs/citty) (entschieden gegen commander
    und clipanion: weniger Boilerplate, Inferenz aus `args`, jedes
    Command als Objekt direkt testbar). Alle neun Subcommands als Stubs
@@ -72,32 +70,45 @@ Pipeline kommt dann mit M2 obendrauf.
    `status`, `add-service`, `add-language`), warnen via consola und
    exiten mit Code 2. Vitest-Smoke-Test prüft Metadaten + alle Commands.
    Root-Skript `pnpm cli` als Workspace-Wrapper.
-4. **Default-Template** — `templates/default/.devcontainer/devcontainer.json`
-   mit Bind-Mount von `~/.claude/`, postCreate-Script für
-   `pnpm install`, Port-Forwards (3000/4000 als Default). Compose-File
-   als optional, kommt nur rein wenn ein Service ausgewählt wurde.
-5. **`monoceros create` implementieren** — Flags für `--languages`,
+2. ✅ **Default-Template** — `templates/default/.devcontainer/` mit
+   `devcontainer.json` (Image
+   `mcr.microsoft.com/devcontainers/typescript-node:22-bookworm`,
+   `remoteUser: node`, Bind-Mount `${localEnv:HOME}/.claude` →
+   `/home/node/.claude`, `forwardPorts: [3000, 4000]`,
+   `postCreateCommand: .devcontainer/post-create.sh`) und
+   `post-create.sh` (installiert `@anthropic-ai/claude-code` global wenn
+   nicht vorhanden, ruft `pnpm install` nur wenn `package.json`
+   existiert). Compose-File bewusst noch nicht enthalten — kommt erst
+   wenn `monoceros create` einen Service auswählt.
+3. **`monoceros create` implementieren** — Flags für `--languages`,
    `--services`, `--postgres-url` (External-DB-Escape-Hatch). Schreibt
    `.devcontainer/`, `.monoceros/stack.json` (Audit-Trail welche Optionen
    gewählt wurden), `README.md`-Stub. Devcontainer-Features für die
    Sprachen (`ghcr.io/devcontainers/features/python:1` etc.) aus
-   Whitelist auswählen.
-6. **`monoceros shell` implementieren** — wrappt
-   [`@devcontainers/cli`](https://github.com/devcontainers/cli) (`devcontainer exec`).
-   Cwd-Awareness: sucht aufwärts nach `.devcontainer/`. Container starten
-   wenn nötig.
-7. **`monoceros run -- <cmd>`** — analog zu `shell`, aber non-interactive,
+   Whitelist auswählen. Idempotent.
+4. **`monoceros shell` implementieren** — wrappt
+   [`@devcontainers/cli`](https://github.com/devcontainers/cli) (`devcontainer up`
+   - `devcontainer exec bash`). Cwd-Awareness: sucht aufwärts nach
+     `.devcontainer/`. Container starten wenn nötig.
+5. **`monoceros run -- <cmd>`** — analog zu `shell`, aber non-interactive,
    führt Befehl aus und kommt zurück. Exit-Code propagiert.
-8. **`monoceros logs / start / stop / status`** — direkt auf Compose
+6. **`monoceros logs / start / stop / status`** — direkt auf Compose
    bzw. Docker-Daemon. Mit `--service=postgres` filterbar.
-9. **`monoceros add-service` / `add-language`** — modifiziert
+7. **`monoceros add-service` / `add-language`** — modifiziert
    `compose.yaml` bzw. `devcontainer.json` einer existierenden Solution.
    Idempotent, mit Diff-Preview vor Schreiben.
-10. **Verifikation auf drei Pfaden** — Test, dass dasselbe Projekt
-    funktioniert in: (a) VS Code Dev Containers, (b) Cursor, (c)
-    Claude Code via direkter Docker-Anbindung. Wenn (c) wackelt, ist
-    das ein Show-Stopper für die Zielgruppe.
-11. **Auth-Smoke-Test** — neues Projekt aus Null, ohne API-Key in ENV,
+8. **Eigenes Runtime-Image** — `images/runtime/Dockerfile` auf Basis
+   des Archivs (`apps/runner/docker/runtime/`). Inhalt: Linux-Basis,
+   Node ≥20, pnpm, Claude-Code-CLI, sudo + non-root User,
+   Egress-Whitelist übernommen, Template-Block raus. Bauen + lokal
+   testen, Default-Template umstellen, publishen
+   (`ghcr.io/kamann/monoceros-runtime:dev`, Multi-Arch amd64 + arm64,
+   `:latest` + `:YYYY-MM-DD`-Tag).
+9. **Verifikation auf drei Pfaden** — Test, dass dasselbe Projekt
+   funktioniert in: (a) VS Code Dev Containers, (b) Cursor, (c)
+   Claude Code via direkter Docker-Anbindung. Wenn (c) wackelt, ist
+   das ein Show-Stopper für die Zielgruppe.
+10. **Auth-Smoke-Test** — neues Projekt aus Null, ohne API-Key in ENV,
     nur Bind-Mount-Auth: `claude` im Container muss out-of-the-box mit
     dem Host-Account arbeiten. Auf zwei verschiedenen Rechnern
     verifizieren wenn möglich.
