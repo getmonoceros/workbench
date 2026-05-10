@@ -1,0 +1,19 @@
+{
+  "name": "monoceros-workbench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "lint-staged": {
+    "*.{json,md,yaml,yml}": [
+      "prettier --write"
+    ]
+  }
+}
