@@ -188,23 +188,6 @@ cd demo
   `node`-User. Diagnose: `monoceros run -- ls -la /home/node/.claude`. Der
   einmalige Erst-Login auf macOS ist erwartet, kein Bug.
 
-### Optional: voller SQL-Roundtrip (C.6 vertieft)
-
-Der TCP-Check beweist Compose-Networking. Wenn du auch Auth + DB-Engine
-verifizieren willst, läuft folgendes durch — `sudo` ist im Base-Image
-passwordless für den `node`-User vorkonfiguriert, `apt`-Pakete sind im
-laufenden Container transient (verschwinden bei Container-Neuanlage):
-
-```sh
-monoceros run -- bash -c '
-  sudo apt-get update -qq >/dev/null &&
-  sudo apt-get install -y -qq postgresql-client >/dev/null &&
-  PGPASSWORD=monoceros psql -h postgres -U monoceros -d monoceros -c "select 1;"
-'
-```
-
-Erwartet: Tabelle mit `?column?` und Wert `1`.
-
 ### Aufräumen Stage C (vom Workbench-Root):
 
 ```sh

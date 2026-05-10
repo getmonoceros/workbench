@@ -303,6 +303,15 @@ Items die jetzt nicht eingeplant sind, aber bewusst getrackt:
   ergänzen, parallel zu Claude Code.
 - **Pre-Push-Hook reaktivieren** — sobald Tests existieren, `npm test`
   als pre-push wieder aktivieren.
+- **E2E-Test-Suite für Stage C** — `packages/cli/test-e2e/` mit
+  Vitest-Cases für `monoceros start/status/logs/run/stop` gegen einen
+  echten Docker-Daemon. Hinter Env-Flag (`MONOCEROS_E2E=1`) gated, in
+  separatem CI-Job mit Image-Pre-Pull. Heute manuell via
+  [`docs/test-plan.md`](test-plan.md) abgedeckt; Automatisierung lohnt
+  sich erst wenn das Repo Multi-Contributor wird oder M2 die
+  Iteration-Pipeline auf den Stage-C-Pfad draufsetzt. C.7 (interaktive
+  Shell) und C.8 (Auth-Pass-Through) bleiben manuell — Auth braucht
+  echten Anthropic-Account, nicht in CI darstellbar.
 - **Visual-Discipline / Stack-Migration / Multi-Doc-Input** — Punkte
   aus dem Vorgänger-Backlog, die für die Workbench-Welt teils anders
   liegen. Bei Bedarf neu durchdenken.
