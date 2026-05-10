@@ -30,60 +30,47 @@ Drei Stufen, in absteigender Reihenfolge der Erreichbarkeit:
 
 ## Setup: `monoceros` lokal aufrufbar machen
 
-Das CLI ist noch nicht publiziert (`"private": true`), wird also nicht über
-`pnpm install -g …` bezogen. Für den Endnutzer kommt das mit Task 8; für
-Workbench-Contributors etablieren wir einen Symlink.
-
-### Schritt 1 — pnpm-Globalpfad initialisieren (einmalig pro Maschine)
+Das CLI ist noch nicht publiziert (`"private": true`); wird erst mit
+Task 8 als globales Paket bereitgestellt. Bis dahin reicht ein
+Session-Alias, der direkt auf den TypeScript-Quellcode zeigt:
 
 ```sh
-pnpm setup
+alias monoceros="$(pwd)/packages/cli/node_modules/.bin/tsx $(pwd)/packages/cli/src/bin.ts"
 ```
 
-Was passiert:
+Voraussetzung: das Kommando wird **einmal aus dem Workbench-Root**
+gesetzt, damit `$(pwd)` die richtigen absoluten Pfade liefert.
 
-- pnpm legt `~/Library/pnpm/` (macOS) als Globalpfad an
-- Zwei Zeilen werden in `~/.zshrc` (bzw. `~/.bashrc`) eingetragen:
-  - `export PNPM_HOME="$HOME/Library/pnpm"`
-  - `export PATH="$PNPM_HOME:$PATH"`
-- Danach: **neue Shell öffnen** oder `source ~/.zshrc` ausführen, sonst
-  greifen die Variablen nicht
+Eigenschaften:
+
+- Lebt nur in der aktuellen Shell — keine `.zshrc`, kein PATH-Eingriff,
+  keine globale Installation
+- Pfade sind absolut → funktioniert anschließend von jeder cwd aus
+- Beim Schließen des Terminals oder `exec zsh` ist er weg
 
 Verifikation:
 
 ```sh
-echo "$PNPM_HOME"          # /Users/<name>/Library/pnpm
-echo "$PATH" | tr ':' '\n' | grep pnpm
+monoceros --version        # 0.1.0-dev
+monoceros --help           # Listing aller 9 Subcommands
 ```
 
-### Schritt 2 — `monoceros` als globalen Symlink registrieren
+Aufräumen erübrigt sich — der Alias ist mit der Shell weg.
 
-Aus dem Workbench-Checkout:
+## Arbeitsverzeichnis: `.local/`
 
-```sh
-pnpm --filter @monoceros/cli link --global
-```
+Alle manuellen Tests legen ihre Solutions unter `<workbench>/.local/play/`
+ab. Vorteile:
 
-Was passiert:
-
-- pnpm verlinkt das Workspace-Paket `@monoceros/cli` in seinen globalen
-  Store
-- Der `bin`-Eintrag aus `packages/cli/package.json` (`monoceros →
-src/bin.ts`) landet als ausführbarer Symlink in `~/Library/pnpm/`
-- Der Symlink zeigt auf den Workspace-Sourcecode — Code-Änderungen wirken
-  sofort, kein Rebuild
-
-Verifikation:
+- `.local/` ist in `.gitignore` → keine versehentlichen Commits von
+  Test-Artefakten
+- Liegt im Repo statt unter `/tmp` → ein einziges `rm -rf .local` setzt
+  alles zurück, unabhängig davon ob Container noch Volumes halten
+- Multiple Test-Sessions können nebeneinander koexistieren (`.local/play`,
+  `.local/scratch`, …)
 
 ```sh
-which monoceros            # Pfad in ~/Library/pnpm/
-monoceros --version        # 0.0.0
-```
-
-### Aufräumen am Ende eines Test-Durchlaufs
-
-```sh
-pnpm --filter @monoceros/cli unlink --global
+mkdir -p .local/play && cd .local/play
 ```
 
 ## Stage A — CLI-Surface
@@ -93,19 +80,21 @@ Schnelle Sanity-Checks, kein Filesystem-Effekt.
 | ID  | Was                            | Befehl                         | Erwartet                                                                                               | Deckt     |
 | --- | ------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------ | --------- |
 | A.1 | Alle 9 Subcommands registriert | `monoceros --help`             | Listing mit `create`, `shell`, `run`, `logs`, `start`, `stop`, `status`, `add-service`, `add-language` | Task 1    |
-| A.2 | `create`-Args sichtbar         | `monoceros create --help`      | Args: `name` (positional), `--languages`, `--services`, `--postgres-url`                               | Task 1, 3 |
-| A.3 | `logs`-Args sichtbar           | `monoceros logs --help`        | Args: `--project`, `--service`, `--follow`                                                             | Task 1, 6 |
-| A.4 | Stub-Commands leben noch nicht | `monoceros add-service --help` | Hilfetext + (Aufruf ohne Args) Hinweis "not yet implemented"                                           | Task 1    |
+| A.2 | Versionsangabe stimmt          | `monoceros --version`          | `0.1.0-dev`                                                                                            | Task 1    |
+| A.3 | `create`-Args sichtbar         | `monoceros create --help`      | Args: `name` (positional), `--languages`, `--services`, `--postgres-url`                               | Task 1, 3 |
+| A.4 | `logs`-Args sichtbar           | `monoceros logs --help`        | Args: `--project`, `--service`, `--follow`                                                             | Task 1, 6 |
+| A.5 | Stub-Commands leben noch nicht | `monoceros add-service --help` | Hilfetext + (Aufruf ohne Args) Hinweis "not yet implemented"                                           | Task 1    |
 
 **Fail-Bedeutung:** wenn A.1 nicht alle 9 zeigt, ist die
 Subcommand-Registrierung in `packages/cli/src/main.ts` kaputt.
 
 ## Stage B — Scaffolding (kein Docker)
 
-Arbeitsverzeichnis frisch:
+Arbeitsverzeichnis: `<workbench>/.local/play/`. Alle Befehle relativ
+dazu.
 
 ```sh
-mkdir -p /tmp/play && cd /tmp/play
+mkdir -p .local/play && cd .local/play
 ```
 
 | ID   | Was                             | Befehl                                                                               | Erwartet                                                                                                                                                                                               | Deckt     |
@@ -118,10 +107,10 @@ mkdir -p /tmp/play && cd /tmp/play
 | B.6  | Konflikt                        | `monoceros create demo --languages=python` (vorher ohne)                             | Error, Exit 1, Hinweis auf `add-service` / `add-language`                                                                                                                                              | Task 3    |
 | B.7  | Whitelist                       | `monoceros create x --languages=cobol`                                               | Error "Unknown language: cobol. Known: …"                                                                                                                                                              | Task 3    |
 | B.8  | Path-Traversal blocked          | `monoceros create ../escape`                                                         | Error "Invalid solution name"                                                                                                                                                                          | Task 3    |
-| B.9  | Status ohne Solution            | `cd /tmp && monoceros status`                                                        | Error "No .devcontainer/ found at or above …"                                                                                                                                                          | Task 6    |
-| B.10 | Status ohne Compose             | `cd /tmp/play/demo && monoceros status`                                              | Error "No compose.yaml … require services configured via add-service. Use monoceros shell …"                                                                                                           | Task 6    |
+| B.9  | Status ohne Solution            | (Workbench-Root, also außerhalb von Solutions) `monoceros status`                    | Error "No .devcontainer/ found at or above …"                                                                                                                                                          | Task 6    |
+| B.10 | Status ohne Compose             | `cd .local/play/demo && monoceros status`                                            | Error "No compose.yaml … require services configured via add-service. Use monoceros shell …"                                                                                                           | Task 6    |
 | B.11 | Run ohne `--`                   | `monoceros run` (irgendwo)                                                           | Error "No command provided. Usage: monoceros run … -- \<cmd\>"                                                                                                                                         | Task 5    |
-| B.12 | Run mit `--` außerhalb Solution | `cd /tmp && monoceros run -- ls`                                                     | Error "No .devcontainer/ found …" (nicht "no command")                                                                                                                                                 | Task 5    |
+| B.12 | Run mit `--` außerhalb Solution | (Workbench-Root) `monoceros run -- ls`                                               | Error "No .devcontainer/ found …" (nicht "no command")                                                                                                                                                 | Task 5    |
 
 **Fail-Bedeutung:**
 
@@ -133,10 +122,10 @@ mkdir -p /tmp/play && cd /tmp/play
   durchsollte
 - B.9–B.12 fehlerhaft → Cwd-Awareness oder Compose-Resolution bricht
 
-Aufräumen Stage B:
+Aufräumen Stage B (vom Workbench-Root):
 
 ```sh
-rm -rf /tmp/play
+rm -rf .local/play
 ```
 
 ## Stage C — Devcontainer/Compose (Docker erforderlich)
@@ -147,7 +136,7 @@ starten.
 Setup-Solution:
 
 ```sh
-mkdir -p /tmp/play && cd /tmp/play
+mkdir -p .local/play && cd .local/play
 monoceros create demo --languages=python --services=postgres
 cd demo
 ```
@@ -177,12 +166,16 @@ cd demo
 - C.8 verlangt erneutes Login → Bind-Mount-Pfad falsch oder Permissions
   auf `~/.claude` blocken den `node`-User
 
-Aufräumen Stage C:
+Aufräumen Stage C (vom Workbench-Root):
 
 ```sh
-monoceros stop
-docker compose -f .devcontainer/compose.yaml down -v   # Volumes löschen
-cd /tmp && rm -rf /tmp/play
+# in der Solution: Volumes weg
+cd .local/play/demo
+docker compose -f .devcontainer/compose.yaml down -v
+
+# zurück und alles wegwerfen
+cd ../../..
+rm -rf .local/play
 ```
 
 ## Was bewusst noch nicht abgedeckt ist

@@ -8,11 +8,12 @@ import { shellCommand } from './commands/shell.js';
 import { startCommand } from './commands/start.js';
 import { statusCommand } from './commands/status.js';
 import { stopCommand } from './commands/stop.js';
+import { CLI_VERSION } from './version.js';
 
 export const main = defineCommand({
   meta: {
     name: 'monoceros',
-    version: '0.0.0',
+    version: CLI_VERSION,
     description:
       'Monoceros workbench — local, sandboxed AI-coding environment for solution builders.',
   },

@@ -30,3 +30,7 @@ pnpm-debug.log*
 
 # TypeScript
 *.tsbuildinfo
+
+# Local scratch space (test plan, manual experiments). Anything you put
+# under .local/ is ephemeral — `rm -rf .local` resets cleanly.
+.local/

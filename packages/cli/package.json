@@ -1,6 +1,6 @@
 {
   "name": "@monoceros/cli",
-  "version": "0.0.0",
+  "version": "0.1.0-dev",
   "private": true,
   "type": "module",
   "description": "Monoceros workbench CLI — devcontainer lifecycle and (later) iteration pipeline.",
