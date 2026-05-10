@@ -8,8 +8,6 @@ import {
   runInContainer,
 } from '../src/devcontainer/run.js';
 
-const silentLogger = { info: () => {} };
-
 describe('extractInnerCommand', () => {
   it('returns the slice after the first `--`', () => {
     expect(
@@ -42,7 +40,6 @@ describe('runInContainer', () => {
       runInContainer({
         command: [],
         cwd: root,
-        logger: silentLogger,
         spawn: async () => 0,
       }),
     ).rejects.toThrow(/No command provided/);
@@ -53,7 +50,6 @@ describe('runInContainer', () => {
       runInContainer({
         command: ['ls'],
         cwd: root,
-        logger: silentLogger,
         spawn: async () => 0,
       }),
     ).rejects.toThrow(/No \.devcontainer\/ found/);
@@ -62,28 +58,30 @@ describe('runInContainer', () => {
   it('forwards the command verbatim to devcontainer exec', async () => {
     const solution = path.join(root, 'demo');
     await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
-    const calls: string[][] = [];
+    const calls: { args: string[]; quiet: boolean }[] = [];
     const exitCode = await runInContainer({
       command: ['pnpm', 'test', '--filter', 'foo'],
       cwd: solution,
-      logger: silentLogger,
-      spawn: async (args) => {
-        calls.push(args);
+      spawn: async (args, _cwd, options) => {
+        calls.push({ args, quiet: options?.quiet === true });
         return 0;
       },
     });
     expect(exitCode).toBe(0);
     expect(calls).toEqual([
-      ['up', '--workspace-folder', solution],
-      [
-        'exec',
-        '--workspace-folder',
-        solution,
-        'pnpm',
-        'test',
-        '--filter',
-        'foo',
-      ],
+      { args: ['up', '--workspace-folder', solution], quiet: true },
+      {
+        args: [
+          'exec',
+          '--workspace-folder',
+          solution,
+          'pnpm',
+          'test',
+          '--filter',
+          'foo',
+        ],
+        quiet: false,
+      },
     ]);
   });
 
@@ -93,7 +91,6 @@ describe('runInContainer', () => {
     const exitCode = await runInContainer({
       command: ['false'],
       cwd: solution,
-      logger: silentLogger,
       spawn: async (args) => (args[0] === 'up' ? 0 : 42),
     });
     expect(exitCode).toBe(42);
@@ -106,7 +103,6 @@ describe('runInContainer', () => {
     const exitCode = await runInContainer({
       command: ['ls'],
       cwd: solution,
-      logger: silentLogger,
       spawn: async (args) => {
         calls.push(args);
         return 9;
@@ -128,7 +124,6 @@ describe('runInContainer', () => {
       command: ['ls'],
       cwd: elsewhere,
       project: path.relative(elsewhere, solution),
-      logger: silentLogger,
       spawn: async (args, cwd) => {
         calls.push({ args, cwd });
         return 0;

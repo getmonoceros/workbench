@@ -6,8 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { findSolutionRoot } from '../src/devcontainer/locate.js';
 import { runShell } from '../src/devcontainer/shell.js';
 
-const silentLogger = { info: () => {} };
-
 describe('findSolutionRoot', () => {
   let root: string;
 
@@ -52,9 +50,9 @@ describe('runShell', () => {
   });
 
   it('throws when no .devcontainer/ is found at or above cwd', async () => {
-    await expect(
-      runShell({ cwd: root, logger: silentLogger, spawn: async () => 0 }),
-    ).rejects.toThrow(/No \.devcontainer\/ found/);
+    await expect(runShell({ cwd: root, spawn: async () => 0 })).rejects.toThrow(
+      /No \.devcontainer\/ found/,
+    );
   });
 
   it('invokes devcontainer up then exec bash with the workspace folder', async () => {
@@ -63,7 +61,6 @@ describe('runShell', () => {
     const calls: { args: string[]; cwd: string }[] = [];
     const exitCode = await runShell({
       cwd: solution,
-      logger: silentLogger,
       spawn: async (args, cwd) => {
         calls.push({ args, cwd });
         return 0;
@@ -85,7 +82,6 @@ describe('runShell', () => {
     const calls: string[][] = [];
     const exitCode = await runShell({
       cwd: solution,
-      logger: silentLogger,
       spawn: async (args) => {
         calls.push(args);
         return 7;
@@ -106,7 +102,6 @@ describe('runShell', () => {
     await runShell({
       cwd: elsewhere,
       project: path.relative(elsewhere, solution),
-      logger: silentLogger,
       spawn: async (args, cwd) => {
         calls.push({ args, cwd });
         return 0;
