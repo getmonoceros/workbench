@@ -85,6 +85,12 @@ export function needsCompose(opts: CreateOptions): boolean {
   return opts.services.length > 0;
 }
 
+interface DevcontainerCustomizations {
+  vscode?: {
+    extensions?: string[];
+  };
+}
+
 interface DevcontainerImageMode {
   name: string;
   image: string;
@@ -96,6 +102,7 @@ interface DevcontainerImageMode {
   runArgs: string[];
   forwardPorts: number[];
   postCreateCommand: string;
+  customizations: DevcontainerCustomizations;
   features?: Record<string, Record<string, unknown>>;
 }
 
@@ -111,6 +118,7 @@ interface DevcontainerComposeMode {
   remoteUser: string;
   forwardPorts: number[];
   postCreateCommand: string;
+  customizations: DevcontainerCustomizations;
   features?: Record<string, Record<string, unknown>>;
 }
 
@@ -127,6 +135,17 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
   const featuresField =
     Object.keys(features).length > 0 ? { features } : undefined;
 
+  // VS Code customizations: auto-install the Claude Code extension when
+  // the workspace opens in a Dev Container. Aligns the IDE story with
+  // the workbench's positioning around AI-assisted coding. Builders who
+  // prefer a different agent (Cline, Continue, …) can edit the
+  // extension list in their solution's devcontainer.json.
+  const customizations: DevcontainerCustomizations = {
+    vscode: {
+      extensions: ['anthropic.claude-code'],
+    },
+  };
+
   if (needsCompose(opts)) {
     // Compose-mode handles NET_ADMIN via cap_add on the workspace
     // service in compose.yaml — no runArgs needed here.
@@ -139,6 +158,7 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
       remoteUser: 'node',
       forwardPorts: [3000, 4000],
       postCreateCommand: '.devcontainer/post-create.sh',
+      customizations,
       ...(featuresField ?? {}),
     };
   }
@@ -153,6 +173,7 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     runArgs: ['--cap-add=NET_ADMIN'],
     forwardPorts: [3000, 4000],
     postCreateCommand: '.devcontainer/post-create.sh',
+    customizations,
     ...(featuresField ?? {}),
   };
 }

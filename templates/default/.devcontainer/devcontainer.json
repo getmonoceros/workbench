@@ -7,5 +7,10 @@
   ],
   "runArgs": ["--cap-add=NET_ADMIN"],
   "forwardPorts": [3000, 4000],
-  "postCreateCommand": ".devcontainer/post-create.sh"
+  "postCreateCommand": ".devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": ["anthropic.claude-code"]
+    }
+  }
 }

@@ -203,10 +203,19 @@ monoceros start && monoceros run -- claude --version`. Egress
    GitHub-Actions-Workflow für reproducible builds. Default-Template
    zeigt nach Push auf den GHCR-Tag.
 
-9. **Verifikation auf drei Pfaden** — Test, dass dasselbe Projekt
-   funktioniert in: (a) VS Code Dev Containers, (b) Cursor, (c)
-   Claude Code via direkter Docker-Anbindung. Wenn (c) wackelt, ist
-   das ein Show-Stopper für die Zielgruppe.
+9. **Verifikation auf den realen Nutzungspfaden** — Test, dass dasselbe
+   Projekt in den IDE-Pfaden funktioniert, die wir tatsächlich
+   benutzen: (a) VS Code Dev Containers Standalone, (b) Claude Code
+   als VS Code-Extension im Dev Container, (c) Claude Code im
+   Terminal (bereits durch C.7/C.8 abgedeckt), (d) Claude Desktop —
+   erkundet. Cursor wird ausgeklammert, kein aktiver Einsatz; kommt
+   wieder rein wenn jemand es nutzt. Generierte `devcontainer.json`
+   bekommt dazu `customizations.vscode.extensions:
+["anthropic.claude-code"]` — Auto-Install der Extension im
+   Container, damit der VS-Code-Pfad ohne manuelles Nachinstallieren
+   läuft. Schritt-für-Schritt-Plan in
+   [Stage D des Test-Plans](test-plan.md). Manuelle Test-Arbeit, kein
+   Code-Output außer der Extension-Voreinstellung.
 10. **Auth-Smoke-Test** — neues Projekt aus Null, ohne API-Key in ENV,
     nur Bind-Mount-Auth: `claude` im Container muss out-of-the-box mit
     dem Host-Account arbeiten. Auf zwei verschiedenen Rechnern

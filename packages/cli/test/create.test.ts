@@ -49,6 +49,9 @@ describe('runCreate', () => {
     expect(devcontainer.mounts).toContain(
       'source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,consistency=cached',
     );
+    expect(devcontainer.customizations?.vscode?.extensions).toContain(
+      'anthropic.claude-code',
+    );
 
     const postCreate = await readFile(
       path.join(target, '.devcontainer', 'post-create.sh'),

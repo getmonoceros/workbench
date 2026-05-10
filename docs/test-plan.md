@@ -29,7 +29,7 @@ Bugs, die der erste Walkthrough gefunden und behoben hat:
 
 ## Stages
 
-Drei Stufen, in absteigender Reihenfolge der Erreichbarkeit:
+Vier Stufen, in absteigender Reihenfolge der Erreichbarkeit:
 
 - **A — CLI-Surface**: nur Node, sonst nichts. Verifiziert dass das CLI
   gebaut ist.
@@ -37,6 +37,10 @@ Drei Stufen, in absteigender Reihenfolge der Erreichbarkeit:
   Docker nötig.
 - **C — Devcontainer/Compose**: braucht Docker. Verifiziert dass die
   generierten Files real funktionieren.
+- **D — IDE-Integration**: optional, erkundet die drei realistischen
+  Nutzungspfade — VS Code Dev Containers, Claude Code als VS Code-
+  Extension, Claude Desktop. Cursor wird ausgeklammert (nicht im
+  Einsatz).
 
 ## Voraussetzungen
 
@@ -214,10 +218,96 @@ cd ../../..
 rm -rf .local/play
 ```
 
+## Stage D — IDE-Integration (optional)
+
+Manuelle Verifikation, dass die generierten Solutions in den drei
+realistischen Nutzungspfaden funktionieren. Voraussetzung: eine
+Solution mit Services existiert (`monoceros create demo --services=postgres`).
+
+### D.1 — VS Code Dev Containers Standalone
+
+**Voraussetzung:** VS Code mit der Extension `ms-vscode-remote.remote-containers`
+("Dev Containers" von Microsoft).
+
+**Aktion:**
+
+1. Workspace-Folder in VS Code öffnen: `code .local/play/demo`
+2. VS Code zeigt unten rechts „Folder contains a Dev Container
+   configuration" → **Reopen in Container** (alternativ
+   `Cmd+Shift+P` → „Dev Containers: Reopen in Container")
+3. Beim ersten Mal: Container-Build/-Pull, kann mehrere Minuten dauern
+4. Statusleiste zeigt „Dev Container: monoceros-default" (oder den
+   Solution-Namen)
+5. Terminal öffnen (`Ctrl+` ` `)
+
+**Erwartet:**
+
+- Prompt im Terminal: `node@<hash>:/workspaces/demo$`
+- `whoami` → `node`
+- `pwd` → `/workspaces/demo`
+- `claude --version` → `2.1.138 (Claude Code)`
+- Datei-Edits in VS Code spiegeln sich auf dem Host wider (Bind-Mount)
+
+**Fail-Diagnose:** Container-Build hängt → `docker info` prüfen,
+gegebenenfalls `pnpm image:build` nachziehen. Auth-Probleme im
+Container → siehe C.8 (macOS-Keychain-Quirk).
+
+### D.2 — Claude Code Extension im Dev Container
+
+**Voraussetzung:** D.1 funktioniert, VS Code-Fenster ist im
+Dev-Container-Mode.
+
+**Aktion:**
+
+1. Extensions-Panel öffnen (`Cmd+Shift+X`) → unter „Container" sollte
+   `anthropic.claude-code` aufgeführt sein (wird durch
+   `customizations.vscode.extensions` automatisch installiert)
+2. Beim Erstaufruf: Extension lädt im Hintergrund, Status sichtbar
+3. Claude-Code-Icon in der Activity Bar anklicken oder
+   `Cmd+Shift+P` → „Claude: Open"
+4. Einen kleinen Task absetzen: „lege eine `hello.txt` mit Inhalt
+   `Hello from VS Code` an"
+
+**Erwartet:**
+
+- Extension auf-und-läuft, ist auth'd (gleiche `~/.claude`-Bind-Mount-
+  Logik wie für die CLI; auf macOS einmalig OAuth, danach sticky)
+- Task wird ausgeführt, `hello.txt` ist im Workspace sichtbar (sowohl
+  in VS Code's File-Tree als auch auf dem Host: `cat
+.local/play/demo/hello.txt`)
+
+**Fail-Diagnose:** Extension fehlt → `customizations.vscode.extensions`
+in der `devcontainer.json` der Solution prüfen. Extension nicht
+authentifiziert → analog C.8 die OAuth-Flow im Container starten.
+
+### D.3 — Claude Code im Terminal
+
+Bereits durch C.7 + C.8 abgedeckt — `monoceros shell` öffnet bash,
+`claude` ist preinstalliert und auth'd (nach Erst-Login auf macOS).
+Hier nur als Cross-Reference; keine separaten Schritte.
+
+### D.4 — Claude Desktop (erkundet)
+
+**Status:** unklar wie der aktuelle Stand des Claude-Desktop-↔-
+Devcontainer-Workflows ist. Claude Desktop läuft am Host; ob es eine
+„open project in container"-Convention gibt oder ob man manuell ein
+Terminal in den Container öffnen muss, weiß ich beim Schreiben des
+Tests nicht. Erkunde:
+
+1. Claude Desktop starten
+2. Projekt-Navigation öffnen (UI-spezifisch)
+3. Den Solution-Folder hinzufügen / öffnen
+4. Eine kleine Aufgabe absetzen, schauen wo Claude Desktop sie
+   ausführt — am Host oder im Container?
+
+**Was wir damit lernen wollen:** ist Claude Desktop für unseren
+Container-getriebenen Workflow nutzbar, oder ist die einzige sinnvolle
+Kombination Claude-Desktop-am-Host + manueller `monoceros shell` für
+container-bezogene Arbeit? Die Antwort dokumentieren wir hier nach
+dem Erkundungs-Lauf.
+
 ## Was bewusst noch nicht abgedeckt ist
 
-- `add-service` / `add-language` mit Diff-Preview → Task 7
-- Eigenes gehärtetes Runtime-Image inkl. Egress-Whitelist → Task 8
-- Drei-Pfade-Verifikation (VS Code Dev Containers / Cursor / Claude
-  Code direkt) → Task 9
+- Eigenes gehärtetes Runtime-Image, Multi-Arch via GHCR-Push → Task 8c
+- Cursor-Pfad — ausgeklammert, kein aktiver Einsatz
 - Auth-Smoke auf zweitem Rechner → Task 10
