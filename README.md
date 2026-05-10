@@ -24,3 +24,5 @@ Drei Bausteine:
 - [`CLAUDE.md`](CLAUDE.md) — Reset-Kontext für KI-Sessions
 - [`docs/konzept.md`](docs/konzept.md) — die volle Story
 - [`docs/backlog.md`](docs/backlog.md) — Milestones M0–M3 mit Tasks
+- [`docs/test-plan.md`](docs/test-plan.md) — manueller End-to-End-Test
+  des aktuellen Stands
