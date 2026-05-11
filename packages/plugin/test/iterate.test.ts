@@ -173,7 +173,12 @@ describe('runIterateCommand — failure handling', () => {
     const failedResult: IterationPipelineResult = {
       ok: false,
       failedPhase: 'reviewer',
-      error: { kind: 'missing_output', sessionId: 'sr' },
+      error: {
+        kind: 'missing_output',
+        sessionId: 'sr',
+        reason: 'no_result_message',
+        messageTypes: ['system', 'assistant'],
+      },
       partial: { plan, generatorReport },
     };
     const outcome = await runIterateCommand(

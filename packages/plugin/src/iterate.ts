@@ -101,10 +101,40 @@ export function summarizeOutcome(outcome: IterateOutcome): string {
     );
     lines.push(`  summary: ${r.reviewReport.summary}`);
   } else {
+    const e = outcome.result.error;
     lines.push(`  FAILED in phase: ${outcome.result.failedPhase}`);
-    lines.push(`  error.kind: ${outcome.result.error.kind}`);
+    lines.push(`  error.kind: ${e.kind}`);
+    if (e.kind === 'sdk_error') {
+      lines.push(`  error.subtype: ${e.subtype}`);
+      for (const msg of e.errors) lines.push(`  error.message: ${msg}`);
+      if (e.stderrTail) {
+        lines.push(`  --- claude stderr (tail) ---`);
+        lines.push(indent(e.stderrTail, 2));
+      }
+    } else if (e.kind === 'missing_output') {
+      lines.push(`  error.reason: ${e.reason}`);
+      lines.push(
+        `  error.messageTypes: ${e.messageTypes.length === 0 ? '(none)' : e.messageTypes.join(', ')}`,
+      );
+      if (e.stderrTail) {
+        lines.push(`  --- claude stderr (tail) ---`);
+        lines.push(indent(e.stderrTail, 2));
+      }
+    } else if (e.kind === 'schema_validation') {
+      for (const issue of e.issues) {
+        lines.push(`  schema: ${issue.path}: ${issue.message}`);
+      }
+    }
   }
   return lines.join('\n');
+}
+
+function indent(text: string, spaces: number): string {
+  const pad = ' '.repeat(spaces);
+  return text
+    .split('\n')
+    .map((line) => `${pad}${line}`)
+    .join('\n');
 }
 
 function buildAuditInput(
@@ -123,15 +153,26 @@ function buildAuditInput(
     base.failedPhase = null;
   } else {
     base.failedPhase = result.failedPhase;
-    base.errorSummary = `${result.error.kind}: ${
-      result.error.kind === 'sdk_error'
-        ? `${result.error.subtype} — ${result.error.errors.join('; ')}`
-        : result.error.kind
-    }`;
+    base.errorSummary = formatErrorSummary(result.error);
     if (result.partial.plan !== undefined) base.plan = result.partial.plan;
     if (result.partial.generatorReport !== undefined) {
       base.generatorReport = result.partial.generatorReport;
     }
   }
   return base;
+}
+
+function formatErrorSummary(
+  error: Extract<IterationPipelineResult, { ok: false }>['error'],
+): string {
+  switch (error.kind) {
+    case 'sdk_error':
+      return `sdk_error/${error.subtype}: ${error.errors.join('; ') || '(no error messages)'}${error.stderrTail ? `\nstderr tail: ${error.stderrTail}` : ''}`;
+    case 'missing_output':
+      return `missing_output/${error.reason}: messages seen = [${error.messageTypes.join(', ')}]${error.stderrTail ? `\nstderr tail: ${error.stderrTail}` : ''}`;
+    case 'schema_validation':
+      return `schema_validation: ${error.issues.map((i) => `${i.path}: ${i.message}`).join('; ')}`;
+    case 'aborted':
+      return 'aborted';
+  }
 }

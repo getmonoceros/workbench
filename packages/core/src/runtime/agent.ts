@@ -42,11 +42,30 @@ export async function runPhase<TSchema extends z.ZodType>(
     unknown
   >;
 
+  // Capture the last 4 KB of the `claude` subprocess's stderr so we
+  // can surface it on missing_output / sdk_error. Without this the
+  // failure mode is opaque.
+  const stderrBuffer: string[] = [];
+  const STDERR_TAIL_LIMIT = 4096;
+  function appendStderr(chunk: string): void {
+    stderrBuffer.push(chunk);
+    let total = stderrBuffer.reduce((sum, s) => sum + s.length, 0);
+    while (total > STDERR_TAIL_LIMIT * 2 && stderrBuffer.length > 1) {
+      total -= stderrBuffer.shift()!.length;
+    }
+  }
+  function stderrTail(): string | undefined {
+    if (stderrBuffer.length === 0) return undefined;
+    const joined = stderrBuffer.join('');
+    return joined.slice(-STDERR_TAIL_LIMIT);
+  }
+
   const sdkOptions: SdkOptions = {
     systemPrompt: opts.systemPrompt,
     allowedTools: [...opts.allowedTools],
     cwd: opts.cwd,
     outputFormat: { type: 'json_schema', schema: jsonSchema },
+    stderr: appendStderr,
   };
 
   // Work around the SDK's musl-first platform resolution on linux.
@@ -64,12 +83,22 @@ export async function runPhase<TSchema extends z.ZodType>(
     sdkOptions.abortController = opts.abortController;
   }
 
+  // Surface SDK debug logging on stderr when MONOCEROS_DEBUG_SDK=1
+  // is set in the calling environment. Useful for diagnosing
+  // missing_output / no_result_message failures.
+  if (process.env.MONOCEROS_DEBUG_SDK === '1') {
+    sdkOptions.env = {
+      ...process.env,
+      DEBUG_CLAUDE_AGENT_SDK: '1',
+    } as Record<string, string>;
+  }
+
   if (opts.enableCheckpointing === true) {
     sdkOptions.enableFileCheckpointing = true;
     sdkOptions.permissionMode = 'acceptEdits';
     sdkOptions.extraArgs = { 'replay-user-messages': null };
     sdkOptions.env = {
-      ...process.env,
+      ...(sdkOptions.env ?? process.env),
       CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: '1',
     } as Record<string, string>;
   } else if (allowsWrites(opts.allowedTools)) {
@@ -82,11 +111,13 @@ export async function runPhase<TSchema extends z.ZodType>(
   let sessionId: string | null = null;
   let checkpointId: string | null = null;
   let resultMessage: Extract<SDKMessage, { type: 'result' }> | null = null;
+  const messageTypes: string[] = [];
 
   const stream = queryFn({ prompt: opts.userPrompt, options: sdkOptions });
 
   try {
     for await (const msg of stream) {
+      messageTypes.push(msg.type);
       if (
         sessionId === null &&
         'session_id' in msg &&
@@ -125,7 +156,15 @@ export async function runPhase<TSchema extends z.ZodType>(
   }
 
   if (resultMessage === null) {
-    return { ok: false, error: { kind: 'missing_output', sessionId } };
+    const error: PhaseError = {
+      kind: 'missing_output',
+      sessionId,
+      reason: 'no_result_message',
+      messageTypes,
+    };
+    const tail = stderrTail();
+    if (tail !== undefined) error.stderrTail = tail;
+    return { ok: false, error };
   }
 
   if (resultMessage.subtype !== 'success') {
@@ -135,14 +174,21 @@ export async function runPhase<TSchema extends z.ZodType>(
       errors: resultMessage.errors,
       sessionId: resultMessage.session_id,
     };
+    const tail = stderrTail();
+    if (tail !== undefined) error.stderrTail = tail;
     return { ok: false, error };
   }
 
   if (resultMessage.structured_output === undefined) {
-    return {
-      ok: false,
-      error: { kind: 'missing_output', sessionId: resultMessage.session_id },
+    const error: PhaseError = {
+      kind: 'missing_output',
+      sessionId: resultMessage.session_id,
+      reason: 'no_structured_output',
+      messageTypes,
     };
+    const tail = stderrTail();
+    if (tail !== undefined) error.stderrTail = tail;
+    return { ok: false, error };
   }
 
   const parsed = opts.outputSchema.safeParse(resultMessage.structured_output);

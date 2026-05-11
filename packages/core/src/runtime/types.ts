@@ -74,6 +74,20 @@ export interface PhaseRunSuccess<TOutput> {
 
 export type PhaseValidationIssue = { path: string; message: string };
 
+/**
+ * Reason the stream ended without producing a usable output.
+ *
+ *  - `no_result_message`: the SDK stream finished without ever
+ *    yielding a `type: 'result'` message. Usually means the
+ *    `claude` subprocess died without reporting an error subtype.
+ *  - `no_structured_output`: a successful result arrived but
+ *    `structured_output` was absent. The SDK should have caught
+ *    this internally and emitted `error_max_structured_output_retries`
+ *    instead — seeing it bare means the SDK didn't enforce
+ *    `outputFormat` for this call.
+ */
+export type MissingOutputReason = 'no_result_message' | 'no_structured_output';
+
 export type PhaseError =
   | {
       kind: 'sdk_error';
@@ -84,6 +98,8 @@ export type PhaseError =
         | 'error_max_structured_output_retries';
       errors: string[];
       sessionId: string | null;
+      /** Last 4 KB of stderr captured from the `claude` subprocess. */
+      stderrTail?: string;
     }
   | {
       kind: 'schema_validation';
@@ -91,7 +107,15 @@ export type PhaseError =
       rawOutput: unknown;
       sessionId: string;
     }
-  | { kind: 'missing_output'; sessionId: string | null }
+  | {
+      kind: 'missing_output';
+      sessionId: string | null;
+      reason: MissingOutputReason;
+      /** Message types seen on the stream, in order, for diagnostics. */
+      messageTypes: string[];
+      /** Last 4 KB of stderr captured from the `claude` subprocess. */
+      stderrTail?: string;
+    }
   | { kind: 'aborted'; sessionId: string | null };
 
 export type PhaseRunResult<TOutput> =
