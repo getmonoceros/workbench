@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { runPhase, type PhaseEvent, type QueryFn } from '../src/index.js';
+import { extractJson } from '../src/runtime/agent.js';
 
 const OutputSchema = z.object({ greeting: z.string() });
 const SESSION_ID = 'sess_test_abc';
@@ -75,6 +76,27 @@ function resultSuccess(structured: unknown): SDKMessage {
     modelUsage: {},
     permission_denials: [],
     structured_output: structured,
+    uuid: 'r_1',
+    session_id: SESSION_ID,
+  } as unknown as SDKMessage;
+}
+
+function resultSuccessText(text: string): SDKMessage {
+  return {
+    type: 'result',
+    subtype: 'success',
+    duration_ms: 1234,
+    duration_api_ms: 1000,
+    is_error: false,
+    num_turns: 3,
+    result: text,
+    stop_reason: 'end_turn',
+    total_cost_usd: 0.0123,
+    usage: {},
+    modelUsage: {},
+    permission_denials: [],
+    // structured_output deliberately NOT set — exercise the
+    // text-parsing fallback path
     uuid: 'r_1',
     session_id: SESSION_ID,
   } as unknown as SDKMessage;
@@ -153,17 +175,15 @@ describe('runPhase — happy path', () => {
     });
   });
 
-  it('converts the Zod schema to JSON schema and passes it as outputFormat', async () => {
+  it('does not pass outputFormat — SDK 0.2.138 does not populate structured_output', async () => {
+    // We compute the JSON Schema (Zod 4 toJSONSchema) and have it
+    // ready for a future SDK release that actually enforces it, but
+    // for now we leave outputFormat unset and parse `result.result`
+    // ourselves. See agent.ts comments.
     const { fn, calls } = makeFakeQuery([resultSuccess({ greeting: 'x' })]);
     await runPhase(basePhaseOpts, fn);
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.options?.outputFormat).toEqual({
-      type: 'json_schema',
-      schema: expect.objectContaining({
-        type: 'object',
-        properties: expect.any(Object),
-      }),
-    });
+    expect(calls[0]!.options?.outputFormat).toBeUndefined();
   });
 
   it('forwards system prompt, allowedTools, cwd to the SDK', async () => {
@@ -352,5 +372,80 @@ describe('runPhase — failure modes', () => {
     await expect(runPhase(basePhaseOpts, fn)).rejects.toThrow(
       'network blew up',
     );
+  });
+});
+
+describe('runPhase — text-based fallback for structured output', () => {
+  it('parses bare JSON from result.result when structured_output is absent', async () => {
+    const { fn } = makeFakeQuery([
+      resultSuccessText('{"greeting":"from text"}'),
+    ]);
+    const result = await runPhase(basePhaseOpts, fn);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toEqual({ greeting: 'from text' });
+  });
+
+  it('parses JSON from a ```json fenced block', async () => {
+    const text = 'Here is the result:\n```json\n{"greeting":"fenced"}\n```\n';
+    const { fn } = makeFakeQuery([resultSuccessText(text)]);
+    const result = await runPhase(basePhaseOpts, fn);
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.output).toEqual({ greeting: 'fenced' });
+  });
+
+  it('parses JSON from a `{…}` block embedded in narrative text', async () => {
+    const text =
+      'I\'ve finished planning. The result is:\n\n{"greeting":"embedded"}\n\nLet me know if you need anything.';
+    const { fn } = makeFakeQuery([resultSuccessText(text)]);
+    const result = await runPhase(basePhaseOpts, fn);
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.output).toEqual({ greeting: 'embedded' });
+  });
+
+  it('fails missing_output/no_structured_output when result.result has no JSON', async () => {
+    const { fn } = makeFakeQuery([
+      resultSuccessText("I couldn't analyze the workspace."),
+    ]);
+    const result = await runPhase(basePhaseOpts, fn);
+    if (result.ok) throw new Error('expected failure');
+    expect(result.error.kind).toBe('missing_output');
+    if (result.error.kind !== 'missing_output') return;
+    expect(result.error.reason).toBe('no_structured_output');
+  });
+});
+
+describe('extractJson', () => {
+  it('parses a bare JSON object', () => {
+    expect(extractJson('{"a":1}')).toEqual({ a: 1 });
+  });
+
+  it('parses a JSON object from a ```json fenced block', () => {
+    expect(
+      extractJson('text before\n```json\n{"a":2}\n```\ntext after'),
+    ).toEqual({
+      a: 2,
+    });
+  });
+
+  it('parses a JSON object from a plain ``` fenced block', () => {
+    expect(extractJson('```\n{"a":3}\n```')).toEqual({ a: 3 });
+  });
+
+  it('extracts the largest valid `{…}` block from narrative text', () => {
+    expect(
+      extractJson('Plan complete. {"a":4,"nested":{"b":5}} — that is all.'),
+    ).toEqual({ a: 4, nested: { b: 5 } });
+  });
+
+  it('returns undefined when no JSON is present', () => {
+    expect(extractJson('I could not produce a plan.')).toBeUndefined();
+    expect(extractJson('')).toBeUndefined();
+    expect(extractJson('   ')).toBeUndefined();
+  });
+
+  it('returns undefined for unbalanced or malformed JSON', () => {
+    expect(extractJson('{"a":1')).toBeUndefined();
+    expect(extractJson('{ a: 1 }')).toBeUndefined();
   });
 });

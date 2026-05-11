@@ -64,9 +64,17 @@ export async function runPhase<TSchema extends z.ZodType>(
     systemPrompt: opts.systemPrompt,
     allowedTools: [...opts.allowedTools],
     cwd: opts.cwd,
-    outputFormat: { type: 'json_schema', schema: jsonSchema },
+    // `outputFormat: { type: 'json_schema', ... }` is in the SDK's
+    // type definition but its implementation in 0.2.138 never sets
+    // `result.structured_output` — verified by grepping the compiled
+    // sdk.mjs. We rely on the phase prompts' "output exactly one
+    // JSON object" instruction and parse `result.result` (the final
+    // assistant text) ourselves, then Zod-validate.
     stderr: appendStderr,
   };
+  // jsonSchema is kept for future use once the SDK actually enforces
+  // structured outputs (Zod 4 toJSONSchema verified by core tests).
+  void jsonSchema;
 
   // Work around the SDK's musl-first platform resolution on linux.
   // See claude-binary.ts for the full story.
@@ -179,19 +187,28 @@ export async function runPhase<TSchema extends z.ZodType>(
     return { ok: false, error };
   }
 
-  if (resultMessage.structured_output === undefined) {
-    const error: PhaseError = {
-      kind: 'missing_output',
-      sessionId: resultMessage.session_id,
-      reason: 'no_structured_output',
-      messageTypes,
-    };
-    const tail = stderrTail();
-    if (tail !== undefined) error.stderrTail = tail;
-    return { ok: false, error };
+  // Try `structured_output` first — if a future SDK release populates
+  // it we get to use it for free. Fall back to parsing the final
+  // assistant text from `result.result`, which is what 0.2.138
+  // actually delivers.
+  let rawOutput: unknown = resultMessage.structured_output;
+  if (rawOutput === undefined) {
+    const parsedJson = extractJson(resultMessage.result);
+    if (parsedJson === undefined) {
+      const error: PhaseError = {
+        kind: 'missing_output',
+        sessionId: resultMessage.session_id,
+        reason: 'no_structured_output',
+        messageTypes,
+      };
+      const tail = stderrTail();
+      if (tail !== undefined) error.stderrTail = tail;
+      return { ok: false, error };
+    }
+    rawOutput = parsedJson;
   }
 
-  const parsed = opts.outputSchema.safeParse(resultMessage.structured_output);
+  const parsed = opts.outputSchema.safeParse(rawOutput);
   if (!parsed.success) {
     return {
       ok: false,
@@ -201,7 +218,7 @@ export async function runPhase<TSchema extends z.ZodType>(
           path: issue.path.map(String).join('.'),
           message: issue.message,
         })),
-        rawOutput: resultMessage.structured_output,
+        rawOutput,
         sessionId: resultMessage.session_id,
       },
     };
@@ -226,6 +243,51 @@ export async function runPhase<TSchema extends z.ZodType>(
 
 function allowsWrites(tools: readonly string[]): boolean {
   return tools.some((tool) => tool === 'Edit' || tool === 'Write');
+}
+
+/**
+ * Tries to parse a JSON object out of the agent's final text. The
+ * phase prompts ask for "exactly one JSON object as your last
+ * message", but Claude sometimes wraps it in a ```json fence or
+ * adds a leading sentence anyway. We accept three shapes:
+ *
+ *  1. The whole trimmed string is a valid JSON object.
+ *  2. There's a single ```json … ``` fenced block; we take its body.
+ *  3. There's a `{ … }` block somewhere; we take the longest
+ *     balanced one and try to parse it.
+ *
+ * Returns the parsed value or `undefined` if no JSON found.
+ */
+export function extractJson(text: string): unknown {
+  const trimmed = text.trim();
+  if (trimmed === '') return undefined;
+  // 1. Whole string is JSON
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // fall through
+  }
+  // 2. ```json fenced block (or plain ```)
+  const fence = /```(?:json)?\s*\n([\s\S]*?)\n```/.exec(trimmed);
+  if (fence !== null) {
+    try {
+      return JSON.parse(fence[1]!.trim());
+    } catch {
+      // fall through
+    }
+  }
+  // 3. Last balanced `{…}` block, longest first
+  const start = trimmed.indexOf('{');
+  if (start === -1) return undefined;
+  for (let end = trimmed.lastIndexOf('}'); end > start; end--) {
+    const candidate = trimmed.slice(start, end + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // keep shrinking
+    }
+  }
+  return undefined;
 }
 
 function forwardAssistantBlocks(
