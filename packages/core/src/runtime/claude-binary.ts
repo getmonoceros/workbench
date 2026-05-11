@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 /**
  * Resolves the platform-specific `claude` native binary that ships
@@ -16,11 +17,19 @@ import { fileURLToPath } from 'node:url';
  *
  * If pnpm has installed both libc variants (our case — we want the
  * workbench bind-mount to serve any future linux runtime), the SDK
- * picks musl and fails on our Debian-bookworm-based runtime image
- * with a "Claude Code native binary not found" ReferenceError.
+ * picks musl. On a Debian-bookworm-based glibc container the kernel
+ * then fails to load `/lib/ld-musl-aarch64.so.1` and the SDK reports
+ * "Claude Code native binary not found".
  *
- * We sidestep the bug by detecting the libc ourselves and passing
- * the resolved path via `options.pathToClaudeCodeExecutable`.
+ * Resolution strategy: locate the main SDK package via
+ * `require.resolve('@anthropic-ai/claude-agent-sdk/package.json')`
+ * (which IS resolvable because @monoceros/core depends on it
+ * directly), then navigate up to the `@anthropic-ai/` directory and
+ * pick the right sibling platform package by filename. We use
+ * `existsSync` instead of `require.resolve` for the binary itself
+ * because the platform packages aren't always importable through
+ * pnpm's hoisted layout — but they ARE always present as siblings
+ * of the main SDK package in `.pnpm/.../@anthropic-ai/`.
  */
 export function resolveClaudeBinary(
   platform: NodeJS.Platform = process.platform,
@@ -28,31 +37,38 @@ export function resolveClaudeBinary(
   isGlibc: () => boolean = isLinuxGlibc,
 ): string | undefined {
   const requireResolve = createRequire(import.meta.url).resolve;
-  const ext = platform === 'win32' ? '.exe' : '';
 
+  let sdkMain: string;
+  try {
+    sdkMain = requireResolve('@anthropic-ai/claude-agent-sdk');
+  } catch {
+    return undefined;
+  }
+
+  // sdkMain      = .../@anthropic-ai/claude-agent-sdk/sdk.mjs
+  // anthropicDir = .../@anthropic-ai/
+  // (package.json subpath is not exported, so we go through the entry file)
+  const anthropicDir = dirname(dirname(sdkMain));
+
+  const ext = platform === 'win32' ? '.exe' : '';
   let candidates: string[];
   if (platform === 'linux') {
     candidates = isGlibc()
       ? [
-          `@anthropic-ai/claude-agent-sdk-linux-${arch}/claude`,
-          `@anthropic-ai/claude-agent-sdk-linux-${arch}-musl/claude`,
+          `claude-agent-sdk-linux-${arch}`,
+          `claude-agent-sdk-linux-${arch}-musl`,
         ]
       : [
-          `@anthropic-ai/claude-agent-sdk-linux-${arch}-musl/claude`,
-          `@anthropic-ai/claude-agent-sdk-linux-${arch}/claude`,
+          `claude-agent-sdk-linux-${arch}-musl`,
+          `claude-agent-sdk-linux-${arch}`,
         ];
   } else {
-    candidates = [
-      `@anthropic-ai/claude-agent-sdk-${platform}-${arch}/claude${ext}`,
-    ];
+    candidates = [`claude-agent-sdk-${platform}-${arch}`];
   }
 
-  for (const candidate of candidates) {
-    try {
-      return requireResolve(candidate);
-    } catch {
-      continue;
-    }
+  for (const pkg of candidates) {
+    const binary = join(anthropicDir, pkg, `claude${ext}`);
+    if (existsSync(binary)) return binary;
   }
   return undefined;
 }
@@ -75,6 +91,3 @@ export function isLinuxGlibc(): boolean {
     return true;
   }
 }
-
-// Expose the resolved module location for diagnostics / smoke tests.
-export const RESOLVER_MODULE_URL: string = fileURLToPath(import.meta.url);
