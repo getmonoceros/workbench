@@ -4,6 +4,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 
 import type { QueryFn } from './agent.js';
+import { resolveClaudeBinary } from './claude-binary.js';
 
 /**
  * Rewinds the solution workspace to the state captured at
@@ -33,6 +34,10 @@ export async function rewindToCheckpoint(
       CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: '1',
     } as Record<string, string>,
   };
+  const claudeBinary = resolveClaudeBinary();
+  if (claudeBinary !== undefined) {
+    options.pathToClaudeCodeExecutable = claudeBinary;
+  }
 
   const stream = queryFn({ prompt: '', options });
 

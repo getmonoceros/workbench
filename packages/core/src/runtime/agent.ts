@@ -6,6 +6,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 
+import { resolveClaudeBinary } from './claude-binary.js';
 import type {
   PhaseEvent,
   PhaseError,
@@ -47,6 +48,13 @@ export async function runPhase<TSchema extends z.ZodType>(
     cwd: opts.cwd,
     outputFormat: { type: 'json_schema', schema: jsonSchema },
   };
+
+  // Work around the SDK's musl-first platform resolution on linux.
+  // See claude-binary.ts for the full story.
+  const claudeBinary = resolveClaudeBinary();
+  if (claudeBinary !== undefined) {
+    sdkOptions.pathToClaudeCodeExecutable = claudeBinary;
+  }
 
   if (opts.model !== undefined) sdkOptions.model = opts.model;
   if (opts.resumeSessionId !== undefined) {
