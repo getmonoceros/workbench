@@ -527,6 +527,16 @@ Konfiguration) könnten je nach Reife mit reingezogen werden.
 
 Items die jetzt nicht eingeplant sind, aber bewusst getrackt:
 
+- **`monoceros run` schluckt Inner-`--help`/`--version`** — citty parst
+  diese Flags eager, _bevor_ unser `--`-Splitter in `runCommand`
+  greift. Folge: `monoceros run -- foo --help` zeigt die Help von
+  `monoceros run` selbst, der Inner-Command läuft nicht. Aktueller
+  Workaround in [test-plan.md](test-plan.md) Stage E: Inner-Commands
+  mit Flag-Argumenten in `bash -c '…'` wrappen. Sauberer Fix:
+  in `packages/cli/src/bin.ts` `process.argv` preprocessen — alles
+  hinter `--` aus dem Citty-Input rausziehen, separat speichern, in
+  `runCommand` reinreichen. Mache ich erst, wenn ein zweiter Builder
+  reinläuft oder Stage E häufiger gefahren wird.
 - **Orchestrator-Side Live-App-Probe** — ursprünglich M2 Task 6.
   Idee: nach Phase 2 ein deterministischer HTTP-Check vom Pipeline-
   Code selbst, damit „Lügen im Generator-Report bringen nichts". Das
