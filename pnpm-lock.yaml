@@ -105,6 +105,34 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@22.19.18)(tsx@4.21.0)(yaml@2.8.4)
 
+  packages/plugin:
+    dependencies:
+      '@monoceros/adapter-local':
+        specifier: workspace:*
+        version: link:../adapter-local
+      '@monoceros/core':
+        specifier: workspace:*
+        version: link:../core
+      citty:
+        specifier: ^0.2.2
+        version: 0.2.2
+      consola:
+        specifier: ^3.4.2
+        version: 3.4.2
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.18
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@22.19.18)(tsx@4.21.0)(yaml@2.8.4)
+
 packages:
 
   '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.2.138':
