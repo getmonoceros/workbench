@@ -45,11 +45,12 @@ abgeschlossen. **Abgeschlossen 2026-05-10.**
 
 ---
 
-## M1 — DevContainer-CLI
+## ✅ M1 — DevContainer-CLI
 
 **Ziel:** `monoceros create my-app` erzeugt einen lauffähigen
 Devcontainer mit Linux + Docker + Claude Code, optionalen Services und
-Sprach-Toolchains. `monoceros shell` führt nativ rein.
+Sprach-Toolchains. `monoceros shell` führt nativ rein. **Abgeschlossen
+2026-05-11.**
 
 Schon nutzbar als Produkt _ohne_ M2: ein Builder kann manuell mit
 Claude Code in einer abgesicherten Umgebung arbeiten — die strukturierte
@@ -203,11 +204,8 @@ monoceros start && monoceros run -- claude --version`. Egress
    `example.com:443` und `cloudflare.com:443` blockiert. Test-Plan-C.10
    deckt das ab.
 
-   **8c — Publish (später, vor Public-Release / Multi-Builder).**
-   Multi-Arch via `docker buildx` (amd64 + arm64),
-   `ghcr.io/kamann/monoceros-runtime:dev` + `:YYYY-MM-DD`-Tag,
-   GitHub-Actions-Workflow für reproducible builds. Default-Template
-   zeigt nach Push auf den GHCR-Tag.
+   **Multi-Arch-GHCR-Publish wird Teil von M4** — heute kein Block,
+   weil Workbench-Builder selbst `pnpm image:build` ausführen.
 
 9. ✅ **Verifikation auf den realen Nutzungspfaden** — am 2026-05-11
    end-to-end durchgegangen (Stage D im Test-Plan).
@@ -231,11 +229,6 @@ monoceros start && monoceros run -- claude --version`. Egress
    Code-Outcome aus diesem Task: Auto-Install-Liste in
    `customizations.vscode.extensions` (`anthropic.claude-code`).
 
-10. **Auth-Smoke-Test** — neues Projekt aus Null, ohne API-Key in ENV,
-    nur Bind-Mount-Auth: `claude` im Container muss out-of-the-box mit
-    dem Host-Account arbeiten. Auf zwei verschiedenen Rechnern
-    verifizieren wenn möglich.
-
 ### Definition of Done
 
 - ✅ `monoceros create demo --services=postgres && cd demo && monoceros start && monoceros run -- claude --version`
@@ -245,20 +238,14 @@ monoceros start && monoceros run -- claude --version`. Egress
 - ✅ Reset über `monoceros down --volumes` räumt sauber auf
 - ✅ Eigenes Runtime-Image lokal verfügbar (8a + 8b). Egress-
   Enforcement liegt im Image, ist aber **default-off** (siehe
-  ADR 0002). Multi-Arch-Publish (8c) erst vor Public-Release nötig.
+  ADR 0002).
 - ✅ VS Code Dev Container + Claude-Code-VS-Code-Extension
   reproduzierbar funktionsfähig (Task 9)
 
-**Funktional ist M1 damit durch.** Offen bleiben:
-
-- **Task 8c (GHCR-Publish)** — Multi-Arch-Image auf
-  `ghcr.io/kamann/monoceros-runtime:dev`. Gehört vor Public-Release
-  oder Multi-Builder-Setup; heute kein Block, weil Builder selbst
-  `pnpm image:build` ausführen.
-- **Task 10 (Auth-Smoke zweiter Rechner)** — Verifikation, dass eine
-  zweite Maschine ohne API-Key in ENV nur über Bind-Mount-Auth
-  hochkommt. Heute auf einem Rechner bestätigt; zweite Maschine
-  „wenn möglich", kein hartes Gate.
+Multi-Arch-GHCR-Publish und Auth-Smoke auf einem zweiten Rechner
+gehören zu **M4 (Go-Live)** — beides macht erst Sinn, wenn ein
+realistischer Solution-Builder-Flow von außen gegen die Workbench
+gefahren werden kann.
 
 ### Bewusst nicht in M1
 
@@ -378,6 +365,63 @@ real wertvoll, sonst hat M3 keinen Sinn).
 
 - Bi-direktionale Echtzeit-Sync (kein Webhook, nur explizites Push/Pull)
 - Eigene Tracking-UI in der Workbench (extern bleibt extern)
+
+---
+
+## M4 — Go-Live (Public-Release)
+
+**Ziel:** Workbench ist für einen zweiten Solution Builder ohne
+Insider-Knowledge nutzbar. Voraussetzung: M1–M3 stabil, ein
+realistischer Nutzer-Flow lässt sich von außen durchspielen.
+
+Wird konkret geplant nach Abschluss von M3. Heute schon klare
+Bausteine:
+
+### Tasks (Stand: Skizze, wird vor M4-Start verfeinert)
+
+1. **Multi-Arch-Image auf GHCR publishen** — vormals M1-Task-8c.
+   `docker buildx` für `amd64 + arm64`,
+   `ghcr.io/kamann/monoceros-runtime:<tag>`, GitHub-Actions-Workflow
+   für reproducible Builds bei Tag-Push. `BASE_IMAGE` in
+   [`catalog.ts`](../packages/cli/src/create/catalog.ts) zeigt auf
+   den GHCR-Tag statt aufs lokal-gebaute `dev`. Damit braucht ein
+   neuer Builder kein `pnpm image:build` mehr — Docker zieht das
+   Image beim ersten Container-Start.
+2. **Auth-Smoke auf zweitem Rechner** — vormals M1-Task-10.
+   Realistischer „neuer Solution Builder"-Flow: fremder Rechner,
+   Workbench-Repo klonen, neue Solution anlegen, in den Container
+   gehen, prüfen dass Claude ohne extra Setup auth'd ist (mit dem
+   bekannten macOS-Keychain-Erstaufruf). Findet Pfad-/Permission-/
+   OS-spezifische Annahmen, die im Solo-Setup unsichtbar bleiben.
+3. **Git-Bootstrap in generierten Solutions** — `.gitignore`,
+   optional `git init`, klare Policy für `.monoceros/`-Subdirs.
+   Heute in „Vorgemerkt für später", gehört hierher weil's
+   relevant ist sobald Solutions geteilt werden.
+4. **Installations-Pfad für Endnutzer** — `@monoceros/cli` als
+   echtes npm-Paket vorbereiten (`private: false`, README-Quickstart,
+   evtl. eigene `bin/`-Verdrahtung). Ablösung des
+   Session-Alias-Workarounds aus dem Test-Plan-Setup.
+5. **Onboarding-Doku** — Quickstart-Guide, Konzept-Zusammenfassung
+   für Außenstehende, Beispiel-Solution. Aktueller `docs/konzept.md`
+   ist eine Entwurfs-/Hintergrund-Notiz, kein Onboarding.
+6. **Threat-Model-Review** — was der HTTPS-Forward-Proxy-Sidecar
+   und das Audit-Log-Egress (beide in „Vorgemerkt") für Public-
+   Release-Anforderungen bedeuten — werden eines davon zur
+   Bedingung, kommt's hierher.
+
+Weitere „Vorgemerkt"-Items werden bei M4-Planung neu bewertet —
+einige (Persistenz-Strategie, E2E-Test-Suite, Service-Init-
+Konfiguration) könnten je nach Reife mit reingezogen werden.
+
+### Definition of Done
+
+- Ein zweiter Solution Builder kann Repo klonen, Solution anlegen,
+  Claude im Container nutzen — ohne Workbench-Repo-internen
+  Build-Schritt
+- Quickstart-Guide deckt diesen Pfad ab
+- Image im GHCR, beide Architekturen
+- Mindestens ein erfolgreich durchgespielter Auth-Pass-Through-Test
+  auf einem nicht-Entwickler-Rechner
 
 ---
 
