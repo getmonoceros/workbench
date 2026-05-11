@@ -263,6 +263,84 @@ gefahren werden kann.
 Container, persistiert Findings/Concerns/Risks als Markdown-Files unter
 `.monoceros/`. `/findings` und `/triage` machen das Material kuratierbar.
 
+### Vorab-Notiz vor M2-Start (Stand 2026-05-11)
+
+Die Task-Liste unten ist die ursprüngliche M2-Skizze aus 2026-05-10.
+Was sich seit M1-Abschluss verändert hat und vor dem ersten Code-Commit
+geklärt werden sollte:
+
+**Lesereihenfolge zum Einstieg** (in dieser Reihenfolge):
+
+1. [`docs/konzept.md`](konzept.md) Abschnitte „Strukturierte Iteration-
+   Pipeline" und „Side-Topic-Memory"
+2. Archiv-ADRs (nur lesen, nicht übernehmen):
+   - [`../../monoceros-for-solution-builder_archive-2026-05-10/docs/adr/0008-3-phasen-iteration-pipeline.md`](../../monoceros-for-solution-builder_archive-2026-05-10/docs/adr/0008-3-phasen-iteration-pipeline.md)
+   - [`../../monoceros-for-solution-builder_archive-2026-05-10/docs/adr/0011-prompt-architektur-daten-vs-system.md`](../../monoceros-for-solution-builder_archive-2026-05-10/docs/adr/0011-prompt-architektur-daten-vs-system.md)
+   - [`../../monoceros-for-solution-builder_archive-2026-05-10/docs/adr/0012-iteration-broker-decoupling.md`](../../monoceros-for-solution-builder_archive-2026-05-10/docs/adr/0012-iteration-broker-decoupling.md)
+3. Archiv-Code (Inventur, was übernehmbar ist):
+   - [`iteration-prompts/`](../../monoceros-for-solution-builder_archive-2026-05-10/apps/api/src/lib/iteration-prompts/)
+     — `planner.ts`, `generator.ts`, `reviewer.ts`, `shared.ts`,
+     `code-examples.ts`, `index.ts`
+   - [`iteration-orchestrator.ts`](../../monoceros-for-solution-builder_archive-2026-05-10/apps/api/src/lib/iteration-orchestrator.ts)
+   - [`schemas/iteration-pipeline.ts`](../../monoceros-for-solution-builder_archive-2026-05-10/packages/shared/src/schemas/iteration-pipeline.ts)
+   - [`iteration-archive.ts`](../../monoceros-for-solution-builder_archive-2026-05-10/apps/api/src/lib/iteration-archive.ts)
+     — ist DB-Persistenz, **wird ersetzt**; nicht übernehmen, nur als
+     Referenz für die Datenstruktur lesen
+
+**Geänderter Kontext seit der ursprünglichen Skizze:**
+
+- Egress-Filter ist default-off (ADR 0002). Claude im Container hat
+  freies Internet — keine Allowlist-Sorgen für API-Calls aus der
+  Pipeline.
+- Runtime-Image `monoceros-runtime:dev` hat `claude` (Anthropic CLI)
+  preinstalled. Die Orchestrator-Phasen können verlässlich auf
+  `claude --print …` ausführen (oder via SDK, siehe Design-Frage).
+- `monoceros run -- <cmd>` läuft als saubere Schale für Subprocess-
+  Aufrufe in den Container, falls die Orchestrator-Steuerung von
+  außerhalb stattfindet.
+- Solution-Layout: `.monoceros/stack.json` existiert. Findings/Concerns/
+  Risks kommen daneben als neue Sub-Folders, müssen mit dem
+  `monoceros add-service`/`add-language`-Mutator koexistieren (der
+  regeneriert heute nur `.devcontainer/` und `stack.json`, lässt
+  alles andere unter `.monoceros/` in Ruhe — verifiziert vor
+  Schreib-Operationen).
+- VS-Code-Claude-Extension nutzt `@anthropic-ai/claude-agent-sdk`,
+  nicht das `claude`-Binary (entdeckt bei M1 Stage D). Relevant für
+  die Design-Frage unten.
+
+**Design-Fragen, die VOR Task 1 entschieden werden sollten** (jeweils
+mit ADR-Eintrag als Output):
+
+1. **Claude-Invocation-Mechanismus**: `claude --print …` (matches
+   Archiv) vs. `@anthropic-ai/claude-agent-sdk` (Programmatic
+   Agent-SDK, neueres Tool von Anthropic). Trade-off: CLI ist
+   simpler und kennen wir, SDK ist näher an der Zukunft von Claude
+   Code und gibt mehr Kontrolle (Tool-Hooks, Streaming, Session-
+   Management). Empfehlung: erst SDK-Doku lesen, dann entscheiden.
+2. **Wo läuft der Orchestrator**: im Container (über
+   `monoceros run`) oder am Host (CLI-Prozess im Workbench-Repo,
+   spawnt Claude im Container)? Konzept sagt „in der Devcontainer-
+   Sandbox" — beim Plugin-Pfad (Slash-Command in Claude Code)
+   läuft Claude Code _selbst_ im Container, also Plugin-Code auch.
+   Beim CLI-Bridge-Pfad gibt's beide Optionen. Implikation für
+   Pfad-Auflösung, Auth, Logging.
+3. **Plugin- vs. CLI-Primat**: das Konzept will beide (Slash-Command
+   und `monoceros iterate`). Welches wird zuerst gebaut? Der
+   _Plugin-Pfad_ ist näher am UX-Versprechen („Claude-Code-Plugin"
+   im Konzept-Titel) und treibt API-Annahmen klarer raus. CLI-
+   Bridge ist dünn drauf zu bauen wenn das Plugin steht.
+4. **Findings-Schema-Validierung**: Zod-Schemas werden aus
+   Archiv übernommen. Vorher prüfen ob die Feld-Namen noch zur
+   neuen Konzept-Sprache passen (`severity`, `status: jetzt|später|verworfen`,
+   `source-iteration`, `defer`-Kategorie).
+
+**Erster konkreter Code-Schritt** (sobald Design-Fragen geklärt):
+Workspace-Paket `packages/core` anlegen (analog zu `packages/cli`:
+`package.json`, `tsconfig.json`, `vitest.config.ts`,
+`src/index.ts`). Erst leeres Gerüst, in pnpm-Workspace einhängen,
+Vitest-Smoke-Test laufen, committen. Dann inkrementell die
+iteration-prompts portieren.
+
 ### Tasks
 
 1. **`packages/core` extrahieren** — Iteration-Prompts (Planner,
