@@ -209,19 +209,28 @@ monoceros start && monoceros run -- claude --version`. Egress
    GitHub-Actions-Workflow für reproducible builds. Default-Template
    zeigt nach Push auf den GHCR-Tag.
 
-9. **Verifikation auf den realen Nutzungspfaden** — Test, dass dasselbe
-   Projekt in den IDE-Pfaden funktioniert, die wir tatsächlich
-   benutzen: (a) VS Code Dev Containers Standalone, (b) Claude Code
-   als VS Code-Extension im Dev Container, (c) Claude Code im
-   Terminal (bereits durch C.7/C.8 abgedeckt), (d) Claude Desktop —
-   erkundet. Cursor wird ausgeklammert, kein aktiver Einsatz; kommt
-   wieder rein wenn jemand es nutzt. Generierte `devcontainer.json`
-   bekommt dazu `customizations.vscode.extensions:
-["anthropic.claude-code"]` — Auto-Install der Extension im
-   Container, damit der VS-Code-Pfad ohne manuelles Nachinstallieren
-   läuft. Schritt-für-Schritt-Plan in
-   [Stage D des Test-Plans](test-plan.md). Manuelle Test-Arbeit, kein
-   Code-Output außer der Extension-Voreinstellung.
+9. ✅ **Verifikation auf den realen Nutzungspfaden** — am 2026-05-11
+   end-to-end durchgegangen (Stage D im Test-Plan).
+   - **VS Code Dev Containers Standalone**: funktioniert nach
+     Egress-Default-off + Image-Rebuild. „Reopen in Container"
+     bringt Workspace + Services hoch, Terminal im Container ist als
+     `node` drin, Files werden bidirektional gespiegelt.
+   - **Claude Code als VS Code-Extension**: durch
+     `customizations.vscode.extensions: ["anthropic.claude-code"]`
+     automatisch im Container installiert. Auth läuft analog zur
+     Terminal-CLI über den `~/.claude`-Bind-Mount (einmaliger
+     macOS-Keychain-OAuth-Flow, danach sticky).
+   - **Claude Code im Terminal**: über `monoceros run -- claude …`
+     oder `monoceros shell` bereits in Stage C bestätigt.
+   - **Claude Desktop / Remote Control**: die claude.ai-URL klappt
+     auf Smartphone (native App) und im Browser. Die Anthropic-
+     Desktop-App öffnet die URL aktuell nicht selbst — Limitation
+     der App, kein Container- oder Monoceros-Problem.
+   - **Cursor**: bewusst ausgeklammert (kein aktiver Einsatz).
+
+   Code-Outcome aus diesem Task: Auto-Install-Liste in
+   `customizations.vscode.extensions` (`anthropic.claude-code`).
+
 10. **Auth-Smoke-Test** — neues Projekt aus Null, ohne API-Key in ENV,
     nur Bind-Mount-Auth: `claude` im Container muss out-of-the-box mit
     dem Host-Account arbeiten. Auf zwei verschiedenen Rechnern
@@ -229,12 +238,27 @@ monoceros start && monoceros run -- claude --version`. Egress
 
 ### Definition of Done
 
-- `monoceros create demo --services=postgres && cd demo && monoceros shell`
-  geht in unter 60s durch, Container ist drin, Claude funktioniert
-- Postgres im Compose-Setup läuft, ist von innen erreichbar
-- Reset (`docker compose down -v`) räumt sauber auf
-- Eigenes Runtime-Image mit aktiver Egress-Whitelist, lokal verfügbar
-  (8a + 8b). Public-Push (8c) optional bis zum Public-Release
+- ✅ `monoceros create demo --services=postgres && cd demo && monoceros start && monoceros run -- claude --version`
+  geht durch, Workspace + Services laufen, Claude antwortet
+- ✅ Postgres im Compose-Setup läuft, ist von innen via Hostname
+  `postgres` erreichbar
+- ✅ Reset über `monoceros down --volumes` räumt sauber auf
+- ✅ Eigenes Runtime-Image lokal verfügbar (8a + 8b). Egress-
+  Enforcement liegt im Image, ist aber **default-off** (siehe
+  ADR 0002). Multi-Arch-Publish (8c) erst vor Public-Release nötig.
+- ✅ VS Code Dev Container + Claude-Code-VS-Code-Extension
+  reproduzierbar funktionsfähig (Task 9)
+
+**Funktional ist M1 damit durch.** Offen bleiben:
+
+- **Task 8c (GHCR-Publish)** — Multi-Arch-Image auf
+  `ghcr.io/kamann/monoceros-runtime:dev`. Gehört vor Public-Release
+  oder Multi-Builder-Setup; heute kein Block, weil Builder selbst
+  `pnpm image:build` ausführen.
+- **Task 10 (Auth-Smoke zweiter Rechner)** — Verifikation, dass eine
+  zweite Maschine ohne API-Key in ENV nur über Bind-Mount-Auth
+  hochkommt. Heute auf einem Rechner bestätigt; zweite Maschine
+  „wenn möglich", kein hartes Gate.
 
 ### Bewusst nicht in M1
 
