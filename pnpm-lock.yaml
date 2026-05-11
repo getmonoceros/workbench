@@ -70,6 +70,18 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@22.19.18)(tsx@4.21.0)(yaml@2.8.4)
 
+  packages/core:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.18
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@22.19.18)(tsx@4.21.0)(yaml@2.8.4)
+
 packages:
 
   '@devcontainers/cli@0.86.1':

@@ -1,0 +1,19 @@
+{
+  "name": "@monoceros/core",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "description": "Monoceros core — iteration prompts, schemas, orchestrator, findings store.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
