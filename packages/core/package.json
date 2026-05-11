@@ -17,6 +17,7 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.138",
     "zod": "^4.4.3"
   }
 }
