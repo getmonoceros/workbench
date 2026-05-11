@@ -311,28 +311,35 @@ geklärt werden sollte:
 **Design-Fragen, die VOR Task 1 entschieden werden sollten** (jeweils
 mit ADR-Eintrag als Output):
 
-1. **Claude-Invocation-Mechanismus**: `claude --print …` (matches
-   Archiv) vs. `@anthropic-ai/claude-agent-sdk` (Programmatic
-   Agent-SDK, neueres Tool von Anthropic). Trade-off: CLI ist
-   simpler und kennen wir, SDK ist näher an der Zukunft von Claude
-   Code und gibt mehr Kontrolle (Tool-Hooks, Streaming, Session-
-   Management). Empfehlung: erst SDK-Doku lesen, dann entscheiden.
-2. **Wo läuft der Orchestrator**: im Container (über
-   `monoceros run`) oder am Host (CLI-Prozess im Workbench-Repo,
-   spawnt Claude im Container)? Konzept sagt „in der Devcontainer-
-   Sandbox" — beim Plugin-Pfad (Slash-Command in Claude Code)
-   läuft Claude Code _selbst_ im Container, also Plugin-Code auch.
-   Beim CLI-Bridge-Pfad gibt's beide Optionen. Implikation für
-   Pfad-Auflösung, Auth, Logging.
-3. **Plugin- vs. CLI-Primat**: das Konzept will beide (Slash-Command
-   und `monoceros iterate`). Welches wird zuerst gebaut? Der
-   _Plugin-Pfad_ ist näher am UX-Versprechen („Claude-Code-Plugin"
-   im Konzept-Titel) und treibt API-Annahmen klarer raus. CLI-
-   Bridge ist dünn drauf zu bauen wenn das Plugin steht.
-4. **Findings-Schema-Validierung**: Zod-Schemas werden aus
-   Archiv übernommen. Vorher prüfen ob die Feld-Namen noch zur
-   neuen Konzept-Sprache passen (`severity`, `status: jetzt|später|verworfen`,
-   `source-iteration`, `defer`-Kategorie).
+1. ✅ **Claude-Invocation-Mechanismus** — entschieden 2026-05-11:
+   `@anthropic-ai/claude-agent-sdk`, nicht `claude --print`. Grund:
+   eingebautes JSON-Schema-Enforcement (`outputFormat`) ersetzt den
+   manuellen Parse-und-Zod-Schritt aus dem Archiv, typed Tool-
+   Whitelists, File-Checkpointing für „Reviewer rejected →
+   rewind". Provider-Wechsel (opencode) ist explizit out-of-scope;
+   stattdessen wird der SDK-Aufruf an einer Stelle in
+   `packages/core` gekapselt. Details in
+   [ADR 0003](adr/0003-claude-invocation-via-agent-sdk.md).
+2. ✅ **Orchestrator-Standort** — entschieden 2026-05-11: läuft im
+   Devcontainer, nicht am Host. Workbench-weite Invariante: am Host
+   passiert nur Container-Steuerung (`monoceros create/shell/start/…`),
+   keine inhaltliche Arbeit am Solution-Repo. Details in
+   [ADR 0004](adr/0004-orchestrator-und-plugin-im-devcontainer.md).
+3. ✅ **Plugin- vs. CLI-Primat** — entschieden 2026-05-11: das
+   Claude-Code-Plugin ist der primäre und einzige Eingang in M2.
+   `monoceros iterate` als CLI-Bridge ist out-of-scope und wandert
+   in „Vorgemerkt für später", weil ein nachgezogener Wrapper über
+   `monoceros run -- …` trivial ist, sobald das Plugin sich bewährt
+   hat. Details in
+   [ADR 0004](adr/0004-orchestrator-und-plugin-im-devcontainer.md).
+4. ✅ **Findings-Schema-Sprache** — entschieden 2026-05-11: Zod-
+   Schemas werden aus dem Archiv portiert, vor dem Übernehmen
+   gegen die neue Konzept-Sprache geprüft. Anzupassen mindestens:
+   `status: jetzt|später|verworfen` (Konzept-Sprache aus
+   [`konzept.md`](konzept.md), nicht `open/closed`), `sourceIteration`
+   als Referenz auf den Iteration-Audit-Trail, `severity` und
+   `recommendation` direkt aus dem Archiv. Konkrete Feld-Inventur
+   passiert inline mit M2 Task 2.
 
 **Erster konkreter Code-Schritt** (sobald Design-Fragen geklärt):
 Workspace-Paket `packages/core` anlegen (analog zu `packages/cli`:
@@ -364,17 +371,14 @@ iteration-prompts portieren.
    `/iterate <prompt>` (ruft Orchestrator), `/findings [--status=open]`,
    `/triage` (interaktiv pro Item: jetzt/später/verworfen), `/defer
 "<text>"` (manuelles Capture).
-6. **CLI-Bridge** — `monoceros iterate "<prompt>"` als CLI-Variante des
-   Slash-Commands für Builder ohne Claude-Code-UI. Selber Code-Pfad,
-   andere Trigger-Schicht.
-7. **Live-App-Probe automatisiert** — der Reviewer probt heute
+6. **Live-App-Probe automatisiert** — der Reviewer probt heute
    `curl localhost:3000/...` von innerhalb des Containers. Aus dem
    Archiv den entsprechenden Block übernehmen, Container-internen Probe
    hinzufügen.
-8. **Erste echte Solution damit bauen** — _eigene_ Solution, nicht
+7. **Erste echte Solution damit bauen** — _eigene_ Solution, nicht
    Studio-Hummel-Demo. Etwas, das du wirklich brauchst. 3 Iterationen
    mindestens.
-9. **Validation-Check nach Solution 1** — `.monoceros/findings/` öffnen,
+8. **Validation-Check nach Solution 1** — `.monoceros/findings/` öffnen,
    ehrlich bewerten: 15-20 echte Items mit Triage-Wert? Oder
    nichtssagende Stichworte? Entscheidung über M3-Start hängt davon ab.
 
@@ -393,6 +397,9 @@ iteration-prompts portieren.
 - Multi-Solution-Aggregat-Sicht
 - Cross-Solution-Patterns
 - Externe Tracking-Anbindung — das ist M3
+- `monoceros iterate`-CLI-Bridge — Plugin ist der einzige Eingang
+  (siehe [ADR 0004](adr/0004-orchestrator-und-plugin-im-devcontainer.md)).
+  Falls später nachgezogen, als dünner Wrapper über `monoceros run --`.
 
 ---
 
@@ -507,6 +514,14 @@ Konfiguration) könnten je nach Reife mit reingezogen werden.
 
 Items die jetzt nicht eingeplant sind, aber bewusst getrackt:
 
+- **`monoceros iterate`-CLI-Bridge** — alternative Eingangs-Schicht
+  zum Plugin. Aus M2 rausgeschnitten weil der Plugin-Pfad alleine
+  trägt (siehe [ADR 0004](adr/0004-orchestrator-und-plugin-im-devcontainer.md)).
+  Wenn ein Builder das Plugin _nicht_ nutzen will (z. B. headless
+  CI-Run, Skript-Pipeline), wird die CLI-Bridge zum dünnen Wrapper:
+  `monoceros run -- node /path/to/orchestrator-entry.js "<prompt>"`.
+  Trigger zum Reaktivieren: erster realistischer Anwendungsfall
+  ohne interaktiven Claude-Code-Client.
 - **Multi-Solution-Aggregat-View** — `monoceros backlog --all`, das
   konfigurierte Solution-Ordner durchsucht und Findings global zeigt.
   Sobald 4+ aktive Solutions zeigen, ob das wirklich Wert hat.
