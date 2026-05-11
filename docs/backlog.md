@@ -350,31 +350,37 @@ iteration-prompts portieren.
 
 ### Tasks
 
-1. **`packages/core` extrahieren** — Iteration-Prompts (Planner,
-   Generator, Reviewer) aus dem Archiv übernehmen, **Stack-agnostisch
-   umschreiben**: keine Drizzle/Zod/Vite-Annahmen mehr, stattdessen
-   „lies 3-5 repräsentative Files, identifiziere Conventions, folge
-   ihnen". Architecture-Philosophy-Block bleibt 1:1.
-2. **Schemas in `packages/core/schemas`** — `IterationPlan`,
-   `GeneratorReport`, `ReviewReport` als Zod-Schemas (Single Source of
-   Truth). Aus Archiv übernehmen, prüfen ob alle Felder noch passen.
-3. **Orchestrator extrahieren** — die 3-Phasen-Sequenz aus
-   `iteration-orchestrator.ts` ins `packages/core` portieren.
-   DB-Persistenz raus, File-Append als Persistenz-Adapter rein. Multi-Turn
-   in Phase 2 (`--resume <session_id>`) erhalten.
-4. **`packages/adapter-local`** — implementiert ein einfaches
-   `FindingsStore`-Interface: `appendFinding`, `appendConcern`,
-   `appendRisk`, `listOpen`, `markStatus(id, jetzt|später|verworfen)`.
-   Schreibt nach `.monoceros/findings/<timestamp>-<slug>.md` etc. mit
-   YAML-Frontmatter (id, severity, status, source-iteration, …).
-5. **`packages/plugin`** — Claude-Code-Plugin-Manifest. Slash-Commands:
-   `/iterate <prompt>` (ruft Orchestrator), `/findings [--status=open]`,
-   `/triage` (interaktiv pro Item: jetzt/später/verworfen), `/defer
-"<text>"` (manuelles Capture).
-6. **Live-App-Probe automatisiert** — der Reviewer probt heute
-   `curl localhost:3000/...` von innerhalb des Containers. Aus dem
-   Archiv den entsprechenden Block übernehmen, Container-internen Probe
-   hinzufügen.
+1. ✅ **`packages/core` extrahieren** — Iteration-Prompts portiert und
+   Stack-agnostisch umgeschrieben (Drizzle/Tailwind/shadcn-Annahmen
+   raus, „lies Manifest-Files, identifiziere Conventions"-Modell
+   rein). 12 Tests; siehe commit `4895d13`.
+2. ✅ **Zod-Schemas** — `IterationPlan`, `GeneratorReport`,
+   `ReviewReport` mit Zod 4 portiert; `z.toJSONSchema()`-Output
+   verifiziert für die SDK-`outputFormat`-Verwendung; zwei
+   Sprach-Anpassungen (`existing_requirement` statt `flow_requirement`,
+   `infra`/`tests` statt `migration`). 14 Tests; commit `8701cb3`.
+3. ✅ **Orchestrator extrahieren** — `runPhase()` als einzelner
+   SDK-Touchpoint (commit `1b8372e`, 18 Tests) und
+   `runIterationPipeline()` als 3-Phasen-Komposit mit Rewind-bei-reject
+   (commit `ce3fc4e`, 16 Tests).
+4. ✅ **`packages/adapter-local`** — FindingsStore-Interface in
+   `@monoceros/core/persistence` + Markdown-Persistierung unter
+   `.monoceros/{findings,concerns,risks}/<id>.md` plus
+   JSON-Audit-Trail unter `.monoceros/iterations/<id>.json`. 26 Tests;
+   commit `d6c8855`.
+5. ✅ **`packages/plugin`** — Claude-Code-Plugin-Manifest +
+   Slash-Commands `/iterate`, `/findings`, `/triage`, `/defer` + Node-CLI
+   `monoceros-plugin` (citty-basiert) als gemeinsamer Bash-Entrypoint
+   der Slash-Commands. 21 Tests; commit `41156ba`.
+6. **Plugin-Distribution für Task 7** — minimaler Pfad, damit die
+   interaktive Claude-Code-Session im Devcontainer das Plugin sieht und
+   `monoceros-plugin` in der `PATH` ist. Konkret: Workbench-Repo als
+   Bind-Mount in den Devcontainer, Slash-Command-Markdowns aus
+   `packages/plugin/commands/` ins solution-lokale
+   `.claude/commands/` kopieren beim `monoceros create`,
+   `post-create.sh` registriert `monoceros-plugin` im PATH. Tests
+   für die `create`-Side-Änderungen. **Bewusst minimal** — saubere
+   GHCR-Publish-Variante kommt mit M4.
 7. **Erste echte Solution damit bauen** — _eigene_ Solution, nicht
    Studio-Hummel-Demo. Etwas, das du wirklich brauchst. 3 Iterationen
    mindestens.
@@ -390,6 +396,13 @@ iteration-prompts portieren.
 - `/triage` markiert Items, die Markdown-File-Änderungen sind im git-Diff
   sichtbar
 - Solution mit ≥3 Iterationen lebt und ist nutzbar
+
+**Bewusst nicht mehr in M2:** Orchestrator-Side Live-App-Probe als
+deterministischer HTTP-Check zwischen Generator und Reviewer. Die
+ursprüngliche Idee aus dem Archiv hatte Vite/Fastify-Ports hardgecodet
+— stack-agnostisch ist sie nur sinnvoll baubar, wenn wir wissen,
+welche Probe-Form in der Praxis Wert hat. Verschoben in „Vorgemerkt
+für später" mit klarer Reaktivierungs-Bedingung.
 
 ### Bewusst nicht in M2
 
@@ -514,6 +527,19 @@ Konfiguration) könnten je nach Reife mit reingezogen werden.
 
 Items die jetzt nicht eingeplant sind, aber bewusst getrackt:
 
+- **Orchestrator-Side Live-App-Probe** — ursprünglich M2 Task 6.
+  Idee: nach Phase 2 ein deterministischer HTTP-Check vom Pipeline-
+  Code selbst, damit „Lügen im Generator-Report bringen nichts". Das
+  Archiv hatte Vite/Fastify-Ports (3000/4000) hardgecodet — stack-
+  agnostisch ist es nur sinnvoll baubar, wenn wir wissen, wie die
+  Solution ihre Endpunkte deklariert. Drei Optionen wurden bewertet
+  (Builder-Vorab-Deklaration in `stack.json`, Generator-deklarierte
+  Probes im Report, TCP-Liveness-Check auf `forwardPorts`) — alle
+  haben Schwächen ohne empirische Begründung. Reaktivierungs-Trigger:
+  M2-Task 7 zeigt, dass Claude die App-Liveness in Generator- oder
+  Reviewer-Report fälscht. Dann ist klar, welche Form die Probe haben
+  muss. Bis dahin verlassen wir uns auf den Reviewer-Agent, der seine
+  curl-Probes via Bash-Tool selbst macht (siehe Reviewer-Prompt).
 - **`monoceros iterate`-CLI-Bridge** — alternative Eingangs-Schicht
   zum Plugin. Aus M2 rausgeschnitten weil der Plugin-Pfad alleine
   trägt (siehe [ADR 0004](adr/0004-orchestrator-und-plugin-im-devcontainer.md)).

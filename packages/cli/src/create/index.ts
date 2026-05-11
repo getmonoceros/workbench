@@ -6,6 +6,7 @@ import {
   buildDevcontainerJson,
   buildReadmeStub,
   buildStackJson,
+  copyPluginCommands,
   copyPostCreateScript,
   needsCompose,
   normalizeOptions,
@@ -91,6 +92,8 @@ export async function runCreate(
   );
 
   await fs.writeFile(path.join(targetDir, 'README.md'), buildReadmeStub(opts));
+
+  await copyPluginCommands(targetDir);
 
   logger.success(`Created solution ${opts.name} at ${targetDir}.`);
   return { status: 'created', targetDir };

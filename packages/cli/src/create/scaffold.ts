@@ -7,6 +7,7 @@ import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
   SERVICE_CATALOG,
+  WORKBENCH_CONTAINER_PATH,
   knownLanguages,
   knownServices,
 } from './catalog.js';
@@ -41,6 +42,14 @@ function findRepoRoot(): string {
 
 export function defaultTemplateDir(): string {
   return path.join(findRepoRoot(), 'templates', 'default');
+}
+
+export function workbenchRoot(): string {
+  return findRepoRoot();
+}
+
+export function pluginCommandsDir(): string {
+  return path.join(findRepoRoot(), 'packages', 'plugin', 'commands');
 }
 
 export function validateOptions(opts: CreateOptions): void {
@@ -169,6 +178,7 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     remoteUser: 'node',
     mounts: [
       'source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,consistency=cached',
+      `source=${workbenchRoot()},target=${WORKBENCH_CONTAINER_PATH},type=bind,consistency=cached`,
     ],
     runArgs: ['--cap-add=NET_ADMIN'],
     forwardPorts: [3000, 4000],
@@ -195,6 +205,7 @@ export function buildComposeYaml(opts: CreateOptions): string {
   lines.push('    volumes:');
   lines.push(`      - ..:/workspaces/${opts.name}:cached`);
   lines.push('      - ${HOME}/.claude:/home/node/.claude');
+  lines.push(`      - ${workbenchRoot()}:${WORKBENCH_CONTAINER_PATH}:cached`);
 
   const namedVolumes: string[] = [];
   for (const svcId of opts.services) {
@@ -280,4 +291,25 @@ export async function copyPostCreateScript(
   const dest = path.join(devcontainerDir, 'post-create.sh');
   await fs.copyFile(src, dest);
   await fs.chmod(dest, 0o755);
+}
+
+/**
+ * Copies the workbench plugin's slash-command markdowns into the
+ * solution's `.claude/commands/` directory. Claude Code picks up
+ * project-level commands from there, so the Builder gets `/iterate`,
+ * `/findings`, `/triage` and `/defer` without any extra wiring.
+ *
+ * Pairs with the workbench bind-mount: the markdowns invoke
+ * `monoceros-plugin <subcommand>`, which post-create.sh symlinks into
+ * `/usr/local/bin/` so it's on PATH.
+ */
+export async function copyPluginCommands(targetDir: string): Promise<void> {
+  const src = pluginCommandsDir();
+  const dest = path.join(targetDir, '.claude', 'commands');
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src);
+  for (const entry of entries) {
+    if (!entry.endsWith('.md')) continue;
+    await fs.copyFile(path.join(src, entry), path.join(dest, entry));
+  }
 }

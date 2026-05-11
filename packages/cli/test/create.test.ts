@@ -223,6 +223,70 @@ describe('runCreate', () => {
     ).rejects.toThrow(/Unknown service: mongodb/);
   });
 
+  it('bind-mounts the workbench into the image-mode container', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      { ...baseRunOpts, cwd },
+    );
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(cwd, 'demo', '.devcontainer', 'devcontainer.json'),
+        'utf8',
+      ),
+    );
+    const mounts = devcontainer.mounts as string[];
+    const workbenchMount = mounts.find((m) =>
+      m.includes('target=/opt/monoceros-workbench'),
+    );
+    expect(workbenchMount).toBeDefined();
+    expect(workbenchMount).toMatch(/^source=\//);
+    expect(workbenchMount).toContain('type=bind');
+  });
+
+  it('bind-mounts the workbench in compose mode as a workspace volume', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: ['postgres'] },
+      { ...baseRunOpts, cwd },
+    );
+    const compose = await readFile(
+      path.join(cwd, 'demo', '.devcontainer', 'compose.yaml'),
+      'utf8',
+    );
+    expect(compose).toMatch(/^\s+- \/.+:\/opt\/monoceros-workbench:cached$/m);
+  });
+
+  it('copies the plugin slash-command markdowns into .claude/commands/', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      { ...baseRunOpts, cwd },
+    );
+    const cmdDir = path.join(cwd, 'demo', '.claude', 'commands');
+    const entries = await fs.readdir(cmdDir);
+    expect(entries.sort()).toEqual([
+      'defer.md',
+      'findings.md',
+      'iterate.md',
+      'triage.md',
+    ]);
+    // Spot-check that the iterate command references the right CLI binary
+    const iterate = await readFile(path.join(cmdDir, 'iterate.md'), 'utf8');
+    expect(iterate).toContain('monoceros-plugin iterate');
+  });
+
+  it('post-create.sh wires monoceros-plugin into PATH', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      { ...baseRunOpts, cwd },
+    );
+    const postCreate = await readFile(
+      path.join(cwd, 'demo', '.devcontainer', 'post-create.sh'),
+      'utf8',
+    );
+    expect(postCreate).toContain('/opt/monoceros-workbench');
+    expect(postCreate).toContain('/usr/local/bin/monoceros-plugin');
+    expect(postCreate).toContain('node_modules/.bin/monoceros-plugin');
+  });
+
   it('rejects invalid solution names', async () => {
     await expect(
       runCreate(

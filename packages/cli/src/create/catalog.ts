@@ -11,6 +11,12 @@
 // switch this to `ghcr.io/kamann/monoceros-runtime:<tag>`.
 export const BASE_IMAGE = 'monoceros-runtime:dev';
 
+// Container-side path where the workbench repo is bind-mounted so the
+// solution's devcontainer can find @monoceros/plugin and its slash
+// commands. Distribution is M4-scoped — this approach (bind-mount the
+// dev checkout) is the MVP for M2 Task 7. See backlog.
+export const WORKBENCH_CONTAINER_PATH = '/opt/monoceros-workbench';
+
 export interface LanguageEntry {
   id: string;
   feature: string;
