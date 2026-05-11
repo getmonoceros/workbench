@@ -3,26 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  extractInnerCommand,
-  runInContainer,
-} from '../src/devcontainer/run.js';
-
-describe('extractInnerCommand', () => {
-  it('returns the slice after the first `--`', () => {
-    expect(
-      extractInnerCommand(['--project=foo', '--', 'ls', '-la', '/tmp']),
-    ).toEqual(['ls', '-la', '/tmp']);
-  });
-
-  it('returns an empty array when `--` is missing', () => {
-    expect(extractInnerCommand(['--project=foo'])).toEqual([]);
-  });
-
-  it('returns an empty array when `--` is the last token', () => {
-    expect(extractInnerCommand(['--project=foo', '--'])).toEqual([]);
-  });
-});
+import { runInContainer } from '../src/devcontainer/run.js';
 
 describe('runInContainer', () => {
   let root: string;

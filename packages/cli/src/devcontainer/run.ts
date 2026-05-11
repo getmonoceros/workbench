@@ -39,13 +39,3 @@ export async function runInContainer(
 
   return spawnFn(['exec', '--workspace-folder', root, ...opts.command], root);
 }
-
-// Pull everything after the first `--` from the raw argv. Required because
-// citty parses unknown flags (e.g. `-la`) into named args otherwise; users
-// must use `--` to mark the boundary between monoceros flags and the inner
-// command.
-export function extractInnerCommand(rawArgs: string[]): string[] {
-  const idx = rawArgs.indexOf('--');
-  if (idx === -1) return [];
-  return rawArgs.slice(idx + 1);
-}
