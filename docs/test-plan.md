@@ -29,7 +29,7 @@ Bugs, die der erste Walkthrough gefunden und behoben hat:
 
 ## Stages
 
-Vier Stufen, in absteigender Reihenfolge der Erreichbarkeit:
+Fünf Stufen, in absteigender Reihenfolge der Erreichbarkeit:
 
 - **A — CLI-Surface**: nur Node, sonst nichts. Verifiziert dass das CLI
   gebaut ist.
@@ -41,16 +41,21 @@ Vier Stufen, in absteigender Reihenfolge der Erreichbarkeit:
   Nutzungspfade — VS Code Dev Containers, Claude Code als VS Code-
   Extension, Claude Desktop. Cursor wird ausgeklammert (nicht im
   Einsatz).
+- **E — M2 Pipeline-End-to-End**: die komplette Strecke von Solution-
+  Anlage bis zur dritten Iteration mit `/iterate`, `/findings`,
+  `/triage`, `/defer`. Verifiziert die M2-Tooling-Phase und führt
+  zur Validation-Hypothesen-Bewertung (konzept.md). Braucht echten
+  Anthropic-Account.
 
 ## Voraussetzungen
 
-| Was                                                                                          | Wozu                                             |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Node ≥ 20, pnpm 11                                                                           | Das Workbench-Repo selbst                        |
-| `pnpm install` einmalig im Repo gelaufen                                                     | Setup vor allem anderen                          |
-| Docker Desktop (oder Docker Engine + Compose v2)                                             | Nur für Stage C                                  |
-| Runtime-Image lokal gebaut: `pnpm image:build` (alias `pnpm image:rebuild` für `--no-cache`) | Wird vom Default-Template referenziert (Stage C) |
-| `claude login` auf dem Host (Subscription oder API-Key)                                      | Für die Auth-Probe in C.8                        |
+| Was                                                                                          | Wozu                                                 |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Node ≥ 20, pnpm 11                                                                           | Das Workbench-Repo selbst                            |
+| `pnpm install` einmalig im Repo gelaufen                                                     | Setup vor allem anderen                              |
+| Docker Desktop (oder Docker Engine + Compose v2)                                             | Nur für Stage C                                      |
+| Runtime-Image lokal gebaut: `pnpm image:build` (alias `pnpm image:rebuild` für `--no-cache`) | Wird vom Default-Template referenziert (Stage C)     |
+| `claude login` auf dem Host (Subscription oder API-Key)                                      | Für die Auth-Probe in C.8 und für Stage E (Pipeline) |
 
 ## Setup: `monoceros` lokal aufrufbar machen
 
@@ -312,8 +317,188 @@ Kombination Claude-Desktop-am-Host + manueller `monoceros shell` für
 container-bezogene Arbeit? Die Antwort dokumentieren wir hier nach
 dem Erkundungs-Lauf.
 
+## Stage E — M2 End-to-End: Plugin + Pipeline (manuell)
+
+Komplette Strecke von Null auf — Solution anlegen, Devcontainer
+starten, Slash-Commands ausführen, Findings triagieren. Verifiziert
+die M2-Tooling-Phase (Tasks 1–6).
+
+**Voraussetzungen zusätzlich zu Stage C:**
+
+| Was                                                  | Wozu                                                                                                                                                   |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm install` _einmalig im Workbench-Root gelaufen_ | Pflicht. Liefert die Workspace-Symlinks unter `node_modules/`, die der Devcontainer per Bind-Mount sieht                                               |
+| Linux-Platform-Binaries in `node_modules`            | Wird automatisch durch die `supportedArchitectures`-Config in `pnpm-workspace.yaml` mitgepullt — verifiziert via `ls node_modules/.pnpm \| grep linux` |
+| Anthropic-Account / API-Key                          | Pipeline ruft echte Claude-API auf (Plan/Generate/Review-Phasen). Subscription oder API-Key reicht                                                     |
+
+### Setup-Solution
+
+```sh
+mkdir -p .local/play && cd .local/play
+monoceros create stage-e-demo --languages=python --services=postgres
+cd stage-e-demo
+```
+
+### E.1 — Sichtkontrolle vor dem Start
+
+Erst die Files prüfen, ohne Docker.
+
+| ID    | Was                                         | Befehl                                                                 | Erwartet                                                                                                                                                 | Deckt                 |
+| ----- | ------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| E.1.1 | Workbench-Bind-Mount in `devcontainer.json` | `cat .devcontainer/devcontainer.json` (Image-Mode) bzw. `compose.yaml` | Eintrag mit absolutem Host-Pfad → `/opt/monoceros-workbench`, `type=bind`. Bei Compose: `- <abs>:/opt/monoceros-workbench:cached` im `workspace`-Service | Task 6 (Distribution) |
+| E.1.2 | Vier Slash-Command-Markdowns vorhanden      | `ls .claude/commands/`                                                 | `defer.md  findings.md  iterate.md  triage.md`                                                                                                           | Task 6                |
+| E.1.3 | Markdowns referenzieren die richtige CLI    | `grep monoceros-plugin .claude/commands/*.md`                          | Jede `.md` enthält genau einen `monoceros-plugin <subcommand>`-Aufruf                                                                                    | Task 6                |
+| E.1.4 | `post-create.sh` enthält Plugin-Wiring      | `cat .devcontainer/post-create.sh`                                     | Sektion mit `/opt/monoceros-workbench/node_modules/.bin/tsx` und `/usr/local/bin/monoceros-plugin`                                                       | Task 6                |
+
+**Fail-Bedeutung:**
+
+- E.1.1 fehlerhaft → `buildDevcontainerJson` / `buildComposeYaml`
+  haben den Mount nicht eingefügt; `findRepoRoot()` greift evtl. nicht
+- E.1.2/E.1.3 fehlerhaft → `copyPluginCommands` ist nicht aufgerufen
+  oder findet `packages/plugin/commands/` nicht
+- E.1.4 fehlerhaft → `templates/default/.devcontainer/post-create.sh`
+  ist nicht aktualisiert
+
+### E.2 — Container starten und Plugin-Verdrahtung verifizieren
+
+```sh
+monoceros start
+```
+
+Beim ersten Mal: Image-Pull + Postgres-Init + Python-Feature-Install.
+Kann 1–3 Minuten dauern. Im `postCreateCommand` wird unser Symlink
+gesetzt — schau, ob er da ist:
+
+| ID    | Was                                  | Befehl                                                                            | Erwartet                                                                                                                                                                                                        | Deckt  |
+| ----- | ------------------------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| E.2.1 | Workbench im Container sichtbar      | `monoceros run -- ls /opt/monoceros-workbench`                                    | Listing zeigt `packages/`, `templates/`, `docs/`, `node_modules/`, `pnpm-workspace.yaml` etc.                                                                                                                   | Task 6 |
+| E.2.2 | `tsx` im Container ausführbar        | `monoceros run -- /opt/monoceros-workbench/node_modules/.bin/tsx --version`       | Versions-Output von tsx, **Exit 0**. Falls Fehler über fehlendes `@esbuild/linux-…`: die `supportedArchitectures`-Konfig hat host-seitig nicht gegriffen — `rm -rf node_modules pnpm-lock.yaml && pnpm install` | Task 6 |
+| E.2.3 | `monoceros-plugin` in PATH           | `monoceros run -- which monoceros-plugin`                                         | `/usr/local/bin/monoceros-plugin`                                                                                                                                                                               | Task 6 |
+| E.2.4 | Plugin-CLI antwortet                 | `monoceros run -- monoceros-plugin --help`                                        | Hilfetext mit Subcommands `iterate`, `list`, `triage`, `defer`. Exit 0                                                                                                                                          | Task 5 |
+| E.2.5 | Plugin findet Solution-Root          | `monoceros run -- monoceros-plugin list`                                          | `No open items. Use \`--all\` to include triaged items.` — Pipeline ist noch nie gelaufen                                                                                                                       | Task 5 |
+| E.2.6 | Plugin verweigert außerhalb Solution | `monoceros run -- bash -c 'cd /opt/monoceros-workbench && monoceros-plugin list'` | Error: `Not inside a Monoceros solution — no .monoceros/ or .devcontainer/ found from ... upwards.`                                                                                                             | Task 5 |
+
+**Fail-Bedeutung:**
+
+- E.2.1 leeres Listing → Bind-Mount wirkt nicht; Docker-Desktop-
+  Datei-Sharing-Settings checken (macOS: das Workbench-Verzeichnis
+  muss unter "File sharing" gelistet sein)
+- E.2.2 fehlerhaft → `pnpm install` host-seitig hat `linux`-Platforms
+  nicht gepullt. Diagnose: `ls node_modules/.pnpm | grep linux`
+  zeigt sollte mindestens `@esbuild+linux-arm64` und `@esbuild+linux-x64`
+- E.2.3 fehlerhaft → `post-create.sh` lief mit Fehler oder Symlink-
+  Schreiben hat keine sudo-Rechte. Diagnose: `monoceros logs --service=workspace --no-follow | tail -30` zeigt post-create-Output
+- E.2.5 falsche Antwort (Crash o. Ä.) → typischerweise ein Import-
+  Fehler in `packages/plugin/src/`. Voll-Output via
+  `monoceros run -- monoceros-plugin list 2>&1`
+
+### E.3 — Erste echte Iteration via Slash-Command
+
+Hier wird's _real_: Claude öffnen, `/iterate` ausführen, Pipeline
+laufen lassen. **Zwei Wege**:
+
+**Weg A — Claude Code im Terminal:**
+
+```sh
+monoceros shell
+# im Container:
+claude
+```
+
+In der Claude-Code-CLI dann `/iterate "Add a CLI subcommand 'greet' that prints 'Hello'"`.
+
+**Weg B — VS Code Claude-Code-Extension:**
+
+`code .` host-seitig, „Reopen in Container", Extension öffnen, Slash-
+Command in deren UI absetzen.
+
+In beiden Fällen prüfst du:
+
+| ID    | Was                                            | Wie                                                                | Erwartet                                                                                                                                                                          | Deckt     |
+| ----- | ---------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| E.3.1 | Slash-Command wird gefunden                    | `/i<TAB>` in der Claude-Code-UI                                    | Autocomplete schlägt `/iterate` vor (oder eines der vier). Falls keines: project-level Command-Discovery von Claude Code zieht `.claude/commands/` nicht — Setup-Issue            | Task 5    |
+| E.3.2 | Pipeline läuft alle drei Phasen                | `/iterate "Add a Python CLI subcommand 'greet' that prints Hello"` | Output zeigt Phase-1 (Planner) → Phase-2 (Generator, Code-Edits) → Phase-3 (Reviewer). Mehrere Minuten möglich                                                                    | Task 3, 5 |
+| E.3.3 | Plugin-Output landet auf stdout                | Beobachten am Ende                                                 | Block in der Form: `Iteration <id>` + `recommendation: approve\|request_changes\|reject` + `tests: pass\|fail` + `rewound: yes\|no` + `appended: N findings, M concerns, K risks` | Task 5    |
+| E.3.4 | Iteration-Audit geschrieben                    | `monoceros run -- ls .monoceros/iterations/`                       | Eine `<id>.json`-Datei. `cat` zeigt das vollständige `plan`/`generatorReport`/`reviewReport`-JSON                                                                                 | Task 4, 5 |
+| E.3.5 | Findings/Concerns/Risks geschrieben (bei `ok`) | `monoceros run -- ls .monoceros/{findings,concerns,risks}/`        | Mindestens ein Item irgendwo (typischerweise mehrere Concerns + Risks aus Planner/Generator)                                                                                      | Task 4, 5 |
+| E.3.6 | Code wurde tatsächlich geschrieben             | `monoceros run -- bash -c 'ls -la src 2>/dev/null \|\| ls'`        | Neue/geänderte Dateien sichtbar. AC vom Prompt erfüllt: das `greet`-Subcommand sollte irgendwo existieren                                                                         | Task 3    |
+| E.3.7 | Test-Run lief (falls Tests im Setup)           | Sichtbar in `cat .monoceros/iterations/*.json \| jq .testRun`      | `executed: true, passed: N>0, failed: 0` bei `approve`. Bei `request_changes`/`reject`: passend zu Findings                                                                       | Task 3    |
+| E.3.8 | Bei `reject`: File-Rewind tatsächlich erfolgt  | `git diff` host-seitig (Solution-Repo war vor `/iterate` clean)    | Workspace ist auf Pre-Generator-State zurückgesetzt. Im Audit `rewound: true`. Falls clean-Workspace _und_ `rewound: false`: File-Checkpointing hat nicht gegriffen — Symptom-Bug | Task 3    |
+
+**Fail-Bedeutung:**
+
+- E.3.1 fehlerhaft → Claude Code findet das `.claude/commands/`-Dir
+  nicht. Häufige Ursache: Claude Code wurde aus dem _falschen_ Working-
+  Directory gestartet; muss aus dem Solution-Root sein. Alternative:
+  `~/.claude/commands/` user-level, kannst du als Workaround mounten
+- E.3.2 hängt → fehlende API-Auth. Diagnose: `claude --version` und
+  versuche `claude` direkt im Container. OAuth-Erst-Login wie in C.8
+- E.3.3 enthält Error → typischerweise SDK-API-Error. Diagnose:
+  `cat .monoceros/iterations/*.json | jq .errorSummary`
+- E.3.4 fehlt komplett → `runIterateCommand` ist nicht durchgelaufen;
+  `pnpm test --filter @monoceros/plugin` host-seitig prüfen ob Logik
+  intakt
+- E.3.8 falsch → File-Checkpointing-Pfad in
+  `packages/core/src/runtime/agent.ts` / `rewind.ts` debuggen
+
+### E.4 — Triage-Workflow
+
+Nachdem mindestens eine Iteration Items produziert hat:
+
+| ID    | Was                                   | Befehl                                                       | Erwartet                                                                                                                                              | Deckt  |
+| ----- | ------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| E.4.1 | `/findings` listet offene Items       | In Claude Code: `/findings`                                  | Markdown-Liste gruppiert nach `## Findings/Concerns/Risks` mit Tag-Summary `(status, severity, category, blocking)` pro Eintrag                       | Task 5 |
+| E.4.2 | Direkt-CLI dasselbe Ergebnis          | `monoceros run -- monoceros-plugin list`                     | Identische Ausgabe — die Slash-Command-`.md` ist nur ein dünner Wrapper                                                                               | Task 5 |
+| E.4.3 | Markdown-File für ein Item editierbar | Solution `.monoceros/findings/<id>.md` öffnen im Host-Editor | Frontmatter mit `id`, `kind`, `status: "open"`, `severity`, `category`, `sourceIteration`, `createdAt` etc. Body = die Message                        | Task 4 |
+| E.4.4 | `/triage <id> später` markiert        | In Claude Code: `/triage <id-aus-E.4.1> später`              | Output: `<id> marked as später (was open).`                                                                                                           | Task 5 |
+| E.4.5 | Markdown-Diff sichtbar in git         | `git diff .monoceros/`                                       | Nur die `status: "open"`-Zeile wurde durch `status: "später"` ersetzt; Body unverändert                                                               | Task 4 |
+| E.4.6 | `/findings` zeigt das Item nicht mehr | `/findings` erneut                                           | Triagiertes Item taucht nicht auf. `monoceros run -- monoceros-plugin list --all` zeigt es _doch_ mit `(später, …)`-Tag                               | Task 5 |
+| E.4.7 | `/triage` mit unbekannter Status      | `/triage <id> done`                                          | Error: `Invalid triage status "done". Use one of: jetzt, später, verworfen.`                                                                          | Task 5 |
+| E.4.8 | `/triage` mit unbekannter ID          | `/triage doesnt-exist jetzt`                                 | Error: `Item not found: doesnt-exist`                                                                                                                 | Task 5 |
+| E.4.9 | `/defer` schreibt manuellen Concern   | `/defer "Auth-Layer braucht Rate-Limiting"`                  | Neue `.monoceros/concerns/<timestamp>-<slug>.md` mit `sourceIteration: "manual"`, Output `Concern captured: <id>`. Taucht in nächstem `/findings` auf | Task 5 |
+
+### E.5 — Drei Iterationen + ehrliche Bewertung (Validation-Hypothese)
+
+Nach Stage E.4 hast du eine erste Iteration vollständig verstanden.
+Jetzt der echte Lakmus-Test: zwei weitere Iterationen am _selben_
+Projekt, dann ehrlich bewerten (konzept.md → „Validierungs-Hypothesen
+1+2").
+
+```sh
+# Iteration 2 (z. B. Erweiterung)
+/iterate "Make the greet command accept a name argument: greet <name> → 'Hello, <name>!'"
+# Iteration 3 (z. B. Bugfix oder Refactor)
+/iterate "Add unit tests for the greet command and make it case-insensitive"
+```
+
+Nach den drei Iterationen:
+
+| ID    | Frage (subjektiv, ehrlich)                                                                                       | Worauf achten                                                                                                               |
+| ----- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| E.5.1 | Sind die 15–20 Items unter `.monoceros/{findings,concerns,risks}/` _wirklich_ triage-würdig? Oder Rauschen?      | Hypothese 1 aus konzept.md. Wenn Rauschen: das Side-Topic-These ist eine Illusion und M3 (Tracking-Adapter) hat keinen Sinn |
+| E.5.2 | Wählt Claude Stack-Tooling sinnvoll? Tests im Test-Framework des Projekts, kein Drizzle in Python-Solution, etc. | Hypothese 2 aus konzept.md. Wenn nein: die Stack-agnostischen Prompts (Task 1) brauchen Schärfung                           |
+| E.5.3 | War mindestens eine Iteration mit `recommendation: "reject"`? Wurde tatsächlich rewound?                         | Verifiziert File-Checkpointing in echtem Einsatz. Falls _alle_ ‹approve›: vielleicht ist der Reviewer-Prompt zu lasch       |
+| E.5.4 | Hat Claude irgendwann _gelogen_ — Generator-Report sagt „tests grün, app läuft", aber App ist tot?               | Reaktivierungs-Trigger für die in „Vorgemerkt für später" liegende Orchestrator-Side Live-App-Probe (ehemals Task 6)        |
+| E.5.5 | Wie ist das UX-Gefühl? Slash-Command schnell genug? Output verständlich? Triage zäh?                             | Input für M3-Priorisierung und für eine spätere Triage-TUI-Entscheidung                                                     |
+
+**Output dieses Stages:** ein kurzes Bewertungs-Dokument (eigenständige
+Notiz, nicht hier inline) mit den Antworten auf E.5.1–E.5.5. _Das_ ist
+die Voraussetzung für M3-Start (siehe Backlog M3 Definition).
+
+### Aufräumen Stage E (vom Workbench-Root):
+
+```sh
+cd .local/play/stage-e-demo
+monoceros down --volumes
+cd ../../..
+rm -rf .local/play
+```
+
 ## Was bewusst noch nicht abgedeckt ist
 
-- Eigenes gehärtetes Runtime-Image, Multi-Arch via GHCR-Push → Task 8c
+- Eigenes gehärtetes Runtime-Image, Multi-Arch via GHCR-Push → M4
 - Cursor-Pfad — ausgeklammert, kein aktiver Einsatz
-- Auth-Smoke auf zweitem Rechner → Task 10
+- Auth-Smoke auf zweitem Rechner → M4
+- Saubere Plugin-Distribution ohne Bind-Mount-Krücke → M4
+- Orchestrator-Side Live-App-Probe → reaktivierbar via E.5.4-Befund
+  (siehe „Vorgemerkt für später" im Backlog)

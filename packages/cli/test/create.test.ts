@@ -273,7 +273,7 @@ describe('runCreate', () => {
     expect(iterate).toContain('monoceros-plugin iterate');
   });
 
-  it('post-create.sh wires monoceros-plugin into PATH', async () => {
+  it('post-create.sh wires monoceros-plugin into PATH via tsx', async () => {
     await runCreate(
       { name: 'demo', languages: [], services: [] },
       { ...baseRunOpts, cwd },
@@ -284,7 +284,8 @@ describe('runCreate', () => {
     );
     expect(postCreate).toContain('/opt/monoceros-workbench');
     expect(postCreate).toContain('/usr/local/bin/monoceros-plugin');
-    expect(postCreate).toContain('node_modules/.bin/monoceros-plugin');
+    expect(postCreate).toContain('node_modules/.bin/tsx');
+    expect(postCreate).toContain('packages/plugin/src/main.ts');
   });
 
   it('rejects invalid solution names', async () => {

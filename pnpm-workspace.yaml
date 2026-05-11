@@ -3,3 +3,16 @@ packages:
   - 'templates/*'
 allowBuilds:
   esbuild: true
+# Pull in linux platform binaries alongside the host's. The solution's
+# devcontainer bind-mounts this workbench checkout at
+# /opt/monoceros-workbench (see ADR 0004 + cli create wiring), so
+# `tsx` running inside a linux container needs its esbuild native
+# binary too. Without this, host-only fetches break the container.
+supportedArchitectures:
+  os:
+    - current
+    - linux
+  cpu:
+    - current
+    - x64
+    - arm64
