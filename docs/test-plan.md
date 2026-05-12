@@ -336,20 +336,20 @@ die M2-Tooling-Phase (Tasks 1–6).
 
 ```sh
 mkdir -p .local/play && cd .local/play
-monoceros create stage-e-demo --languages=python --services=postgres
-cd stage-e-demo
+monoceros create sandbox --languages=python --services=postgres
+cd sandbox
 ```
 
 **Schnellweg** beim wiederholten Stage-E-Durchlauf:
 
 ```sh
-pnpm stage-e:reset
+pnpm sandbox:reset
 ```
 
 Das Skript rebuildet das Runtime-Image (`--no-cache`), bringt eine
-vorhandene `stage-e-demo`-Solution sauber runter, scaffoldet sie
+vorhandene `sandbox`-Solution sauber runter, scaffoldet sie
 frisch (`--languages=node --services=postgres`) und ruft
-`monoceros start` auf. Source: [`scripts/stage-e-reset.sh`](../scripts/stage-e-reset.sh).
+`monoceros start` auf. Source: [`scripts/sandbox-reset.sh`](../scripts/sandbox-reset.sh).
 Idempotent — läuft auch sauber, wenn vorher gar nichts da war.
 
 ### E.1 — Sichtkontrolle vor dem Start
@@ -505,7 +505,7 @@ In beiden Wegen prüfst du:
 #### Reference iteration sequence
 
 Diese fünf Prompts wurden am 2026-05-11/12 in einer einzelnen
-Stage-E-Sitzung gegen einen bare `monoceros create stage-e-demo --languages=node --services=postgres`-Workspace gefahren. Sie bauen
+Stage-E-Sitzung gegen einen bare `monoceros create sandbox --languages=node --services=postgres`-Workspace gefahren. Sie bauen
 aufeinander auf — die Solution wächst von leer zu einer kleinen
 Node-CLI mit fünf Subcommands plus shared Validation-Helper. Jeder
 Prompt zielt auf einen anderen Aspekt der Pipeline. Beim Reset
@@ -618,7 +618,7 @@ die Voraussetzung für M3-Start (siehe Backlog M3 Definition).
 ### Aufräumen Stage E (vom Workbench-Root):
 
 ```sh
-cd .local/play/stage-e-demo
+cd .local/play/sandbox
 monoceros down --volumes
 cd ../../..
 rm -rf .local/play
