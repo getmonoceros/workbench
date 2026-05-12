@@ -126,7 +126,7 @@ describe('runIterateCommand — happy path', () => {
     }
   });
 
-  it('summarizes a successful outcome as Markdown', async () => {
+  it('summarizes a successful outcome as plain text with Unicode glyphs', async () => {
     const store = createLocalFindingsStore({ solutionRoot: fix.root });
     const successResult: IterationPipelineResult = {
       ok: true,
@@ -143,22 +143,31 @@ describe('runIterateCommand — happy path', () => {
       { pipeline: async () => successResult },
     );
     const text = summarizeOutcome(outcome);
-    expect(text).toMatch(/^## ✓ Iteration .* — \*\*approve\*\*/);
-    expect(text).toContain('**Plan**');
-    expect(text).toContain('**Generate**');
-    expect(text).toContain('**Review**');
-    expect(text).toContain('### Acceptance Criteria — 1/1 met');
-    expect(text).toContain('### Files changed');
-    expect(text).toContain('### Tests');
-    expect(text).toContain('### Captured');
+    // Headline: status glyph + iteration short id + recommendation, no Markdown markers
+    expect(text).toMatch(/^✓ Iteration .* — approve/);
+    expect(text).not.toContain('##');
+    expect(text).not.toContain('**');
+    // Phase metrics (per-line, padded)
+    expect(text).toContain('Plan');
+    expect(text).toContain('Generate');
+    expect(text).toContain('Review');
+    expect(text).toContain('Total');
+    // Sections
+    expect(text).toContain('Acceptance Criteria — 1/1 met');
+    expect(text).toContain('Files changed');
+    expect(text).toContain('Tests');
+    expect(text).toContain('Captured');
     expect(text).toContain('1 finding (1 low)');
     expect(text).toContain('2 concerns');
     expect(text).toContain('2 risks');
-    expect(text).toContain('### Reviewer');
+    expect(text).toContain('Reviewer');
     expect(text).toContain(reviewReport.summary);
+    // Footer
+    expect(text).toContain('audit');
+    expect(text).toContain('.monoceros/iterations/');
   });
 
-  it('shows the "rewound" section when the workspace was rewound', async () => {
+  it('shows the rewound section when the workspace was rewound', async () => {
     const store = createLocalFindingsStore({ solutionRoot: fix.root });
     const rejectReport: ReviewReport = {
       ...reviewReport,
@@ -179,8 +188,8 @@ describe('runIterateCommand — happy path', () => {
       { pipeline: async () => successResult },
     );
     const text = summarizeOutcome(outcome);
-    expect(text).toContain('### Workspace rewound');
-    expect(text).toMatch(/^## ✗ .* — \*\*reject\*\*/);
+    expect(text).toContain('Workspace rewound');
+    expect(text).toMatch(/^✗ .* — reject/);
   });
 });
 
@@ -237,13 +246,15 @@ describe('runIterateCommand — failure handling', () => {
       { pipeline: async () => failedResult },
     );
     const text = summarizeOutcome(outcome);
-    expect(text).toMatch(/^## ✗ .* — FAILED in \*\*reviewer\*\*/);
-    expect(text).toContain('### Error: `missing_output` / `no_result_message`');
-    expect(text).toContain('`system`, `assistant`');
-    expect(text).toContain('### Stderr tail');
+    expect(text).toMatch(/^✗ .* — FAILED in reviewer/);
+    expect(text).toContain('Error   missing_output / no_result_message');
+    expect(text).toContain('messages seen: system, assistant');
+    expect(text).toContain('Stderr (tail)');
     expect(text).toContain('some stderr output here');
-    expect(text).toContain('### Partial output');
+    expect(text).toContain('Partial output');
     expect(text).toContain('Planner produced a plan');
     expect(text).toContain('Generator report captured');
+    expect(text).not.toContain('##');
+    expect(text).not.toContain('**');
   });
 });

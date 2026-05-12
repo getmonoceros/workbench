@@ -14,17 +14,19 @@ monoceros-plugin iterate -- "$ARGUMENTS"
 
 ## How to present the output
 
-The script's stdout is **already a finished Markdown report** —
-headings (`## ✓ Iteration …`), sections (`### Acceptance Criteria`,
-`### Files changed`, `### Tests`, `### Captured`, `### Reviewer`),
-bullet lists, code spans for filenames and ids. Do **not** write your
-own summary, do **not** re-interpret, do **not** condense.
+The script's stdout is a structured plain-text report with Unicode
+glyphs and indentation — no Markdown markers. Sections include:
+`Iteration … — <recommendation>`, the per-phase timing block,
+`Acceptance Criteria`, `Files changed`, `Tests`, `Captured`,
+`Reviewer`, and a footer with the iteration id and audit path.
 
-Your message to the Builder is exactly the bash stdout, rendered as
-Markdown. Copy it across verbatim. The Builder reads the rendered
-result, not your paraphrase.
+Show the entire stdout to the Builder verbatim, inside a fenced code
+block so the whitespace and column alignment are preserved.
 
-If the script exits non-zero, the stdout still contains the
-Markdown-rendered failure report — surface that as-is too. Only add
-your own words if stderr contains content the Markdown report did not
-already cover.
+Do **not** rewrite, paraphrase or condense the report. Do **not** add
+a "here is the result" preamble. Do **not** summarise the Reviewer's
+text. The Builder reads the report directly.
+
+If the script exits non-zero, the stdout still contains the formatted
+failure report — surface that the same way. Add words of your own
+only when stderr carries content the report did not already cover.

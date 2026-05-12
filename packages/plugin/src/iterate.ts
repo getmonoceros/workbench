@@ -87,10 +87,19 @@ export async function runIterateCommand(
 }
 
 /**
- * Renders the iteration outcome as Markdown. Claude Code reads the
- * bash output of `monoceros-plugin iterate` and renders Markdown
- * directly in the chat, so headings, bullets, code spans and tables
- * all surface as proper formatted text.
+ * Renders the iteration outcome as plain text — no Markdown markers.
+ *
+ * Why plain text: Claude Code's slash-command output surface shows
+ * either the raw bash stdout (in a monospaced box where Markdown is
+ * NOT rendered) or, when Claude passes it through, a verbatim block
+ * that also doesn't get re-rendered. Markdown markers (`##`, `**`,
+ * `` ` ``) end up showing literally as text in both views. Plus single
+ * `\n` inside a Markdown paragraph collapses to a space, which broke
+ * our per-phase metrics line.
+ *
+ * Solution: rely on Unicode glyphs (✓ ✗ · → ─) and indentation, with
+ * double newlines between sections. Renders identically everywhere —
+ * Bash-OUT box, Claude's reply, terminal `cat`.
  */
 export function summarizeOutcome(outcome: IterateOutcome): string {
   return outcome.result.ok
@@ -106,24 +115,23 @@ function renderSuccess(
   const rec = result.reviewReport.recommendation;
   const icon = rec === 'approve' ? '✓' : rec === 'request_changes' ? '?' : '✗';
 
-  // Headline
-  sections.push(
-    `## ${icon} Iteration ${shortId(outcome.iterationId)} — **${rec}**`,
-  );
+  // Headline + headline rule
+  sections.push(`${icon} Iteration ${shortId(outcome.iterationId)} — ${rec}`);
 
-  // Phase metrics
+  // Phase metrics — each phase on its own line so a single \n collapse
+  // can't ruin the layout
   const m = result.metrics;
-  const phaseLine = [
-    `**Plan** ${fmtDuration(m.planner.durationMs)} · ${m.planner.numTurns} turns`,
-    `**Generate** ${fmtDuration(m.generator.durationMs)} · ${m.generator.numTurns} turns`,
-    `**Review** ${fmtDuration(m.reviewer.durationMs)} · ${m.reviewer.numTurns} turns`,
-  ].join('  ·  ');
   const totalMs =
     m.planner.durationMs + m.generator.durationMs + m.reviewer.durationMs;
   const totalCost =
     m.planner.costUsd + m.generator.costUsd + m.reviewer.costUsd;
   sections.push(
-    `${phaseLine}\n_Total: ${fmtDuration(totalMs)} · ${fmtCost(totalCost)}_`,
+    [
+      `  Plan       ${fmtDurationCol(m.planner.durationMs)}   ${m.planner.numTurns} turns`,
+      `  Generate   ${fmtDurationCol(m.generator.durationMs)}   ${m.generator.numTurns} turns`,
+      `  Review     ${fmtDurationCol(m.reviewer.durationMs)}   ${m.reviewer.numTurns} turns`,
+      `  Total      ${fmtDurationCol(totalMs)}   ${fmtCost(totalCost)}`,
+    ].join('\n'),
   );
 
   // Acceptance Criteria
@@ -132,7 +140,7 @@ function renderSuccess(
   if (totalACs > 0) {
     const metCount = acResults.filter((a) => a.status === 'met').length;
     const acLines: string[] = [
-      `### Acceptance Criteria — ${metCount}/${totalACs} met`,
+      `Acceptance Criteria — ${metCount}/${totalACs} met`,
     ];
     for (const acResult of acResults) {
       const planAc = result.plan.acceptanceCriteria[acResult.acIndex];
@@ -143,7 +151,7 @@ function renderSuccess(
           : acResult.status === 'unclear'
             ? '?'
             : '✗';
-      acLines.push(`- ${acIcon} ${planAc.then}`);
+      acLines.push(`  ${acIcon} ${planAc.then}`);
     }
     sections.push(acLines.join('\n'));
   }
@@ -155,16 +163,10 @@ function renderSuccess(
     changes.filesModified.length +
     changes.filesDeleted.length;
   if (totalChanges > 0) {
-    const lines = ['### Files changed'];
-    if (changes.filesCreated.length > 0) {
-      lines.push(`- **created** ${formatFileList(changes.filesCreated)}`);
-    }
-    if (changes.filesModified.length > 0) {
-      lines.push(`- **modified** ${formatFileList(changes.filesModified)}`);
-    }
-    if (changes.filesDeleted.length > 0) {
-      lines.push(`- **deleted** ${formatFileList(changes.filesDeleted)}`);
-    }
+    const lines = ['Files changed'];
+    for (const f of changes.filesCreated) lines.push(`  + ${f}`);
+    for (const f of changes.filesModified) lines.push(`  ~ ${f}`);
+    for (const f of changes.filesDeleted) lines.push(`  - ${f}`);
     sections.push(lines.join('\n'));
   }
 
@@ -172,12 +174,10 @@ function renderSuccess(
   const tr = result.generatorReport.testRun;
   if (tr.executed) {
     sections.push(
-      `### Tests\n${tr.passed} passed${tr.failed > 0 ? ` · **${tr.failed} failed**` : ' · 0 failed'}`,
+      `Tests   ${tr.passed} passed${tr.failed > 0 ? ` · ${tr.failed} FAILED` : ' · 0 failed'}`,
     );
   } else if (tr.outputExcerpt !== undefined && tr.outputExcerpt.length > 0) {
-    sections.push(
-      `### Tests\n_No test framework in project — verified via live probes._`,
-    );
+    sections.push(`Tests   no test framework — verified via live probes`);
   }
 
   // Captured items
@@ -187,41 +187,47 @@ function renderSuccess(
       result.reviewReport.findings.map((f) => f.severity),
     );
     captureLines.push(
-      `- ${plural(outcome.appendedFindingIds.length, 'finding', 'findings')}${sev ? ` (${sev})` : ''}`,
+      `  · ${plural(outcome.appendedFindingIds.length, 'finding', 'findings')}${sev ? ` (${sev})` : ''}`,
     );
   }
   if (outcome.appendedConcernIds.length > 0) {
     captureLines.push(
-      `- ${plural(outcome.appendedConcernIds.length, 'concern', 'concerns')}`,
+      `  · ${plural(outcome.appendedConcernIds.length, 'concern', 'concerns')}`,
     );
   }
   if (outcome.appendedRiskIds.length > 0) {
     const sev = countBySeverity(result.plan.risks.map((r) => r.severity));
     captureLines.push(
-      `- ${plural(outcome.appendedRiskIds.length, 'risk', 'risks')}${sev ? ` (${sev})` : ''}`,
+      `  · ${plural(outcome.appendedRiskIds.length, 'risk', 'risks')}${sev ? ` (${sev})` : ''}`,
     );
   }
   if (captureLines.length > 0) {
-    sections.push(
-      `### Captured\n${captureLines.join('\n')}\n\n→ \`/findings\` to inspect, \`/triage <id> <status>\` to mark`,
+    captureLines.unshift('Captured');
+    captureLines.push(
+      `  → use /findings to inspect, /triage <id> <status> to mark`,
     );
+    sections.push(captureLines.join('\n'));
   }
 
   // Rewound notice
   if (result.rewound) {
     sections.push(
-      `### Workspace rewound\nThe Generator's edits were rolled back because the Reviewer recommended \`reject\`. Your working tree is back to the state before this iteration started.`,
+      [
+        'Workspace rewound',
+        "  The Generator's edits were rolled back because the Reviewer recommended reject.",
+        '  Your working tree is back to the state before this iteration started.',
+      ].join('\n'),
     );
   }
 
   // Reviewer summary
   if (result.reviewReport.summary) {
-    sections.push(`### Reviewer\n${result.reviewReport.summary}`);
+    sections.push(`Reviewer\n  ${result.reviewReport.summary}`);
   }
 
   // Footer
   sections.push(
-    `---\n_id: \`${outcome.iterationId}\` · audit: \`.monoceros/iterations/${outcome.iterationId}.json\`_`,
+    `${'─'.repeat(60)}\nid    ${outcome.iterationId}\naudit .monoceros/iterations/${outcome.iterationId}.json`,
   );
 
   return sections.join('\n\n');
@@ -235,38 +241,36 @@ function renderFailure(
   const e = result.error;
 
   sections.push(
-    `## ✗ Iteration ${shortId(outcome.iterationId)} — FAILED in **${result.failedPhase}**`,
+    `✗ Iteration ${shortId(outcome.iterationId)} — FAILED in ${result.failedPhase}`,
   );
 
   // Error details by kind
   if (e.kind === 'sdk_error') {
-    const lines: string[] = [`### Error: \`sdk_error\` / \`${e.subtype}\``];
+    const lines: string[] = [`Error   sdk_error / ${e.subtype}`];
     if (e.errors.length > 0) {
-      for (const msg of e.errors) lines.push(`- ${msg}`);
+      for (const msg of e.errors) lines.push(`  · ${msg}`);
     }
     sections.push(lines.join('\n'));
     if (e.stderrTail !== undefined && e.stderrTail.length > 0) {
-      sections.push(`### Stderr tail\n\`\`\`\n${e.stderrTail}\n\`\`\``);
+      sections.push(`Stderr (tail)\n${indent(e.stderrTail, 2)}`);
     }
   } else if (e.kind === 'missing_output') {
+    const seen =
+      e.messageTypes.length === 0 ? '(none)' : e.messageTypes.join(', ');
     sections.push(
-      `### Error: \`missing_output\` / \`${e.reason}\`\nMessages seen on stream: ${
-        e.messageTypes.length === 0
-          ? '_(none)_'
-          : e.messageTypes.map((t) => `\`${t}\``).join(', ')
-      }`,
+      `Error   missing_output / ${e.reason}\n  messages seen: ${seen}`,
     );
     if (e.stderrTail !== undefined && e.stderrTail.length > 0) {
-      sections.push(`### Stderr tail\n\`\`\`\n${e.stderrTail}\n\`\`\``);
+      sections.push(`Stderr (tail)\n${indent(e.stderrTail, 2)}`);
     }
   } else if (e.kind === 'schema_validation') {
-    const lines = ['### Error: `schema_validation`'];
+    const lines = ['Error   schema_validation'];
     for (const issue of e.issues) {
-      lines.push(`- \`${issue.path || '(root)'}\`: ${issue.message}`);
+      lines.push(`  · ${issue.path || '(root)'}: ${issue.message}`);
     }
     sections.push(lines.join('\n'));
   } else if (e.kind === 'aborted') {
-    sections.push(`### Error: \`aborted\`\nThe iteration was cancelled.`);
+    sections.push(`Error   aborted\n  The iteration was cancelled.`);
   }
 
   // Partial outputs that did make it through
@@ -274,24 +278,38 @@ function renderFailure(
   const partialLines: string[] = [];
   if (partial.plan !== undefined) {
     partialLines.push(
-      `- ✓ Planner produced a plan (${partial.plan.acceptanceCriteria.length} ACs, ${partial.plan.risks.length} risks)`,
+      `  ✓ Planner produced a plan (${partial.plan.acceptanceCriteria.length} ACs, ${partial.plan.risks.length} risks)`,
     );
   }
   if (partial.generatorReport !== undefined) {
     const changes = partial.generatorReport.changesSummary;
     partialLines.push(
-      `- ✓ Generator report captured (${changes.filesCreated.length + changes.filesModified.length + changes.filesDeleted.length} file ops)`,
+      `  ✓ Generator report captured (${changes.filesCreated.length + changes.filesModified.length + changes.filesDeleted.length} file ops)`,
     );
   }
   if (partialLines.length > 0) {
-    sections.push(`### Partial output\n${partialLines.join('\n')}`);
+    partialLines.unshift('Partial output');
+    sections.push(partialLines.join('\n'));
   }
 
   sections.push(
-    `---\n_id: \`${outcome.iterationId}\` · audit: \`.monoceros/iterations/${outcome.iterationId}.json\`_`,
+    `${'─'.repeat(60)}\nid    ${outcome.iterationId}\naudit .monoceros/iterations/${outcome.iterationId}.json`,
   );
 
   return sections.join('\n\n');
+}
+
+function indent(text: string, spaces: number): string {
+  const pad = ' '.repeat(spaces);
+  return text
+    .split('\n')
+    .map((line) => `${pad}${line}`)
+    .join('\n');
+}
+
+function fmtDurationCol(ms: number): string {
+  // Fixed-width-ish: pad to 8 chars so columns line up nicely
+  return fmtDuration(ms).padStart(8, ' ');
 }
 
 // ---- formatting helpers --------------------------------------------
@@ -338,10 +356,6 @@ function countBySeverity(severities: readonly string[]): string {
     ...[...seen].filter((s) => !order.includes(s)),
   ];
   return ordered.map((sev) => `${counts[sev]} ${sev}`).join(', ');
-}
-
-function formatFileList(files: readonly string[]): string {
-  return files.map((f) => `\`${f}\``).join(', ');
 }
 
 function buildAuditInput(
