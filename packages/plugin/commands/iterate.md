@@ -14,38 +14,62 @@ monoceros-plugin iterate -- "$ARGUMENTS"
 
 ## How to present the output
 
-The script's stdout is a structured plain-text report with Unicode
-glyphs and column alignment. It contains sections including
-`Iteration … — <recommendation>`, the per-phase timing block,
-`Acceptance Criteria`, `Files changed`, `Tests`, `Captured`,
-`Reviewer`, and a footer with the iteration id and audit path.
+The bash stdout is a structured plain-text report with Unicode glyphs
+and column alignment. Section headers it contains: `Iteration … —
+<recommendation>`, per-phase timing block, `Acceptance Criteria`,
+`Files changed`, `Tests`, `Captured`, `Reviewer`, footer with id and
+audit path.
 
-Your response message must follow this exact shape:
+Your response must follow this exact shape — **two parts and nothing
+else**:
 
-1. **A fenced code block** containing the entire bash stdout
-   verbatim. The fence preserves the column alignment and prevents
-   markdown from collapsing the whitespace.
+### Part 1 — fenced code block with the bash stdout verbatim
 
-2. **One single line right after the code block**, listing the
-   changed files (and only the changed files) as inline code spans
-   so Claude Code renders them as clickable links. Format:
+```
+<the entire bash stdout, unchanged>
+```
 
-   ```
-   Files: `path/one.js` · `path/two.js` · `path/three.js`
-   ```
+The fence preserves whitespace and column alignment. Do not edit,
+trim, summarise or rewrap the content. Do not insert your own
+commentary inside the fence.
 
-   Pull the paths from the "Files changed" section of the report.
-   Mark created files with a leading `+ ` inside the backtick span,
-   modified with `~ `, deleted with `- ` — keep the same glyphs the
-   report uses. If there were no file changes, omit this line.
+### Part 2 — exactly two short lines right after the fence
 
-That's it. Do **not** add a preamble, do **not** write a summary, do
-**not** paraphrase the Reviewer text. The code block already contains
-everything the Builder needs to read; the `Files:` line exists only
-to give them clickable navigation.
+**Line A — outcome + next action**, picked from this table by the
+`recommendation` (or failure) shown in the report. Substitute the
+italicised placeholders with values from the report. Use the exact
+wording otherwise.
 
-If the bash command exits non-zero, the stdout still contains the
-formatted failure report — render it the same way (in a code block).
-Skip the `Files:` line in that case (there are typically no file
-changes on failure). Only add words of your own if the stderr carries
-content that the formatted report did not cover.
+| Recommendation                      | Line A template                                                                                                                  |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `approve`, no captured items        | **approve** — workspace updated. Nothing to triage.                                                                              |
+| `approve`, items captured           | **approve** — workspace updated. Run `/findings` to inspect the _N_ captured items.                                              |
+| `request_changes`                   | **request_changes** — Reviewer flagged _N_ findings. Run `/findings` to see them, then `/iterate` again with a follow-up prompt. |
+| `reject`                            | **reject** — Reviewer rejected, workspace was rewound. Read the Reviewer summary above before the next `/iterate`.               |
+| Pipeline failed (no recommendation) | **FAILED** in `<phase>` — see the audit JSON at the path shown above for the full trace.                                         |
+
+**Line B — clickable file references**, one line, listing the
+changed files from the "Files changed" section of the report. Each
+path wrapped in a code span (` `` `) so Claude Code auto-links it.
+Mirror the same `+ ` / `~ ` / `- ` glyphs the report uses for
+created/modified/deleted:
+
+```
+Files: `+ path/one.js` · `~ path/two.js` · `- path/three.js`
+```
+
+If there were no file changes (e.g. on failure), omit Line B
+entirely.
+
+### What not to do
+
+- **No** preamble before the code block ("Here is the result …").
+- **No** summary or paraphrase of the Reviewer text — the Builder
+  reads it from the report.
+- **No** commentary, observations or your own analysis between or
+  after the two lines. If you have something to say beyond the
+  template, it does not belong here.
+
+The report above already contains everything the Builder needs to
+understand the iteration. Your role is to render it cleanly and
+point to the next action.
