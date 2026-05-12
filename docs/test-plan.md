@@ -441,6 +441,75 @@ In beiden Fällen prüfst du:
 - E.3.8 falsch → File-Checkpointing-Pfad in
   `packages/core/src/runtime/agent.ts` / `rewind.ts` debuggen
 
+#### Reference iteration sequence
+
+Diese fünf Prompts wurden am 2026-05-11/12 in einer einzelnen
+Stage-E-Sitzung gegen einen bare `monoceros create stage-e-demo --languages=node --services=postgres`-Workspace gefahren. Sie bauen
+aufeinander auf — die Solution wächst von leer zu einer kleinen
+Node-CLI mit fünf Subcommands plus shared Validation-Helper. Jeder
+Prompt zielt auf einen anderen Aspekt der Pipeline. Beim Reset
+einer Stage-E-Session reicht `rm -rf src` (oder eine neue
+Solution); `.monoceros/` und der Devcontainer bleiben, damit du
+keine fünf Minuten Build-Pipeline neu durchlaufen musst.
+
+1. **Greenfield-Start** — verlangt der Pipeline ab, ein leeres
+   Projekt _selbst_ zu strukturieren (Manifest, src-Layout, Konvention
+   wählen):
+
+   ```
+   /iterate Add a CLI subcommand 'greet' that prints 'Hello'
+   ```
+
+2. **Erweiterung mit Annahmen** — testet, ob der Planner
+   Spezifikationslücken als explizite Risks markiert (was passiert
+   bei `greet` ohne Argument? — nicht im Prompt spezifiziert):
+
+   ```
+   /iterate Make the greet command accept a name argument: greet <name> prints Hello, <name>!
+   ```
+
+3. **Refactoring mit Regression-Schutz** — verlangt eine
+   strukturelle Änderung (DRY) plus Regression-ACs, dass das alte
+   Verhalten erhalten bleibt:
+
+   ```
+   /iterate Add a 'goodbye <name>' subcommand. Make sure goodbye and greet share their argument-validation logic via a helper module.
+   ```
+
+4. **Nicht-determinismus + bedingte Helper-Nutzung** — Randomness
+   macht den Reviewer's Live-Probes schwieriger; der Helper soll
+   _bedingt_ genutzt werden (nur wenn Argument da ist), nicht
+   unconditional:
+
+   ```
+   /iterate Add a 'wave' subcommand that prints a random one of: 'Hi!', 'Hey!', 'Yo!'. Wave should reuse the existing name-validation helper if a name is provided, and print '<greeting>, <name>!' in that case.
+   ```
+
+5. **Unicode-Edge-Case** — `.toUpperCase()` macht z. B. `ß` → `SS`,
+   ist locale-abhängig; soll als Reviewer-Concern hochpoppen oder
+   im Plan als Risk markiert werden:
+
+   ```
+   /iterate Add a 'shout' subcommand that prints the name in ALL CAPS, like 'HEY, ALICE!'. Make sure it handles non-ASCII characters (umlauts, accents) correctly.
+   ```
+
+Nach diesen fünf hat die Solution einen `src/cli.js`-Dispatcher mit
+fünf Subcommands (`greet`, `goodbye`, `wave`, `shout` + einem aus
+Iter 1) und einen `src/lib/validate-name.js`-Helper. Insgesamt
+~10–15 Items unter `.monoceros/` als Material für Stage E.4.
+
+**Reset für eine frische Stage-E-Session** (im Container, im
+Solution-Root):
+
+```sh
+rm -rf src package.json package-lock.json node_modules
+rm -rf .monoceros/findings .monoceros/concerns .monoceros/risks .monoceros/iterations
+```
+
+`stack.json`, `.devcontainer/`, `.claude/commands/` bleiben — Setup
+ist vollständig erhalten, nur die Solution-Inhalte und das gesammelte
+Material sind weg.
+
 ### E.4 — Triage-Workflow
 
 Nachdem mindestens eine Iteration Items produziert hat:
