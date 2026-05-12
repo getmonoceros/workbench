@@ -388,8 +388,14 @@ iteration-prompts portieren.
       /opt/monoceros-workbench) plus
       `enabledPlugins["monoceros@monoceros-workbench"]: true`. Funktioniert
       identisch für Terminal-CLI und VS-Code-Extension (beide lesen aus
-      `.claude/settings.json`). Live-Reload aus Bind-Mount bleibt
-      erhalten. Slash-Commands sind plugin-namespaced
+      `.claude/settings.json`). Beim ersten Solution-Start stellt
+      Claude Code einen Trust-Prompt; Builder bestätigt einmal, das
+      Plugin landet im Cache unter `~/.claude/plugins/cache/`. Weil
+      `~/.claude/` host-bind-mounted ist, ist das ein einmaliger
+      Schritt pro Builder-Maschine. Plugin-Edits in der Workbench
+      benötigen `/plugin update monoceros@monoceros-workbench` —
+      Claude Codes Konvention für Cache-Refresh, kein Monoceros-
+      Workaround. Slash-Commands sind plugin-namespaced
       (`/monoceros:iterate` etc.). Tests in
       `packages/cli/test/create.test.ts`. M4 ersetzt die `source:
 directory` durch `source: github` — siehe M4-Tasks.

@@ -425,18 +425,48 @@ In der Claude-Code-CLI dann `/monoceros:iterate "Add a CLI subcommand 'greet' th
 `code .` host-seitig, „Reopen in Container", Extension öffnen, Slash-
 Command in deren UI absetzen.
 
-In beiden Fällen prüfst du:
+#### E.3.0 — Plugin-Installation (einmalig pro Builder-Maschine)
 
-| ID    | Was                                            | Wie                                                                   | Erwartet                                                                                                                                                                                                            | Deckt     |
-| ----- | ---------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| E.3.1 | Slash-Command wird gefunden                    | `/mon<TAB>` in der Claude-Code-UI                                     | Autocomplete schlägt `/monoceros:iterate`, `/monoceros:findings`, `/monoceros:triage`, `/monoceros:defer` vor. Falls keines: der `claude`-Wrapper im Runtime-Image hat das Plugin nicht via `--plugin-dir` geladen. | Task 5    |
-| E.3.2 | Pipeline läuft alle drei Phasen                | `/monoceros:iterate "Add a CLI subcommand 'greet' that prints Hello"` | Output zeigt Phase-1 (Planner) → Phase-2 (Generator, Code-Edits) → Phase-3 (Reviewer). Mehrere Minuten möglich                                                                                                      | Task 3, 5 |
-| E.3.3 | Plugin-Output landet auf stdout                | Beobachten am Ende                                                    | Block in der Form: `Iteration <id>` + `recommendation: approve\|request_changes\|reject` + `tests: pass\|fail` + `rewound: yes\|no` + `appended: N findings, M concerns, K risks`                                   | Task 5    |
-| E.3.4 | Iteration-Audit geschrieben                    | `monoceros run -- ls .monoceros/iterations/`                          | Eine `<id>.json`-Datei. `cat` zeigt das vollständige `plan`/`generatorReport`/`reviewReport`-JSON                                                                                                                   | Task 4, 5 |
-| E.3.5 | Findings/Concerns/Risks geschrieben (bei `ok`) | `monoceros run -- ls .monoceros/{findings,concerns,risks}/`           | Mindestens ein Item irgendwo (typischerweise mehrere Concerns + Risks aus Planner/Generator)                                                                                                                        | Task 4, 5 |
-| E.3.6 | Code wurde tatsächlich geschrieben             | `monoceros run -- bash -c 'ls -la src 2>/dev/null \|\| ls'`           | Neue/geänderte Dateien sichtbar. AC vom Prompt erfüllt: das `greet`-Subcommand sollte irgendwo existieren                                                                                                           | Task 3    |
-| E.3.7 | Test-Run lief (falls Tests im Setup)           | Sichtbar in `cat .monoceros/iterations/*.json \| jq .testRun`         | `executed: true, passed: N>0, failed: 0` bei `approve`. Bei `request_changes`/`reject`: passend zu Findings                                                                                                         | Task 3    |
-| E.3.8 | Bei `reject`: File-Rewind tatsächlich erfolgt  | `git diff` host-seitig (Solution-Repo war vor `/iterate` clean)       | Workspace ist auf Pre-Generator-State zurückgesetzt. Im Audit `rewound: true`. Falls clean-Workspace _und_ `rewound: false`: File-Checkpointing hat nicht gegriffen — Symptom-Bug                                   | Task 3    |
+Beim ersten Start von Claude Code in einer Monoceros-Solution erkennt
+Claude Code via `.claude/settings.json` einen unbekannten Marketplace
+und stellt einen **Trust-Prompt**: Der Builder bestätigt das
+Marketplace-Setup. Anschließend kopiert Claude Code das Plugin in
+seinen Cache (`~/.claude/plugins/cache`) und aktiviert es per
+`enabledPlugins`. Weil `~/.claude/` als Bind-Mount vom Host gemountet
+ist, persistiert die Installation über Solution-Wechsel hinaus —
+**einmaliger Schritt pro Builder-Maschine**, nicht pro Solution.
+
+Falls Claude Code den Trust-Prompt nicht zeigt (z. B. weil der
+Marketplace schon vorher mal akzeptiert wurde), kann die Installation
+auch manuell getriggert werden:
+
+```
+/plugin install monoceros@monoceros-workbench
+```
+
+**Plugin-Update nach Workbench-Edits.** Plugin-Source wird gecached,
+nicht live aus dem Bind-Mount gelesen. Wenn du am Plugin selbst
+entwickelst (Slash-Command-MD oder `src/`-Files in
+`packages/plugin/` ändern), brauchen die Änderungen ein:
+
+```
+/plugin update monoceros@monoceros-workbench
+```
+
+Das ist Claude Codes Konvention, kein Monoceros-Workaround.
+
+In beiden Wegen prüfst du:
+
+| ID    | Was                                            | Wie                                                                   | Erwartet                                                                                                                                                                                                                             | Deckt     |
+| ----- | ---------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
+| E.3.1 | Slash-Command wird gefunden                    | `/mon<TAB>` in der Claude-Code-UI                                     | Autocomplete schlägt `/monoceros:iterate`, `/monoceros:findings`, `/monoceros:triage`, `/monoceros:defer` vor. Falls keines: Plugin nicht installiert (E.3.0) oder das Plugin lädt aus dem Cache nicht — siehe Fail-Bedeutung unten. | Task 5    |
+| E.3.2 | Pipeline läuft alle drei Phasen                | `/monoceros:iterate "Add a CLI subcommand 'greet' that prints Hello"` | Output zeigt Phase-1 (Planner) → Phase-2 (Generator, Code-Edits) → Phase-3 (Reviewer). Mehrere Minuten möglich                                                                                                                       | Task 3, 5 |
+| E.3.3 | Plugin-Output landet auf stdout                | Beobachten am Ende                                                    | Block in der Form: `Iteration <id>` + `recommendation: approve\|request_changes\|reject` + `tests: pass\|fail` + `rewound: yes\|no` + `appended: N findings, M concerns, K risks`                                                    | Task 5    |
+| E.3.4 | Iteration-Audit geschrieben                    | `monoceros run -- ls .monoceros/iterations/`                          | Eine `<id>.json`-Datei. `cat` zeigt das vollständige `plan`/`generatorReport`/`reviewReport`-JSON                                                                                                                                    | Task 4, 5 |
+| E.3.5 | Findings/Concerns/Risks geschrieben (bei `ok`) | `monoceros run -- ls .monoceros/{findings,concerns,risks}/`           | Mindestens ein Item irgendwo (typischerweise mehrere Concerns + Risks aus Planner/Generator)                                                                                                                                         | Task 4, 5 |
+| E.3.6 | Code wurde tatsächlich geschrieben             | `monoceros run -- bash -c 'ls -la src 2>/dev/null \|\| ls'`           | Neue/geänderte Dateien sichtbar. AC vom Prompt erfüllt: das `greet`-Subcommand sollte irgendwo existieren                                                                                                                            | Task 3    |
+| E.3.7 | Test-Run lief (falls Tests im Setup)           | Sichtbar in `cat .monoceros/iterations/*.json \| jq .testRun`         | `executed: true, passed: N>0, failed: 0` bei `approve`. Bei `request_changes`/`reject`: passend zu Findings                                                                                                                          | Task 3    |
+| E.3.8 | Bei `reject`: File-Rewind tatsächlich erfolgt  | `git diff` host-seitig (Solution-Repo war vor `/iterate` clean)       | Workspace ist auf Pre-Generator-State zurückgesetzt. Im Audit `rewound: true`. Falls clean-Workspace _und_ `rewound: false`: File-Checkpointing hat nicht gegriffen — Symptom-Bug                                                    | Task 3    |
 
 **Fail-Bedeutung:**
 
