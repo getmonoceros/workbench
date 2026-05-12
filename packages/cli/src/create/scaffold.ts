@@ -48,10 +48,6 @@ export function workbenchRoot(): string {
   return findRepoRoot();
 }
 
-export function pluginCommandsDir(): string {
-  return path.join(findRepoRoot(), 'packages', 'plugin', 'commands');
-}
-
 export function validateOptions(opts: CreateOptions): void {
   if (!opts.name || !/^[a-zA-Z0-9._-]+$/.test(opts.name)) {
     throw new Error(
@@ -291,25 +287,4 @@ export async function copyPostCreateScript(
   const dest = path.join(devcontainerDir, 'post-create.sh');
   await fs.copyFile(src, dest);
   await fs.chmod(dest, 0o755);
-}
-
-/**
- * Copies the workbench plugin's slash-command markdowns into the
- * solution's `.claude/commands/` directory. Claude Code picks up
- * project-level commands from there, so the Builder gets `/iterate`,
- * `/findings`, `/triage` and `/defer` without any extra wiring.
- *
- * Pairs with the workbench bind-mount: the markdowns invoke
- * `monoceros-plugin <subcommand>`, which post-create.sh symlinks into
- * `/usr/local/bin/` so it's on PATH.
- */
-export async function copyPluginCommands(targetDir: string): Promise<void> {
-  const src = pluginCommandsDir();
-  const dest = path.join(targetDir, '.claude', 'commands');
-  await fs.mkdir(dest, { recursive: true });
-  const entries = await fs.readdir(src);
-  for (const entry of entries) {
-    if (!entry.endsWith('.md')) continue;
-    await fs.copyFile(path.join(src, entry), path.join(dest, entry));
-  }
 }

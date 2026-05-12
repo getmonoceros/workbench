@@ -42,8 +42,9 @@ Fünf Stufen, in absteigender Reihenfolge der Erreichbarkeit:
   Extension, Claude Desktop. Cursor wird ausgeklammert (nicht im
   Einsatz).
 - **E — M2 Pipeline-End-to-End**: die komplette Strecke von Solution-
-  Anlage bis zur dritten Iteration mit `/iterate`, `/findings`,
-  `/triage`, `/defer`. Verifiziert die M2-Tooling-Phase und führt
+  Anlage bis zur dritten Iteration mit `/monoceros:iterate`,
+  `/monoceros:findings`, `/monoceros:triage`, `/monoceros:defer`.
+  Verifiziert die M2-Tooling-Phase und führt
   zur Validation-Hypothesen-Bewertung (konzept.md). Braucht echten
   Anthropic-Account.
 
@@ -343,19 +344,23 @@ cd stage-e-demo
 
 Erst die Files prüfen, ohne Docker.
 
-| ID    | Was                                         | Befehl                                                                 | Erwartet                                                                                                                                                 | Deckt                 |
-| ----- | ------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| E.1.1 | Workbench-Bind-Mount in `devcontainer.json` | `cat .devcontainer/devcontainer.json` (Image-Mode) bzw. `compose.yaml` | Eintrag mit absolutem Host-Pfad → `/opt/monoceros-workbench`, `type=bind`. Bei Compose: `- <abs>:/opt/monoceros-workbench:cached` im `workspace`-Service | Task 6 (Distribution) |
-| E.1.2 | Vier Slash-Command-Markdowns vorhanden      | `ls .claude/commands/`                                                 | `defer.md  findings.md  iterate.md  triage.md`                                                                                                           | Task 6                |
-| E.1.3 | Markdowns referenzieren die richtige CLI    | `grep monoceros-plugin .claude/commands/*.md`                          | Jede `.md` enthält genau einen `monoceros-plugin <subcommand>`-Aufruf                                                                                    | Task 6                |
-| E.1.4 | `post-create.sh` enthält Plugin-Wiring      | `cat .devcontainer/post-create.sh`                                     | Sektion mit `/opt/monoceros-workbench/node_modules/.bin/tsx` und `/usr/local/bin/monoceros-plugin`                                                       | Task 6                |
+| ID    | Was                                                | Befehl                                                                   | Erwartet                                                                                                                                                 | Deckt                 |
+| ----- | -------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| E.1.1 | Workbench-Bind-Mount in `devcontainer.json`        | `cat .devcontainer/devcontainer.json` (Image-Mode) bzw. `compose.yaml`   | Eintrag mit absolutem Host-Pfad → `/opt/monoceros-workbench`, `type=bind`. Bei Compose: `- <abs>:/opt/monoceros-workbench:cached` im `workspace`-Service | Task 6 (Distribution) |
+| E.1.2 | Solution-Verzeichnis **ohne** `.claude/commands/`  | `ls .claude/commands/` (sollte `No such file or directory` liefern)      | Slash-Commands liegen im Plugin-Paket selbst und werden via Runtime-Image-Wrapper geladen — keine Kopien in der Solution                                 | Task 6                |
+| E.1.3 | Plugin-Manifest im Workbench                       | `cat ../packages/plugin/.claude-plugin/plugin.json` (oder via Container) | Gültiges JSON mit `name: "monoceros"` und der erwarteten `description`                                                                                   | Task 5                |
+| E.1.4 | `post-create.sh` enthält `monoceros-plugin`-Wiring | `cat .devcontainer/post-create.sh`                                       | Sektion mit `/opt/monoceros-workbench/node_modules/.bin/tsx` und `/usr/local/bin/monoceros-plugin` (für den Bash-Entry der Slash-Commands)               | Task 6                |
 
 **Fail-Bedeutung:**
 
 - E.1.1 fehlerhaft → `buildDevcontainerJson` / `buildComposeYaml`
   haben den Mount nicht eingefügt; `findRepoRoot()` greift evtl. nicht
-- E.1.2/E.1.3 fehlerhaft → `copyPluginCommands` ist nicht aufgerufen
-  oder findet `packages/plugin/commands/` nicht
+- E.1.2 zeigt doch `.claude/commands/` → `copyPluginCommands` wurde
+  versehentlich wieder in `monoceros create` aufgenommen (sollte
+  raus sein); oder Solution ist ein Altstand vor dem cp-Cleanup
+- E.1.3 fehlerhaft → Plugin-Manifest fehlt oder ist syntaktisch
+  kaputt; `cat packages/plugin/.claude-plugin/plugin.json` host-seitig
+  prüfen
 - E.1.4 fehlerhaft → `templates/default/.devcontainer/post-create.sh`
   ist nicht aktualisiert
 
@@ -377,6 +382,8 @@ gesetzt — schau, ob er da ist:
 | E.2.4 | Plugin-CLI antwortet                 | `monoceros run -- monoceros-plugin --help`                                        | Hilfetext mit Subcommands `iterate`, `list`, `triage`, `defer`. Exit 0                                                                                                                                          | Task 5 |
 | E.2.5 | Plugin findet Solution-Root          | `monoceros run -- monoceros-plugin list`                                          | `No open items. Use \`--all\` to include triaged items.` — Pipeline ist noch nie gelaufen                                                                                                                       | Task 5 |
 | E.2.6 | Plugin verweigert außerhalb Solution | `monoceros run -- bash -c 'cd /opt/monoceros-workbench && monoceros-plugin list'` | Error: `Not inside a Monoceros solution — no .monoceros/ or .devcontainer/ found from ... upwards.`                                                                                                             | Task 5 |
+| E.2.7 | `claude`-Wrapper im Image            | `monoceros run -- bash -c 'head -2 /usr/local/bin/claude'`                        | Erste Zeilen zeigen `#!/usr/bin/env bash` und ein `Monoceros wrapper around the Claude Code CLI`-Kommentar. Wenn stattdessen Node-Bytecode kommt, wurde der Wrapper im Runtime-Image nicht installiert.         | Task 6 |
+| E.2.8 | Wrapper findet die echte Binary      | `monoceros run -- ls /usr/local/bin/claude.real`                                  | Datei existiert und ist executable. Das ist die ursprüngliche Claude-Code-CLI, vom Wrapper gerufen.                                                                                                             | Task 6 |
 
 **Fail-Bedeutung:**
 
@@ -405,7 +412,7 @@ monoceros shell
 claude
 ```
 
-In der Claude-Code-CLI dann `/iterate "Add a CLI subcommand 'greet' that prints 'Hello'"`.
+In der Claude-Code-CLI dann `/monoceros:iterate "Add a CLI subcommand 'greet' that prints 'Hello'"`. Die Slash-Commands sind plugin-namespaced (Plugin heißt `monoceros`).
 
 **Weg B — VS Code Claude-Code-Extension:**
 
@@ -414,23 +421,25 @@ Command in deren UI absetzen.
 
 In beiden Fällen prüfst du:
 
-| ID    | Was                                            | Wie                                                                | Erwartet                                                                                                                                                                          | Deckt     |
-| ----- | ---------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| E.3.1 | Slash-Command wird gefunden                    | `/i<TAB>` in der Claude-Code-UI                                    | Autocomplete schlägt `/iterate` vor (oder eines der vier). Falls keines: project-level Command-Discovery von Claude Code zieht `.claude/commands/` nicht — Setup-Issue            | Task 5    |
-| E.3.2 | Pipeline läuft alle drei Phasen                | `/iterate "Add a Python CLI subcommand 'greet' that prints Hello"` | Output zeigt Phase-1 (Planner) → Phase-2 (Generator, Code-Edits) → Phase-3 (Reviewer). Mehrere Minuten möglich                                                                    | Task 3, 5 |
-| E.3.3 | Plugin-Output landet auf stdout                | Beobachten am Ende                                                 | Block in der Form: `Iteration <id>` + `recommendation: approve\|request_changes\|reject` + `tests: pass\|fail` + `rewound: yes\|no` + `appended: N findings, M concerns, K risks` | Task 5    |
-| E.3.4 | Iteration-Audit geschrieben                    | `monoceros run -- ls .monoceros/iterations/`                       | Eine `<id>.json`-Datei. `cat` zeigt das vollständige `plan`/`generatorReport`/`reviewReport`-JSON                                                                                 | Task 4, 5 |
-| E.3.5 | Findings/Concerns/Risks geschrieben (bei `ok`) | `monoceros run -- ls .monoceros/{findings,concerns,risks}/`        | Mindestens ein Item irgendwo (typischerweise mehrere Concerns + Risks aus Planner/Generator)                                                                                      | Task 4, 5 |
-| E.3.6 | Code wurde tatsächlich geschrieben             | `monoceros run -- bash -c 'ls -la src 2>/dev/null \|\| ls'`        | Neue/geänderte Dateien sichtbar. AC vom Prompt erfüllt: das `greet`-Subcommand sollte irgendwo existieren                                                                         | Task 3    |
-| E.3.7 | Test-Run lief (falls Tests im Setup)           | Sichtbar in `cat .monoceros/iterations/*.json \| jq .testRun`      | `executed: true, passed: N>0, failed: 0` bei `approve`. Bei `request_changes`/`reject`: passend zu Findings                                                                       | Task 3    |
-| E.3.8 | Bei `reject`: File-Rewind tatsächlich erfolgt  | `git diff` host-seitig (Solution-Repo war vor `/iterate` clean)    | Workspace ist auf Pre-Generator-State zurückgesetzt. Im Audit `rewound: true`. Falls clean-Workspace _und_ `rewound: false`: File-Checkpointing hat nicht gegriffen — Symptom-Bug | Task 3    |
+| ID    | Was                                            | Wie                                                                   | Erwartet                                                                                                                                                                                                            | Deckt     |
+| ----- | ---------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| E.3.1 | Slash-Command wird gefunden                    | `/mon<TAB>` in der Claude-Code-UI                                     | Autocomplete schlägt `/monoceros:iterate`, `/monoceros:findings`, `/monoceros:triage`, `/monoceros:defer` vor. Falls keines: der `claude`-Wrapper im Runtime-Image hat das Plugin nicht via `--plugin-dir` geladen. | Task 5    |
+| E.3.2 | Pipeline läuft alle drei Phasen                | `/monoceros:iterate "Add a CLI subcommand 'greet' that prints Hello"` | Output zeigt Phase-1 (Planner) → Phase-2 (Generator, Code-Edits) → Phase-3 (Reviewer). Mehrere Minuten möglich                                                                                                      | Task 3, 5 |
+| E.3.3 | Plugin-Output landet auf stdout                | Beobachten am Ende                                                    | Block in der Form: `Iteration <id>` + `recommendation: approve\|request_changes\|reject` + `tests: pass\|fail` + `rewound: yes\|no` + `appended: N findings, M concerns, K risks`                                   | Task 5    |
+| E.3.4 | Iteration-Audit geschrieben                    | `monoceros run -- ls .monoceros/iterations/`                          | Eine `<id>.json`-Datei. `cat` zeigt das vollständige `plan`/`generatorReport`/`reviewReport`-JSON                                                                                                                   | Task 4, 5 |
+| E.3.5 | Findings/Concerns/Risks geschrieben (bei `ok`) | `monoceros run -- ls .monoceros/{findings,concerns,risks}/`           | Mindestens ein Item irgendwo (typischerweise mehrere Concerns + Risks aus Planner/Generator)                                                                                                                        | Task 4, 5 |
+| E.3.6 | Code wurde tatsächlich geschrieben             | `monoceros run -- bash -c 'ls -la src 2>/dev/null \|\| ls'`           | Neue/geänderte Dateien sichtbar. AC vom Prompt erfüllt: das `greet`-Subcommand sollte irgendwo existieren                                                                                                           | Task 3    |
+| E.3.7 | Test-Run lief (falls Tests im Setup)           | Sichtbar in `cat .monoceros/iterations/*.json \| jq .testRun`         | `executed: true, passed: N>0, failed: 0` bei `approve`. Bei `request_changes`/`reject`: passend zu Findings                                                                                                         | Task 3    |
+| E.3.8 | Bei `reject`: File-Rewind tatsächlich erfolgt  | `git diff` host-seitig (Solution-Repo war vor `/iterate` clean)       | Workspace ist auf Pre-Generator-State zurückgesetzt. Im Audit `rewound: true`. Falls clean-Workspace _und_ `rewound: false`: File-Checkpointing hat nicht gegriffen — Symptom-Bug                                   | Task 3    |
 
 **Fail-Bedeutung:**
 
-- E.3.1 fehlerhaft → Claude Code findet das `.claude/commands/`-Dir
-  nicht. Häufige Ursache: Claude Code wurde aus dem _falschen_ Working-
-  Directory gestartet; muss aus dem Solution-Root sein. Alternative:
-  `~/.claude/commands/` user-level, kannst du als Workaround mounten
+- E.3.1 fehlerhaft → der `claude`-Wrapper im Runtime-Image hat das
+  Plugin nicht via `--plugin-dir` geladen. Diagnose:
+  `monoceros run -- bash -c 'cat /usr/local/bin/claude'` muss den
+  Monoceros-Wrapper zeigen, _nicht_ Node-Bytecode. Wenn nicht: das
+  Runtime-Image ist nicht der aktuelle Stand — `pnpm image:rebuild`
+  und Container neu starten.
 - E.3.2 hängt → fehlende API-Auth. Diagnose: `claude --version` und
   versuche `claude` direkt im Container. OAuth-Erst-Login wie in C.8
 - E.3.3 enthält Error → typischerweise SDK-API-Error. Diagnose:
@@ -457,7 +466,7 @@ keine fünf Minuten Build-Pipeline neu durchlaufen musst.
    wählen):
 
    ```
-   /iterate Add a CLI subcommand 'greet' that prints 'Hello'
+   /monoceros:iterate Add a CLI subcommand 'greet' that prints 'Hello'
    ```
 
 2. **Erweiterung mit Annahmen** — testet, ob der Planner
@@ -465,7 +474,7 @@ keine fünf Minuten Build-Pipeline neu durchlaufen musst.
    bei `greet` ohne Argument? — nicht im Prompt spezifiziert):
 
    ```
-   /iterate Make the greet command accept a name argument: greet <name> prints Hello, <name>!
+   /monoceros:iterate Make the greet command accept a name argument: greet <name> prints Hello, <name>!
    ```
 
 3. **Refactoring mit Regression-Schutz** — verlangt eine
@@ -473,7 +482,7 @@ keine fünf Minuten Build-Pipeline neu durchlaufen musst.
    Verhalten erhalten bleibt:
 
    ```
-   /iterate Add a 'goodbye <name>' subcommand. Make sure goodbye and greet share their argument-validation logic via a helper module.
+   /monoceros:iterate Add a 'goodbye <name>' subcommand. Make sure goodbye and greet share their argument-validation logic via a helper module.
    ```
 
 4. **Nicht-determinismus + bedingte Helper-Nutzung** — Randomness
@@ -482,7 +491,7 @@ keine fünf Minuten Build-Pipeline neu durchlaufen musst.
    unconditional:
 
    ```
-   /iterate Add a 'wave' subcommand that prints a random one of: 'Hi!', 'Hey!', 'Yo!'. Wave should reuse the existing name-validation helper if a name is provided, and print '<greeting>, <name>!' in that case.
+   /monoceros:iterate Add a 'wave' subcommand that prints a random one of: 'Hi!', 'Hey!', 'Yo!'. Wave should reuse the existing name-validation helper if a name is provided, and print '<greeting>, <name>!' in that case.
    ```
 
 5. **Unicode-Edge-Case** — `.toUpperCase()` macht z. B. `ß` → `SS`,
@@ -490,7 +499,7 @@ keine fünf Minuten Build-Pipeline neu durchlaufen musst.
    im Plan als Risk markiert werden:
 
    ```
-   /iterate Add a 'shout' subcommand that prints the name in ALL CAPS, like 'HEY, ALICE!'. Make sure it handles non-ASCII characters (umlauts, accents) correctly.
+   /monoceros:iterate Add a 'shout' subcommand that prints the name in ALL CAPS, like 'HEY, ALICE!'. Make sure it handles non-ASCII characters (umlauts, accents) correctly.
    ```
 
 Nach diesen fünf hat die Solution einen `src/cli.js`-Dispatcher mit
@@ -506,25 +515,25 @@ rm -rf src package.json package-lock.json node_modules
 rm -rf .monoceros/findings .monoceros/concerns .monoceros/risks .monoceros/iterations
 ```
 
-`stack.json`, `.devcontainer/`, `.claude/commands/` bleiben — Setup
-ist vollständig erhalten, nur die Solution-Inhalte und das gesammelte
+`stack.json` und `.devcontainer/` bleiben — Setup ist vollständig
+erhalten, nur die Solution-Inhalte und das gesammelte
 Material sind weg.
 
 ### E.4 — Triage-Workflow
 
 Nachdem mindestens eine Iteration Items produziert hat:
 
-| ID    | Was                                   | Befehl                                                       | Erwartet                                                                                                                                              | Deckt  |
-| ----- | ------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| E.4.1 | `/findings` listet offene Items       | In Claude Code: `/findings`                                  | Markdown-Liste gruppiert nach `## Findings/Concerns/Risks` mit Tag-Summary `(status, severity, category, blocking)` pro Eintrag                       | Task 5 |
-| E.4.2 | Direkt-CLI dasselbe Ergebnis          | `monoceros run -- monoceros-plugin list`                     | Identische Ausgabe — die Slash-Command-`.md` ist nur ein dünner Wrapper                                                                               | Task 5 |
-| E.4.3 | Markdown-File für ein Item editierbar | Solution `.monoceros/findings/<id>.md` öffnen im Host-Editor | Frontmatter mit `id`, `kind`, `status: "open"`, `severity`, `category`, `sourceIteration`, `createdAt` etc. Body = die Message                        | Task 4 |
-| E.4.4 | `/triage <id> später` markiert        | In Claude Code: `/triage <id-aus-E.4.1> später`              | Output: `<id> marked as später (was open).`                                                                                                           | Task 5 |
-| E.4.5 | Markdown-Diff sichtbar in git         | `git diff .monoceros/`                                       | Nur die `status: "open"`-Zeile wurde durch `status: "später"` ersetzt; Body unverändert                                                               | Task 4 |
-| E.4.6 | `/findings` zeigt das Item nicht mehr | `/findings` erneut                                           | Triagiertes Item taucht nicht auf. `monoceros run -- monoceros-plugin list --all` zeigt es _doch_ mit `(später, …)`-Tag                               | Task 5 |
-| E.4.7 | `/triage` mit unbekannter Status      | `/triage <id> done`                                          | Error: `Invalid triage status "done". Use one of: jetzt, später, verworfen.`                                                                          | Task 5 |
-| E.4.8 | `/triage` mit unbekannter ID          | `/triage doesnt-exist jetzt`                                 | Error: `Item not found: doesnt-exist`                                                                                                                 | Task 5 |
-| E.4.9 | `/defer` schreibt manuellen Concern   | `/defer "Auth-Layer braucht Rate-Limiting"`                  | Neue `.monoceros/concerns/<timestamp>-<slug>.md` mit `sourceIteration: "manual"`, Output `Concern captured: <id>`. Taucht in nächstem `/findings` auf | Task 5 |
+| ID    | Was                                             | Befehl                                                       | Erwartet                                                                                                                                                        | Deckt  |
+| ----- | ----------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| E.4.1 | `/monoceros:findings` listet offene Items       | In Claude Code: `/monoceros:findings`                        | Markdown-Liste gruppiert nach `## Findings/Concerns/Risks` mit Tag-Summary `(status, severity, category, blocking)` pro Eintrag                                 | Task 5 |
+| E.4.2 | Direkt-CLI dasselbe Ergebnis                    | `monoceros run -- monoceros-plugin list`                     | Identische Ausgabe — die Slash-Command-`.md` ist nur ein dünner Wrapper                                                                                         | Task 5 |
+| E.4.3 | Markdown-File für ein Item editierbar           | Solution `.monoceros/findings/<id>.md` öffnen im Host-Editor | Frontmatter mit `id`, `kind`, `status: "open"`, `severity`, `category`, `sourceIteration`, `createdAt` etc. Body = die Message                                  | Task 4 |
+| E.4.4 | `/monoceros:triage <id> später` markiert        | In Claude Code: `/monoceros:triage <id-aus-E.4.1> später`    | Output: `<id> marked as später (was open).`                                                                                                                     | Task 5 |
+| E.4.5 | Markdown-Diff sichtbar in git                   | `git diff .monoceros/`                                       | Nur die `status: "open"`-Zeile wurde durch `status: "später"` ersetzt; Body unverändert                                                                         | Task 4 |
+| E.4.6 | `/monoceros:findings` zeigt das Item nicht mehr | `/monoceros:findings` erneut                                 | Triagiertes Item taucht nicht auf. `monoceros run -- monoceros-plugin list --all` zeigt es _doch_ mit `(später, …)`-Tag                                         | Task 5 |
+| E.4.7 | `/monoceros:triage` mit unbekannter Status      | `/monoceros:triage <id> done`                                | Error: `Invalid triage status "done". Use one of: jetzt, später, verworfen.`                                                                                    | Task 5 |
+| E.4.8 | `/monoceros:triage` mit unbekannter ID          | `/monoceros:triage doesnt-exist jetzt`                       | Error: `Item not found: doesnt-exist`                                                                                                                           | Task 5 |
+| E.4.9 | `/monoceros:defer` schreibt manuellen Concern   | `/monoceros:defer "Auth-Layer braucht Rate-Limiting"`        | Neue `.monoceros/concerns/<timestamp>-<slug>.md` mit `sourceIteration: "manual"`, Output `Concern captured: <id>`. Taucht in nächstem `/monoceros:findings` auf | Task 5 |
 
 ### E.5 — Drei Iterationen + ehrliche Bewertung (Validation-Hypothese)
 

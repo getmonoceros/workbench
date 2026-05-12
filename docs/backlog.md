@@ -372,15 +372,17 @@ iteration-prompts portieren.
    Slash-Commands `/iterate`, `/findings`, `/triage`, `/defer` + Node-CLI
    `monoceros-plugin` (citty-basiert) als gemeinsamer Bash-Entrypoint
    der Slash-Commands. 21 Tests; commit `41156ba`.
-6. **Plugin-Distribution für Task 7** — minimaler Pfad, damit die
-   interaktive Claude-Code-Session im Devcontainer das Plugin sieht und
-   `monoceros-plugin` in der `PATH` ist. Konkret: Workbench-Repo als
-   Bind-Mount in den Devcontainer, Slash-Command-Markdowns aus
-   `packages/plugin/commands/` ins solution-lokale
-   `.claude/commands/` kopieren beim `monoceros create`,
-   `post-create.sh` registriert `monoceros-plugin` im PATH. Tests
-   für die `create`-Side-Änderungen. **Bewusst minimal** — saubere
-   GHCR-Publish-Variante kommt mit M4.
+6. **Plugin-Distribution für Task 7** — initiale Version
+   (Bind-Mount + `cp` der Slash-Commands ins solution-lokale
+   `.claude/commands/`) während des Stage-E-Walkthroughs am
+   2026-05-12 ersetzt durch den sauberen Mechanismus: der
+   Runtime-Image-`claude`-Wrapper lädt das Plugin automatisch via
+   `--plugin-dir /opt/monoceros-workbench/packages/plugin` aus dem
+   Bind-Mount. Edits an Slash-Command-MDs oder Plugin-Source sind
+   damit sofort live, kein `cp` mehr nötig. `monoceros create` legt
+   keine `.claude/commands/` mehr an. Slash-Commands sind
+   plugin-namespaced (`/monoceros:iterate` etc.). Distribution via
+   GHCR + npm-Publish bleibt M4. Tests in `packages/cli/test/create.test.ts`.
 7. **Erste echte Solution damit bauen** — _eigene_ Solution, nicht
    Studio-Hummel-Demo. Etwas, das du wirklich brauchst. 3 Iterationen
    mindestens.

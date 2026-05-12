@@ -255,22 +255,18 @@ describe('runCreate', () => {
     expect(compose).toMatch(/^\s+- \/.+:\/opt\/monoceros-workbench:cached$/m);
   });
 
-  it('copies the plugin slash-command markdowns into .claude/commands/', async () => {
+  it('does not create a project-level .claude/commands/ directory', async () => {
+    // Slash commands ship as a Claude Code plugin, loaded by the
+    // runtime image's `claude` wrapper via `--plugin-dir` from the
+    // workbench bind-mount. The solution itself stays free of
+    // duplicated command MD files.
     await runCreate(
       { name: 'demo', languages: [], services: [] },
       { ...baseRunOpts, cwd },
     );
-    const cmdDir = path.join(cwd, 'demo', '.claude', 'commands');
-    const entries = await fs.readdir(cmdDir);
-    expect(entries.sort()).toEqual([
-      'defer.md',
-      'findings.md',
-      'iterate.md',
-      'triage.md',
-    ]);
-    // Spot-check that the iterate command references the right CLI binary
-    const iterate = await readFile(path.join(cmdDir, 'iterate.md'), 'utf8');
-    expect(iterate).toContain('monoceros-plugin iterate');
+    expect(
+      await pathExists(path.join(cwd, 'demo', '.claude', 'commands')),
+    ).toBe(false);
   });
 
   it('post-create.sh wires monoceros-plugin into PATH via tsx', async () => {
