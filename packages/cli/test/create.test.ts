@@ -256,10 +256,9 @@ describe('runCreate', () => {
   });
 
   it('does not create a project-level .claude/commands/ directory', async () => {
-    // Slash commands ship as a Claude Code plugin, loaded by the
-    // runtime image's `claude` wrapper via `--plugin-dir` from the
-    // workbench bind-mount. The solution itself stays free of
-    // duplicated command MD files.
+    // Slash commands ship as a Claude Code plugin, loaded via the
+    // marketplace registered in .claude/settings.json. The solution
+    // itself stays free of duplicated command MD files.
     await runCreate(
       { name: 'demo', languages: [], services: [] },
       { ...baseRunOpts, cwd },
@@ -267,6 +266,30 @@ describe('runCreate', () => {
     expect(
       await pathExists(path.join(cwd, 'demo', '.claude', 'commands')),
     ).toBe(false);
+  });
+
+  it('writes a .claude/settings.json that registers the workbench marketplace', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      { ...baseRunOpts, cwd },
+    );
+    const settingsPath = path.join(cwd, 'demo', '.claude', 'settings.json');
+    const settings = JSON.parse(await readFile(settingsPath, 'utf8')) as {
+      extraKnownMarketplaces?: Record<
+        string,
+        { source: { source: string; path: string } }
+      >;
+      enabledPlugins?: Record<string, boolean>;
+    };
+    expect(settings.extraKnownMarketplaces?.['monoceros-workbench']).toEqual({
+      source: {
+        source: 'directory',
+        path: '/opt/monoceros-workbench',
+      },
+    });
+    expect(settings.enabledPlugins).toEqual({
+      'monoceros@monoceros-workbench': true,
+    });
   });
 
   it('post-create.sh wires monoceros-plugin into PATH via tsx', async () => {

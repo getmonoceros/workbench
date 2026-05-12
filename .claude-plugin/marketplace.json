@@ -1,0 +1,12 @@
+{
+  "name": "monoceros-workbench",
+  "owner": { "name": "Monoceros" },
+  "description": "Local marketplace registering the in-tree monoceros plugin for dev iteration. M4 replaces this with a published GitHub source.",
+  "plugins": [
+    {
+      "name": "monoceros",
+      "source": "./packages/plugin",
+      "description": "Plan/Generate/Review iteration pipeline plus Findings triage."
+    }
+  ]
+}

@@ -288,3 +288,36 @@ export async function copyPostCreateScript(
   await fs.copyFile(src, dest);
   await fs.chmod(dest, 0o755);
 }
+
+/**
+ * The `.claude/settings.json` we write into each solution. Registers
+ * the workbench checkout as a `directory`-source marketplace and
+ * enables the in-tree `monoceros` plugin. Claude Code reads this
+ * settings file at session start (terminal CLI and VS Code Extension
+ * alike), so the plugin's slash commands appear without per-solution
+ * file copying.
+ *
+ * **Dev only.** When the plugin is published in M4 (likely as a
+ * GitHub-source marketplace at `kamann/monoceros`, or via a default
+ * marketplace listing), this function returns a settings object that
+ * points at the published source instead. The wrapping mechanism
+ * (`enabledPlugins` + `extraKnownMarketplaces` in the solution's
+ * `.claude/settings.json`) stays the same; only the marketplace
+ * source descriptor changes. Plan tracked in
+ * [docs/backlog.md](../../../../../docs/backlog.md) under "M4 — Go-Live".
+ */
+export function buildClaudeSettings(): Record<string, unknown> {
+  return {
+    extraKnownMarketplaces: {
+      'monoceros-workbench': {
+        source: {
+          source: 'directory',
+          path: WORKBENCH_CONTAINER_PATH,
+        },
+      },
+    },
+    enabledPlugins: {
+      'monoceros@monoceros-workbench': true,
+    },
+  };
+}

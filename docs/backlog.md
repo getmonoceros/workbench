@@ -372,17 +372,27 @@ iteration-prompts portieren.
    Slash-Commands `/iterate`, `/findings`, `/triage`, `/defer` + Node-CLI
    `monoceros-plugin` (citty-basiert) als gemeinsamer Bash-Entrypoint
    der Slash-Commands. 21 Tests; commit `41156ba`.
-6. **Plugin-Distribution für Task 7** — initiale Version
-   (Bind-Mount + `cp` der Slash-Commands ins solution-lokale
-   `.claude/commands/`) während des Stage-E-Walkthroughs am
-   2026-05-12 ersetzt durch den sauberen Mechanismus: der
-   Runtime-Image-`claude`-Wrapper lädt das Plugin automatisch via
-   `--plugin-dir /opt/monoceros-workbench/packages/plugin` aus dem
-   Bind-Mount. Edits an Slash-Command-MDs oder Plugin-Source sind
-   damit sofort live, kein `cp` mehr nötig. `monoceros create` legt
-   keine `.claude/commands/` mehr an. Slash-Commands sind
-   plugin-namespaced (`/monoceros:iterate` etc.). Distribution via
-   GHCR + npm-Publish bleibt M4. Tests in `packages/cli/test/create.test.ts`.
+6. **Plugin-Distribution für Task 7** — drei Iterationen während des
+   Stage-E-Walkthroughs am 2026-05-12 durchlaufen:
+   1. Erste Version: `cp` der Slash-Commands ins solution-lokale
+      `.claude/commands/`. Funktioniert für Terminal-CLI, ist aber
+      Live-Reload-feindlich (jede Plugin-MD-Änderung braucht `cp`).
+   2. Zweite Version: `claude`-Wrapper im Runtime-Image, der
+      `--plugin-dir` automatisch setzt. Funktioniert für Terminal, **nicht**
+      für die VS-Code-Extension (die ruft `claude` nicht über PATH auf).
+   3. **Aktuelle Version (final):** Claude Codes offizielles Plugin-
+      Marketplace-System nutzen. Workbench hat eine
+      `.claude-plugin/marketplace.json` am Repo-Root. `monoceros create`
+      schreibt `.claude/settings.json` in jede Solution mit
+      `extraKnownMarketplaces` (source: directory, path:
+      /opt/monoceros-workbench) plus
+      `enabledPlugins["monoceros@monoceros-workbench"]: true`. Funktioniert
+      identisch für Terminal-CLI und VS-Code-Extension (beide lesen aus
+      `.claude/settings.json`). Live-Reload aus Bind-Mount bleibt
+      erhalten. Slash-Commands sind plugin-namespaced
+      (`/monoceros:iterate` etc.). Tests in
+      `packages/cli/test/create.test.ts`. M4 ersetzt die `source:
+directory` durch `source: github` — siehe M4-Tasks.
 7. **Erste echte Solution damit bauen** — _eigene_ Solution, nicht
    Studio-Hummel-Demo. Etwas, das du wirklich brauchst. 3 Iterationen
    mindestens.
@@ -508,6 +518,24 @@ Bausteine:
    und das Audit-Log-Egress (beide in „Vorgemerkt") für Public-
    Release-Anforderungen bedeuten — werden eines davon zur
    Bedingung, kommt's hierher.
+7. **Plugin-Source auf GitHub-Marketplace umstellen** — Heute (Dev)
+   schreibt `monoceros create` eine `.claude/settings.json` mit
+   `extraKnownMarketplaces.monoceros-workbench.source = { source:
+"directory", path: "/opt/monoceros-workbench" }`. Setzt voraus,
+   dass jeder Builder einen Workbench-Checkout per Bind-Mount im
+   Container hat — Live-Reload für Dev. Für Public-Release wird die
+   `directory`-Source durch `github` ersetzt (`{ source: "github",
+repo: "kamann/monoceros" }` o. Ä., je nach Publish-Repo), und der
+   Bind-Mount in `devcontainer.json` / `compose.yaml` kann entfallen.
+   Konkrete Datei-Änderungen: `buildClaudeSettings()` in
+   [`packages/cli/src/create/scaffold.ts`](../packages/cli/src/create/scaffold.ts)
+   (eine Funktion), `buildDevcontainerJson` / `buildComposeYaml` für
+   den entfallenden Mount, ein Test in
+   [`create.test.ts`](../packages/cli/test/create.test.ts), plus
+   Update der `.claude-plugin/marketplace.json` (oder Löschen, falls
+   Plugin auf einen Default-Marketplace gelistet wird). Trigger: M4-
+   Distribution-Pfad ist final entschieden (GHCR-Image + npm-CLI +
+   ggf. GitHub-Marketplace für das Plugin).
 
 Weitere „Vorgemerkt"-Items werden bei M4-Planung neu bewertet —
 einige (Persistenz-Strategie, E2E-Test-Suite, Service-Init-

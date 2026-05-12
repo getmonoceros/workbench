@@ -344,12 +344,14 @@ cd stage-e-demo
 
 Erst die Files prüfen, ohne Docker.
 
-| ID    | Was                                                | Befehl                                                                   | Erwartet                                                                                                                                                 | Deckt                 |
-| ----- | -------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| E.1.1 | Workbench-Bind-Mount in `devcontainer.json`        | `cat .devcontainer/devcontainer.json` (Image-Mode) bzw. `compose.yaml`   | Eintrag mit absolutem Host-Pfad → `/opt/monoceros-workbench`, `type=bind`. Bei Compose: `- <abs>:/opt/monoceros-workbench:cached` im `workspace`-Service | Task 6 (Distribution) |
-| E.1.2 | Solution-Verzeichnis **ohne** `.claude/commands/`  | `ls .claude/commands/` (sollte `No such file or directory` liefern)      | Slash-Commands liegen im Plugin-Paket selbst und werden via Runtime-Image-Wrapper geladen — keine Kopien in der Solution                                 | Task 6                |
-| E.1.3 | Plugin-Manifest im Workbench                       | `cat ../packages/plugin/.claude-plugin/plugin.json` (oder via Container) | Gültiges JSON mit `name: "monoceros"` und der erwarteten `description`                                                                                   | Task 5                |
-| E.1.4 | `post-create.sh` enthält `monoceros-plugin`-Wiring | `cat .devcontainer/post-create.sh`                                       | Sektion mit `/opt/monoceros-workbench/node_modules/.bin/tsx` und `/usr/local/bin/monoceros-plugin` (für den Bash-Entry der Slash-Commands)               | Task 6                |
+| ID    | Was                                                | Befehl                                                                 | Erwartet                                                                                                                                                                 | Deckt                 |
+| ----- | -------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------- |
+| E.1.1 | Workbench-Bind-Mount in `devcontainer.json`        | `cat .devcontainer/devcontainer.json` (Image-Mode) bzw. `compose.yaml` | Eintrag mit absolutem Host-Pfad → `/opt/monoceros-workbench`, `type=bind`. Bei Compose: `- <abs>:/opt/monoceros-workbench:cached` im `workspace`-Service                 | Task 6 (Distribution) |
+| E.1.2 | Solution-Verzeichnis **ohne** `.claude/commands/`  | `ls .claude/commands/` (sollte `No such file or directory` liefern)    | Slash-Commands liegen im Plugin-Paket; Claude Code lädt sie via Marketplace-Eintrag in `.claude/settings.json` — keine Kopien in der Solution                            | Task 6                |
+| E.1.3 | `.claude/settings.json` registriert Marketplace    | `cat .claude/settings.json`                                            | Enthält `extraKnownMarketplaces.monoceros-workbench` mit `source: directory, path: /opt/monoceros-workbench` und `enabledPlugins["monoceros@monoceros-workbench"]: true` | Task 6                |
+| E.1.4 | Marketplace-Manifest im Workbench                  | `cat ../../../.claude-plugin/marketplace.json`                         | Gültiges JSON mit `name: "monoceros-workbench"` und `plugins: [{ name: "monoceros", source: "./packages/plugin" }]`                                                      | Task 6                |
+| E.1.5 | Plugin-Manifest im Workbench                       | `cat ../../../packages/plugin/.claude-plugin/plugin.json`              | Gültiges JSON mit `name: "monoceros"` und der erwarteten `description`                                                                                                   | Task 5                |
+| E.1.6 | `post-create.sh` enthält `monoceros-plugin`-Wiring | `cat .devcontainer/post-create.sh`                                     | Sektion mit `/opt/monoceros-workbench/node_modules/.bin/tsx` und `/usr/local/bin/monoceros-plugin` (für den Bash-Entry der Slash-Commands)                               | Task 6                |
 
 **Fail-Bedeutung:**
 
@@ -357,11 +359,17 @@ Erst die Files prüfen, ohne Docker.
   haben den Mount nicht eingefügt; `findRepoRoot()` greift evtl. nicht
 - E.1.2 zeigt doch `.claude/commands/` → `copyPluginCommands` wurde
   versehentlich wieder in `monoceros create` aufgenommen (sollte
-  raus sein); oder Solution ist ein Altstand vor dem cp-Cleanup
-- E.1.3 fehlerhaft → Plugin-Manifest fehlt oder ist syntaktisch
+  raus sein); oder Solution ist ein Altstand vor dem cleanup
+- E.1.3 fehlerhaft → `buildClaudeSettings()` wird nicht aufgerufen
+  oder schreibt nach falschem Pfad. Settings-File ist Pflicht für
+  CLI- _und_ VS-Code-Extension-Plugin-Loading.
+- E.1.4 fehlerhaft → `.claude-plugin/marketplace.json` im Workbench
+  fehlt oder ist syntaktisch kaputt. Ohne das funktioniert die
+  `source: directory`-Auflösung nicht.
+- E.1.5 fehlerhaft → Plugin-Manifest fehlt oder ist syntaktisch
   kaputt; `cat packages/plugin/.claude-plugin/plugin.json` host-seitig
   prüfen
-- E.1.4 fehlerhaft → `templates/default/.devcontainer/post-create.sh`
+- E.1.6 fehlerhaft → `templates/default/.devcontainer/post-create.sh`
   ist nicht aktualisiert
 
 ### E.2 — Container starten und Plugin-Verdrahtung verifizieren
@@ -382,8 +390,6 @@ gesetzt — schau, ob er da ist:
 | E.2.4 | Plugin-CLI antwortet                 | `monoceros run -- monoceros-plugin --help`                                        | Hilfetext mit Subcommands `iterate`, `list`, `triage`, `defer`. Exit 0                                                                                                                                          | Task 5 |
 | E.2.5 | Plugin findet Solution-Root          | `monoceros run -- monoceros-plugin list`                                          | `No open items. Use \`--all\` to include triaged items.` — Pipeline ist noch nie gelaufen                                                                                                                       | Task 5 |
 | E.2.6 | Plugin verweigert außerhalb Solution | `monoceros run -- bash -c 'cd /opt/monoceros-workbench && monoceros-plugin list'` | Error: `Not inside a Monoceros solution — no .monoceros/ or .devcontainer/ found from ... upwards.`                                                                                                             | Task 5 |
-| E.2.7 | `claude`-Wrapper im Image            | `monoceros run -- bash -c 'head -2 $(which claude)'`                              | Erste Zeilen zeigen `#!/usr/bin/env bash` und ein `Monoceros wrapper around the Claude Code CLI`-Kommentar. Wenn stattdessen Node-Bytecode kommt, wurde der Wrapper im Runtime-Image nicht installiert.         | Task 6 |
-| E.2.8 | Wrapper findet die echte Binary      | `monoceros run -- ls /usr/local/share/npm-global/bin/claude.real`                 | Datei existiert und ist executable. Das ist die ursprüngliche Claude-Code-CLI, vom Wrapper gerufen.                                                                                                             | Task 6 |
 
 **Fail-Bedeutung:**
 
@@ -434,12 +440,16 @@ In beiden Fällen prüfst du:
 
 **Fail-Bedeutung:**
 
-- E.3.1 fehlerhaft → der `claude`-Wrapper im Runtime-Image hat das
-  Plugin nicht via `--plugin-dir` geladen. Diagnose:
-  `monoceros run -- bash -c 'cat $(which claude)'` muss den
-  Monoceros-Wrapper zeigen, _nicht_ Node-Bytecode. Wenn nicht: das
-  Runtime-Image ist nicht der aktuelle Stand — `pnpm image:rebuild`
-  und Container neu starten.
+- E.3.1 fehlerhaft → Claude Code findet das Plugin nicht. Diagnose
+  in dieser Reihenfolge:
+  1. `cat .claude/settings.json` (E.1.3) — ist der Marketplace
+     registriert und das Plugin aktiviert?
+  2. `cat /opt/monoceros-workbench/.claude-plugin/marketplace.json`
+     (E.1.4) — gültiges JSON, listet `monoceros`?
+  3. `cat /opt/monoceros-workbench/packages/plugin/.claude-plugin/plugin.json`
+     (E.1.5) — gültiges JSON, name = `monoceros`?
+  4. Claude Code muss aus dem Solution-Root gestartet werden, sonst
+     wird `.claude/settings.json` nicht gefunden.
 - E.3.2 hängt → fehlende API-Auth. Diagnose: `claude --version` und
   versuche `claude` direkt im Container. OAuth-Erst-Login wie in C.8
 - E.3.3 enthält Error → typischerweise SDK-API-Error. Diagnose:

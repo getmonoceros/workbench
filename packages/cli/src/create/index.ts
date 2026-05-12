@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
 import {
+  buildClaudeSettings,
   buildComposeYaml,
   buildDevcontainerJson,
   buildReadmeStub,
@@ -91,6 +92,16 @@ export async function runCreate(
   );
 
   await fs.writeFile(path.join(targetDir, 'README.md'), buildReadmeStub(opts));
+
+  // Register the Monoceros plugin via Claude Code's plugin/marketplace
+  // system. Same mechanism is read by the terminal CLI and the VS
+  // Code Extension, so slash commands appear in both surfaces.
+  const claudeDir = path.join(targetDir, '.claude');
+  await fs.mkdir(claudeDir, { recursive: true });
+  await fs.writeFile(
+    path.join(claudeDir, 'settings.json'),
+    JSON.stringify(buildClaudeSettings(), null, 2) + '\n',
+  );
 
   logger.success(`Created solution ${opts.name} at ${targetDir}.`);
   return { status: 'created', targetDir };

@@ -35,17 +35,15 @@ RUN apt-get update \
 # Pin the Claude Code CLI to whatever was current when the image was
 # built. Override at run time with `npm install -g @anthropic-ai/claude-code@latest`
 # inside the container if you need newer.
+#
+# The Monoceros plugin is loaded via the proper Claude Code plugin
+# system, not by wrapping the `claude` binary: `monoceros create`
+# writes a `.claude/settings.json` into each generated solution that
+# registers the workbench checkout as a `directory`-source
+# marketplace and enables the `monoceros` plugin. That mechanism is
+# read by both the terminal CLI and the VS Code extension, so no
+# binary shadowing is needed.
 RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code
-
-# Wrap the global `claude` binary so it auto-loads the Monoceros
-# plugin from the workbench bind-mount when present. The base
-# image's npm puts globals under /usr/local/share/npm-global/, so
-# `claude` lives there — not in /usr/local/bin. We move the real
-# binary aside and drop the wrapper in its place. See
-# claude-wrapper.sh for the logic.
-RUN mv /usr/local/share/npm-global/bin/claude /usr/local/share/npm-global/bin/claude.real
-COPY claude-wrapper.sh /usr/local/share/npm-global/bin/claude
-RUN chmod 0755 /usr/local/share/npm-global/bin/claude
 
 RUN install -d /etc/monoceros
 COPY egress-allow.default.txt /etc/monoceros/egress-allow.default.txt
