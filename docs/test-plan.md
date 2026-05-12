@@ -382,8 +382,8 @@ gesetzt — schau, ob er da ist:
 | E.2.4 | Plugin-CLI antwortet                 | `monoceros run -- monoceros-plugin --help`                                        | Hilfetext mit Subcommands `iterate`, `list`, `triage`, `defer`. Exit 0                                                                                                                                          | Task 5 |
 | E.2.5 | Plugin findet Solution-Root          | `monoceros run -- monoceros-plugin list`                                          | `No open items. Use \`--all\` to include triaged items.` — Pipeline ist noch nie gelaufen                                                                                                                       | Task 5 |
 | E.2.6 | Plugin verweigert außerhalb Solution | `monoceros run -- bash -c 'cd /opt/monoceros-workbench && monoceros-plugin list'` | Error: `Not inside a Monoceros solution — no .monoceros/ or .devcontainer/ found from ... upwards.`                                                                                                             | Task 5 |
-| E.2.7 | `claude`-Wrapper im Image            | `monoceros run -- bash -c 'head -2 /usr/local/bin/claude'`                        | Erste Zeilen zeigen `#!/usr/bin/env bash` und ein `Monoceros wrapper around the Claude Code CLI`-Kommentar. Wenn stattdessen Node-Bytecode kommt, wurde der Wrapper im Runtime-Image nicht installiert.         | Task 6 |
-| E.2.8 | Wrapper findet die echte Binary      | `monoceros run -- ls /usr/local/bin/claude.real`                                  | Datei existiert und ist executable. Das ist die ursprüngliche Claude-Code-CLI, vom Wrapper gerufen.                                                                                                             | Task 6 |
+| E.2.7 | `claude`-Wrapper im Image            | `monoceros run -- bash -c 'head -2 $(which claude)'`                              | Erste Zeilen zeigen `#!/usr/bin/env bash` und ein `Monoceros wrapper around the Claude Code CLI`-Kommentar. Wenn stattdessen Node-Bytecode kommt, wurde der Wrapper im Runtime-Image nicht installiert.         | Task 6 |
+| E.2.8 | Wrapper findet die echte Binary      | `monoceros run -- ls /usr/local/share/npm-global/bin/claude.real`                 | Datei existiert und ist executable. Das ist die ursprüngliche Claude-Code-CLI, vom Wrapper gerufen.                                                                                                             | Task 6 |
 
 **Fail-Bedeutung:**
 
@@ -436,7 +436,7 @@ In beiden Fällen prüfst du:
 
 - E.3.1 fehlerhaft → der `claude`-Wrapper im Runtime-Image hat das
   Plugin nicht via `--plugin-dir` geladen. Diagnose:
-  `monoceros run -- bash -c 'cat /usr/local/bin/claude'` muss den
+  `monoceros run -- bash -c 'cat $(which claude)'` muss den
   Monoceros-Wrapper zeigen, _nicht_ Node-Bytecode. Wenn nicht: das
   Runtime-Image ist nicht der aktuelle Stand — `pnpm image:rebuild`
   und Container neu starten.

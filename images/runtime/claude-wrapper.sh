@@ -16,7 +16,7 @@
 set -euo pipefail
 
 PLUGIN_DIR="/opt/monoceros-workbench/packages/plugin"
-REAL_CLAUDE="/usr/local/bin/claude.real"
+REAL_CLAUDE="/usr/local/share/npm-global/bin/claude.real"
 
 if [ -f "$PLUGIN_DIR/.claude-plugin/plugin.json" ]; then
   exec "$REAL_CLAUDE" --plugin-dir "$PLUGIN_DIR" "$@"
