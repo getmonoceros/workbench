@@ -17,7 +17,8 @@
     "test": "pnpm -r run test",
     "cli": "pnpm --filter @monoceros/cli start",
     "image:build": "docker build -t monoceros-runtime:dev images/runtime",
-    "image:rebuild": "docker build --no-cache -t monoceros-runtime:dev images/runtime"
+    "image:rebuild": "docker build --no-cache -t monoceros-runtime:dev images/runtime",
+    "stage-e:reset": "bash scripts/stage-e-reset.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",

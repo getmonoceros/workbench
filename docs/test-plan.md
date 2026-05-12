@@ -340,6 +340,18 @@ monoceros create stage-e-demo --languages=python --services=postgres
 cd stage-e-demo
 ```
 
+**Schnellweg** beim wiederholten Stage-E-Durchlauf:
+
+```sh
+pnpm stage-e:reset
+```
+
+Das Skript rebuildet das Runtime-Image (`--no-cache`), bringt eine
+vorhandene `stage-e-demo`-Solution sauber runter, scaffoldet sie
+frisch (`--languages=node --services=postgres`) und ruft
+`monoceros start` auf. Source: [`scripts/stage-e-reset.sh`](../scripts/stage-e-reset.sh).
+Idempotent — läuft auch sauber, wenn vorher gar nichts da war.
+
 ### E.1 — Sichtkontrolle vor dem Start
 
 Erst die Files prüfen, ohne Docker.
