@@ -212,6 +212,23 @@ export async function runIterationPipeline(
       generator: generatorResult.sessionId,
       reviewer: reviewerResult.sessionId,
     },
+    metrics: {
+      planner: {
+        numTurns: plannerResult.numTurns,
+        durationMs: plannerResult.durationMs,
+        costUsd: plannerResult.costUsd,
+      },
+      generator: {
+        numTurns: generatorResult.numTurns,
+        durationMs: generatorResult.durationMs,
+        costUsd: generatorResult.costUsd,
+      },
+      reviewer: {
+        numTurns: reviewerResult.numTurns,
+        durationMs: reviewerResult.durationMs,
+        costUsd: reviewerResult.costUsd,
+      },
+    },
     rewound,
   };
 }

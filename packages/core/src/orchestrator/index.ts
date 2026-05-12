@@ -14,4 +14,5 @@ export type {
   IterationPipelineInput,
   IterationPipelineResult,
   IterationPipelineSuccess,
+  PhaseMetrics,
 } from './types.js';

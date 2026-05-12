@@ -209,6 +209,22 @@ describe('runIterationPipeline — happy path', () => {
     expect(fake.calls).toHaveLength(3);
   });
 
+  it('collects per-phase metrics (turns, duration, cost) from runPhase results', async () => {
+    const fake = makeFakePipelineQuery([
+      [resultSuccess('sp', planExample)],
+      [resultSuccess('sg', generatorReportExample)],
+      [resultSuccess('sr', approveReportExample)],
+    ]);
+    const result = await runIterationPipeline(baseInput, fake.fn);
+    if (!result.ok) throw new Error('expected ok');
+    // resultSuccess fixture sets num_turns=1, duration_ms=100, total_cost_usd=0.01
+    expect(result.metrics).toEqual({
+      planner: { numTurns: 1, durationMs: 100, costUsd: 0.01 },
+      generator: { numTurns: 1, durationMs: 100, costUsd: 0.01 },
+      reviewer: { numTurns: 1, durationMs: 100, costUsd: 0.01 },
+    });
+  });
+
   it('uses the per-phase tool whitelists', async () => {
     const fake = makeFakePipelineQuery([
       [resultSuccess('sess-planner', planExample)],

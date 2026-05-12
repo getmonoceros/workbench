@@ -7,11 +7,22 @@ import type {
   GeneratorReport,
   IterationPipelineResult,
   IterationPlan,
+  PhaseMetrics,
   ReviewReport,
 } from '@monoceros/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { runIterateCommand, summarizeOutcome } from '../src/iterate.js';
+
+const mockMetrics: {
+  planner: PhaseMetrics;
+  generator: PhaseMetrics;
+  reviewer: PhaseMetrics;
+} = {
+  planner: { numTurns: 3, durationMs: 12_300, costUsd: 0.02 },
+  generator: { numTurns: 7, durationMs: 28_100, costUsd: 0.05 },
+  reviewer: { numTurns: 4, durationMs: 15_200, costUsd: 0.03 },
+};
 
 const plan: IterationPlan = {
   planSummary: 'Add /healthz endpoint.',
@@ -34,7 +45,11 @@ const plan: IterationPlan = {
 };
 
 const generatorReport: GeneratorReport = {
-  changesSummary: { filesCreated: [], filesModified: [], filesDeleted: [] },
+  changesSummary: {
+    filesCreated: ['src/routes/healthz.ts'],
+    filesModified: ['src/routes/index.ts'],
+    filesDeleted: [],
+  },
   testRun: { executed: true, passed: 3, failed: 0 },
   planDeviations: [],
   reviewerNotes: [],
@@ -88,6 +103,7 @@ describe('runIterateCommand — happy path', () => {
       generatorReport,
       reviewReport,
       sessions: { planner: 'sp', generator: 'sg', reviewer: 'sr' },
+      metrics: mockMetrics,
       rewound: false,
     };
     const outcome = await runIterateCommand(
@@ -110,7 +126,7 @@ describe('runIterateCommand — happy path', () => {
     }
   });
 
-  it('summarizes a successful outcome compactly', async () => {
+  it('summarizes a successful outcome as Markdown', async () => {
     const store = createLocalFindingsStore({ solutionRoot: fix.root });
     const successResult: IterationPipelineResult = {
       ok: true,
@@ -118,6 +134,7 @@ describe('runIterateCommand — happy path', () => {
       generatorReport,
       reviewReport,
       sessions: { planner: 'sp', generator: 'sg', reviewer: 'sr' },
+      metrics: mockMetrics,
       rewound: false,
     };
     const outcome = await runIterateCommand(
@@ -126,12 +143,44 @@ describe('runIterateCommand — happy path', () => {
       { pipeline: async () => successResult },
     );
     const text = summarizeOutcome(outcome);
-    expect(text).toContain('recommendation: approve');
-    expect(text).toContain('tests: pass');
-    expect(text).toContain('rewound: no');
-    expect(text).toContain('1 findings');
+    expect(text).toMatch(/^## ✓ Iteration .* — \*\*approve\*\*/);
+    expect(text).toContain('**Plan**');
+    expect(text).toContain('**Generate**');
+    expect(text).toContain('**Review**');
+    expect(text).toContain('### Acceptance Criteria — 1/1 met');
+    expect(text).toContain('### Files changed');
+    expect(text).toContain('### Tests');
+    expect(text).toContain('### Captured');
+    expect(text).toContain('1 finding (1 low)');
     expect(text).toContain('2 concerns');
     expect(text).toContain('2 risks');
+    expect(text).toContain('### Reviewer');
+    expect(text).toContain(reviewReport.summary);
+  });
+
+  it('shows the "rewound" section when the workspace was rewound', async () => {
+    const store = createLocalFindingsStore({ solutionRoot: fix.root });
+    const rejectReport: ReviewReport = {
+      ...reviewReport,
+      recommendation: 'reject',
+    };
+    const successResult: IterationPipelineResult = {
+      ok: true,
+      plan,
+      generatorReport,
+      reviewReport: rejectReport,
+      sessions: { planner: 'sp', generator: 'sg', reviewer: 'sr' },
+      metrics: mockMetrics,
+      rewound: true,
+    };
+    const outcome = await runIterateCommand(
+      store,
+      { userPrompt: 'p', cwd: fix.root },
+      { pipeline: async () => successResult },
+    );
+    const text = summarizeOutcome(outcome);
+    expect(text).toContain('### Workspace rewound');
+    expect(text).toMatch(/^## ✗ .* — \*\*reject\*\*/);
   });
 });
 
@@ -168,7 +217,7 @@ describe('runIterateCommand — failure handling', () => {
     expect(await store.listAll()).toHaveLength(0);
   });
 
-  it('summarizes a failed outcome with the failed phase and error kind', async () => {
+  it('summarizes a failed outcome as Markdown with the failed phase and error kind', async () => {
     const store = createLocalFindingsStore({ solutionRoot: fix.root });
     const failedResult: IterationPipelineResult = {
       ok: false,
@@ -178,6 +227,7 @@ describe('runIterateCommand — failure handling', () => {
         sessionId: 'sr',
         reason: 'no_result_message',
         messageTypes: ['system', 'assistant'],
+        stderrTail: 'some stderr output here',
       },
       partial: { plan, generatorReport },
     };
@@ -187,7 +237,13 @@ describe('runIterateCommand — failure handling', () => {
       { pipeline: async () => failedResult },
     );
     const text = summarizeOutcome(outcome);
-    expect(text).toContain('FAILED in phase: reviewer');
-    expect(text).toContain('error.kind: missing_output');
+    expect(text).toMatch(/^## ✗ .* — FAILED in \*\*reviewer\*\*/);
+    expect(text).toContain('### Error: `missing_output` / `no_result_message`');
+    expect(text).toContain('`system`, `assistant`');
+    expect(text).toContain('### Stderr tail');
+    expect(text).toContain('some stderr output here');
+    expect(text).toContain('### Partial output');
+    expect(text).toContain('Planner produced a plan');
+    expect(text).toContain('Generator report captured');
   });
 });

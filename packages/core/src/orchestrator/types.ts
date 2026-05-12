@@ -42,12 +42,23 @@ export type IterationEvent =
       rewound: boolean;
     };
 
+export interface PhaseMetrics {
+  numTurns: number;
+  durationMs: number;
+  costUsd: number;
+}
+
 export interface IterationPipelineSuccess {
   ok: true;
   plan: IterationPlan;
   generatorReport: GeneratorReport;
   reviewReport: ReviewReport;
   sessions: { planner: string; generator: string; reviewer: string };
+  metrics: {
+    planner: PhaseMetrics;
+    generator: PhaseMetrics;
+    reviewer: PhaseMetrics;
+  };
   /**
    * `true` if the Reviewer rejected and the Generator's file edits
    * were rolled back to the pre-Phase-2 state via
