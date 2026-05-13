@@ -79,8 +79,13 @@ Was **nicht** mitgeht:
 
 - **Commit-Messages** auf Englisch
 - **Source-Code-Dokumentation** (Kommentare, JSDoc) auf Englisch
-- **User-Doku** (README, Konzept-Dokumente, Backlog) auf Deutsch — der
-  primäre Solution Builder ist deutschsprachig
+- **User-Doku** (README, Konzept-Dokumente, Backlog, Befehlsdocs unter
+  `docs/commands/`) auf Deutsch — der primäre Solution Builder ist
+  deutschsprachig
+- **Pro neuer CLI-Befehl** eine MD-Datei unter `docs/commands/<name>.md`
+  im selben Commit wie der Code, und ein Verweis in
+  [`docs/commands/README.md`](docs/commands/README.md). Generierte
+  Solutions zeigen via README auf `/opt/monoceros-workbench/docs/commands/`
 - **Context7** ist die erste Anlaufstelle für externe Library-Versionen.
   Tools: `mcp__context7__resolve-library-id` und
   `mcp__context7__query-docs`. Niemals Versionsnummern aus dem Gedächtnis

@@ -351,6 +351,13 @@ export function buildReadmeStub(opts: CreateOptions): string {
     '',
     'See `.monoceros/stack.json` for the full audit trail of selected options.',
     '',
+    '## Command reference',
+    '',
+    'Inside the container, every `monoceros …` command has a detail',
+    'doc under `/opt/monoceros-workbench/docs/commands/` — start with',
+    '`/opt/monoceros-workbench/docs/commands/README.md` for the index.',
+    '`monoceros <cmd> --help` shows the short version with flags only.',
+    '',
   );
   return lines.join('\n');
 }

@@ -350,6 +350,15 @@ describe('runCreate', () => {
     expect(readme).toMatch(/projects\//);
     expect(readme).toMatch(/demo\.code-workspace/);
   });
+
+  it('README points at the in-container command-reference docs', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      { ...baseRunOpts, cwd },
+    );
+    const readme = await readFile(path.join(cwd, 'demo', 'README.md'), 'utf8');
+    expect(readme).toMatch(/\/opt\/monoceros-workbench\/docs\/commands\//);
+  });
 });
 
 async function pathExists(p: string): Promise<boolean> {
