@@ -315,6 +315,41 @@ describe('runCreate', () => {
       ),
     ).rejects.toThrow(/Invalid solution name/);
   });
+
+  it('creates a projects/ directory with a .gitkeep placeholder', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      { ...baseRunOpts, cwd },
+    );
+    const projectsDir = path.join(cwd, 'demo', 'projects');
+    const stat = await fs.stat(projectsDir);
+    expect(stat.isDirectory()).toBe(true);
+
+    const entries = await fs.readdir(projectsDir);
+    expect(entries).toEqual(['.gitkeep']);
+  });
+
+  it('writes a <name>.code-workspace file listing the root folder', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      { ...baseRunOpts, cwd },
+    );
+    const workspaceFile = path.join(cwd, 'demo', 'demo.code-workspace');
+    const content = JSON.parse(await readFile(workspaceFile, 'utf8')) as {
+      folders: Array<{ path: string }>;
+    };
+    expect(content).toEqual({ folders: [{ path: '.' }] });
+  });
+
+  it('README mentions the projects/ workflow', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      { ...baseRunOpts, cwd },
+    );
+    const readme = await readFile(path.join(cwd, 'demo', 'README.md'), 'utf8');
+    expect(readme).toMatch(/projects\//);
+    expect(readme).toMatch(/demo\.code-workspace/);
+  });
 });
 
 async function pathExists(p: string): Promise<boolean> {

@@ -260,6 +260,27 @@ export function buildReadmeStub(opts: CreateOptions): string {
     'monoceros shell',
     '```',
     '',
+    '## Workspace layout',
+    '',
+    'This solution is a Monoceros workspace, not a project. The Monoceros',
+    'system folders (`.devcontainer/`, `.monoceros/`, `.claude/`) live at',
+    'the workspace root. Your actual code goes into `projects/` — one folder',
+    'per repository or sub-project:',
+    '',
+    '```',
+    `${opts.name}/`,
+    '  .devcontainer/        ← system',
+    '  .monoceros/           ← system',
+    '  .claude/              ← system',
+    `  ${opts.name}.code-workspace`,
+    '  projects/',
+    '    your-repo-here/     ← clone or `git init`',
+    '',
+    '```',
+    '',
+    `Open \`${opts.name}.code-workspace\` in VS Code to see all project folders`,
+    'as separate roots in the Explorer alongside the workspace root.',
+    '',
     '## Stack',
     '',
     `- Languages: ${opts.languages.length ? opts.languages.join(', ') : '(node only — base image)'}`,
@@ -274,6 +295,30 @@ export function buildReadmeStub(opts: CreateOptions): string {
     '',
   );
   return lines.join('\n');
+}
+
+interface CodeWorkspaceFolder {
+  path: string;
+  name?: string;
+}
+
+interface CodeWorkspaceFile {
+  folders: CodeWorkspaceFolder[];
+}
+
+/**
+ * The `<name>.code-workspace` file VS Code uses to open the solution as
+ * a multi-root workspace. The first entry is `.` so the workspace root
+ * (with its system dotfolders) stays visible in the Explorer. Project
+ * subfolders are appended later by `monoceros add-repo` once they
+ * exist — at create time the list contains only `.`.
+ */
+export function buildCodeWorkspaceJson(
+  _opts: CreateOptions,
+): CodeWorkspaceFile {
+  return {
+    folders: [{ path: '.' }],
+  };
 }
 
 export async function copyPostCreateScript(

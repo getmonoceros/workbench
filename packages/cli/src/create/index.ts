@@ -3,6 +3,7 @@ import path from 'node:path';
 import { consola } from 'consola';
 import {
   buildClaudeSettings,
+  buildCodeWorkspaceJson,
   buildComposeYaml,
   buildDevcontainerJson,
   buildReadmeStub,
@@ -67,8 +68,14 @@ export async function runCreate(
 
   const devcontainerDir = path.join(targetDir, '.devcontainer');
   const monocerosDir = path.join(targetDir, '.monoceros');
+  const projectsDir = path.join(targetDir, 'projects');
   await fs.mkdir(devcontainerDir, { recursive: true });
   await fs.mkdir(monocerosDir, { recursive: true });
+  await fs.mkdir(projectsDir, { recursive: true });
+  // Empty .gitkeep so `projects/` survives a fresh git clone before any
+  // sub-project has been added. Harmless when the solution itself isn't
+  // a git repo.
+  await fs.writeFile(path.join(projectsDir, '.gitkeep'), '');
 
   const devcontainerJson = buildDevcontainerJson(opts);
   await fs.writeFile(
@@ -92,6 +99,14 @@ export async function runCreate(
   );
 
   await fs.writeFile(path.join(targetDir, 'README.md'), buildReadmeStub(opts));
+
+  // VS Code multi-root workspace file. Lists `.` as the only root at
+  // create time; `monoceros add-repo` appends each project subfolder
+  // later so they appear as sibling roots in the Explorer.
+  await fs.writeFile(
+    path.join(targetDir, `${opts.name}.code-workspace`),
+    JSON.stringify(buildCodeWorkspaceJson(opts), null, 2) + '\n',
+  );
 
   // Register the Monoceros plugin via Claude Code's plugin/marketplace
   // system. Same mechanism is read by the terminal CLI and the VS

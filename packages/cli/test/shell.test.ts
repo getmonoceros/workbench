@@ -36,6 +36,18 @@ describe('findSolutionRoot', () => {
     await fs.mkdir(deeper, { recursive: true });
     expect(findSolutionRoot(deeper)).toBe(solution);
   });
+
+  it('resolves from a projects/<name>/ subfolder to the solution root', async () => {
+    // The new workspace layout puts user repos under `projects/`. The
+    // pipeline runs from cwd inside a project — `findSolutionRoot` must
+    // walk back up to where `.devcontainer/` lives, not stop at the
+    // project boundary.
+    const solution = path.join(root, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    const projectDir = path.join(solution, 'projects', 'my-repo');
+    await fs.mkdir(projectDir, { recursive: true });
+    expect(findSolutionRoot(projectDir)).toBe(solution);
+  });
 });
 
 describe('runShell', () => {
