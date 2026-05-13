@@ -457,12 +457,17 @@ export function buildPostCreateScript(opts: CreateOptions): string {
     lines.push(
       '',
       '# Custom install URLs added via `monoceros add-from-url`. Each is',
-      '# fetched and piped to bash on every container rebuild. URLs run',
+      '# fetched and piped to `sh` on every container rebuild. URLs run',
       '# in insertion order so later installs can build on earlier ones.',
+      '#',
+      '# Why `sh` (not `bash`): most install scripts target POSIX `sh`',
+      '# and some (starship, rustup, …) explicitly refuse to run under',
+      '# `bash`. Outer `set -o pipefail` in this script makes a curl',
+      '# failure abort the post-create as expected.',
       `echo "→ Running ${opts.installUrls.length} install URL(s) added via add-from-url…"`,
     );
     for (const url of opts.installUrls) {
-      lines.push(`echo "→ ${url}"`, `bash <(curl -fsSL "${url}")`);
+      lines.push(`echo "→ ${url}"`, `curl -fsSL "${url}" | sh`);
     }
   }
 

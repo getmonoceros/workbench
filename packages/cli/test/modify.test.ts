@@ -594,7 +594,7 @@ describe('runAddFromUrl', () => {
       'utf8',
     );
     expect(postCreate).toContain(
-      'bash <(curl -fsSL "https://example.com/install.sh")',
+      'curl -fsSL "https://example.com/install.sh" | sh',
     );
     // Script must still be executable after the modify path writes it.
     const stat = await fs.stat(

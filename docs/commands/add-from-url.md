@@ -1,7 +1,7 @@
 # `monoceros add-from-url`
 
 Fügt eine HTTPS-Install-Script-URL hinzu, die bei jedem Container-
-Rebuild via `bash <(curl -fsSL <url>)` ausgeführt wird.
+Rebuild via `curl -fsSL <url> | sh` ausgeführt wird.
 
 ## Zweck
 
@@ -9,8 +9,9 @@ Manche Tools haben weder ein Devcontainer-Feature noch ein apt-Paket,
 sondern werden über eine projektspezifische Install-Skript-URL
 installiert. Beispiele:
 
-- `bash <(curl -fsSL https://teamwork-graph.atlassian.com/cli/install)` (TWG-CLI)
-- `bash <(curl -fsSL https://get.acmecorp.io/install)` (interne Tools)
+- `curl -fsSL https://teamwork-graph.atlassian.com/cli/install | sh` (TWG-CLI)
+- `curl -fsSL https://starship.rs/install.sh | sh` (Starship-Prompt)
+- `curl -fsSL https://sh.rustup.rs | sh` (Rust-Toolchain)
 
 `add-from-url` versorgt die Solution deklarativ mit solchen Installs:
 einmal hinzufügen, danach läuft das Skript automatisch bei jedem
@@ -55,11 +56,20 @@ wie Flags aussehen.
 
 1. Die URL wird in `stack.json.installUrls` aufgenommen (Reihenfolge bleibt erhalten — Installs können aufeinander aufbauen).
 2. `.devcontainer/post-create.sh` wird regeneriert. Ans Ende kommt:
+
    ```bash
    echo "→ Running N install URL(s) added via add-from-url…"
    echo "→ https://example.com/install"
-   bash <(curl -fsSL "https://example.com/install")
+   curl -fsSL "https://example.com/install" | sh
    ```
+
+   Warum `sh` und nicht `bash`? Die meisten Install-Scripts (rustup,
+   starship, homebrew, …) zielen auf POSIX `sh`, einige weigern sich
+   explizit unter `bash` zu laufen (starship). `sh` ist der universellere
+   Default. Die äußere post-create.sh läuft weiterhin unter bash mit
+   `set -o pipefail`, sodass ein Fehler in curl _oder_ im Install-Script
+   den Post-Create-Step abbricht.
+
 3. Beim nächsten `monoceros apply` führt der Container das Skript aus.
 
 `monoceros down` und neue Builds re-ausführen die Skripte erneut. Wenn
