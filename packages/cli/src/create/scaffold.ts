@@ -54,6 +54,11 @@ export function workbenchRoot(): string {
 // arbitrary shell into the apt-packages feature config.
 const APT_PACKAGE_NAME_RE = /^[a-z0-9][a-z0-9.+-]*$/;
 
+// Devcontainer feature refs are OCI image refs:
+// `<registry>/<namespace>/<feature>:<tag>`. Permissive but no shell
+// metacharacters or spaces.
+const FEATURE_REF_RE = /^[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+$/;
+
 export function validateOptions(opts: CreateOptions): void {
   if (!opts.name || !/^[a-zA-Z0-9._-]+$/.test(opts.name)) {
     throw new Error(
@@ -81,6 +86,13 @@ export function validateOptions(opts: CreateOptions): void {
       );
     }
   }
+  for (const ref of Object.keys(opts.features ?? {})) {
+    if (!FEATURE_REF_RE.test(ref)) {
+      throw new Error(
+        `Invalid devcontainer feature ref: ${JSON.stringify(ref)}. Expected OCI-image-style ref like 'ghcr.io/devcontainers/features/<name>:<tag>'.`,
+      );
+    }
+  }
 }
 
 // Normalize: dedupe + sort + drop postgres from compose services when an
@@ -92,12 +104,20 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
     services = services.filter((s) => s !== 'postgres');
   }
   const aptPackages = [...new Set(opts.aptPackages ?? [])].sort();
+  // Sort feature refs alphabetically so devcontainer.json + stack.json
+  // output is deterministic regardless of insertion order.
+  const features = opts.features
+    ? Object.fromEntries(
+        Object.entries(opts.features).sort(([a], [b]) => a.localeCompare(b)),
+      )
+    : undefined;
   return {
     name: opts.name,
     languages,
     services,
     postgresUrl: opts.postgresUrl,
     ...(aptPackages.length > 0 ? { aptPackages } : {}),
+    ...(features && Object.keys(features).length > 0 ? { features } : {}),
   };
 }
 
@@ -158,6 +178,15 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     features['ghcr.io/devcontainers-contrib/features/apt-packages:1'] = {
       packages: opts.aptPackages.join(','),
     };
+  }
+  // Custom features (via `monoceros add-feature`) are merged last. If
+  // they collide with a curated feature ref (e.g. the apt-packages
+  // feature also managed via add-apt-packages), the custom entry wins —
+  // the builder added it explicitly.
+  if (opts.features) {
+    for (const [ref, options] of Object.entries(opts.features)) {
+      features[ref] = options;
+    }
   }
 
   const featuresField =
@@ -269,6 +298,9 @@ export function buildStackJson(
     externalServices: opts.postgresUrl ? { postgres: opts.postgresUrl } : {},
     ...(opts.aptPackages && opts.aptPackages.length > 0
       ? { aptPackages: opts.aptPackages }
+      : {}),
+    ...(opts.features && Object.keys(opts.features).length > 0
+      ? { features: opts.features }
       : {}),
   };
 }

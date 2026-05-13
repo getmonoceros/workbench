@@ -17,7 +17,11 @@ import {
   normalizeOptions,
   validateOptions,
 } from '../create/scaffold.js';
-import type { CreateOptions, StackFile } from '../create/types.js';
+import type {
+  CreateOptions,
+  FeatureOptions,
+  StackFile,
+} from '../create/types.js';
 import { findSolutionRoot } from '../devcontainer/locate.js';
 
 export interface ModifyLogger {
@@ -48,6 +52,11 @@ export interface AddServiceInput extends ModifyOptions {
 
 export interface AddAptPackagesInput extends ModifyOptions {
   packages: string[];
+}
+
+export interface AddFeatureInput extends ModifyOptions {
+  ref: string;
+  options?: FeatureOptions;
 }
 
 export type ModifyResult =
@@ -105,6 +114,41 @@ export async function runAddAptPackages(
   });
 }
 
+export async function runAddFeature(
+  input: AddFeatureInput,
+): Promise<ModifyResult> {
+  const ref = input.ref.trim();
+  if (ref.length === 0) {
+    throw new Error('Missing feature ref. Usage: monoceros add-feature <ref>.');
+  }
+  return mutate(input, (stack) => {
+    const existing = stack.features?.[ref];
+    if (existing !== undefined) {
+      // We treat re-adding a known feature as an explicit error rather
+      // than silently overwriting its options. Builder must
+      // `remove-feature` (future) or edit stack.json directly to change
+      // option values. The no-options re-add is still caught as
+      // "no-change" later because the regenerated stack/devcontainer
+      // bytes are byte-identical.
+      const sameOptions =
+        JSON.stringify(existing) === JSON.stringify(input.options ?? {});
+      if (!sameOptions) {
+        throw new Error(
+          `Feature ${ref} is already configured with different options. Edit stack.json directly or remove it first.`,
+        );
+      }
+    }
+    const features: Record<string, FeatureOptions> = {
+      ...(stack.features ?? {}),
+      [ref]: input.options ?? {},
+    };
+    return {
+      ...stack,
+      features,
+    };
+  });
+}
+
 interface PlannedChange {
   relPath: string;
   absPath: string;
@@ -141,6 +185,9 @@ async function mutate(
     ...(draftStack.aptPackages && draftStack.aptPackages.length > 0
       ? { aptPackages: draftStack.aptPackages }
       : {}),
+    ...(draftStack.features && Object.keys(draftStack.features).length > 0
+      ? { features: draftStack.features }
+      : {}),
   };
   validateOptions(draftOptions);
   const normalized = normalizeOptions(draftOptions);
@@ -155,6 +202,9 @@ async function mutate(
     monocerosCliVersion: opts.cliVersion,
     ...(normalized.aptPackages && normalized.aptPackages.length > 0
       ? { aptPackages: normalized.aptPackages }
+      : {}),
+    ...(normalized.features && Object.keys(normalized.features).length > 0
+      ? { features: normalized.features }
       : {}),
   };
 

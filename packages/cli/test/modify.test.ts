@@ -7,6 +7,7 @@ import { runCreate } from '../src/create/index.js';
 import type { StackFile } from '../src/create/types.js';
 import {
   runAddAptPackages,
+  runAddFeature,
   runAddLanguage,
   runAddService,
 } from '../src/modify/index.js';
@@ -415,5 +416,148 @@ describe('runAddAptPackages', () => {
       path.join(solution, '.monoceros', 'stack.json'),
     );
     expect(stack.aptPackages).toBeUndefined();
+  });
+});
+
+describe('runAddFeature', () => {
+  let cwd: string;
+
+  beforeEach(async () => {
+    cwd = await mkdtemp(path.join(tmpdir(), 'monoceros-add-feature-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  it('writes the feature into devcontainer.json with the given options', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    const result = await runAddFeature({
+      ...baseModifyOpts,
+      cwd: solution,
+      ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
+      options: { version: 'latest', moby: true },
+    });
+    expect(result.status).toBe('updated');
+
+    const devcontainer = await readJson<{
+      features?: Record<string, Record<string, unknown>>;
+    }>(path.join(solution, '.devcontainer', 'devcontainer.json'));
+    expect(
+      devcontainer.features?.[
+        'ghcr.io/devcontainers/features/docker-in-docker:2'
+      ],
+    ).toEqual({ version: 'latest', moby: true });
+
+    const stack = await readJson<StackFile>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(
+      stack.features?.['ghcr.io/devcontainers/features/docker-in-docker:2'],
+    ).toEqual({ version: 'latest', moby: true });
+  });
+
+  it('is a no-op when re-added with identical options', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await runAddFeature({
+      ...baseModifyOpts,
+      cwd: solution,
+      ref: 'ghcr.io/devcontainers/features/github-cli:1',
+      options: {},
+    });
+    const stackBefore = await fs.readFile(
+      path.join(solution, '.monoceros', 'stack.json'),
+      'utf8',
+    );
+
+    const result = await runAddFeature({
+      ...baseModifyOpts,
+      cwd: solution,
+      ref: 'ghcr.io/devcontainers/features/github-cli:1',
+      options: {},
+    });
+    expect(result.status).toBe('no-change');
+
+    expect(
+      await fs.readFile(
+        path.join(solution, '.monoceros', 'stack.json'),
+        'utf8',
+      ),
+    ).toBe(stackBefore);
+  });
+
+  it('refuses to silently overwrite an existing feature with new options', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddFeature({
+      ...baseModifyOpts,
+      cwd: solution,
+      ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
+      options: { version: 'latest' },
+    });
+
+    await expect(
+      runAddFeature({
+        ...baseModifyOpts,
+        cwd: solution,
+        ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
+        options: { version: '24' },
+      }),
+    ).rejects.toThrow(/already configured with different options/);
+  });
+
+  it('rejects invalid feature refs (no shell metacharacters allowed)', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await expect(
+      runAddFeature({
+        ...baseModifyOpts,
+        cwd: solution,
+        ref: 'ghcr.io/foo; rm -rf /',
+      }),
+    ).rejects.toThrow(/Invalid devcontainer feature ref/);
+  });
+
+  it('rejects empty feature ref', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await expect(
+      runAddFeature({
+        ...baseModifyOpts,
+        cwd: solution,
+        ref: '',
+      }),
+    ).rejects.toThrow(/Missing feature ref/);
+  });
+
+  it('coexists with apt-packages and language features (sorted ref output)', async () => {
+    const solution = await scaffold(cwd, {
+      name: 'demo',
+      languages: ['python'],
+    });
+    await runAddAptPackages({
+      ...baseModifyOpts,
+      cwd: solution,
+      packages: ['jq'],
+    });
+
+    const result = await runAddFeature({
+      ...baseModifyOpts,
+      cwd: solution,
+      ref: 'ghcr.io/devcontainers/features/github-cli:1',
+      options: {},
+    });
+    expect(result.status).toBe('updated');
+
+    const devcontainer = await readJson<{
+      features?: Record<string, Record<string, unknown>>;
+    }>(path.join(solution, '.devcontainer', 'devcontainer.json'));
+    const refs = Object.keys(devcontainer.features ?? {});
+    expect(refs).toContain('ghcr.io/devcontainers/features/python:1');
+    expect(refs).toContain(
+      'ghcr.io/devcontainers-contrib/features/apt-packages:1',
+    );
+    expect(refs).toContain('ghcr.io/devcontainers/features/github-cli:1');
   });
 });
