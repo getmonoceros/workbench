@@ -240,11 +240,15 @@ cd sandbox
     (`monoceros status` zeigt nichts running) oder das Volume wurde
     durch ein `monoceros down --volumes` weggeräumt. Frische Solution:
     `pnpm sandbox:reset`.
-  - `apply` scheitert mit „container name … is already in use" → der
-    Cleanup hat einen Container nicht erwischt, der das Project-Label
-    nicht trägt (z. B. manuell angelegt). Host-seitig:
-    `docker ps -a | grep sandbox_devcontainer` zeigt verwaiste Container,
-    mit `docker rm -f <name>` entfernen.
+  - `apply` scheitert mit „containers reappeared after removal" oder
+    „container name … is already in use" → **VS Code mit aktiver
+    Remote-Containers-Session** auf derselben Solution. Die
+    VS-Code-Extension recreated den Container automatisch, sobald
+    `apply` ihn entfernt — race mit dem nachfolgenden `devcontainer up`.
+    Lösung: in VS Code `Cmd+Shift+P` → „Dev Containers: Close Remote
+    Connection", danach `apply` erneut. Seit der Cleanup-Härtung
+    erkennt `apply` das selbst (Post-Cleanup-Re-Check) und bricht mit
+    eindeutigem Hinweis ab, statt in den Race-`up` zu laufen.
   - Image-Mode-Variante hängt → `--remove-existing-container` braucht
     @devcontainers/cli ≥ 0.86; check `node_modules/@devcontainers/cli/package.json`
     Version.

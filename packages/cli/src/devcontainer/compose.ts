@@ -208,10 +208,32 @@ export async function runApply(opts: ApplyOptions = {}): Promise<number> {
       `Force-removing existing ${projectName} containers (volumes preserved)…`,
     );
     const cleanupSpawn = opts.cleanupSpawn ?? spawnBash;
-    // List containers by the docker-compose project label, force-remove
-    // them, drop the default network. Trailing `; true` prevents a
-    // missing network from failing the whole script.
-    const script = `set -eu; ids=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}"); if [ -n "$ids" ]; then docker rm -f $ids; fi; docker network rm ${projectName}_default 2>/dev/null; true`;
+    // Two-step removal so a container with stale/missing labels still
+    // gets caught:
+    //   - by docker-compose project label (covers tool-managed
+    //     containers from @devcontainers/cli or VS Code's Remote
+    //     Containers extension)
+    //   - by container-name prefix `<project>-*` (covers leftover
+    //     containers whose labels drifted or were never set)
+    // Each command is guarded with `|| true` so a missing target
+    // (empty list, no such network) doesn't abort the whole script.
+    // After removal we re-query: if anything remains, VS Code's
+    // Remote Containers extension is the most likely culprit
+    // (auto-recreates on container loss), so we abort with a clear
+    // hint rather than letting `devcontainer up` collide.
+    const script = [
+      `set -u`,
+      `echo "[cleanup] checking project ${projectName}…"`,
+      `by_label=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}" 2>/dev/null || true)`,
+      `by_name=$(docker ps -aq --filter "name=^${projectName}-" 2>/dev/null || true)`,
+      `to_remove=$(printf "%s\\n%s\\n" "$by_label" "$by_name" | sort -u | grep -v "^$" || true)`,
+      `if [ -n "$to_remove" ]; then echo "[cleanup] removing: $(echo $to_remove | tr "\\n" " ")"; docker rm -f $to_remove >/dev/null || true; else echo "[cleanup] no containers to remove"; fi`,
+      `docker network rm ${projectName}_default 2>/dev/null && echo "[cleanup] network ${projectName}_default removed" || echo "[cleanup] network ${projectName}_default not present"`,
+      `remaining_label=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}" 2>/dev/null || true)`,
+      `remaining_name=$(docker ps -aq --filter "name=^${projectName}-" 2>/dev/null || true)`,
+      `if [ -n "$remaining_label" ] || [ -n "$remaining_name" ]; then echo "" >&2; echo "ERROR: containers under project ${projectName} reappeared after removal." >&2; echo "This typically means VS Code's Remote Containers extension is connected to" >&2; echo "this devcontainer and auto-recreated it. Close the dev container session" >&2; echo "in VS Code (Cmd+Shift+P → 'Dev Containers: Close Remote Connection')" >&2; echo "and retry \\\`monoceros apply\\\`." >&2; exit 1; fi`,
+      `echo "[cleanup] done"`,
+    ].join('; ');
     const cleanupCode = await cleanupSpawn(['-c', script], root);
     if (cleanupCode !== 0) return cleanupCode;
 

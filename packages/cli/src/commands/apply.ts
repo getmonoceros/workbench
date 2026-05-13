@@ -6,7 +6,7 @@ export const applyCommand = defineCommand({
   meta: {
     name: 'apply',
     description:
-      'Rebuild the devcontainer to materialise pending changes from `add-language` / `add-service` / future `add-*` mutations. Compose-mode: force-remove project containers + drop network (volumes preserved) + devcontainer up. Image-mode: devcontainer up --remove-existing-container.',
+      'Rebuild the devcontainer to materialise pending changes from `add-language` / `add-service` / `add-apt-packages` mutations. Compose-mode: force-remove project containers + drop network (volumes preserved) + devcontainer up. Image-mode: devcontainer up --remove-existing-container. Close any VS Code Remote Containers session first — the extension auto-recreates containers and races with apply.',
   },
   args: {
     project: {
