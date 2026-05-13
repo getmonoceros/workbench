@@ -48,6 +48,12 @@ export function workbenchRoot(): string {
   return findRepoRoot();
 }
 
+// Debian/Ubuntu apt package name rules: start with alphanumeric, then
+// alphanumerics + `.+-` are allowed. We intentionally don't allow shell
+// metacharacters (`;`, `&`, `|`, `$`, `(`, …) so a typo can't smuggle
+// arbitrary shell into the apt-packages feature config.
+const APT_PACKAGE_NAME_RE = /^[a-z0-9][a-z0-9.+-]*$/;
+
 export function validateOptions(opts: CreateOptions): void {
   if (!opts.name || !/^[a-zA-Z0-9._-]+$/.test(opts.name)) {
     throw new Error(
@@ -68,6 +74,13 @@ export function validateOptions(opts: CreateOptions): void {
       );
     }
   }
+  for (const pkg of opts.aptPackages ?? []) {
+    if (!APT_PACKAGE_NAME_RE.test(pkg)) {
+      throw new Error(
+        `Invalid apt package name: ${JSON.stringify(pkg)}. Expected lowercase alphanumeric plus '.+-'.`,
+      );
+    }
+  }
 }
 
 // Normalize: dedupe + sort + drop postgres from compose services when an
@@ -78,11 +91,13 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
   if (opts.postgresUrl) {
     services = services.filter((s) => s !== 'postgres');
   }
+  const aptPackages = [...new Set(opts.aptPackages ?? [])].sort();
   return {
     name: opts.name,
     languages,
     services,
     postgresUrl: opts.postgresUrl,
+    ...(aptPackages.length > 0 ? { aptPackages } : {}),
   };
 }
 
@@ -135,6 +150,14 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     if (BUILTIN_LANGUAGES.has(lang)) continue;
     const entry = LANGUAGE_CATALOG[lang];
     if (entry) features[entry.feature] = {};
+  }
+  if (opts.aptPackages && opts.aptPackages.length > 0) {
+    // The apt-packages devcontainer feature accepts a comma-separated
+    // list of package names. Spaces in the value would trip apt-get, so
+    // we join exactly as the feature expects.
+    features['ghcr.io/devcontainers-contrib/features/apt-packages:1'] = {
+      packages: opts.aptPackages.join(','),
+    };
   }
 
   const featuresField =
@@ -244,6 +267,9 @@ export function buildStackJson(
     languages: opts.languages,
     services: opts.services,
     externalServices: opts.postgresUrl ? { postgres: opts.postgresUrl } : {},
+    ...(opts.aptPackages && opts.aptPackages.length > 0
+      ? { aptPackages: opts.aptPackages }
+      : {}),
   };
 }
 

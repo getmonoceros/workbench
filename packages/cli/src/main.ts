@@ -1,4 +1,5 @@
 import { defineCommand } from 'citty';
+import { addAptPackagesCommand } from './commands/add-apt-packages.js';
 import { addLanguageCommand } from './commands/add-language.js';
 import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
@@ -31,5 +32,6 @@ export const main = defineCommand({
     apply: applyCommand,
     'add-service': addServiceCommand,
     'add-language': addLanguageCommand,
+    'add-apt-packages': addAptPackagesCommand,
   },
 });

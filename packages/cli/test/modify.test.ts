@@ -5,7 +5,11 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runCreate } from '../src/create/index.js';
 import type { StackFile } from '../src/create/types.js';
-import { runAddLanguage, runAddService } from '../src/modify/index.js';
+import {
+  runAddAptPackages,
+  runAddLanguage,
+  runAddService,
+} from '../src/modify/index.js';
 
 const silentLogger = {
   info: () => {},
@@ -285,5 +289,131 @@ describe('runAddService', () => {
         service: 'postgres',
       }),
     ).rejects.toThrow(/No \.monoceros\/stack\.json at/);
+  });
+});
+
+describe('runAddAptPackages', () => {
+  let cwd: string;
+
+  beforeEach(async () => {
+    cwd = await mkdtemp(path.join(tmpdir(), 'monoceros-add-apt-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  it('adds the apt-packages feature to a bare solution and records the list in stack.json', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    const result = await runAddAptPackages({
+      ...baseModifyOpts,
+      cwd: solution,
+      packages: ['make', 'jq'],
+    });
+    expect(result.status).toBe('updated');
+
+    const devcontainer = await readJson<{
+      features?: Record<string, Record<string, unknown>>;
+    }>(path.join(solution, '.devcontainer', 'devcontainer.json'));
+    expect(
+      devcontainer.features?.[
+        'ghcr.io/devcontainers-contrib/features/apt-packages:1'
+      ],
+    ).toEqual({ packages: 'jq,make' });
+
+    const stack = await readJson<StackFile>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.aptPackages).toEqual(['jq', 'make']);
+  });
+
+  it('accumulates packages across multiple invocations (idempotent + sorted)', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await runAddAptPackages({
+      ...baseModifyOpts,
+      cwd: solution,
+      packages: ['make'],
+    });
+    await runAddAptPackages({
+      ...baseModifyOpts,
+      cwd: solution,
+      packages: ['jq', 'openssh-client'],
+    });
+
+    const stack = await readJson<StackFile>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.aptPackages).toEqual(['jq', 'make', 'openssh-client']);
+  });
+
+  it('is a no-op when every requested package is already declared', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddAptPackages({
+      ...baseModifyOpts,
+      cwd: solution,
+      packages: ['make', 'jq'],
+    });
+    const stackBefore = await fs.readFile(
+      path.join(solution, '.monoceros', 'stack.json'),
+      'utf8',
+    );
+
+    const result = await runAddAptPackages({
+      ...baseModifyOpts,
+      cwd: solution,
+      packages: ['jq', 'make'],
+    });
+    expect(result.status).toBe('no-change');
+
+    expect(
+      await fs.readFile(
+        path.join(solution, '.monoceros', 'stack.json'),
+        'utf8',
+      ),
+    ).toBe(stackBefore);
+  });
+
+  it('rejects invalid package names with shell metacharacters', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await expect(
+      runAddAptPackages({
+        ...baseModifyOpts,
+        cwd: solution,
+        packages: ['make; rm -rf /'],
+      }),
+    ).rejects.toThrow(/Invalid apt package name/);
+  });
+
+  it('rejects empty package list with a usage hint', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await expect(
+      runAddAptPackages({
+        ...baseModifyOpts,
+        cwd: solution,
+        packages: [],
+      }),
+    ).rejects.toThrow(/No package names given/);
+  });
+
+  it('respects an explicit no on the confirmation prompt', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    const result = await runAddAptPackages({
+      ...baseModifyOpts,
+      cwd: solution,
+      yes: false,
+      confirm: async () => false,
+      packages: ['make'],
+    });
+    expect(result.status).toBe('aborted');
+
+    const stack = await readJson<StackFile>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.aptPackages).toBeUndefined();
   });
 });

@@ -46,6 +46,10 @@ export interface AddServiceInput extends ModifyOptions {
   service: string;
 }
 
+export interface AddAptPackagesInput extends ModifyOptions {
+  packages: string[];
+}
+
 export type ModifyResult =
   | { status: 'no-change' }
   | { status: 'updated'; changedPaths: string[] }
@@ -82,6 +86,25 @@ export async function runAddService(
   }));
 }
 
+export async function runAddAptPackages(
+  input: AddAptPackagesInput,
+): Promise<ModifyResult> {
+  if (input.packages.length === 0) {
+    throw new Error(
+      'No package names given. Usage: monoceros add-apt-packages <pkg> [<pkg> …].',
+    );
+  }
+  return mutate(input, (stack) => {
+    const merged = [
+      ...new Set([...(stack.aptPackages ?? []), ...input.packages]),
+    ].sort();
+    return {
+      ...stack,
+      aptPackages: merged,
+    };
+  });
+}
+
 interface PlannedChange {
   relPath: string;
   absPath: string;
@@ -115,6 +138,9 @@ async function mutate(
     languages: draftStack.languages,
     services: draftStack.services,
     postgresUrl: draftStack.externalServices.postgres,
+    ...(draftStack.aptPackages && draftStack.aptPackages.length > 0
+      ? { aptPackages: draftStack.aptPackages }
+      : {}),
   };
   validateOptions(draftOptions);
   const normalized = normalizeOptions(draftOptions);
@@ -127,6 +153,9 @@ async function mutate(
       ? { postgres: normalized.postgresUrl }
       : {},
     monocerosCliVersion: opts.cliVersion,
+    ...(normalized.aptPackages && normalized.aptPackages.length > 0
+      ? { aptPackages: normalized.aptPackages }
+      : {}),
   };
 
   const devcontainerPath = path.join(
@@ -203,6 +232,9 @@ async function mutate(
 
   await applyChanges(root, planned);
   logger.success(`Updated solution at ${root}.`);
+  logger.info(
+    'Run `monoceros apply` to rebuild the container and pick up the change.',
+  );
   return {
     status: 'updated',
     changedPaths: planned.map((c) => c.relPath),

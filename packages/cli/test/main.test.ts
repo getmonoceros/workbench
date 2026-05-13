@@ -23,6 +23,7 @@ describe('monoceros main command', () => {
       'apply',
       'add-service',
       'add-language',
+      'add-apt-packages',
     ];
 
     const subCommands = main.subCommands;
