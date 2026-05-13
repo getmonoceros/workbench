@@ -21,6 +21,21 @@ export const spawnDockerCompose: ComposeSpawn = (args, cwd) => {
   });
 };
 
+// Generic shell spawn used by `monoceros apply` for the label-based
+// container cleanup (a small pipeline that's awkward to express as a
+// pure argv vector). Same ComposeSpawn shape so tests can inject a
+// fake; `args[0]` is `-c`, `args[1]` is the shell command string.
+export const spawnBash: ComposeSpawn = (args, cwd) => {
+  return new Promise((resolve, reject) => {
+    const child = spawn('bash', args, {
+      cwd,
+      stdio: 'inherit',
+    });
+    child.on('error', reject);
+    child.on('exit', (code) => resolve(code ?? 0));
+  });
+};
+
 interface ResolvedCompose {
   root: string;
   composeFile: string;
@@ -140,9 +155,10 @@ export async function runDown(opts: DownOptions = {}): Promise<number> {
 export interface ApplyOptions {
   cwd?: string;
   project?: string;
-  // Compose-mode `apply` shells out to `docker compose down`; this hook
-  // injects an alternative spawn for tests.
-  dockerComposeSpawn?: ComposeSpawn;
+  // Compose-mode `apply` shells out to a bash one-liner that force-
+  // removes the project's containers and network. Same shape as
+  // ComposeSpawn so tests can inject a fake. Args are `['-c', '<script>']`.
+  cleanupSpawn?: ComposeSpawn;
   // Both compose- and image-mode `apply` call `devcontainer up` at the
   // end; this hook covers that side.
   devcontainerSpawn?: DevcontainerSpawn;
@@ -152,15 +168,25 @@ export interface ApplyOptions {
 // `monoceros apply` is the convenience step the builder runs after any
 // `monoceros add-*` to materialise the change in the running container.
 // Internally:
-//   - compose-mode (compose.yaml present): `docker compose down`
-//     (volumes preserved) followed by `devcontainer up`. The down step
-//     wipes the workspace container so the rebuild picks up new
-//     devcontainer features; named volumes (postgres-data etc.) survive.
+//   - compose-mode (compose.yaml present): force-remove all containers
+//     carrying the project label, drop the default network, then
+//     `devcontainer up` to rebuild. Named volumes (postgres-data etc.)
+//     survive because the cleanup only touches containers + network.
 //   - image-mode (no compose.yaml): `devcontainer up --remove-existing-container`,
 //     which stops + removes the workspace container and recreates it
-//     in one step. Equivalent to the compose-mode down+start, just
-//     without an aux-service compose stack to manage.
-// If the down step fails (non-zero exit), the up step is skipped so
+//     in one step.
+//
+// Why a direct label-based cleanup instead of `docker compose down`:
+// docker compose's down only matches containers whose
+// `com.docker.compose.project.config_files` label matches the current
+// compose-file set. When a builder mixes `@devcontainers/cli`-managed
+// containers (via `monoceros start/apply`) with VS Code's
+// "Reopen in Container" extension — both write `project=<solution>_devcontainer`
+// but use different temporary merge files — compose-down silently
+// skips the containers from the "other" tool. The label-based force
+// remove sidesteps that entirely.
+//
+// If the cleanup step fails (non-zero exit), the up step is skipped so
 // the failure surfaces clearly instead of being masked by a successful
 // `up` on a half-broken stack.
 export async function runApply(opts: ApplyOptions = {}): Promise<number> {
@@ -177,14 +203,17 @@ export async function runApply(opts: ApplyOptions = {}): Promise<number> {
   const logger = opts.logger ?? { info: (msg) => consola.info(msg) };
 
   if (hasCompose) {
-    logger.info('Stopping containers (volumes preserved)…');
-    const downCode = await runDown({
-      cwd,
-      ...(opts.project !== undefined ? { project: opts.project } : {}),
-      volumes: false,
-      ...(opts.dockerComposeSpawn ? { spawn: opts.dockerComposeSpawn } : {}),
-    });
-    if (downCode !== 0) return downCode;
+    const projectName = composeProjectName(root);
+    logger.info(
+      `Force-removing existing ${projectName} containers (volumes preserved)…`,
+    );
+    const cleanupSpawn = opts.cleanupSpawn ?? spawnBash;
+    // List containers by the docker-compose project label, force-remove
+    // them, drop the default network. Trailing `; true` prevents a
+    // missing network from failing the whole script.
+    const script = `set -eu; ids=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}"); if [ -n "$ids" ]; then docker rm -f $ids; fi; docker network rm ${projectName}_default 2>/dev/null; true`;
+    const cleanupCode = await cleanupSpawn(['-c', script], root);
+    if (cleanupCode !== 0) return cleanupCode;
 
     return runStart({
       cwd,

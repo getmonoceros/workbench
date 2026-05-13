@@ -241,20 +241,20 @@ describe('runApply', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it('compose-mode: runs docker compose down (no -v) then devcontainer up', async () => {
+  it('compose-mode: force-removes project containers then devcontainer up', async () => {
     const solution = path.join(root, 'demo');
     await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
     const composeFile = path.join(solution, '.devcontainer', 'compose.yaml');
     await fs.writeFile(composeFile, 'services: {}\n');
 
-    const composeCalls: string[][] = [];
+    const cleanupCalls: { args: string[]; cwd: string }[] = [];
     const devcontainerCalls: { args: string[]; cwd: string }[] = [];
 
     const exitCode = await runApply({
       cwd: solution,
       logger: { info: () => {} },
-      dockerComposeSpawn: async (args) => {
-        composeCalls.push(args);
+      cleanupSpawn: async (args, cwd) => {
+        cleanupCalls.push({ args, cwd });
         return 0;
       },
       devcontainerSpawn: async (args, cwd) => {
@@ -264,15 +264,24 @@ describe('runApply', () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(composeCalls).toEqual([
-      ['-f', composeFile, '-p', 'demo_devcontainer', 'down'],
-    ]);
+    // Cleanup is a `bash -c <script>`; the script must reference the
+    // project label and the default network so we know it will reach
+    // both kinds of artifact a previous `up` left behind.
+    expect(cleanupCalls).toHaveLength(1);
+    expect(cleanupCalls[0]?.cwd).toBe(solution);
+    expect(cleanupCalls[0]?.args[0]).toBe('-c');
+    const script = cleanupCalls[0]?.args[1] ?? '';
+    expect(script).toContain(
+      'label=com.docker.compose.project=demo_devcontainer',
+    );
+    expect(script).toContain('docker rm -f');
+    expect(script).toContain('docker network rm demo_devcontainer_default');
     expect(devcontainerCalls).toEqual([
       { args: ['up', '--workspace-folder', solution], cwd: solution },
     ]);
   });
 
-  it('compose-mode: short-circuits if down fails (skips devcontainer up)', async () => {
+  it('compose-mode: short-circuits if cleanup fails (skips devcontainer up)', async () => {
     const solution = path.join(root, 'demo');
     await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
     await fs.writeFile(
@@ -285,7 +294,7 @@ describe('runApply', () => {
     const exitCode = await runApply({
       cwd: solution,
       logger: { info: () => {} },
-      dockerComposeSpawn: async () => 7,
+      cleanupSpawn: async () => 7,
       devcontainerSpawn: async (args) => {
         devcontainerCalls.push({ args });
         return 0;
@@ -301,14 +310,14 @@ describe('runApply', () => {
     await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
     // No compose.yaml — image mode.
 
-    const composeCalls: string[][] = [];
+    const cleanupCalls: string[][] = [];
     const devcontainerCalls: { args: string[]; cwd: string }[] = [];
 
     const exitCode = await runApply({
       cwd: solution,
       logger: { info: () => {} },
-      dockerComposeSpawn: async (args) => {
-        composeCalls.push(args);
+      cleanupSpawn: async (args) => {
+        cleanupCalls.push(args);
         return 0;
       },
       devcontainerSpawn: async (args, cwd) => {
@@ -318,7 +327,7 @@ describe('runApply', () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(composeCalls).toEqual([]);
+    expect(cleanupCalls).toEqual([]);
     expect(devcontainerCalls).toEqual([
       {
         args: [
@@ -337,7 +346,7 @@ describe('runApply', () => {
       runApply({
         cwd: root,
         logger: { info: () => {} },
-        dockerComposeSpawn: async () => 0,
+        cleanupSpawn: async () => 0,
         devcontainerSpawn: async () => 0,
       }),
     ).rejects.toThrow(/No \.devcontainer\/ found/);
