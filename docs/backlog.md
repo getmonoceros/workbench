@@ -434,6 +434,211 @@ für später" mit klarer Reaktivierungs-Bedingung.
 
 ---
 
+## M2.5 — DevContainer-Pimps (Workspace-Komfort)
+
+**Ziel:** Den Dev-Container von einer „lauffähigen Umgebung" zu einer
+**vollständig deklarativen Solution-Workbench** ausbauen. Builder
+deklariert was er braucht (Sprachen, apt-Pakete, Devcontainer-Features,
+Custom-Installer, Git-Repos), Monoceros materialisiert das. Jeder
+Container-Rebuild reproduziert exakt dieselbe Umgebung. Keine
+verlorene „ich hab das mal manuell installiert"-Tooling.
+
+Läuft parallel zur offenen M2-Design-Diskussion
+([design-pivot-autonomous-iterate.md](design-pivot-autonomous-iterate.md))
+und ist unabhängig von deren Ausgang. Phase 1+2 sind unmittelbare
+Pimps, Phase 3+4 sind die größere Wette aufs deklarative
+Manifest-Modell.
+
+### Workspace-Layout — Vorab-Entscheidung
+
+Solution-Layout bekommt eine eigene Projekt-Ebene unter `projects/`,
+damit System-Dotfolder (`.monoceros/`, `.devcontainer/`, `.claude/`)
+nicht in den Review-Scope rutschen:
+
+```
+sandbox/                          ← Dev-Container-Workspace-Root
+  .claude/                        ← System
+  .devcontainer/                  ← System
+  .monoceros/                     ← System (Audit)
+  README.md
+  sandbox.code-workspace          ← VS Code Multi-Root-Definition
+  projects/                       ← Container für Projekte
+    repo-a/                       ← geklont oder `git init`
+    repo-b/
+```
+
+`sandbox.code-workspace` listet `"."` plus jeden Projekt-Subfolder
+als Root. Pipeline arbeitet cwd-basiert: Builder `cd projects/repo-a`,
+ruft `/monoceros:iterate`, Pipeline findet `.monoceros/` durch
+Aufwärtswalk. Multi-Projekt ist „einfach mehrere Folder unter
+`projects/`" — keine spezielle Monoceros-Logik nötig.
+
+### Phase 1 — Imperative `add-*`-Befehle + `apply`
+
+Drei neue Befehle für die drei realen Installationsarten, plus
+Git-Clone und kombinierter Rebuild-Step:
+
+1. **`monoceros add-apt-packages <pkg> [<pkg> …]`**
+   - Mehrfach-Args (apt-Pakete kommen in Bündeln)
+   - Speichert Liste in `stack.json.aptPackages: string[]`
+   - Schreibt Devcontainer-Feature
+     `ghcr.io/devcontainers-contrib/features/apt-packages:1` mit
+     akkumulierter Liste
+   - Idempotent: Paket schon drin → no-op
+   - Diff-Preview, `--yes` zum Skippen
+
+2. **`monoceros add-feature <feature-ref> [--option key=value …]`**
+   - Single-Arg + Options-Pairs
+   - Beispiel:
+     `monoceros add-feature ghcr.io/devcontainers/features/docker-in-docker:2 --option version=latest`
+   - Schreibt direkt in `.devcontainer/devcontainer.json` →
+     `features` mit dem Options-Hash
+   - Spiegelung in `stack.json.features: { [ref]: options }`
+   - Idempotenz: gleiche Ref vorhanden → error (Builder muss explizit
+     `remove-feature` + neu adden, falls Options sich ändern sollen)
+
+3. **`monoceros add-from-url <url>`**
+   - Single-Arg
+   - Beispiel:
+     `monoceros add-from-url https://teamwork-graph.atlassian.com/cli/install`
+   - Speichert URL in `stack.json.installUrls: string[]`
+     (Reihenfolge erhalten — Installs können aufeinander aufbauen)
+   - Erweitert `.devcontainer/post-create.sh` um einen Block, der pro
+     URL `bash <(curl -fsSL <url>)` ausführt
+   - **Security-Confirm**: Befehl zeigt _vor_ dem Schreiben einen
+     lauten Hinweis „This will execute remote shell code at every
+     container build. Trust this URL? [y/N]". `--yes` zum Skippen.
+   - Idempotenz: URL schon drin → no-op
+
+4. **`monoceros add-repo <url> [--name=<n>] [--branch=<b>]`**
+   - Eintrag in `stack.json.repos: Array<{url, name, branch}>`
+   - `name` aus URL abgeleitet (`bar.git` → `bar`), Override via
+     `--name`
+   - Klont **nicht sofort** — beim nächsten Container-Start klont
+     `post-create.sh` was in `projects/<name>/` fehlt (idempotent;
+     bestehende Verzeichnisse werden in Ruhe gelassen)
+   - `--clone-now` als Opt-in für direkten Host-Klon
+   - SSH-Agent-Forwarding wird im Default in `devcontainer.json`
+     ergänzt (`mounts` mit `${env:SSH_AUTH_SOCK}`), damit Container-
+     interne Git-Operationen ohne Host-Setup funktionieren
+   - Aktualisiert `<solution>.code-workspace`: neuer Root für
+     `projects/<name>/`
+
+5. **`monoceros apply`** (neuer Befehl)
+   - Kombiniert `monoceros down && monoceros start` in einem Aufruf
+   - Wird am Ende _jedes_ `add-*`-Befehls als Hinweis ausgegeben:
+     „Container muss neu gebaut werden — run `monoceros apply`"
+   - Optional: `add-*` mit `--apply`-Flag triggert `apply` direkt
+     im Anschluss (Komfort für Power-User, default off weil
+     destruktiv für laufende Sessions)
+
+### Phase 2 — `monoceros create` mit `projects/`-Layout
+
+`monoceros create <name>` schreibt das oben skizzierte Layout:
+
+- `projects/`-Folder (leer)
+- `<name>.code-workspace` mit nur `"."` als initialem Root
+- README erweitert um Workflow-Hinweis („klone Repos nach `projects/`
+  via `monoceros add-repo`")
+
+Keine prescriptive Sub-Projekt-Struktur, kein `add-project`-Befehl.
+Projekte sind Repos, die der Builder reinklont — Monoceros verwaltet
+sie nicht, listet sie nur im `.code-workspace`.
+
+### Phase 3 — YAML-Manifest (`monoceros.yml`)
+
+Statt mehrerer `add-*`-Aufrufe in Reihe: ein deklaratives Manifest,
+das alles in einem Wisch beschreibt.
+
+```yaml
+# monoceros.yml — am Workspace-Root
+name: sandbox
+
+languages: [python, node]
+aptPackages: [make, openssh-client, jq]
+features:
+  - ref: ghcr.io/devcontainers/features/docker-in-docker:2
+    options: { version: latest }
+installUrls:
+  - https://teamwork-graph.atlassian.com/cli/install
+services: [postgres]
+repos:
+  - url: git@github.com:foo/bar.git
+  - url: https://github.com/baz/qux.git
+    name: ui
+    branch: develop
+```
+
+`monoceros create --config sandbox.yml` (oder Kurzform
+`--config sandbox` mit Auto-Suffix-Resolution): legt Workspace an,
+kopiert YAML als `monoceros.yml` ins Workspace-Root, läuft jede
+Sektion wie ein `add-*` in Reihe, anschließend `monoceros apply`.
+
+`monoceros.yml` wird zur kanonischen Wahrheit; `stack.json` wird
+intern aus dem YAML abgeleitet (oder durch YAML komplett ersetzt —
+siehe Phase 4).
+
+### Phase 4 — `stack.json` → `monoceros.yml` Migration
+
+- `stack.json` wird abgelöst durch `monoceros.yml`
+- Alle `add-*`-Befehle lesen+schreiben `monoceros.yml`
+- Imperative und deklarative Modi teilen sich denselben State
+- Migration-Pfad: bei `monoceros apply` mit altem `stack.json` →
+  one-shot-Konvertierung mit Hinweis
+
+### Tasks (vorläufig — werden vor Implementierung verfeinert)
+
+1. **Workspace-Layout-Refactor** — `monoceros create` schreibt
+   `projects/`-Folder + `<name>.code-workspace`. Tests in
+   [`create.test.ts`](../packages/cli/test/create.test.ts) anpassen.
+   Pipeline-Aufwärtswalk verifizieren, dass `cd projects/repo-a &&
+/monoceros:iterate` korrekt zur Solution-Root findet.
+2. **`monoceros apply`** — Wrapper über `runDown` + `runStart` in
+   [`packages/cli/src/devcontainer/compose.ts`](../packages/cli/src/devcontainer/compose.ts).
+3. **`monoceros add-apt-packages`** — Implementierung analog zu
+   `add-language`, schreibt apt-packages-Feature in
+   `devcontainer.json` + `stack.json.aptPackages`.
+4. **`monoceros add-feature`** — Implementierung mit
+   Options-Hash-Support.
+5. **`monoceros add-from-url`** — Implementierung mit lautem
+   Security-Confirm. `post-create.sh`-Template wird um eine
+   `INSTALL_URLS`-Block-Sektion erweitert.
+6. **`monoceros add-repo`** — Implementierung mit Idempotenz beim
+   `post-create.sh`-Klon-Step. SSH-Agent-Forwarding-Mount als
+   Default in `buildDevcontainerJson` / `buildComposeYaml`.
+7. **YAML-Manifest** — Schema-Definition (Zod oder ähnliches),
+   Reader in `packages/cli/src/create/`, `monoceros create
+--config <path>`-Pfad. Migration `stack.json` → `monoceros.yml`.
+8. **Doku** — README in jeder generierten Solution erklärt den
+   Workflow knapp. Test-Plan-Stage-B wird um die neuen Befehle
+   ergänzt.
+
+### Definition of Done
+
+- Phase 1+2: alle vier neuen `add-*`-Befehle plus `apply` arbeiten
+  end-to-end, idempotent, mit Diff-Preview und Security-Confirm wo
+  nötig. `projects/`-Layout wird beim `create` angelegt.
+  Stage-E-Walkthrough mit dem neuen Layout durchgespielt und im
+  Test-Plan dokumentiert.
+- Phase 3+4: `monoceros create --config <yml>` erzeugt eine voll
+  konfigurierte Solution aus einer YAML-Datei in einem Schritt;
+  `monoceros.yml` ist die kanonische Konfig, `stack.json` migriert.
+
+### Bewusst nicht in M2.5
+
+- `remove-apt-packages` / `remove-feature` / `remove-from-url` /
+  `remove-repo` — wer was raushaben will, editiert `monoceros.yml`
+  und ruft `apply`. Symmetrie-Befehle erst, wenn echter Bedarf
+  entsteht.
+- Auth-Setup-Magie für `add-repo` jenseits von SSH-Agent-Forwarding
+  (z. B. PAT-Management, `gh auth login` automatisieren) — Builder
+  kann `add-tool gh` aufrufen und `gh auth login` im Container manuell
+  machen. Komplexere Auth-Workflows kommen wenn nötig.
+- Curated Whitelist für `add-feature` — der Builder kann beliebige
+  Feature-Refs übergeben. Kein „nur diese sind erlaubt"-Schutz.
+
+---
+
 ## M3 — Externe Tracking-Adapter
 
 **Ziel:** Findings können in GitHub Issues / Jira / Notion / Linear

@@ -33,12 +33,21 @@ Builder.
 ## Lese-Reihenfolge für neue Sessions
 
 1. Diese Datei (kurz, gibt den Reset-Kontext)
-2. [`docs/konzept.md`](docs/konzept.md) — die volle Story: warum so, wie
-   es funktioniert, was bewusst draußen bleibt
-3. [`docs/backlog.md`](docs/backlog.md) — die drei Milestones mit
+2. [`docs/design-pivot-autonomous-iterate.md`](docs/design-pivot-autonomous-iterate.md)
+   — **offene Design-Diskussion vom 2026-05-13**, die das M2-Modell
+   möglicherweise auf einen autonomen Loop mit PR-Output umstellt.
+   Solange diese Notiz existiert, ist konzept.md _teilweise überholt_:
+   die drei Phasen Plan/Generate/Review bleiben, aber Side-Topic-Memory
+   (Findings/Concerns/Risks) und M3 (Tracking-Adapter) sind in Frage
+   gestellt. Lies das _vor_ konzept.md, damit du den Diskussionsstand
+   mitbekommst
+3. [`docs/konzept.md`](docs/konzept.md) — die ursprüngliche Story: warum
+   so, wie es funktioniert, was bewusst draußen bleibt. Wird überarbeitet,
+   sobald die offenen Fragen aus dem Design-Pivot beantwortet sind
+4. [`docs/backlog.md`](docs/backlog.md) — die drei Milestones mit
    detaillierten Tasks. Das ist die Roadmap und gleichzeitig
    Arbeits-Backlog
-4. Bei Detail-Fragen ins Vorgänger-Archiv schauen — viele Entscheidungen
+5. Bei Detail-Fragen ins Vorgänger-Archiv schauen — viele Entscheidungen
    (Drizzle, Fastify, Iteration-Prompts, Container-Sandbox-Modell) sind
    dort durchdacht und teilweise direkt übernehmbar
 
