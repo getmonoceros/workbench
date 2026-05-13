@@ -114,13 +114,13 @@ mkdir -p .local/play && cd .local/play
 
 Schnelle Sanity-Checks, kein Filesystem-Effekt.
 
-| ID  | Was                             | Befehl                         | Erwartet                                                                                                       | Deckt     |
-| --- | ------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------- | --------- |
-| A.1 | Alle 10 Subcommands registriert | `monoceros --help`             | Listing mit `create`, `shell`, `run`, `logs`, `start`, `stop`, `down`, `status`, `add-service`, `add-language` | Task 1    |
-| A.2 | Versionsangabe stimmt           | `monoceros --version`          | `0.1.0-dev`                                                                                                    | Task 1    |
-| A.3 | `create`-Args sichtbar          | `monoceros create --help`      | Args: `name` (positional), `--languages`, `--services`, `--postgres-url`                                       | Task 1, 3 |
-| A.4 | `logs`-Args sichtbar            | `monoceros logs --help`        | Args: `--project`, `--service`, `--follow`                                                                     | Task 1, 6 |
-| A.5 | `add-service`-Args sichtbar     | `monoceros add-service --help` | Args: `service` (positional), `--project`, `--yes`/`-y`                                                        | Task 1, 7 |
+| ID  | Was                             | Befehl                         | Erwartet                                                                                                                | Deckt     |
+| --- | ------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | --------- |
+| A.1 | Alle 11 Subcommands registriert | `monoceros --help`             | Listing mit `create`, `shell`, `run`, `logs`, `start`, `stop`, `down`, `status`, `apply`, `add-service`, `add-language` | Task 1    |
+| A.2 | Versionsangabe stimmt           | `monoceros --version`          | `0.1.0-dev`                                                                                                             | Task 1    |
+| A.3 | `create`-Args sichtbar          | `monoceros create --help`      | Args: `name` (positional), `--languages`, `--services`, `--postgres-url`                                                | Task 1, 3 |
+| A.4 | `logs`-Args sichtbar            | `monoceros logs --help`        | Args: `--project`, `--service`, `--follow`                                                                              | Task 1, 6 |
+| A.5 | `add-service`-Args sichtbar     | `monoceros add-service --help` | Args: `service` (positional), `--project`, `--yes`/`-y`                                                                 | Task 1, 7 |
 
 **Fail-Bedeutung:** wenn A.1 nicht alle 10 zeigt, ist die
 Subcommand-Registrierung in `packages/cli/src/main.ts` kaputt.

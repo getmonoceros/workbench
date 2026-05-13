@@ -10,7 +10,7 @@ describe('monoceros main command', () => {
     });
   });
 
-  it('registers the M1 subcommand surface', async () => {
+  it('registers the M1 + M2.5 subcommand surface', async () => {
     const expected = [
       'create',
       'shell',
@@ -20,6 +20,7 @@ describe('monoceros main command', () => {
       'stop',
       'down',
       'status',
+      'apply',
       'add-service',
       'add-language',
     ];

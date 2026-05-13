@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   resolveCompose,
+  runApply,
   runDown,
   runLogs,
   runStart,
@@ -226,5 +227,142 @@ describe('compose actions', () => {
     });
     expect(calls[0]?.cwd).toBe(solution);
     expect(calls[0]?.args).toContain(composeFile);
+  });
+});
+
+describe('runApply', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'monoceros-apply-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('compose-mode: runs docker compose down (no -v) then devcontainer up', async () => {
+    const solution = path.join(root, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    const composeFile = path.join(solution, '.devcontainer', 'compose.yaml');
+    await fs.writeFile(composeFile, 'services: {}\n');
+
+    const composeCalls: string[][] = [];
+    const devcontainerCalls: { args: string[]; cwd: string }[] = [];
+
+    const exitCode = await runApply({
+      cwd: solution,
+      logger: { info: () => {} },
+      dockerComposeSpawn: async (args) => {
+        composeCalls.push(args);
+        return 0;
+      },
+      devcontainerSpawn: async (args, cwd) => {
+        devcontainerCalls.push({ args, cwd });
+        return 0;
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(composeCalls).toEqual([
+      ['-f', composeFile, '-p', 'demo_devcontainer', 'down'],
+    ]);
+    expect(devcontainerCalls).toEqual([
+      { args: ['up', '--workspace-folder', solution], cwd: solution },
+    ]);
+  });
+
+  it('compose-mode: short-circuits if down fails (skips devcontainer up)', async () => {
+    const solution = path.join(root, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    await fs.writeFile(
+      path.join(solution, '.devcontainer', 'compose.yaml'),
+      'services: {}\n',
+    );
+
+    const devcontainerCalls: { args: string[] }[] = [];
+
+    const exitCode = await runApply({
+      cwd: solution,
+      logger: { info: () => {} },
+      dockerComposeSpawn: async () => 7,
+      devcontainerSpawn: async (args) => {
+        devcontainerCalls.push({ args });
+        return 0;
+      },
+    });
+
+    expect(exitCode).toBe(7);
+    expect(devcontainerCalls).toEqual([]);
+  });
+
+  it('image-mode: calls devcontainer up with --remove-existing-container', async () => {
+    const solution = path.join(root, 'bare');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    // No compose.yaml — image mode.
+
+    const composeCalls: string[][] = [];
+    const devcontainerCalls: { args: string[]; cwd: string }[] = [];
+
+    const exitCode = await runApply({
+      cwd: solution,
+      logger: { info: () => {} },
+      dockerComposeSpawn: async (args) => {
+        composeCalls.push(args);
+        return 0;
+      },
+      devcontainerSpawn: async (args, cwd) => {
+        devcontainerCalls.push({ args, cwd });
+        return 0;
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(composeCalls).toEqual([]);
+    expect(devcontainerCalls).toEqual([
+      {
+        args: [
+          'up',
+          '--workspace-folder',
+          solution,
+          '--remove-existing-container',
+        ],
+        cwd: solution,
+      },
+    ]);
+  });
+
+  it('throws when no .devcontainer/ exists at or above cwd', async () => {
+    await expect(
+      runApply({
+        cwd: root,
+        logger: { info: () => {} },
+        dockerComposeSpawn: async () => 0,
+        devcontainerSpawn: async () => 0,
+      }),
+    ).rejects.toThrow(/No \.devcontainer\/ found/);
+  });
+
+  it('honors --project to locate the solution from elsewhere', async () => {
+    const solution = path.join(root, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    // Image mode (no compose.yaml) — simpler call shape.
+
+    const elsewhere = path.join(root, 'elsewhere');
+    await fs.mkdir(elsewhere, { recursive: true });
+
+    const devcontainerCalls: { args: string[]; cwd: string }[] = [];
+    await runApply({
+      cwd: elsewhere,
+      project: path.relative(elsewhere, solution),
+      logger: { info: () => {} },
+      devcontainerSpawn: async (args, cwd) => {
+        devcontainerCalls.push({ args, cwd });
+        return 0;
+      },
+    });
+
+    expect(devcontainerCalls[0]?.cwd).toBe(solution);
+    expect(devcontainerCalls[0]?.args).toContain('--remove-existing-container');
   });
 });

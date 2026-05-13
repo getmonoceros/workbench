@@ -137,6 +137,71 @@ export async function runDown(opts: DownOptions = {}): Promise<number> {
   return spawnFn(args, root);
 }
 
+export interface ApplyOptions {
+  cwd?: string;
+  project?: string;
+  // Compose-mode `apply` shells out to `docker compose down`; this hook
+  // injects an alternative spawn for tests.
+  dockerComposeSpawn?: ComposeSpawn;
+  // Both compose- and image-mode `apply` call `devcontainer up` at the
+  // end; this hook covers that side.
+  devcontainerSpawn?: DevcontainerSpawn;
+  logger?: { info: (message: string) => void };
+}
+
+// `monoceros apply` is the convenience step the builder runs after any
+// `monoceros add-*` to materialise the change in the running container.
+// Internally:
+//   - compose-mode (compose.yaml present): `docker compose down`
+//     (volumes preserved) followed by `devcontainer up`. The down step
+//     wipes the workspace container so the rebuild picks up new
+//     devcontainer features; named volumes (postgres-data etc.) survive.
+//   - image-mode (no compose.yaml): `devcontainer up --remove-existing-container`,
+//     which stops + removes the workspace container and recreates it
+//     in one step. Equivalent to the compose-mode down+start, just
+//     without an aux-service compose stack to manage.
+// If the down step fails (non-zero exit), the up step is skipped so
+// the failure surfaces clearly instead of being masked by a successful
+// `up` on a half-broken stack.
+export async function runApply(opts: ApplyOptions = {}): Promise<number> {
+  const cwd = opts.cwd ?? process.cwd();
+  const startDir = opts.project ? path.resolve(cwd, opts.project) : cwd;
+  const root = findSolutionRoot(startDir);
+  if (!root) {
+    throw new Error(
+      `No .devcontainer/ found at or above ${startDir}. Run \`monoceros create\` first or change into a solution directory.`,
+    );
+  }
+  const composeFile = path.join(root, '.devcontainer', 'compose.yaml');
+  const hasCompose = existsSync(composeFile);
+  const logger = opts.logger ?? { info: (msg) => consola.info(msg) };
+
+  if (hasCompose) {
+    logger.info('Stopping containers (volumes preserved)…');
+    const downCode = await runDown({
+      cwd,
+      ...(opts.project !== undefined ? { project: opts.project } : {}),
+      volumes: false,
+      ...(opts.dockerComposeSpawn ? { spawn: opts.dockerComposeSpawn } : {}),
+    });
+    if (downCode !== 0) return downCode;
+
+    return runStart({
+      cwd,
+      ...(opts.project !== undefined ? { project: opts.project } : {}),
+      ...(opts.devcontainerSpawn ? { spawn: opts.devcontainerSpawn } : {}),
+      logger,
+    });
+  }
+
+  logger.info(`Recreating image-mode devcontainer at ${root}…`);
+  const spawnFn = opts.devcontainerSpawn ?? spawnDevcontainer;
+  return spawnFn(
+    ['up', '--workspace-folder', root, '--remove-existing-container'],
+    root,
+  );
+}
+
 export function runStop(opts: ComposeActionOptions = {}): Promise<number> {
   return runComposeAction(
     (service) => ['stop', ...(service ? [service] : [])],
