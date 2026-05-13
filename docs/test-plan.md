@@ -89,7 +89,7 @@ Verifikation:
 
 ```sh
 monoceros --version        # 0.1.0-dev
-monoceros --help           # Listing aller 10 Subcommands
+monoceros --help           # Listing aller 11 Subcommands
 ```
 
 Aufräumen erübrigt sich — der Alias ist mit der Shell weg.
@@ -122,7 +122,7 @@ Schnelle Sanity-Checks, kein Filesystem-Effekt.
 | A.4 | `logs`-Args sichtbar            | `monoceros logs --help`        | Args: `--project`, `--service`, `--follow`                                                                              | Task 1, 6 |
 | A.5 | `add-service`-Args sichtbar     | `monoceros add-service --help` | Args: `service` (positional), `--project`, `--yes`/`-y`                                                                 | Task 1, 7 |
 
-**Fail-Bedeutung:** wenn A.1 nicht alle 10 zeigt, ist die
+**Fail-Bedeutung:** wenn A.1 nicht alle 11 zeigt, ist die
 Subcommand-Registrierung in `packages/cli/src/main.ts` kaputt.
 
 ## Stage B — Scaffolding (kein Docker)
