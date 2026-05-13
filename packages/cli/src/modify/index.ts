@@ -12,7 +12,7 @@ import {
 import {
   buildComposeYaml,
   buildDevcontainerJson,
-  copyPostCreateScript,
+  buildPostCreateScript,
   needsCompose,
   normalizeOptions,
   validateOptions,
@@ -57,6 +57,10 @@ export interface AddAptPackagesInput extends ModifyOptions {
 export interface AddFeatureInput extends ModifyOptions {
   ref: string;
   options?: FeatureOptions;
+}
+
+export interface AddFromUrlInput extends ModifyOptions {
+  url: string;
 }
 
 export type ModifyResult =
@@ -114,6 +118,28 @@ export async function runAddAptPackages(
   });
 }
 
+export async function runAddFromUrl(
+  input: AddFromUrlInput,
+): Promise<ModifyResult> {
+  const url = input.url.trim();
+  if (url.length === 0) {
+    throw new Error('Missing URL. Usage: monoceros add-from-url <url>.');
+  }
+  return mutate(input, (stack) => {
+    // Preserve order: existing URLs stay where they are, new URL is
+    // appended. Re-add of an existing URL is a no-op via the dedup in
+    // normalizeOptions.
+    const existing = stack.installUrls ?? [];
+    if (existing.includes(url)) {
+      return stack;
+    }
+    return {
+      ...stack,
+      installUrls: [...existing, url],
+    };
+  });
+}
+
 export async function runAddFeature(
   input: AddFeatureInput,
 ): Promise<ModifyResult> {
@@ -154,6 +180,8 @@ interface PlannedChange {
   absPath: string;
   before: string | null;
   after: string | null;
+  /** When true, applyChanges chmods the file to 0o755 after writing. */
+  executable?: boolean;
 }
 
 async function mutate(
@@ -188,6 +216,9 @@ async function mutate(
     ...(draftStack.features && Object.keys(draftStack.features).length > 0
       ? { features: draftStack.features }
       : {}),
+    ...(draftStack.installUrls && draftStack.installUrls.length > 0
+      ? { installUrls: draftStack.installUrls }
+      : {}),
   };
   validateOptions(draftOptions);
   const normalized = normalizeOptions(draftOptions);
@@ -206,6 +237,9 @@ async function mutate(
     ...(normalized.features && Object.keys(normalized.features).length > 0
       ? { features: normalized.features }
       : {}),
+    ...(normalized.installUrls && normalized.installUrls.length > 0
+      ? { installUrls: normalized.installUrls }
+      : {}),
   };
 
   const devcontainerPath = path.join(
@@ -214,15 +248,18 @@ async function mutate(
     'devcontainer.json',
   );
   const composePath = path.join(root, '.devcontainer', 'compose.yaml');
+  const postCreatePath = path.join(root, '.devcontainer', 'post-create.sh');
 
   const oldDevcontainer = await readUtf8(devcontainerPath);
   const oldCompose = await readUtf8(composePath);
+  const oldPostCreate = await readUtf8(postCreatePath);
 
   const newDevcontainer =
     JSON.stringify(buildDevcontainerJson(normalized), null, 2) + '\n';
   const newCompose = needsCompose(normalized)
     ? buildComposeYaml(normalized)
     : null;
+  const newPostCreate = buildPostCreateScript(normalized);
   const newStackContent = JSON.stringify(newStack, null, 2) + '\n';
 
   const planned: PlannedChange[] = [];
@@ -249,6 +286,15 @@ async function mutate(
       absPath: composePath,
       before: oldCompose,
       after: null,
+    });
+  }
+  if (oldPostCreate !== newPostCreate) {
+    planned.push({
+      relPath: path.relative(root, postCreatePath),
+      absPath: postCreatePath,
+      before: oldPostCreate,
+      after: newPostCreate,
+      executable: true,
     });
   }
   if (oldStackContent !== newStackContent) {
@@ -316,7 +362,7 @@ function renderPatch(change: PlannedChange): string {
 }
 
 async function applyChanges(
-  root: string,
+  _root: string,
   planned: PlannedChange[],
 ): Promise<void> {
   for (const change of planned) {
@@ -325,12 +371,11 @@ async function applyChanges(
     } else {
       await fs.mkdir(path.dirname(change.absPath), { recursive: true });
       await fs.writeFile(change.absPath, change.after);
+      if (change.executable) {
+        await fs.chmod(change.absPath, 0o755);
+      }
     }
   }
-  // post-create.sh is generated from the template each time; rerunning the
-  // copy is idempotent and ensures the file stays in sync with whatever
-  // the current CLI version ships.
-  await copyPostCreateScript(path.join(root, '.devcontainer'));
 }
 
 async function readUtf8(filePath: string): Promise<string | null> {

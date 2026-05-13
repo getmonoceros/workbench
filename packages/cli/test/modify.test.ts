@@ -8,6 +8,7 @@ import type { StackFile } from '../src/create/types.js';
 import {
   runAddAptPackages,
   runAddFeature,
+  runAddFromUrl,
   runAddLanguage,
   runAddService,
 } from '../src/modify/index.js';
@@ -559,5 +560,150 @@ describe('runAddFeature', () => {
       'ghcr.io/devcontainers-contrib/features/apt-packages:1',
     );
     expect(refs).toContain('ghcr.io/devcontainers/features/github-cli:1');
+  });
+});
+
+describe('runAddFromUrl', () => {
+  let cwd: string;
+
+  beforeEach(async () => {
+    cwd = await mkdtemp(path.join(tmpdir(), 'monoceros-add-from-url-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  it('appends the URL to stack.installUrls and post-create.sh', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    const result = await runAddFromUrl({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://example.com/install.sh',
+    });
+    expect(result.status).toBe('updated');
+
+    const stack = await readJson<StackFile>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.installUrls).toEqual(['https://example.com/install.sh']);
+
+    const postCreate = await fs.readFile(
+      path.join(solution, '.devcontainer', 'post-create.sh'),
+      'utf8',
+    );
+    expect(postCreate).toContain(
+      'bash <(curl -fsSL "https://example.com/install.sh")',
+    );
+    // Script must still be executable after the modify path writes it.
+    const stat = await fs.stat(
+      path.join(solution, '.devcontainer', 'post-create.sh'),
+    );
+    expect(stat.mode & 0o111).not.toBe(0);
+  });
+
+  it('preserves insertion order across multiple URLs', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await runAddFromUrl({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://a.example/install',
+    });
+    await runAddFromUrl({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://b.example/install',
+    });
+    await runAddFromUrl({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://c.example/install',
+    });
+
+    const stack = await readJson<StackFile>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.installUrls).toEqual([
+      'https://a.example/install',
+      'https://b.example/install',
+      'https://c.example/install',
+    ]);
+
+    const postCreate = await fs.readFile(
+      path.join(solution, '.devcontainer', 'post-create.sh'),
+      'utf8',
+    );
+    // Order in the script matches insertion order.
+    const aIdx = postCreate.indexOf('a.example');
+    const bIdx = postCreate.indexOf('b.example');
+    const cIdx = postCreate.indexOf('c.example');
+    expect(aIdx).toBeGreaterThan(-1);
+    expect(bIdx).toBeGreaterThan(aIdx);
+    expect(cIdx).toBeGreaterThan(bIdx);
+  });
+
+  it('is a no-op when the URL is already declared', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddFromUrl({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://example.com/install',
+    });
+    const stackBefore = await fs.readFile(
+      path.join(solution, '.monoceros', 'stack.json'),
+      'utf8',
+    );
+
+    const result = await runAddFromUrl({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://example.com/install',
+    });
+    expect(result.status).toBe('no-change');
+
+    expect(
+      await fs.readFile(
+        path.join(solution, '.monoceros', 'stack.json'),
+        'utf8',
+      ),
+    ).toBe(stackBefore);
+  });
+
+  it('rejects non-https URLs', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await expect(
+      runAddFromUrl({
+        ...baseModifyOpts,
+        cwd: solution,
+        url: 'http://example.com/install',
+      }),
+    ).rejects.toThrow(/Invalid install URL/);
+  });
+
+  it('rejects URLs with shell metacharacters', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await expect(
+      runAddFromUrl({
+        ...baseModifyOpts,
+        cwd: solution,
+        url: 'https://example.com/install$(whoami)',
+      }),
+    ).rejects.toThrow(/Invalid install URL/);
+  });
+
+  it('rejects empty URL', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await expect(
+      runAddFromUrl({
+        ...baseModifyOpts,
+        cwd: solution,
+        url: '',
+      }),
+    ).rejects.toThrow(/Missing URL/);
   });
 });

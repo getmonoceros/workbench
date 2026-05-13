@@ -59,6 +59,13 @@ const APT_PACKAGE_NAME_RE = /^[a-z0-9][a-z0-9.+-]*$/;
 // metacharacters or spaces.
 const FEATURE_REF_RE = /^[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+$/;
 
+// Install URLs must be https:// (no plain http, no other schemes) and
+// contain only URL-safe characters. We deliberately reject shell
+// metacharacters even inside a query string — the URL is embedded into
+// a generated bash script, and a stray `$` or backtick would be a
+// shell-injection vector.
+const INSTALL_URL_RE = /^https:\/\/[A-Za-z0-9.\-_~/:?#[\]@!&'()*+,;=%]+$/;
+
 export function validateOptions(opts: CreateOptions): void {
   if (!opts.name || !/^[a-zA-Z0-9._-]+$/.test(opts.name)) {
     throw new Error(
@@ -93,6 +100,13 @@ export function validateOptions(opts: CreateOptions): void {
       );
     }
   }
+  for (const url of opts.installUrls ?? []) {
+    if (!INSTALL_URL_RE.test(url)) {
+      throw new Error(
+        `Invalid install URL: ${JSON.stringify(url)}. Must start with 'https://' and contain only URL-safe characters (no shell metacharacters).`,
+      );
+    }
+  }
 }
 
 // Normalize: dedupe + sort + drop postgres from compose services when an
@@ -111,6 +125,11 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
         Object.entries(opts.features).sort(([a], [b]) => a.localeCompare(b)),
       )
     : undefined;
+  // Install URLs preserve insertion order (installs may depend on each
+  // other), but we deduplicate to keep stack.json stable across re-adds.
+  const installUrls = opts.installUrls
+    ? [...new Set(opts.installUrls)]
+    : undefined;
   return {
     name: opts.name,
     languages,
@@ -118,6 +137,7 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
     postgresUrl: opts.postgresUrl,
     ...(aptPackages.length > 0 ? { aptPackages } : {}),
     ...(features && Object.keys(features).length > 0 ? { features } : {}),
+    ...(installUrls && installUrls.length > 0 ? { installUrls } : {}),
   };
 }
 
@@ -302,6 +322,9 @@ export function buildStackJson(
     ...(opts.features && Object.keys(opts.features).length > 0
       ? { features: opts.features }
       : {}),
+    ...(opts.installUrls && opts.installUrls.length > 0
+      ? { installUrls: opts.installUrls }
+      : {}),
   };
 }
 
@@ -386,16 +409,72 @@ export function buildCodeWorkspaceJson(
   };
 }
 
-export async function copyPostCreateScript(
+/**
+ * Generate the `post-create.sh` content for a solution. The base
+ * sections (pnpm install, monoceros-plugin wiring) are fixed. The
+ * `installUrls` section is appended only when the solution has at
+ * least one URL — keeping the script byte-identical with previous
+ * versions for the common case.
+ */
+export function buildPostCreateScript(opts: CreateOptions): string {
+  const lines: string[] = [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    '',
+    '# Claude Code CLI is preinstalled in monoceros-runtime:dev. Only thing',
+    '# left for postCreate is bringing Node dependencies if the workspace',
+    '# has a package.json.',
+    'if [ -f package.json ]; then',
+    '  pnpm install',
+    'fi',
+    '',
+    '# Wire `monoceros-plugin` into PATH when the workbench is bind-mounted',
+    "# at /opt/monoceros-workbench. The workbench's pnpm install must have",
+    '# been run host-side first; the workspace symlinks under node_modules/',
+    "# come along via the bind mount. pnpm's supportedArchitectures config",
+    '# (in pnpm-workspace.yaml) pulls linux esbuild binaries host-side so',
+    '# tsx works in the container.',
+    '#',
+    '# Failing to wire here is non-fatal — the slash commands will surface',
+    '# a clear error message at first use.',
+    'WORKBENCH=/opt/monoceros-workbench',
+    'BIN_PATH=/usr/local/bin/monoceros-plugin',
+    'MAIN_TS=$WORKBENCH/packages/plugin/src/main.ts',
+    'TSX=$WORKBENCH/node_modules/.bin/tsx',
+    'if [ -f "$MAIN_TS" ] && [ -x "$TSX" ]; then',
+    '  sudo tee "$BIN_PATH" > /dev/null <<EOF',
+    '#!/usr/bin/env bash',
+    'exec "$TSX" "$MAIN_TS" "\\$@"',
+    'EOF',
+    '  sudo chmod 0755 "$BIN_PATH"',
+    'elif [ -d "$WORKBENCH/packages/plugin" ]; then',
+    '  echo "warn: monoceros-plugin not wired into PATH." >&2',
+    '  echo "warn: run \\`pnpm install\\` in the workbench host-side, then restart the container." >&2',
+    'fi',
+  ];
+
+  if (opts.installUrls && opts.installUrls.length > 0) {
+    lines.push(
+      '',
+      '# Custom install URLs added via `monoceros add-from-url`. Each is',
+      '# fetched and piped to bash on every container rebuild. URLs run',
+      '# in insertion order so later installs can build on earlier ones.',
+      `echo "→ Running ${opts.installUrls.length} install URL(s) added via add-from-url…"`,
+    );
+    for (const url of opts.installUrls) {
+      lines.push(`echo "→ ${url}"`, `bash <(curl -fsSL "${url}")`);
+    }
+  }
+
+  return lines.join('\n') + '\n';
+}
+
+export async function writePostCreateScript(
   devcontainerDir: string,
+  opts: CreateOptions,
 ): Promise<void> {
-  const src = path.join(
-    defaultTemplateDir(),
-    '.devcontainer',
-    'post-create.sh',
-  );
   const dest = path.join(devcontainerDir, 'post-create.sh');
-  await fs.copyFile(src, dest);
+  await fs.writeFile(dest, buildPostCreateScript(opts));
   await fs.chmod(dest, 0o755);
 }
 

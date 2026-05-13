@@ -8,10 +8,10 @@ import {
   buildDevcontainerJson,
   buildReadmeStub,
   buildStackJson,
-  copyPostCreateScript,
   needsCompose,
   normalizeOptions,
   validateOptions,
+  writePostCreateScript,
 } from './scaffold.js';
 import type { CreateOptions, StackFile } from './types.js';
 
@@ -83,7 +83,7 @@ export async function runCreate(
     JSON.stringify(devcontainerJson, null, 2) + '\n',
   );
 
-  await copyPostCreateScript(devcontainerDir);
+  await writePostCreateScript(devcontainerDir, opts);
 
   if (needsCompose(opts)) {
     await fs.writeFile(

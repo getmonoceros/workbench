@@ -24,6 +24,14 @@ export interface CreateOptions {
    * the feature's option hash.
    */
   features?: Record<string, FeatureOptions>;
+  /**
+   * URLs to install scripts that get piped to `bash` during post-create
+   * (`bash <(curl -fsSL <url>)`). Run in insertion order, so installs
+   * can build on one another. Each URL fetches and executes arbitrary
+   * remote shell code — `monoceros add-from-url` warns about that
+   * loudly before persisting the entry.
+   */
+  installUrls?: string[];
 }
 
 export interface StackFile {
@@ -45,4 +53,10 @@ export interface StackFile {
    * hashes. Reflected verbatim into `devcontainer.json` → `features`.
    */
   features?: Record<string, FeatureOptions>;
+  /**
+   * Optional list of install URLs added via `monoceros add-from-url`.
+   * Each gets piped to `bash` in the generated `post-create.sh`. Order
+   * is preserved across re-adds.
+   */
+  installUrls?: string[];
 }
