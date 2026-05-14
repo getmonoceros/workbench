@@ -5,11 +5,13 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runCreate } from '../src/create/index.js';
 import type { StackFile } from '../src/create/types.js';
+import { deriveRepoName } from '../src/create/scaffold.js';
 import {
   runAddAptPackages,
   runAddFeature,
   runAddFromUrl,
   runAddLanguage,
+  runAddRepo,
   runAddService,
 } from '../src/modify/index.js';
 
@@ -705,5 +707,176 @@ describe('runAddFromUrl', () => {
         url: '',
       }),
     ).rejects.toThrow(/Missing URL/);
+  });
+});
+
+describe('deriveRepoName', () => {
+  it('strips .git from a https URL', () => {
+    expect(deriveRepoName('https://github.com/foo/bar.git')).toBe('bar');
+  });
+
+  it('handles a https URL without .git', () => {
+    expect(deriveRepoName('https://github.com/foo/bar')).toBe('bar');
+  });
+
+  it('handles a git@ SSH URL', () => {
+    expect(deriveRepoName('git@github.com:foo/bar.git')).toBe('bar');
+  });
+
+  it('handles a ssh:// URL', () => {
+    expect(deriveRepoName('ssh://git@github.com/foo/bar.git')).toBe('bar');
+  });
+});
+
+describe('runAddRepo', () => {
+  let cwd: string;
+
+  beforeEach(async () => {
+    cwd = await mkdtemp(path.join(tmpdir(), 'monoceros-add-repo-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  it('persists the repo in stack.json and adds a clone block to post-create.sh', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    const result = await runAddRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://github.com/foo/bar.git',
+    });
+    expect(result.status).toBe('updated');
+
+    const stack = await readJson<StackFile>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.repos).toEqual([
+      { url: 'https://github.com/foo/bar.git', name: 'bar' },
+    ]);
+
+    const postCreate = await fs.readFile(
+      path.join(solution, '.devcontainer', 'post-create.sh'),
+      'utf8',
+    );
+    expect(postCreate).toContain('if [ ! -d "projects/bar" ]; then');
+    expect(postCreate).toContain(
+      'git clone "https://github.com/foo/bar.git" "projects/bar"',
+    );
+  });
+
+  it('adds the repo as a folder root in the code-workspace file', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://github.com/foo/bar.git',
+    });
+    const workspaceFile = path.join(solution, 'demo.code-workspace');
+    const ws = await readJson<{
+      folders: Array<{ path: string; name?: string }>;
+    }>(workspaceFile);
+    expect(ws.folders).toEqual([
+      { path: '.' },
+      { path: 'projects/bar', name: 'bar' },
+    ]);
+  });
+
+  it('honors --name override and --branch flag', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://github.com/foo/bar.git',
+      name: 'ui',
+      branch: 'develop',
+    });
+    const stack = await readJson<StackFile>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.repos).toEqual([
+      {
+        url: 'https://github.com/foo/bar.git',
+        name: 'ui',
+        branch: 'develop',
+      },
+    ]);
+
+    const postCreate = await fs.readFile(
+      path.join(solution, '.devcontainer', 'post-create.sh'),
+      'utf8',
+    );
+    expect(postCreate).toContain(
+      'git clone --branch develop "https://github.com/foo/bar.git" "projects/ui"',
+    );
+  });
+
+  it('is a no-op when the same repo is re-added', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://github.com/foo/bar.git',
+    });
+    const stackBefore = await fs.readFile(
+      path.join(solution, '.monoceros', 'stack.json'),
+      'utf8',
+    );
+
+    const result = await runAddRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://github.com/foo/bar.git',
+    });
+    expect(result.status).toBe('no-change');
+
+    expect(
+      await fs.readFile(
+        path.join(solution, '.monoceros', 'stack.json'),
+        'utf8',
+      ),
+    ).toBe(stackBefore);
+  });
+
+  it('rejects two repos that collide on derived name', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://github.com/alice/bar.git',
+    });
+
+    await expect(
+      runAddRepo({
+        ...baseModifyOpts,
+        cwd: solution,
+        url: 'https://github.com/bob/bar.git',
+      }),
+    ).rejects.toThrow(/Duplicate repo name/);
+  });
+
+  it('rejects URLs with shell metacharacters', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await expect(
+      runAddRepo({
+        ...baseModifyOpts,
+        cwd: solution,
+        url: 'https://github.com/foo/bar.git; rm -rf /',
+      }),
+    ).rejects.toThrow(/Invalid repo URL/);
+  });
+
+  it('rejects an empty URL', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+
+    await expect(
+      runAddRepo({
+        ...baseModifyOpts,
+        cwd: solution,
+        url: '',
+      }),
+    ).rejects.toThrow(/Missing repo URL/);
   });
 });

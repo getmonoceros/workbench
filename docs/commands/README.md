@@ -39,6 +39,7 @@ less /opt/monoceros-workbench/docs/commands/<name>.md
 | `monoceros add-apt-packages -- …` | Beliebige apt-Pakete ergänzen (kein Whitelist)                        | [add-apt-packages.md](./add-apt-packages.md) |
 | `monoceros add-feature <ref>`     | Beliebiges Devcontainer-Feature ergänzen (kein Whitelist)             | [add-feature.md](./add-feature.md)           |
 | `monoceros add-from-url <url>`    | HTTPS-Install-Script per `bash <(curl -fsSL …)` registrieren          | [add-from-url.md](./add-from-url.md)         |
+| `monoceros add-repo <url>`        | Git-Repo nach `projects/<name>/` klonen (idempotent, post-create)     | [add-repo.md](./add-repo.md)                 |
 
 ## Konvention für alle Konfig-Befehle
 

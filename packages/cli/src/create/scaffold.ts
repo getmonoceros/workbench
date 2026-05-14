@@ -66,6 +66,33 @@ const FEATURE_REF_RE = /^[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+$/;
 // shell-injection vector.
 const INSTALL_URL_RE = /^https:\/\/[A-Za-z0-9.\-_~/:?#[\]@!&'()*+,;=%]+$/;
 
+// Git URLs: covers HTTPS, SSH (`git@host:path/repo.git`), and
+// `ssh://`/`git://` schemes. Permissive but no shell metacharacters.
+const REPO_URL_RE = /^[A-Za-z0-9@:/+_~.#=&?-]+$/;
+
+// Repo name = folder name under `projects/`. Must be a safe folder
+// name (same shape as solution names — no slashes, no spaces, no
+// shell metacharacters).
+const REPO_NAME_RE = /^[A-Za-z0-9._-]+$/;
+
+// Git branch names: allow common characters including `/`
+// (e.g. `feature/foo`). Reject anything that could be a shell escape.
+const REPO_BRANCH_RE = /^[A-Za-z0-9._/-]+$/;
+
+/**
+ * Derive a repo name from its URL.
+ *
+ *   `git@github.com:foo/bar.git`     → `bar`
+ *   `https://github.com/foo/bar.git` → `bar`
+ *   `https://github.com/foo/bar`     → `bar`
+ *   `ssh://git@host:22/foo/bar.git`  → `bar`
+ */
+export function deriveRepoName(url: string): string {
+  const lastSep = Math.max(url.lastIndexOf('/'), url.lastIndexOf(':'));
+  const tail = url.slice(lastSep + 1);
+  return tail.replace(/\.git$/, '');
+}
+
 export function validateOptions(opts: CreateOptions): void {
   if (!opts.name || !/^[a-zA-Z0-9._-]+$/.test(opts.name)) {
     throw new Error(
@@ -107,6 +134,30 @@ export function validateOptions(opts: CreateOptions): void {
       );
     }
   }
+  const seenRepoNames = new Set<string>();
+  for (const repo of opts.repos ?? []) {
+    if (!REPO_URL_RE.test(repo.url)) {
+      throw new Error(
+        `Invalid repo URL: ${JSON.stringify(repo.url)}. Use HTTPS or SSH/git@ form; no shell metacharacters.`,
+      );
+    }
+    if (!REPO_NAME_RE.test(repo.name)) {
+      throw new Error(
+        `Invalid repo name: ${JSON.stringify(repo.name)}. Folder name must match ${REPO_NAME_RE}.`,
+      );
+    }
+    if (repo.branch !== undefined && !REPO_BRANCH_RE.test(repo.branch)) {
+      throw new Error(
+        `Invalid branch name: ${JSON.stringify(repo.branch)}. Must match ${REPO_BRANCH_RE}.`,
+      );
+    }
+    if (seenRepoNames.has(repo.name)) {
+      throw new Error(
+        `Duplicate repo name: ${JSON.stringify(repo.name)}. Each projects/<name> folder must be unique — pass --name to disambiguate.`,
+      );
+    }
+    seenRepoNames.add(repo.name);
+  }
 }
 
 // Normalize: dedupe + sort + drop postgres from compose services when an
@@ -130,6 +181,17 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
   const installUrls = opts.installUrls
     ? [...new Set(opts.installUrls)]
     : undefined;
+  // Repos: preserve insertion order, dedupe by (url, name, branch)
+  // signature — same triple twice is a no-op, different triples
+  // coexist. (Same name with different URL is a validation error
+  // in validateOptions, not silently merged here.)
+  const repos = opts.repos
+    ? Array.from(
+        new Map(
+          opts.repos.map((r) => [`${r.url}${r.name}${r.branch ?? ''}`, r]),
+        ).values(),
+      )
+    : undefined;
   return {
     name: opts.name,
     languages,
@@ -138,6 +200,7 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
     ...(aptPackages.length > 0 ? { aptPackages } : {}),
     ...(features && Object.keys(features).length > 0 ? { features } : {}),
     ...(installUrls && installUrls.length > 0 ? { installUrls } : {}),
+    ...(repos && repos.length > 0 ? { repos } : {}),
   };
 }
 
@@ -325,6 +388,7 @@ export function buildStackJson(
     ...(opts.installUrls && opts.installUrls.length > 0
       ? { installUrls: opts.installUrls }
       : {}),
+    ...(opts.repos && opts.repos.length > 0 ? { repos: opts.repos } : {}),
   };
 }
 
@@ -397,16 +461,22 @@ interface CodeWorkspaceFile {
 /**
  * The `<name>.code-workspace` file VS Code uses to open the solution as
  * a multi-root workspace. The first entry is `.` so the workspace root
- * (with its system dotfolders) stays visible in the Explorer. Project
- * subfolders are appended later by `monoceros add-repo` once they
- * exist — at create time the list contains only `.`.
+ * (with its system dotfolders) stays visible in the Explorer. Each
+ * repo added via `monoceros add-repo` appears as a sibling root
+ * pointing at `projects/<name>/`.
  */
-export function buildCodeWorkspaceJson(
-  _opts: CreateOptions,
-): CodeWorkspaceFile {
-  return {
-    folders: [{ path: '.' }],
-  };
+export function buildCodeWorkspaceJson(opts: CreateOptions): CodeWorkspaceFile {
+  const folders: CodeWorkspaceFolder[] = [{ path: '.' }];
+  // Sort repos by name so the Explorer order is deterministic and
+  // doesn't depend on insertion order. (Clone order in post-create
+  // stays as-added so deps still work.)
+  const sortedRepos = [...(opts.repos ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  for (const repo of sortedRepos) {
+    folders.push({ path: `projects/${repo.name}`, name: repo.name });
+  }
+  return { folders };
 }
 
 /**
@@ -468,6 +538,29 @@ export function buildPostCreateScript(opts: CreateOptions): string {
     );
     for (const url of opts.installUrls) {
       lines.push(`echo "→ ${url}"`, `curl -fsSL "${url}" | sh`);
+    }
+  }
+
+  if (opts.repos && opts.repos.length > 0) {
+    lines.push(
+      '',
+      '# Repos managed by `monoceros add-repo`. Each entry is cloned',
+      '# into `projects/<name>/` if (and only if) the directory does',
+      '# not exist yet. Existing project subfolders are left alone so',
+      '# local changes survive `monoceros apply` rebuilds.',
+      'mkdir -p projects',
+    );
+    for (const repo of opts.repos) {
+      const branchFlag = repo.branch ? ` --branch ${repo.branch}` : '';
+      const branchLabel = repo.branch ? ` (branch: ${repo.branch})` : '';
+      lines.push(
+        `if [ ! -d "projects/${repo.name}" ]; then`,
+        `  echo "→ Cloning ${repo.name} from ${repo.url}${branchLabel}…"`,
+        `  git clone${branchFlag} "${repo.url}" "projects/${repo.name}"`,
+        `else`,
+        `  echo "→ projects/${repo.name} already exists, skipping clone"`,
+        `fi`,
+      );
     }
   }
 

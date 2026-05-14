@@ -2,6 +2,7 @@ import { defineCommand } from 'citty';
 import { addAptPackagesCommand } from './commands/add-apt-packages.js';
 import { addFeatureCommand } from './commands/add-feature.js';
 import { addFromUrlCommand } from './commands/add-from-url.js';
+import { addRepoCommand } from './commands/add-repo.js';
 import { addLanguageCommand } from './commands/add-language.js';
 import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
@@ -37,5 +38,6 @@ export const main = defineCommand({
     'add-apt-packages': addAptPackagesCommand,
     'add-feature': addFeatureCommand,
     'add-from-url': addFromUrlCommand,
+    'add-repo': addRepoCommand,
   },
 });

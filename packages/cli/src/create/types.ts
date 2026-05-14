@@ -6,6 +6,17 @@
  */
 export type FeatureOptions = Record<string, string | number | boolean>;
 
+/**
+ * A repo to clone into `projects/<name>/` during post-create.
+ * `name` is derived from the URL on add but can be overridden;
+ * `branch` is optional (defaults to the repo's default branch).
+ */
+export interface RepoEntry {
+  url: string;
+  name: string;
+  branch?: string;
+}
+
 export interface CreateOptions {
   name: string;
   languages: string[];
@@ -32,6 +43,13 @@ export interface CreateOptions {
    * loudly before persisting the entry.
    */
   installUrls?: string[];
+  /**
+   * Git repositories to clone into `projects/<name>/` during
+   * post-create. Cloning is idempotent: if the target directory
+   * already exists, the clone step is skipped — local changes survive
+   * a rebuild.
+   */
+  repos?: RepoEntry[];
 }
 
 export interface StackFile {
@@ -59,4 +77,10 @@ export interface StackFile {
    * is preserved across re-adds.
    */
   installUrls?: string[];
+  /**
+   * Optional list of git repos added via `monoceros add-repo`. Each
+   * gets cloned (idempotently) into `projects/<name>/` during
+   * post-create.
+   */
+  repos?: RepoEntry[];
 }

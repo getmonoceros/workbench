@@ -10,9 +10,11 @@ import {
   knownServices,
 } from '../create/catalog.js';
 import {
+  buildCodeWorkspaceJson,
   buildComposeYaml,
   buildDevcontainerJson,
   buildPostCreateScript,
+  deriveRepoName,
   needsCompose,
   normalizeOptions,
   validateOptions,
@@ -20,6 +22,7 @@ import {
 import type {
   CreateOptions,
   FeatureOptions,
+  RepoEntry,
   StackFile,
 } from '../create/types.js';
 import { findSolutionRoot } from '../devcontainer/locate.js';
@@ -61,6 +64,12 @@ export interface AddFeatureInput extends ModifyOptions {
 
 export interface AddFromUrlInput extends ModifyOptions {
   url: string;
+}
+
+export interface AddRepoInput extends ModifyOptions {
+  url: string;
+  name?: string;
+  branch?: string;
 }
 
 export type ModifyResult =
@@ -114,6 +123,41 @@ export async function runAddAptPackages(
     return {
       ...stack,
       aptPackages: merged,
+    };
+  });
+}
+
+export async function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
+  const url = input.url.trim();
+  if (url.length === 0) {
+    throw new Error('Missing repo URL. Usage: monoceros add-repo <url>.');
+  }
+  // URL syntax check happens later via validateOptions; the name we
+  // derive here only matters if it isn't overridden. Empty derived
+  // name falls through to validateOptions' REPO_NAME_RE check.
+  const name = (input.name ?? deriveRepoName(url)).trim();
+  const entry: RepoEntry = {
+    url,
+    name,
+    ...(input.branch !== undefined ? { branch: input.branch } : {}),
+  };
+  return mutate(input, (stack) => {
+    const existing = stack.repos ?? [];
+    // Idempotent: same name + url + branch → no change. Different
+    // signature with the same name → validation error downstream
+    // (handled by validateOptions in mutate's draftOptions pass).
+    const same = existing.find(
+      (r) =>
+        r.name === entry.name &&
+        r.url === entry.url &&
+        (r.branch ?? undefined) === (entry.branch ?? undefined),
+    );
+    if (same) {
+      return stack;
+    }
+    return {
+      ...stack,
+      repos: [...existing, entry],
     };
   });
 }
@@ -219,6 +263,9 @@ async function mutate(
     ...(draftStack.installUrls && draftStack.installUrls.length > 0
       ? { installUrls: draftStack.installUrls }
       : {}),
+    ...(draftStack.repos && draftStack.repos.length > 0
+      ? { repos: draftStack.repos }
+      : {}),
   };
   validateOptions(draftOptions);
   const normalized = normalizeOptions(draftOptions);
@@ -240,6 +287,9 @@ async function mutate(
     ...(normalized.installUrls && normalized.installUrls.length > 0
       ? { installUrls: normalized.installUrls }
       : {}),
+    ...(normalized.repos && normalized.repos.length > 0
+      ? { repos: normalized.repos }
+      : {}),
   };
 
   const devcontainerPath = path.join(
@@ -249,10 +299,15 @@ async function mutate(
   );
   const composePath = path.join(root, '.devcontainer', 'compose.yaml');
   const postCreatePath = path.join(root, '.devcontainer', 'post-create.sh');
+  const codeWorkspacePath = path.join(
+    root,
+    `${normalized.name}.code-workspace`,
+  );
 
   const oldDevcontainer = await readUtf8(devcontainerPath);
   const oldCompose = await readUtf8(composePath);
   const oldPostCreate = await readUtf8(postCreatePath);
+  const oldCodeWorkspace = await readUtf8(codeWorkspacePath);
 
   const newDevcontainer =
     JSON.stringify(buildDevcontainerJson(normalized), null, 2) + '\n';
@@ -260,6 +315,8 @@ async function mutate(
     ? buildComposeYaml(normalized)
     : null;
   const newPostCreate = buildPostCreateScript(normalized);
+  const newCodeWorkspace =
+    JSON.stringify(buildCodeWorkspaceJson(normalized), null, 2) + '\n';
   const newStackContent = JSON.stringify(newStack, null, 2) + '\n';
 
   const planned: PlannedChange[] = [];
@@ -295,6 +352,14 @@ async function mutate(
       before: oldPostCreate,
       after: newPostCreate,
       executable: true,
+    });
+  }
+  if (oldCodeWorkspace !== newCodeWorkspace) {
+    planned.push({
+      relPath: path.relative(root, codeWorkspacePath),
+      absPath: codeWorkspacePath,
+      before: oldCodeWorkspace,
+      after: newCodeWorkspace,
     });
   }
   if (oldStackContent !== newStackContent) {
