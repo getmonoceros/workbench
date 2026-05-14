@@ -15,8 +15,9 @@ Was es **nicht** ist:
 
 - Kein `git clone` ad-hoc (das passiert beim nächsten `monoceros apply`,
   nicht beim `add-repo`-Aufruf selbst)
-- Kein Push-Mechanism (Workflow: in der Shell `git push` wie üblich)
-- Keine Auth-Magie für private SSH-Repos (siehe Limit unten)
+- Kein Push-Mechanism (Workflow: in der Shell `git push` wie üblich —
+  funktioniert via SSH-Agent-Forwarding, siehe unten)
+- Keine HTTPS-Credential-Helper-Magie (siehe Auth-Sektion unten)
 
 ## Synopsis
 
@@ -114,15 +115,47 @@ sandbox/
 - **Name**: muss `[A-Za-z0-9._-]+` matchen (kein Slash, kein Space). Folder-Safe.
 - **Branch**: `[A-Za-z0-9._/-]+` (Slashes erlaubt für `feature/foo`-Konventionen).
 
-## Bekannte Limits
+## Auth — SSH-Agent-Forwarding
 
-**SSH-Auth für private Repos ist heute nicht automatisiert.** Wenn du `git@github.com:…`-URLs verwendest, läuft der Klon im Container nur, wenn entweder:
+Sobald in `stack.json.repos` mindestens ein Eintrag steht, schreibt
+`monoceros create` / `monoceros add-repo` automatisch SSH-Agent-
+Forwarding in den Devcontainer:
 
-- ein SSH-Agent-Socket händisch in `devcontainer.json` / `compose.yaml` gemounted ist, _oder_
-- du HTTPS mit einem Personal-Access-Token in der URL verwendest (`https://USER:TOKEN@github.com/…`), _oder_
-- ein Credential-Helper im Container konfiguriert ist.
+- **Image-Mode** (`devcontainer.json`): Mount
+  `${localEnv:SSH_AUTH_SOCK} → /ssh-agent` plus
+  `containerEnv.SSH_AUTH_SOCK = /ssh-agent`
+- **Compose-Mode** (`compose.yaml`): Volume
+  `${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent` auf dem `workspace`-Service
+  plus `environment.SSH_AUTH_SOCK = /ssh-agent`
+- In beiden Modi: `GIT_SSH_COMMAND = "ssh -o StrictHostKeyChecking=accept-new"`,
+  damit der erste Connect zu einem neuen Git-Host (`github.com`,
+  `gitlab.com`, …) nicht interaktiv „Are you sure?" fragt und
+  post-create.sh dadurch hängt.
 
-Für public Repos kein Problem — HTTPS klont ohne Auth. SSH-Agent-Forwarding via Devcontainer-Spec kommt als eigene Folge-Aufgabe (M2.5 Phase-3-Erweiterung), sobald wir die Ergonomie sauber aufsetzen können (es gibt Edge-Cases bei macOS-Docker-Desktop-Socket-Permissions).
+**Builder-Voraussetzung — einmalig pro Host-OS:**
+
+| OS          | Wie ein lokaler SSH-Agent läuft + Key lädt                                  |
+| ----------- | --------------------------------------------------------------------------- |
+| macOS       | `ssh-add --apple-use-keychain ~/.ssh/id_ed25519` — Agent läuft via Keychain |
+| Linux       | `eval $(ssh-agent)` + `ssh-add ~/.ssh/id_ed25519` (z. B. in `~/.zshrc`)     |
+| Windows-WSL | wie Linux, oder OpenSSH-Service via `systemctl --user enable ssh-agent`     |
+
+Damit funktionieren SSH-URLs (`git@github.com:…`, `git@gitlab.com:…`,
+`git@bitbucket.org:…`, self-hosted Gitea) sowohl beim Klonen
+(post-create.sh) als auch bei `git push`/`pull`/`fetch` interaktiv im
+Container — der Host-Agent verteilt die Keys.
+
+**HTTPS-Auth ist nicht automatisiert.** Wenn du HTTPS-URLs für private
+Repos verwenden willst, musst du selbst einen Credential-Helper im
+Container einrichten (z. B. via `git config --global credential.helper …`
+in einem custom post-create-Step). Public-HTTPS-Klone funktionieren
+ohne Auth.
+
+**Wenn host-seitig kein SSH-Agent läuft:** im Compose-Mode greift das
+`:-/dev/null`-Fallback und der Container startet sauber, aber der
+Klon im post-create scheitert mit einer klaren SSH-Error-Message. Im
+Image-Mode ohne Agent wird devcontainer-cli den leeren Mount-Source
+melden.
 
 ## Verwandte Befehle
 
@@ -134,5 +167,6 @@ Für public Repos kein Problem — HTTPS klont ohne Auth. SSH-Agent-Forwarding v
 - **`Invalid repo URL`** — URL enthält verbotene Zeichen. Häufige Ursachen: versehentlich kopierte Anführungszeichen, Tab im String.
 - **`Invalid repo name`** — Name enthält Slash oder Space. Mit `--name=safer-name` overriden.
 - **`Duplicate repo name`** — zwei Repos beanspruchen denselben `projects/<name>/`-Slot. Mit `--name` einen davon umbenennen.
-- **Clone scheitert mit `Permission denied (publickey)`** — SSH-Auth nicht gegeben (siehe Limits oben). HTTPS-URL nutzen oder SSH-Agent händisch einrichten.
+- **Clone scheitert mit `Permission denied (publickey)`** — SSH-Agent läuft host-seitig nicht oder hat den falschen Key. Host: `ssh-add -l` sollte den Key zeigen; falls leer, `ssh-add ~/.ssh/id_ed25519` (macOS: `--apple-use-keychain` mit dazu). Danach `monoceros apply` erneut.
+- **`Could not open a connection to your authentication agent`** im Container — der SSH-Agent-Socket-Mount ist leer (Host hatte keinen Agent zur Compose-Up-Zeit). Compose fällt auf `/dev/null` zurück; ssh weiß damit nichts anzufangen. Host-Agent starten, dann `monoceros apply`.
 - **Clone scheitert mit `Repository not found`** — URL falsch oder Repo privat. Auth-Setup prüfen.

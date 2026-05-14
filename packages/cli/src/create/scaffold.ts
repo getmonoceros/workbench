@@ -227,6 +227,10 @@ interface DevcontainerImageMode {
   postCreateCommand: string;
   customizations: DevcontainerCustomizations;
   features?: Record<string, Record<string, unknown>>;
+  // Env vars injected into the workspace container at start time
+  // (inherited by postCreateCommand). Used by add-repo to wire the
+  // forwarded SSH-agent socket and a permissive SSH host-key policy.
+  containerEnv?: Record<string, string>;
 }
 
 interface DevcontainerComposeMode {
@@ -243,6 +247,28 @@ interface DevcontainerComposeMode {
   postCreateCommand: string;
   customizations: DevcontainerCustomizations;
   features?: Record<string, Record<string, unknown>>;
+}
+
+// Repos-related Git-auth wiring: forward the host SSH-agent socket into
+// the container and tell git to auto-accept new host keys (avoids the
+// interactive "Are you sure?" prompt that would hang post-create.sh on
+// first connect). Builder is expected to have a running ssh-agent
+// host-side with the right key loaded — that's the only host-OS-
+// specific bit; the mount itself is the same on macOS, Linux, WSL.
+const SSH_AGENT_TARGET = '/ssh-agent';
+const GIT_SSH_COMMAND = 'ssh -o StrictHostKeyChecking=accept-new';
+
+function buildRepoAuthMounts(): string[] {
+  return [
+    `source=\${localEnv:SSH_AUTH_SOCK},target=${SSH_AGENT_TARGET},type=bind`,
+  ];
+}
+
+function buildRepoAuthEnv(): Record<string, string> {
+  return {
+    SSH_AUTH_SOCK: SSH_AGENT_TARGET,
+    GIT_SSH_COMMAND,
+  };
 }
 
 export type DevcontainerJson = DevcontainerImageMode | DevcontainerComposeMode;
@@ -286,9 +312,13 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     },
   };
 
+  const wantsRepoAuth = (opts.repos?.length ?? 0) > 0;
+  const repoAuthEnv = wantsRepoAuth ? { containerEnv: buildRepoAuthEnv() } : {};
+
   if (needsCompose(opts)) {
-    // Compose-mode handles NET_ADMIN via cap_add on the workspace
-    // service in compose.yaml — no runArgs needed here.
+    // Compose-mode: SSH-agent mount goes onto the workspace service in
+    // compose.yaml (see buildComposeYaml); devcontainer.json just
+    // forwards the env vars.
     return {
       name: opts.name,
       dockerComposeFile: 'compose.yaml',
@@ -300,6 +330,7 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
       postCreateCommand: '.devcontainer/post-create.sh',
       customizations,
       ...(featuresField ?? {}),
+      ...repoAuthEnv,
     };
   }
 
@@ -310,12 +341,14 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     mounts: [
       'source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,consistency=cached',
       `source=${workbenchRoot()},target=${WORKBENCH_CONTAINER_PATH},type=bind,consistency=cached`,
+      ...(wantsRepoAuth ? buildRepoAuthMounts() : []),
     ],
     runArgs: ['--cap-add=NET_ADMIN'],
     forwardPorts: [3000, 4000],
     postCreateCommand: '.devcontainer/post-create.sh',
     customizations,
     ...(featuresField ?? {}),
+    ...repoAuthEnv,
   };
 }
 
@@ -337,6 +370,17 @@ export function buildComposeYaml(opts: CreateOptions): string {
   lines.push(`      - ..:/workspaces/${opts.name}:cached`);
   lines.push('      - ${HOME}/.claude:/home/node/.claude');
   lines.push(`      - ${workbenchRoot()}:${WORKBENCH_CONTAINER_PATH}:cached`);
+  const wantsRepoAuth = (opts.repos?.length ?? 0) > 0;
+  if (wantsRepoAuth) {
+    // `:-/dev/null` fallback so the compose-up doesn't error when the
+    // builder has no SSH agent running host-side — the container starts
+    // (with a useless dummy socket), and the git clone fails clearly
+    // instead of crashing the whole devcontainer.
+    lines.push(`      - \${SSH_AUTH_SOCK:-/dev/null}:${SSH_AGENT_TARGET}`);
+    lines.push('    environment:');
+    lines.push(`      SSH_AUTH_SOCK: ${SSH_AGENT_TARGET}`);
+    lines.push(`      GIT_SSH_COMMAND: "${GIT_SSH_COMMAND}"`);
+  }
 
   const namedVolumes: string[] = [];
   for (const svcId of opts.services) {

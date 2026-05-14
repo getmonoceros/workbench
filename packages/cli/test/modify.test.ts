@@ -879,4 +879,74 @@ describe('runAddRepo', () => {
       }),
     ).rejects.toThrow(/Missing repo URL/);
   });
+
+  it('wires SSH-agent forwarding into devcontainer.json (image mode)', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://github.com/foo/bar.git',
+    });
+    const devcontainer = await readJson<{
+      mounts?: string[];
+      containerEnv?: Record<string, string>;
+    }>(path.join(solution, '.devcontainer', 'devcontainer.json'));
+    expect(
+      devcontainer.mounts?.some((m) => m.includes('${localEnv:SSH_AUTH_SOCK}')),
+    ).toBe(true);
+    expect(devcontainer.containerEnv).toEqual({
+      SSH_AUTH_SOCK: '/ssh-agent',
+      GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new',
+    });
+  });
+
+  it('wires SSH-agent forwarding into compose.yaml (compose mode)', async () => {
+    const solution = await scaffold(cwd, {
+      name: 'demo',
+      services: ['postgres'],
+    });
+    await runAddRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'https://github.com/foo/bar.git',
+    });
+    const compose = await fs.readFile(
+      path.join(solution, '.devcontainer', 'compose.yaml'),
+      'utf8',
+    );
+    expect(compose).toContain('${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent');
+    expect(compose).toContain('SSH_AUTH_SOCK: /ssh-agent');
+    expect(compose).toContain(
+      'GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=accept-new"',
+    );
+    // devcontainer.json mirrors the env via containerEnv so devcontainer-
+    // cli picks it up for the workspace service exec context.
+    const devcontainer = await readJson<{
+      containerEnv?: Record<string, string>;
+      mounts?: string[];
+    }>(path.join(solution, '.devcontainer', 'devcontainer.json'));
+    expect(devcontainer.containerEnv?.SSH_AUTH_SOCK).toBe('/ssh-agent');
+    // Compose-mode devcontainer.json doesn't use `mounts` — those live
+    // in compose.yaml. The SSH mount must not leak into devcontainer.json
+    // here.
+    expect(devcontainer.mounts).toBeUndefined();
+  });
+
+  it('does NOT wire SSH-agent forwarding when no repos are configured', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    // Add something else (apt-package) but no repo.
+    await runAddAptPackages({
+      ...baseModifyOpts,
+      cwd: solution,
+      packages: ['jq'],
+    });
+    const devcontainer = await readJson<{
+      mounts?: string[];
+      containerEnv?: Record<string, string>;
+    }>(path.join(solution, '.devcontainer', 'devcontainer.json'));
+    expect(
+      devcontainer.mounts?.some((m) => m.includes('${localEnv:SSH_AUTH_SOCK}')),
+    ).toBe(false);
+    expect(devcontainer.containerEnv).toBeUndefined();
+  });
 });
