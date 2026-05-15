@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
+import type { RepoEntry, StackFile } from '../create/types.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
+import { collectGitCredentials, type CredentialsSpawn } from './credentials.js';
 import { findSolutionRoot } from './locate.js';
 
 export type ComposeSpawn = (args: string[], cwd: string) => Promise<number>;
@@ -162,7 +164,14 @@ export interface ApplyOptions {
   // Both compose- and image-mode `apply` call `devcontainer up` at the
   // end; this hook covers that side.
   devcontainerSpawn?: DevcontainerSpawn;
-  logger?: { info: (message: string) => void };
+  // Host-side `git credential fill` for HTTPS repos. Default spawns
+  // real git; tests inject a fake. Skipped when no HTTPS repos in
+  // stack.json.
+  credentialsSpawn?: CredentialsSpawn;
+  logger?: {
+    info: (message: string) => void;
+    warn?: (message: string) => void;
+  };
 }
 
 // `monoceros apply` is the convenience step the builder runs after any
@@ -200,7 +209,25 @@ export async function runApply(opts: ApplyOptions = {}): Promise<number> {
   }
   const composeFile = path.join(root, '.devcontainer', 'compose.yaml');
   const hasCompose = existsSync(composeFile);
-  const logger = opts.logger ?? { info: (msg) => consola.info(msg) };
+  const logger = opts.logger ?? {
+    info: (msg) => consola.info(msg),
+    warn: (msg) => consola.warn(msg),
+  };
+  const credsLogger = {
+    info: logger.info,
+    warn: logger.warn ?? logger.info,
+  };
+
+  // Step 0: pull host-side git credentials for any HTTPS repos. Runs
+  // before container teardown so the credentials file is in place
+  // when post-create.sh tries to clone.
+  const repos = await readRepoEntries(root);
+  if (repos.some((r) => r.url.startsWith('https://'))) {
+    await collectGitCredentials(root, repos, {
+      ...(opts.credentialsSpawn ? { spawn: opts.credentialsSpawn } : {}),
+      logger: credsLogger,
+    });
+  }
 
   if (hasCompose) {
     const projectName = composeProjectName(root);
@@ -281,4 +308,15 @@ export function runLogs(opts: LogsOptions = {}): Promise<number> {
     ],
     opts,
   );
+}
+
+async function readRepoEntries(root: string): Promise<RepoEntry[]> {
+  const stackPath = path.join(root, '.monoceros', 'stack.json');
+  try {
+    const content = await fs.readFile(stackPath, 'utf8');
+    const stack = JSON.parse(content) as StackFile;
+    return stack.repos ?? [];
+  } catch {
+    return [];
+  }
 }

@@ -374,4 +374,87 @@ describe('runApply', () => {
     expect(devcontainerCalls[0]?.cwd).toBe(solution);
     expect(devcontainerCalls[0]?.args).toContain('--remove-existing-container');
   });
+
+  it('fetches host-side git credentials when stack.json has HTTPS repos', async () => {
+    const solution = path.join(root, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    await fs.mkdir(path.join(solution, '.monoceros'), { recursive: true });
+    // Image-mode for simplicity.
+    await fs.writeFile(
+      path.join(solution, '.monoceros', 'stack.json'),
+      JSON.stringify({
+        name: 'demo',
+        createdAt: '2026-01-01T00:00:00Z',
+        monocerosCliVersion: '0.0.0',
+        languages: [],
+        services: [],
+        externalServices: {},
+        repos: [
+          { url: 'https://github.com/foo/bar.git', name: 'bar' },
+          { url: 'git@github.com:other/baz.git', name: 'baz' },
+        ],
+      }),
+    );
+
+    const credentialsInputs: string[] = [];
+    await runApply({
+      cwd: solution,
+      logger: { info: () => {}, warn: () => {} },
+      devcontainerSpawn: async () => 0,
+      credentialsSpawn: async (input) => {
+        credentialsInputs.push(input);
+        return {
+          stdout:
+            'protocol=https\nhost=github.com\nusername=ci\npassword=tok\n',
+          exitCode: 0,
+        };
+      },
+    });
+
+    // Exactly one credential-fill call — for github.com (the SSH/git@
+    // repo is skipped).
+    expect(credentialsInputs).toEqual(['protocol=https\nhost=github.com\n\n']);
+
+    // Credentials file got written.
+    const creds = await fs.readFile(
+      path.join(solution, '.monoceros', 'git-credentials'),
+      'utf8',
+    );
+    expect(creds).toContain('https://ci:tok@github.com');
+  });
+
+  it('skips credential fetching when stack.json has no HTTPS repos', async () => {
+    const solution = path.join(root, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    await fs.mkdir(path.join(solution, '.monoceros'), { recursive: true });
+    await fs.writeFile(
+      path.join(solution, '.monoceros', 'stack.json'),
+      JSON.stringify({
+        name: 'demo',
+        createdAt: '2026-01-01T00:00:00Z',
+        monocerosCliVersion: '0.0.0',
+        languages: [],
+        services: [],
+        externalServices: {},
+        repos: [{ url: 'git@github.com:foo/bar.git', name: 'bar' }],
+      }),
+    );
+
+    let credentialsCalls = 0;
+    await runApply({
+      cwd: solution,
+      logger: { info: () => {}, warn: () => {} },
+      devcontainerSpawn: async () => 0,
+      credentialsSpawn: async () => {
+        credentialsCalls += 1;
+        return { stdout: '', exitCode: 0 };
+      },
+    });
+
+    expect(credentialsCalls).toBe(0);
+    // No credentials file written when no HTTPS repos exist.
+    await expect(
+      fs.access(path.join(solution, '.monoceros', 'git-credentials')),
+    ).rejects.toThrow();
+  });
 });

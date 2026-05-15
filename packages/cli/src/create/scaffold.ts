@@ -586,6 +586,17 @@ export function buildPostCreateScript(opts: CreateOptions): string {
   }
 
   if (opts.repos && opts.repos.length > 0) {
+    const hasHttpsRepo = opts.repos.some((r) => r.url.startsWith('https://'));
+    if (hasHttpsRepo) {
+      lines.push(
+        '',
+        '# Wire git to the per-dev-container credentials file populated',
+        '# by `monoceros apply` (via `git credential fill` on the host).',
+        '# Path uses the workspace bind-mount so the file is reachable',
+        '# from inside the container.',
+        `git config --global credential.helper "store --file=/workspaces/${opts.name}/.monoceros/git-credentials"`,
+      );
+    }
     lines.push(
       '',
       '# Repos managed by `monoceros add-repo`. Each entry is cloned',

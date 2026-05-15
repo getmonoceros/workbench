@@ -76,6 +76,13 @@ export async function runCreate(
   // sub-project has been added. Harmless when the solution itself isn't
   // a git repo.
   await fs.writeFile(path.join(projectsDir, '.gitkeep'), '');
+  // `.monoceros/.gitignore` keeps the per-apply credentials file out of
+  // any git repo the builder might wrap around the dev-container. The
+  // credentials file itself is also written with 0o600 perms.
+  await fs.writeFile(
+    path.join(monocerosDir, '.gitignore'),
+    'git-credentials*\n',
+  );
 
   const devcontainerJson = buildDevcontainerJson(opts);
   await fs.writeFile(
