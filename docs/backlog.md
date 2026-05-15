@@ -445,9 +445,16 @@ verlorene „ich hab das mal manuell installiert"-Tooling.
 
 Läuft parallel zur offenen M2-Design-Diskussion
 ([design-pivot-autonomous-iterate.md](design-pivot-autonomous-iterate.md))
-und ist unabhängig von deren Ausgang. Phase 1+2 sind unmittelbare
-Pimps, Phase 3+4 sind die größere Wette aufs deklarative
-Manifest-Modell.
+und ist unabhängig von deren Ausgang.
+
+**Stand 2026-05-15:** Phase 1+2 + die organisch hinzugekommene
+Auth-Infrastruktur sind alle abgeschlossen. Phase 3 wurde nach Builder-
+Feedback umkonzipiert — yml ist jetzt ein **wiederverwendbares Profil
+außerhalb des Dev-Containers**, nicht eine Per-Container-Manifest-
+Datei. Phase 4 wurde dadurch überflüssig (es gibt keine
+„stack.json → yml"-Migration mehr im alten Sinn — die yml ist die
+externe Quelle, der Stack im Dev-Container leitet sich aus ihr ab und
+zeigt nur per `origin` zurück auf den yml-Namen).
 
 ### Workspace-Layout — Vorab-Entscheidung
 
@@ -473,12 +480,12 @@ ruft `/monoceros:iterate`, Pipeline findet `.monoceros/` durch
 Aufwärtswalk. Multi-Projekt ist „einfach mehrere Folder unter
 `projects/`" — keine spezielle Monoceros-Logik nötig.
 
-### Phase 1 — Imperative `add-*`-Befehle + `apply`
+### ✅ Phase 1 — Imperative `add-*`-Befehle + `apply` (abgeschlossen)
 
 Drei neue Befehle für die drei realen Installationsarten, plus
-Git-Clone und kombinierter Rebuild-Step:
+Git-Clone und kombinierter Rebuild-Step. **Alles geliefert.**
 
-1. **`monoceros add-apt-packages <pkg> [<pkg> …]`**
+1. ✅ **`monoceros add-apt-packages <pkg> [<pkg> …]`**
    - Mehrfach-Args (apt-Pakete kommen in Bündeln)
    - Speichert Liste in `stack.json.aptPackages: string[]`
    - Schreibt Devcontainer-Feature
@@ -487,7 +494,7 @@ Git-Clone und kombinierter Rebuild-Step:
    - Idempotent: Paket schon drin → no-op
    - Diff-Preview, `--yes` zum Skippen
 
-2. **`monoceros add-feature <feature-ref> [--option key=value …]`**
+2. ✅ **`monoceros add-feature <feature-ref> [--option key=value …]`**
    - Single-Arg + Options-Pairs
    - Beispiel:
      `monoceros add-feature ghcr.io/devcontainers/features/docker-in-docker:2 --option version=latest`
@@ -497,7 +504,7 @@ Git-Clone und kombinierter Rebuild-Step:
    - Idempotenz: gleiche Ref vorhanden → error (Builder muss explizit
      `remove-feature` + neu adden, falls Options sich ändern sollen)
 
-3. **`monoceros add-from-url <url>`**
+3. ✅ **`monoceros add-from-url <url>`**
    - Single-Arg
    - Beispiel:
      `monoceros add-from-url https://teamwork-graph.atlassian.com/cli/install`
@@ -510,7 +517,7 @@ Git-Clone und kombinierter Rebuild-Step:
      container build. Trust this URL? [y/N]". `--yes` zum Skippen.
    - Idempotenz: URL schon drin → no-op
 
-4. **`monoceros add-repo <url> [--name=<n>] [--branch=<b>]`**
+4. ✅ **`monoceros add-repo <url> [--name=<n>] [--branch=<b>]`**
    - Eintrag in `stack.json.repos: Array<{url, name, branch}>`
    - `name` aus URL abgeleitet (`bar.git` → `bar`), Override via
      `--name`
@@ -524,15 +531,38 @@ Git-Clone und kombinierter Rebuild-Step:
    - Aktualisiert `<solution>.code-workspace`: neuer Root für
      `projects/<name>/`
 
-5. **`monoceros apply`** (neuer Befehl)
-   - Kombiniert `monoceros down && monoceros start` in einem Aufruf
-   - Wird am Ende _jedes_ `add-*`-Befehls als Hinweis ausgegeben:
-     „Container muss neu gebaut werden — run `monoceros apply`"
-   - Optional: `add-*` mit `--apply`-Flag triggert `apply` direkt
-     im Anschluss (Komfort für Power-User, default off weil
-     destruktiv für laufende Sessions)
+5. ✅ **`monoceros apply`** (neuer Befehl)
+   - Kombiniert Container-Teardown (Label-basiert, mit VS-Code-Race-
+     Detection) + `devcontainer up` in einem Aufruf
+   - Wird am Ende _jedes_ `add-*`-Befehls als Hinweis ausgegeben
+   - Regeneriert `post-create.sh` aus stack.json bei jedem Lauf
+     (verhindert stale-after-CLI-upgrade-Probleme)
 
-### Phase 2 — `monoceros create` mit `projects/`-Layout
+### ✅ Auth-Infrastruktur (organisch dazugekommen, Phase 1-Erweiterung)
+
+Während der Phase-1-Arbeit kam raus, dass `add-repo` plus
+`monoceros apply` nicht reicht — der Container braucht Auth-Setup, um
+private Repos zu klonen, zu committen und zu pushen. Drei
+Mechanismen wurden ergänzt, alle host-OS- und git-host-agnostisch:
+
+- ✅ **SSH-Agent-Forwarding** — `${localEnv:SSH_AUTH_SOCK}` wird
+  in `devcontainer.json` / `compose.yaml` gemountet, sobald
+  `stack.json.repos` einen Eintrag hat. Mit
+  `GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new"` um
+  den first-time-host-key-Prompt zu vermeiden.
+- ✅ **HTTPS-Credentials via `git credential fill`** — bei jedem
+  `apply` werden host-seitig pro HTTPS-Host Creds gefetcht
+  (osxkeychain, manager, libsecret, was auch immer der Host hat) und
+  in `.monoceros/git-credentials` geschrieben (mode 0o600). Container-
+  git liest sie via `credential.helper=store --file=…`.
+- ✅ **Git-Identity** — host-seitig `git config --global --get
+user.name`/`user.email`, mit Persistenz in `.monoceros/gitconfig` und
+  interaktivem Prompt-Fallback wenn Host kein Global hat. Container-
+  git inkludiert die Datei via `include.path`.
+- ✅ **`.monoceros/.gitignore`** schließt `git-credentials*` und
+  `gitconfig` aus, damit per-Builder-State nicht in Repos rutscht.
+
+### ✅ Phase 2 — `monoceros create` mit `projects/`-Layout (abgeschlossen)
 
 `monoceros create <name>` schreibt das oben skizzierte Layout:
 
@@ -545,13 +575,80 @@ Keine prescriptive Sub-Projekt-Struktur, kein `add-project`-Befehl.
 Projekte sind Repos, die der Builder reinklont — Monoceros verwaltet
 sie nicht, listet sie nur im `.code-workspace`.
 
-### Phase 3 — YAML-Manifest (`monoceros.yml`)
+### Phase 3 — YAML-Profile (`<name>.yml`) als wiederverwendbare Konfig
 
-Statt mehrerer `add-*`-Aufrufe in Reihe: ein deklaratives Manifest,
-das alles in einem Wisch beschreibt.
+**Neues Modell (Stand 2026-05-15):** Die yml ist **kein per-Dev-
+Container-Manifest** sondern ein **wiederverwendbares Profil**, das
+außerhalb des Dev-Containers liegt. Mehrere Dev-Container können
+dieselbe yml referenzieren; eine Änderung an der yml propagiert beim
+nächsten `apply` in jeden Container der sie nutzt.
+
+**Begriffe:**
+
+- **Template** — von Monoceros mitgelieferte Vorlage, read-only.
+  Liegt in `templates/yml/<name>.yml` im Workbench-Repo. Beispiele:
+  `nodejs-github.yml`, `spring-boot.yml`, `forge-addon.yml`, `php.yml`.
+- **Konfig** (oder „User-yml") — eine vom Builder kopierte und
+  customizable yml. Liegt während der Dev/Test-Phase in
+  `.local/container-configs/<name>.yml` (später, mit Distributions-
+  kanal, ggf. an anderem Ort). Diese Datei ist die _Wahrheit_ für
+  einen oder mehrere Dev-Container.
+- **Stack** — die materialisierte Form einer Konfig in einem
+  konkreten Dev-Container-Verzeichnis: `.devcontainer/`, `.monoceros/`,
+  Scaffold-Files. Der Stack hat ein `origin: <name>`-Feld, das auf
+  die Konfig zurück zeigt.
+
+**Workflow:**
+
+```sh
+# 1. Template kopieren (zum Customizen)
+monoceros init nodejs-github sandbox
+# → kopiert templates/yml/nodejs-github.yml
+#   nach .local/container-configs/sandbox.yml
+
+# 2. Konfig anpassen
+vim .local/container-configs/sandbox.yml
+
+# 3. Auf ein Dev-Container-Verzeichnis anwenden
+mkdir .local/play/sandbox && cd .local/play/sandbox
+monoceros apply sandbox
+# (entspricht `monoceros apply sandbox .`)
+# → liest .local/container-configs/sandbox.yml
+# → generiert .devcontainer/, .monoceros/, etc.
+# → .monoceros/state.json bekommt `origin: 'sandbox'`
+# → Container hochfahren
+
+# 4. Zweiter Dev-Container mit derselben Konfig
+monoceros apply sandbox .local/play/sandbox-clone
+# → derselbe Stack-Inhalt, andere Container-Instanz
+
+# 5. Re-apply nach Edit der Konfig
+vim .local/container-configs/sandbox.yml
+cd .local/play/sandbox
+monoceros apply
+# → liest origin aus .monoceros/state.json, holt yml, re-appliziert
+
+# 6. add-* / remove-* editieren die SHARED Konfig
+cd .local/play/sandbox
+monoceros add-repo https://...
+# → editiert .local/container-configs/sandbox.yml
+# → sandbox-clone bekommt das Repo beim nächsten apply
+```
+
+**Befehls-Übersicht:**
+
+| Befehl                             | Wirkung                                                          |
+| ---------------------------------- | ---------------------------------------------------------------- |
+| `monoceros init <template> <name>` | Kopiert Template → `.local/container-configs/<name>.yml`         |
+| `monoceros apply <name> [<pfad>]`  | Liest yml, generiert Stack im Pfad (default cwd)                 |
+| `monoceros apply` (ohne Arg)       | Liest `origin` aus `.monoceros/state.json` in cwd, re-appliziert |
+| `monoceros add-* …`                | Editiert die yml, auf die der Stack via `origin` zeigt           |
+| `monoceros remove-* …`             | Symmetrisch zu `add-*`, entfernt Einträge aus der yml            |
+
+**yml-Schema (Skelett):**
 
 ```yaml
-# monoceros.yml — am Workspace-Root
+schemaVersion: 1
 name: sandbox
 
 languages: [python, node]
@@ -567,75 +664,106 @@ repos:
   - url: https://github.com/baz/qux.git
     name: ui
     branch: develop
+git:
+  user:
+    name: Thorsten Kamann
+    email: thorsten.kamann@conciso.de
 ```
 
-`monoceros create --config sandbox.yml` (oder Kurzform
-`--config sandbox` mit Auto-Suffix-Resolution): legt Workspace an,
-kopiert YAML als `monoceros.yml` ins Workspace-Root, läuft jede
-Sektion wie ein `add-*` in Reihe, anschließend `monoceros apply`.
+**Mechanik-Entscheidungen (Stand der Diskussion):**
 
-`monoceros.yml` wird zur kanonischen Wahrheit; `stack.json` wird
-intern aus dem YAML abgeleitet (oder durch YAML komplett ersetzt —
-siehe Phase 4).
+- yml-Parser: `yaml`-package (eemeli), kann Comments beim Round-Trip
+  erhalten — wichtig wenn Builder Notes in der yml stehen lassen will.
+- Validierung: Zod-Schema vor jedem Apply; klare Fehler bei
+  Schema-Verletzung, kein „halb angewendet"-Zustand.
+- `monoceros apply <template>` ohne lokale yml in cwd: Error mit
+  Hinweis auf `monoceros init <template> <name>` first.
+- Pfad-Auflösung: `apply <name>` resolves `.local/container-configs/<name>.yml`.
+  Builder kann auch absoluten Pfad geben (`apply ./my-yml.yml`) — name-
+  Resolver fällt dann auf Pfad-Behandlung zurück wenn `name` ein
+  Pfad-Pattern matched.
+- Stack-Persistenz: `.monoceros/state.json` ersetzt das alte
+  `stack.json` und enthält nur noch `{ origin: <name>, …materialisierte
+Werte für Diagnose… }`. Die yml bleibt die Wahrheit.
 
-### Phase 4 — `stack.json` → `monoceros.yml` Migration
+### Phase 3 — Tasks (vor Implementierung verfeinern)
 
-- `stack.json` wird abgelöst durch `monoceros.yml`
-- Alle `add-*`-Befehle lesen+schreiben `monoceros.yml`
-- Imperative und deklarative Modi teilen sich denselben State
-- Migration-Pfad: bei `monoceros apply` mit altem `stack.json` →
-  one-shot-Konvertierung mit Hinweis
+1. **Schema + I/O** — Zod-Schema für yml, `yaml`-package als
+   Dependency, Reader/Writer mit Comment-Preservation, Round-Trip-
+   Tests in eigenem Modul.
+2. **`monoceros init <template> <name>`** — neuer Befehl. Validiert
+   Template-Existenz in `templates/yml/`, kopiert nach
+   `.local/container-configs/`, Idempotenz wenn die Ziel-Datei schon
+   da ist (Error: „existiert schon, manuell löschen wenn re-templated").
+3. **`monoceros apply <name> [<pfad>]`** — refactored vom heutigen
+   `apply`. Liest yml aus `.local/container-configs/<name>.yml`,
+   generiert komplettes Scaffold im Pfad (default cwd), schreibt
+   `.monoceros/state.json` mit `origin: <name>`, dann container-up.
+4. **`monoceros apply` (ohne Args)** — liest `state.json` in cwd,
+   ermittelt origin, ruft yml ab, re-appliziert.
+5. **`add-*` lesen+schreiben die yml** — refactored. Statt heute
+   `stack.json` zu mutieren: yml laden, Eintrag hinzufügen, yml
+   schreiben. State.json wird beim nächsten Apply aktualisiert.
+6. **`remove-*`-Befehlsfamilie** — symmetrisch zu `add-*`. Editiert
+   die yml. Builder muss apply für die Materialisierung aufrufen.
+7. **`stack.json` → `state.json`-Migration** — bestehende Solutions
+   (mit stack.json) werden beim ersten apply transparent auf das neue
+   Modell migriert: yml wird aus stack.json generiert, in
+   `.local/container-configs/<name>.yml` abgelegt, state.json
+   geschrieben, stack.json archiviert.
+8. **Templates ausarbeiten** — wenigstens drei Anfangs-Templates:
+   `nodejs-github.yml`, `python.yml`, `bare.yml`. Spring-Boot, Forge,
+   PHP etc. dann als Folge-PRs.
+9. **Doku** — `docs/commands/init.md`, `docs/commands/apply.md` neu
+   schreiben, README in `templates/yml/` als Template-Katalog.
 
-### Tasks (vorläufig — werden vor Implementierung verfeinert)
+### ✅ Phase 1+2 Tasks (alle erledigt)
 
-1. **Workspace-Layout-Refactor** — `monoceros create` schreibt
-   `projects/`-Folder + `<name>.code-workspace`. Tests in
-   [`create.test.ts`](../packages/cli/test/create.test.ts) anpassen.
-   Pipeline-Aufwärtswalk verifizieren, dass `cd projects/repo-a &&
-/monoceros:iterate` korrekt zur Solution-Root findet.
-2. **`monoceros apply`** — Wrapper über `runDown` + `runStart` in
-   [`packages/cli/src/devcontainer/compose.ts`](../packages/cli/src/devcontainer/compose.ts).
-3. **`monoceros add-apt-packages`** — Implementierung analog zu
-   `add-language`, schreibt apt-packages-Feature in
-   `devcontainer.json` + `stack.json.aptPackages`.
-4. **`monoceros add-feature`** — Implementierung mit
-   Options-Hash-Support.
-5. **`monoceros add-from-url`** — Implementierung mit lautem
-   Security-Confirm. `post-create.sh`-Template wird um eine
-   `INSTALL_URLS`-Block-Sektion erweitert.
-6. **`monoceros add-repo`** — Implementierung mit Idempotenz beim
-   `post-create.sh`-Klon-Step. SSH-Agent-Forwarding-Mount als
-   Default in `buildDevcontainerJson` / `buildComposeYaml`.
-7. **YAML-Manifest** — Schema-Definition (Zod oder ähnliches),
-   Reader in `packages/cli/src/create/`, `monoceros create
---config <path>`-Pfad. Migration `stack.json` → `monoceros.yml`.
-8. **Doku** — README in jeder generierten Solution erklärt den
-   Workflow knapp. Test-Plan-Stage-B wird um die neuen Befehle
-   ergänzt.
+1. ✅ **Workspace-Layout-Refactor** — `monoceros create` schreibt
+   `projects/`-Folder + `<name>.code-workspace`. 4 Tests dafür in
+   `create.test.ts`. `findSolutionRoot()`-Aufwärtswalk aus
+   `projects/<name>/` separat getestet.
+2. ✅ **`monoceros apply`** — Container-Teardown mit Label-basiertem
+   Force-Remove und VS-Code-Race-Detection, dann `devcontainer up`.
+   Regeneriert post-create.sh aus stack.json bei jedem Lauf.
+3. ✅ **`monoceros add-apt-packages`** — funktioniert.
+4. ✅ **`monoceros add-feature`** — funktioniert, mit Options-Hash
+   und Smart-Coercion (true/false → bool, integers → number).
+5. ✅ **`monoceros add-from-url`** — funktioniert, mit lautem
+   Security-Warn. `curl -fsSL "<url>" | sh` (nicht bash, weil das
+   für die meisten Install-Scripts wie starship Voraussetzung ist).
+6. ✅ **`monoceros add-repo`** — funktioniert, mit SSH-Agent-
+   Forwarding, HTTPS-Credentials-Fetch und Git-Identity-Capture.
+   Auth funktioniert für GitHub, GitLab, Bitbucket, Gitea, …
+   automatisch.
+
+(Phase-3-Tasks oben aufgelistet.)
 
 ### Definition of Done
 
-- Phase 1+2: alle vier neuen `add-*`-Befehle plus `apply` arbeiten
-  end-to-end, idempotent, mit Diff-Preview und Security-Confirm wo
-  nötig. `projects/`-Layout wird beim `create` angelegt.
-  Stage-E-Walkthrough mit dem neuen Layout durchgespielt und im
-  Test-Plan dokumentiert.
-- Phase 3+4: `monoceros create --config <yml>` erzeugt eine voll
-  konfigurierte Solution aus einer YAML-Datei in einem Schritt;
-  `monoceros.yml` ist die kanonische Konfig, `stack.json` migriert.
+- ✅ Phase 1+2: alle vier neuen `add-*`-Befehle plus `apply` arbeiten
+  end-to-end, idempotent. Auth läuft automatisch (SSH + HTTPS +
+  Identity). `projects/`-Layout angelegt. Stage-E-Walkthrough mit
+  dem neuen Layout durchgespielt und manuell bestätigt
+  (clone + commit + push gegen Conciso-private-Repo grün).
+- Phase 3: `monoceros init <template> <name>` und
+  `monoceros apply <name> [<pfad>]` funktionieren. yml lebt in
+  `.local/container-configs/`, ist die Wahrheit. `state.json`
+  ersetzt `stack.json`. Migration bestehender Solutions transparent.
+  Drei Initial-Templates ausgearbeitet (`nodejs-github`, `python`,
+  `bare`).
 
 ### Bewusst nicht in M2.5
 
-- `remove-apt-packages` / `remove-feature` / `remove-from-url` /
-  `remove-repo` — wer was raushaben will, editiert `monoceros.yml`
-  und ruft `apply`. Symmetrie-Befehle erst, wenn echter Bedarf
-  entsteht.
-- Auth-Setup-Magie für `add-repo` jenseits von SSH-Agent-Forwarding
-  (z. B. PAT-Management, `gh auth login` automatisieren) — Builder
-  kann `add-tool gh` aufrufen und `gh auth login` im Container manuell
-  machen. Komplexere Auth-Workflows kommen wenn nötig.
+- Komplexes Provider-Specific-Auth-Setup für HTTPS-Git jenseits von
+  `git credential fill` (z. B. PAT-Management, OAuth-Token-Refresh)
+  — der Builder bringt seine Host-Auth mit, Monoceros liest sie aus.
 - Curated Whitelist für `add-feature` — der Builder kann beliebige
   Feature-Refs übergeben. Kein „nur diese sind erlaubt"-Schutz.
+- Code-internes Rename `solution` → `dev container` —
+  Sprachinkonsistenz im CLI-Code (`findSolutionRoot`, „solution
+  directory"-Fehlermeldungen, `runCreate`-Kommentare etc.). Separate
+  Mini-Refactor-Aufgabe, blockiert nichts.
 
 ---
 
