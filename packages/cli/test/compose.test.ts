@@ -423,6 +423,50 @@ describe('runApply', () => {
     expect(creds).toContain('https://ci:tok@github.com');
   });
 
+  it('regenerates post-create.sh from current scaffold code (catches stale files after CLI upgrade)', async () => {
+    const solution = path.join(root, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    await fs.mkdir(path.join(solution, '.monoceros'), { recursive: true });
+    // Seed a valid stack.json.
+    await fs.writeFile(
+      path.join(solution, '.monoceros', 'stack.json'),
+      JSON.stringify({
+        name: 'demo',
+        createdAt: '2026-01-01T00:00:00Z',
+        monocerosCliVersion: '0.0.0',
+        languages: [],
+        services: [],
+        externalServices: {},
+      }),
+    );
+    // Seed an INTENTIONALLY STALE post-create.sh — missing the
+    // include.path line that current scaffold code emits.
+    const postCreatePath = path.join(
+      solution,
+      '.devcontainer',
+      'post-create.sh',
+    );
+    await fs.writeFile(
+      postCreatePath,
+      '#!/usr/bin/env bash\necho "stale\\nplaceholder"\n',
+    );
+
+    await runApply({
+      cwd: solution,
+      logger: { info: () => {}, warn: () => {} },
+      devcontainerSpawn: async () => 0,
+      credentialsSpawn: async () => ({ stdout: '', exitCode: 0 }),
+      identitySpawn: async () => ({ value: '', exitCode: 1 }),
+      identityPrompt: async () => undefined,
+    });
+
+    const regenerated = await fs.readFile(postCreatePath, 'utf8');
+    expect(regenerated).toContain(
+      'git config --global include.path "/workspaces/demo/.monoceros/gitconfig"',
+    );
+    expect(regenerated).not.toContain('stale');
+  });
+
   it('skips credential fetching when stack.json has no HTTPS repos', async () => {
     const solution = path.join(root, 'demo');
     await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });

@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
-import type { RepoEntry, StackFile } from '../create/types.js';
+import { writePostCreateScript } from '../create/scaffold.js';
+import type { CreateOptions, RepoEntry, StackFile } from '../create/types.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 import { collectGitCredentials, type CredentialsSpawn } from './credentials.js';
 import {
@@ -229,7 +230,13 @@ export async function runApply(opts: ApplyOptions = {}): Promise<number> {
     warn: logger.warn ?? logger.info,
   };
 
-  // Step 0a: refresh host git identity (user.name + user.email) into
+  // Step 0a: regenerate post-create.sh from the current scaffold
+  // code. The mutate path (add-*) already does this, but a `monoceros
+  // apply` after a workbench CLI upgrade would otherwise carry a stale
+  // post-create.sh into the rebuilt container.
+  await regeneratePostCreateScript(root);
+
+  // Step 0b: refresh host git identity (user.name + user.email) into
   // `.monoceros/gitconfig` so the container's git can `commit` without
   // a manual config step inside.
   await collectGitIdentity(root, {
@@ -331,12 +338,44 @@ export function runLogs(opts: LogsOptions = {}): Promise<number> {
 }
 
 async function readRepoEntries(root: string): Promise<RepoEntry[]> {
+  const stack = await readStackJson(root);
+  return stack?.repos ?? [];
+}
+
+async function readStackJson(root: string): Promise<StackFile | undefined> {
   const stackPath = path.join(root, '.monoceros', 'stack.json');
   try {
     const content = await fs.readFile(stackPath, 'utf8');
-    const stack = JSON.parse(content) as StackFile;
-    return stack.repos ?? [];
+    return JSON.parse(content) as StackFile;
   } catch {
-    return [];
+    return undefined;
   }
+}
+
+function stackToCreateOptions(stack: StackFile): CreateOptions {
+  return {
+    name: stack.name,
+    languages: stack.languages,
+    services: stack.services,
+    ...(stack.externalServices.postgres !== undefined
+      ? { postgresUrl: stack.externalServices.postgres }
+      : {}),
+    ...(stack.aptPackages && stack.aptPackages.length > 0
+      ? { aptPackages: stack.aptPackages }
+      : {}),
+    ...(stack.features && Object.keys(stack.features).length > 0
+      ? { features: stack.features }
+      : {}),
+    ...(stack.installUrls && stack.installUrls.length > 0
+      ? { installUrls: stack.installUrls }
+      : {}),
+    ...(stack.repos && stack.repos.length > 0 ? { repos: stack.repos } : {}),
+  };
+}
+
+async function regeneratePostCreateScript(root: string): Promise<void> {
+  const stack = await readStackJson(root);
+  if (!stack) return;
+  const opts = stackToCreateOptions(stack);
+  await writePostCreateScript(path.join(root, '.devcontainer'), opts);
 }
