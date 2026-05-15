@@ -9,11 +9,18 @@ import type { StackFile } from '../src/create/types.js';
 const silentLogger = {
   success: () => {},
   info: () => {},
+  warn: () => {},
 };
+
+// Tests run non-interactively; `consola.prompt` would hang otherwise.
+// Passing a noop prompt that returns undefined makes the identity step
+// behave like the production "no TTY" branch.
+const noopIdentityPrompt = async () => undefined;
 
 const baseRunOpts = {
   cliVersion: '0.0.0',
   logger: silentLogger,
+  identityPrompt: noopIdentityPrompt,
 };
 
 describe('runCreate', () => {
@@ -358,6 +365,59 @@ describe('runCreate', () => {
     );
     const readme = await readFile(path.join(cwd, 'demo', 'README.md'), 'utf8');
     expect(readme).toMatch(/\/opt\/monoceros-workbench\/docs\/commands\//);
+  });
+
+  it('post-create.sh sources host gitconfig via include.path', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      { ...baseRunOpts, cwd },
+    );
+    const postCreate = await readFile(
+      path.join(cwd, 'demo', '.devcontainer', 'post-create.sh'),
+      'utf8',
+    );
+    expect(postCreate).toContain(
+      'git config --global include.path "/workspaces/demo/.monoceros/gitconfig"',
+    );
+  });
+
+  it('writes .monoceros/gitconfig with host identity (injected spawn)', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      {
+        ...baseRunOpts,
+        cwd,
+        identitySpawn: async (key) => {
+          if (key === 'user.name') {
+            return { value: 'Test Builder', exitCode: 0 };
+          }
+          if (key === 'user.email') {
+            return { value: 'builder@example.com', exitCode: 0 };
+          }
+          return { value: '', exitCode: 1 };
+        },
+      },
+    );
+    const gitconfig = await readFile(
+      path.join(cwd, 'demo', '.monoceros', 'gitconfig'),
+      'utf8',
+    );
+    expect(gitconfig).toContain('[user]');
+    expect(gitconfig).toContain('name = Test Builder');
+    expect(gitconfig).toContain('email = builder@example.com');
+  });
+
+  it('.monoceros/.gitignore excludes both git-credentials and gitconfig', async () => {
+    await runCreate(
+      { name: 'demo', languages: [], services: [] },
+      { ...baseRunOpts, cwd },
+    );
+    const gitignore = await readFile(
+      path.join(cwd, 'demo', '.monoceros', '.gitignore'),
+      'utf8',
+    );
+    expect(gitignore).toContain('git-credentials*');
+    expect(gitignore).toContain('gitconfig');
   });
 });
 

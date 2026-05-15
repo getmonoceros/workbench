@@ -125,6 +125,33 @@ Host läuft, funktioniert es auch im Container.
 
 **Zwei Mechanismen, parallel — je nachdem welche URL du nutzt:**
 
+### Identity (`user.name` / `user.email`)
+
+Damit `git commit` im Container nicht mit „Author identity unknown"
+abbricht, wird bei jedem `monoceros create` / `monoceros apply` die
+Host-Identity extrahiert:
+
+1. `git config --global --get user.name` host-seitig
+2. Falls leer → existierendes `.monoceros/gitconfig` (von einem
+   früheren Lauf) wird benutzt
+3. Falls auch leer → Monoceros prompted interaktiv (überspringbar wenn
+   non-TTY: nur Warning, Wert bleibt leer)
+
+Resultat landet in `<dev-container>/.monoceros/gitconfig`:
+
+```
+[user]
+    name = Thorsten Kamann
+    email = thorsten@example.com
+```
+
+post-create.sh setzt `git config --global include.path /workspaces/<name>/.monoceros/gitconfig`,
+sodass die Container-Identity diese Werte erbt.
+
+**Builder mit per-Repo-Identities** (kein `--global`): beim ersten
+`create` einmal eingeben, danach persistiert. Spätere Applies fragen
+nicht erneut, solange `.monoceros/gitconfig` existiert.
+
 ### HTTPS-URLs (`https://github.com/foo/bar.git`)
 
 Bei jedem `monoceros apply` läuft host-seitig `git credential fill`

@@ -47,7 +47,10 @@ async function scaffold(
     {
       cwd,
       cliVersion: '0.1.0-dev',
-      logger: { success: () => {}, info: () => {} },
+      logger: { success: () => {}, info: () => {}, warn: () => {} },
+      // Non-interactive — avoid `consola.prompt` hanging in test envs
+      // where the user has no host-side global git identity.
+      identityPrompt: async () => undefined,
     },
   );
   return path.join(cwd, opts.name);

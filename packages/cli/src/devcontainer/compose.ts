@@ -5,6 +5,11 @@ import { consola } from 'consola';
 import type { RepoEntry, StackFile } from '../create/types.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 import { collectGitCredentials, type CredentialsSpawn } from './credentials.js';
+import {
+  collectGitIdentity,
+  type IdentityPrompt,
+  type IdentitySpawn,
+} from './identity.js';
 import { findSolutionRoot } from './locate.js';
 
 export type ComposeSpawn = (args: string[], cwd: string) => Promise<number>;
@@ -168,6 +173,12 @@ export interface ApplyOptions {
   // real git; tests inject a fake. Skipped when no HTTPS repos in
   // stack.json.
   credentialsSpawn?: CredentialsSpawn;
+  // Host-side `git config --global --get` for user.name/user.email.
+  // Default spawns real git; tests inject a fake.
+  identitySpawn?: IdentitySpawn;
+  // Interactive fallback when host has no global identity AND no
+  // persisted gitconfig. Production uses consola.prompt; tests inject.
+  identityPrompt?: IdentityPrompt;
   logger?: {
     info: (message: string) => void;
     warn?: (message: string) => void;
@@ -218,7 +229,16 @@ export async function runApply(opts: ApplyOptions = {}): Promise<number> {
     warn: logger.warn ?? logger.info,
   };
 
-  // Step 0: pull host-side git credentials for any HTTPS repos. Runs
+  // Step 0a: refresh host git identity (user.name + user.email) into
+  // `.monoceros/gitconfig` so the container's git can `commit` without
+  // a manual config step inside.
+  await collectGitIdentity(root, {
+    ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
+    ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),
+    logger: credsLogger,
+  });
+
+  // Step 0b: pull host-side git credentials for any HTTPS repos. Runs
   // before container teardown so the credentials file is in place
   // when post-create.sh tries to clone.
   const repos = await readRepoEntries(root);

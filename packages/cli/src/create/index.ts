@@ -2,6 +2,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
 import {
+  collectGitIdentity,
+  type IdentityPrompt,
+  type IdentitySpawn,
+} from '../devcontainer/identity.js';
+import {
   buildClaudeSettings,
   buildCodeWorkspaceJson,
   buildComposeYaml,
@@ -20,6 +25,7 @@ export type { CreateOptions, StackFile } from './types.js';
 export interface RunCreateLogger {
   success: (message: string) => void;
   info: (message: string) => void;
+  warn?: (message: string) => void;
 }
 
 export interface RunCreateOptions {
@@ -27,6 +33,19 @@ export interface RunCreateOptions {
   cwd?: string;
   now?: Date;
   logger?: RunCreateLogger;
+  /**
+   * Host-side `git config --global --get` spawn used to capture the
+   * builder's user.name and user.email into `.monoceros/gitconfig`.
+   * Tests inject a fake; production uses the real git binary.
+   */
+  identitySpawn?: IdentitySpawn;
+  /**
+   * Interactive fallback when the host has no global identity and no
+   * persisted gitconfig from a previous run. Tests inject a canned
+   * answer; production uses `consola.prompt` (skipped in
+   * non-interactive contexts).
+   */
+  identityPrompt?: IdentityPrompt;
 }
 
 export interface RunCreateResult {
@@ -76,12 +95,13 @@ export async function runCreate(
   // sub-project has been added. Harmless when the solution itself isn't
   // a git repo.
   await fs.writeFile(path.join(projectsDir, '.gitkeep'), '');
-  // `.monoceros/.gitignore` keeps the per-apply credentials file out of
-  // any git repo the builder might wrap around the dev-container. The
-  // credentials file itself is also written with 0o600 perms.
+  // `.monoceros/.gitignore` keeps per-builder runtime state out of any
+  // git repo the builder might wrap around the dev-container:
+  //   - git-credentials*: tokens fetched per apply (mode 0o600)
+  //   - gitconfig: identity (user.name/email) extracted from host
   await fs.writeFile(
     path.join(monocerosDir, '.gitignore'),
-    'git-credentials*\n',
+    'git-credentials*\ngitconfig\n',
   );
 
   const devcontainerJson = buildDevcontainerJson(opts);
@@ -124,6 +144,19 @@ export async function runCreate(
     path.join(claudeDir, 'settings.json'),
     JSON.stringify(buildClaudeSettings(), null, 2) + '\n',
   );
+
+  // Capture host git identity (user.name + user.email) into
+  // `.monoceros/gitconfig` so the first `monoceros start` already
+  // gives the builder a working `git commit` inside the container.
+  // `monoceros apply` re-runs this and overwrites with fresh values.
+  await collectGitIdentity(targetDir, {
+    ...(runOpts.identitySpawn ? { spawn: runOpts.identitySpawn } : {}),
+    ...(runOpts.identityPrompt ? { prompt: runOpts.identityPrompt } : {}),
+    logger: {
+      info: () => {},
+      warn: logger.warn ?? (() => {}),
+    },
+  });
 
   logger.success(`Created solution ${opts.name} at ${targetDir}.`);
   return { status: 'created', targetDir };
