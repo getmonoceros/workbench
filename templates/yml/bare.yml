@@ -1,0 +1,15 @@
+# Monoceros solution-config — `bare` template.
+#
+# The minimum a Monoceros yml needs: a schema version and a name.
+# Node is preinstalled in the base image, so an empty `languages` list
+# is fine — the container will boot with Node available.
+#
+# Customize this file (or use `monoceros add-*`) to layer on Python /
+# Java / Go / Rust / .NET, apt packages, devcontainer features, install
+# URLs, services like Postgres, or git repos under `projects/`.
+#
+# `name` is replaced by `monoceros init <template> <name>` when this
+# file is copied into `.local/container-configs/<name>.yml`.
+
+schemaVersion: 1
+name: bare

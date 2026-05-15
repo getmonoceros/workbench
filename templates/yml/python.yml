@@ -1,0 +1,20 @@
+# Monoceros solution-config — `python` template.
+#
+# Profile for a Python solution with a local Postgres service. The
+# `python` language adds the devcontainers/python feature; Postgres
+# comes up as a sibling container in compose mode.
+#
+# Inside the container, the DB is reachable as host `postgres`:
+#   postgresql://monoceros:monoceros@postgres:5432/monoceros
+#
+# Swap to an external Postgres by replacing `services: [postgres]` with
+# `externalServices: { postgres: postgresql://… }`.
+
+schemaVersion: 1
+name: python
+
+languages:
+  - python
+
+services:
+  - postgres
