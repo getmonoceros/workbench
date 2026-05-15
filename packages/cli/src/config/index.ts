@@ -24,3 +24,10 @@ export {
   writeConfig,
 } from './io.js';
 export type { ParsedConfig } from './io.js';
+export {
+  configPath,
+  configsDir,
+  templatePath,
+  templatesDir,
+  workbenchRoot,
+} from './paths.js';

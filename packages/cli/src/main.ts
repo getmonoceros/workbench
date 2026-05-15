@@ -8,6 +8,7 @@ import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
 import { createCommand } from './commands/create.js';
 import { downCommand } from './commands/down.js';
+import { initCommand } from './commands/init.js';
 import { logsCommand } from './commands/logs.js';
 import { runCommand } from './commands/run.js';
 import { shellCommand } from './commands/shell.js';
@@ -24,6 +25,7 @@ export const main = defineCommand({
       'Monoceros workbench — local, sandboxed AI-coding environment for solution builders.',
   },
   subCommands: {
+    init: initCommand,
     create: createCommand,
     shell: shellCommand,
     run: runCommand,
