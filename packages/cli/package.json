@@ -16,7 +16,9 @@
     "@devcontainers/cli": "^0.86.1",
     "citty": "^0.2.2",
     "consola": "^3.4.2",
-    "diff": "^9.0.0"
+    "diff": "^9.0.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
