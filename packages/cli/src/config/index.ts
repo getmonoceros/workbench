@@ -38,4 +38,7 @@ export {
   writeStateFile,
 } from './state.js';
 export type { StateFile } from './state.js';
-export { solutionConfigToCreateOptions } from './transform.js';
+export {
+  solutionConfigToCreateOptions,
+  stackFileToSolutionConfig,
+} from './transform.js';

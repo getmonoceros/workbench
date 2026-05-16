@@ -104,8 +104,11 @@ describe('runApplyFromCwd', () => {
     expect(exit).toBe(0);
   });
 
-  it('falls back to the legacy stack.json path when no state.json exists', async () => {
+  it('migrates a legacy stack.json solution on first apply', async () => {
     // Mimic a legacy M1 solution: .devcontainer/ + stack.json, no state.json.
+    // Detailed migration coverage lives in apply-migration.test.ts —
+    // this case just asserts the dispatch routes through migration
+    // rather than erroring.
     const targetDir = path.join(workbench, '.local', 'play', 'legacy');
     await mkdir(path.join(targetDir, '.devcontainer'), { recursive: true });
     await mkdir(path.join(targetDir, '.monoceros'), { recursive: true });
@@ -130,9 +133,6 @@ describe('runApplyFromCwd', () => {
       cwd: targetDir,
       workbenchRoot: workbench,
     });
-    // Legacy runApply walks the same machinery as Phase 3 (identity,
-    // optional credentials, container cycle). With all spawns stubbed
-    // to success, the call resolves cleanly.
     expect(exit).toBe(0);
   });
 

@@ -1,15 +1,19 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
-import { configPath } from '../config/paths.js';
-import { readConfig } from '../config/io.js';
+import { configPath, configsDir } from '../config/paths.js';
+import { createDoc, readConfig, writeConfig } from '../config/io.js';
 import { REGEX } from '../config/schema.js';
 import {
   buildStateFile,
   readStateFile,
   writeStateFile,
 } from '../config/state.js';
-import { solutionConfigToCreateOptions } from '../config/transform.js';
+import {
+  solutionConfigToCreateOptions,
+  stackFileToSolutionConfig,
+} from '../config/transform.js';
+import type { StackFile } from '../create/types.js';
 import {
   needsCompose,
   normalizeOptions,
@@ -17,9 +21,7 @@ import {
   writeScaffold,
 } from '../create/scaffold.js';
 import {
-  type ApplyOptions,
   type ComposeSpawn,
-  runApply as runApplyLegacy,
   runContainerCycle,
 } from '../devcontainer/compose.js';
 import {
@@ -249,31 +251,40 @@ export async function runApplyFromCwd(
     );
   }
 
+  const logger = opts.logger ?? {
+    info: (msg) => consola.info(msg),
+    success: (msg) => consola.success(msg),
+    warn: (msg) => consola.warn(msg),
+  };
+
   const state = await readStateFile(root);
+  let origin: string;
   if (state) {
-    const result = await runApplyFromYml({
-      name: state.origin,
-      targetDir: root,
-      cliVersion: opts.cliVersion,
+    origin = state.origin;
+  } else {
+    // No state.json — look for a legacy stack.json and migrate.
+    const stack = await readLegacyStackFile(root);
+    if (!stack) {
+      // Should be unreachable: findSolutionRoot succeeded but neither
+      // state.json nor stack.json is present. Builder must have hand-
+      // crafted a `.devcontainer/`. Surface a clear instruction.
+      throw new Error(
+        `Found ${root}/.devcontainer/ but no .monoceros/state.json or stack.json. Recreate via \`monoceros init <template> <name>\` + \`monoceros apply <name> ${root}\`.`,
+      );
+    }
+    origin = await migrateStackToYml(root, stack, {
       ...(opts.workbenchRoot ? { workbenchRoot: opts.workbenchRoot } : {}),
-      ...(opts.logger ? { logger: opts.logger } : {}),
-      ...(opts.cleanupSpawn ? { cleanupSpawn: opts.cleanupSpawn } : {}),
-      ...(opts.devcontainerSpawn
-        ? { devcontainerSpawn: opts.devcontainerSpawn }
-        : {}),
-      ...(opts.credentialsSpawn
-        ? { credentialsSpawn: opts.credentialsSpawn }
-        : {}),
-      ...(opts.identitySpawn ? { identitySpawn: opts.identitySpawn } : {}),
-      ...(opts.identityPrompt ? { identityPrompt: opts.identityPrompt } : {}),
+      cliVersion: opts.cliVersion,
+      logger,
     });
-    return result.containerExitCode;
   }
 
-  // No state.json — assume legacy stack.json. Task 7 migrates it.
-  const legacyOpts: ApplyOptions = {
-    cwd,
-    ...(opts.project !== undefined ? { project: opts.project } : {}),
+  const result = await runApplyFromYml({
+    name: origin,
+    targetDir: root,
+    cliVersion: opts.cliVersion,
+    ...(opts.workbenchRoot ? { workbenchRoot: opts.workbenchRoot } : {}),
+    ...(opts.logger ? { logger: opts.logger } : {}),
     ...(opts.cleanupSpawn ? { cleanupSpawn: opts.cleanupSpawn } : {}),
     ...(opts.devcontainerSpawn
       ? { devcontainerSpawn: opts.devcontainerSpawn }
@@ -283,7 +294,80 @@ export async function runApplyFromCwd(
       : {}),
     ...(opts.identitySpawn ? { identitySpawn: opts.identitySpawn } : {}),
     ...(opts.identityPrompt ? { identityPrompt: opts.identityPrompt } : {}),
-    ...(opts.logger ? { logger: opts.logger } : {}),
-  };
-  return runApplyLegacy(legacyOpts);
+  });
+  return result.containerExitCode;
+}
+
+async function readLegacyStackFile(
+  root: string,
+): Promise<StackFile | undefined> {
+  try {
+    const text = await fs.readFile(
+      path.join(root, '.monoceros', 'stack.json'),
+      'utf8',
+    );
+    return JSON.parse(text) as StackFile;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Migrate a legacy M1 solution to the Phase-3 yml model. Writes
+ * `.local/container-configs/<stack.name>.yml` from the stack, then
+ * archives `.monoceros/stack.json` as `stack.json.legacy` so the next
+ * `monoceros apply` doesn't try to migrate again.
+ *
+ * Returns the chosen config name so the caller can route into
+ * runApplyFromYml. state.json is left to runApplyFromYml's normal
+ * write step.
+ *
+ * Refuses to overwrite an existing yml — that situation means the
+ * builder already ran `monoceros init <stack.name> …` separately and
+ * the migration could clobber hand-edits.
+ */
+async function migrateStackToYml(
+  root: string,
+  stack: StackFile,
+  opts: {
+    workbenchRoot?: string;
+    cliVersion?: string;
+    logger: { info: (msg: string) => void; success: (msg: string) => void };
+  },
+): Promise<string> {
+  const config = stackFileToSolutionConfig(stack);
+  const ymlPath = configPath(config.name, opts.workbenchRoot);
+
+  if (existsSync(ymlPath)) {
+    throw new Error(
+      `Migration aborted: yml at ${ymlPath} already exists. Delete it or rename the legacy solution (edit stack.json's "name" field) before re-running apply.`,
+    );
+  }
+
+  await fs.mkdir(configsDir(opts.workbenchRoot), { recursive: true });
+  await writeConfig(ymlPath, createDoc(config));
+
+  // Write state.json upfront so the follow-up `runApplyFromYml`
+  // recognizes the directory as "already materialized from <name>" and
+  // passes its safe-dir check. The materializedAt timestamp is the
+  // migration moment, which is good enough — runApplyFromYml will
+  // overwrite it with the actual apply timestamp at the end.
+  await writeStateFile(
+    root,
+    buildStateFile({
+      origin: config.name,
+      cliVersion: opts.cliVersion ?? stack.monocerosCliVersion,
+    }),
+  );
+
+  // Archive the legacy stack.json so subsequent apply runs route
+  // straight into the yml path. Keep the file around (renamed) so a
+  // builder can diff against it if something looks off.
+  const stackPath = path.join(root, '.monoceros', 'stack.json');
+  await fs.rename(stackPath, `${stackPath}.legacy`);
+
+  opts.logger.success(
+    `Migrated ${root} to the yml model. yml: ${ymlPath}, stack.json archived as stack.json.legacy.`,
+  );
+  return config.name;
 }
