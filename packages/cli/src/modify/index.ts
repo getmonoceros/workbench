@@ -2,6 +2,10 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
 import { createPatch } from 'diff';
+import type { Document } from 'yaml';
+import { parseConfig, stringifyConfig } from '../config/io.js';
+import { configPath } from '../config/paths.js';
+import { readStateFile } from '../config/state.js';
 import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
@@ -26,6 +30,14 @@ import type {
   StackFile,
 } from '../create/types.js';
 import { findSolutionRoot } from '../devcontainer/locate.js';
+import {
+  addAptPackagesToDoc,
+  addFeatureToDoc,
+  addInstallUrlToDoc,
+  addLanguageToDoc,
+  addRepoToDoc,
+  addServiceToDoc,
+} from './yml.js';
 
 export interface ModifyLogger {
   info: (message: string) => void;
@@ -43,6 +55,8 @@ export interface ModifyOptions {
   logger?: ModifyLogger;
   output?: (line: string) => void;
   confirm?: ConfirmFn;
+  /** Override workbench root (used by Phase-3 yml lookup). Tests inject. */
+  workbenchRoot?: string;
 }
 
 export interface AddLanguageInput extends ModifyOptions {
@@ -77,6 +91,16 @@ export type ModifyResult =
   | { status: 'updated'; changedPaths: string[] }
   | { status: 'aborted' };
 
+/**
+ * Mutator pair: one operates on the yml Document (Phase 3 path), one
+ * on the legacy StackFile. Each `runAdd*` provides both so `mutate()`
+ * can dispatch on whether `.monoceros/state.json` exists.
+ */
+interface Mutators {
+  yml: (doc: Document) => boolean;
+  stack: (stack: StackFile) => StackFile;
+}
+
 export async function runAddLanguage(
   input: AddLanguageInput,
 ): Promise<ModifyResult> {
@@ -88,10 +112,13 @@ export async function runAddLanguage(
       `Unknown language: ${input.language}. Known: ${knownLanguages().join(', ')}.`,
     );
   }
-  return mutate(input, (stack) => ({
-    ...stack,
-    languages: [...new Set([...stack.languages, input.language])].sort(),
-  }));
+  return mutate(input, {
+    yml: (doc) => addLanguageToDoc(doc, input.language),
+    stack: (stack) => ({
+      ...stack,
+      languages: [...new Set([...stack.languages, input.language])].sort(),
+    }),
+  });
 }
 
 export async function runAddService(
@@ -102,10 +129,13 @@ export async function runAddService(
       `Unknown service: ${input.service}. Known: ${knownServices().join(', ')}.`,
     );
   }
-  return mutate(input, (stack) => ({
-    ...stack,
-    services: [...new Set([...stack.services, input.service])].sort(),
-  }));
+  return mutate(input, {
+    yml: (doc) => addServiceToDoc(doc, input.service),
+    stack: (stack) => ({
+      ...stack,
+      services: [...new Set([...stack.services, input.service])].sort(),
+    }),
+  });
 }
 
 export async function runAddAptPackages(
@@ -116,14 +146,17 @@ export async function runAddAptPackages(
       'No package names given. Usage: monoceros add-apt-packages <pkg> [<pkg> …].',
     );
   }
-  return mutate(input, (stack) => {
-    const merged = [
-      ...new Set([...(stack.aptPackages ?? []), ...input.packages]),
-    ].sort();
-    return {
-      ...stack,
-      aptPackages: merged,
-    };
+  return mutate(input, {
+    yml: (doc) => addAptPackagesToDoc(doc, input.packages),
+    stack: (stack) => {
+      const merged = [
+        ...new Set([...(stack.aptPackages ?? []), ...input.packages]),
+      ].sort();
+      return {
+        ...stack,
+        aptPackages: merged,
+      };
+    },
   });
 }
 
@@ -141,24 +174,27 @@ export async function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
     name,
     ...(input.branch !== undefined ? { branch: input.branch } : {}),
   };
-  return mutate(input, (stack) => {
-    const existing = stack.repos ?? [];
-    // Idempotent: same name + url + branch → no change. Different
-    // signature with the same name → validation error downstream
-    // (handled by validateOptions in mutate's draftOptions pass).
-    const same = existing.find(
-      (r) =>
-        r.name === entry.name &&
-        r.url === entry.url &&
-        (r.branch ?? undefined) === (entry.branch ?? undefined),
-    );
-    if (same) {
-      return stack;
-    }
-    return {
-      ...stack,
-      repos: [...existing, entry],
-    };
+  return mutate(input, {
+    yml: (doc) => addRepoToDoc(doc, entry),
+    stack: (stack) => {
+      const existing = stack.repos ?? [];
+      // Idempotent: same name + url + branch → no change. Different
+      // signature with the same name → validation error downstream
+      // (handled by validateOptions in mutate's draftOptions pass).
+      const same = existing.find(
+        (r) =>
+          r.name === entry.name &&
+          r.url === entry.url &&
+          (r.branch ?? undefined) === (entry.branch ?? undefined),
+      );
+      if (same) {
+        return stack;
+      }
+      return {
+        ...stack,
+        repos: [...existing, entry],
+      };
+    },
   });
 }
 
@@ -169,18 +205,21 @@ export async function runAddFromUrl(
   if (url.length === 0) {
     throw new Error('Missing URL. Usage: monoceros add-from-url <url>.');
   }
-  return mutate(input, (stack) => {
-    // Preserve order: existing URLs stay where they are, new URL is
-    // appended. Re-add of an existing URL is a no-op via the dedup in
-    // normalizeOptions.
-    const existing = stack.installUrls ?? [];
-    if (existing.includes(url)) {
-      return stack;
-    }
-    return {
-      ...stack,
-      installUrls: [...existing, url],
-    };
+  return mutate(input, {
+    yml: (doc) => addInstallUrlToDoc(doc, url),
+    stack: (stack) => {
+      // Preserve order: existing URLs stay where they are, new URL is
+      // appended. Re-add of an existing URL is a no-op via the dedup in
+      // normalizeOptions.
+      const existing = stack.installUrls ?? [];
+      if (existing.includes(url)) {
+        return stack;
+      }
+      return {
+        ...stack,
+        installUrls: [...existing, url],
+      };
+    },
   });
 }
 
@@ -191,31 +230,34 @@ export async function runAddFeature(
   if (ref.length === 0) {
     throw new Error('Missing feature ref. Usage: monoceros add-feature <ref>.');
   }
-  return mutate(input, (stack) => {
-    const existing = stack.features?.[ref];
-    if (existing !== undefined) {
-      // We treat re-adding a known feature as an explicit error rather
-      // than silently overwriting its options. Builder must
-      // `remove-feature` (future) or edit stack.json directly to change
-      // option values. The no-options re-add is still caught as
-      // "no-change" later because the regenerated stack/devcontainer
-      // bytes are byte-identical.
-      const sameOptions =
-        JSON.stringify(existing) === JSON.stringify(input.options ?? {});
-      if (!sameOptions) {
-        throw new Error(
-          `Feature ${ref} is already configured with different options. Edit stack.json directly or remove it first.`,
-        );
+  return mutate(input, {
+    yml: (doc) => addFeatureToDoc(doc, ref, input.options ?? {}),
+    stack: (stack) => {
+      const existing = stack.features?.[ref];
+      if (existing !== undefined) {
+        // We treat re-adding a known feature as an explicit error rather
+        // than silently overwriting its options. Builder must
+        // `remove-feature` (future) or edit stack.json directly to change
+        // option values. The no-options re-add is still caught as
+        // "no-change" later because the regenerated stack/devcontainer
+        // bytes are byte-identical.
+        const sameOptions =
+          JSON.stringify(existing) === JSON.stringify(input.options ?? {});
+        if (!sameOptions) {
+          throw new Error(
+            `Feature ${ref} is already configured with different options. Edit stack.json directly or remove it first.`,
+          );
+        }
       }
-    }
-    const features: Record<string, FeatureOptions> = {
-      ...(stack.features ?? {}),
-      [ref]: input.options ?? {},
-    };
-    return {
-      ...stack,
-      features,
-    };
+      const features: Record<string, FeatureOptions> = {
+        ...(stack.features ?? {}),
+        [ref]: input.options ?? {},
+      };
+      return {
+        ...stack,
+        features,
+      };
+    },
   });
 }
 
@@ -230,7 +272,7 @@ interface PlannedChange {
 
 async function mutate(
   opts: ModifyOptions,
-  apply: (stack: StackFile) => StackFile,
+  mutators: Mutators,
 ): Promise<ModifyResult> {
   const cwd = opts.cwd ?? process.cwd();
   const startDir = opts.project ? path.resolve(cwd, opts.project) : cwd;
@@ -241,6 +283,80 @@ async function mutate(
     );
   }
 
+  // Phase-3 solutions carry a `.monoceros/state.json` with an `origin`
+  // pointing at the yml that owns this dev-container. When present,
+  // mutate the yml directly (the yml is the wahrheit; container files
+  // regenerate on `monoceros apply`). Legacy stack.json-only solutions
+  // fall through to the old in-place rewrite — Task 7 migrates them.
+  const state = await readStateFile(root);
+  if (state) {
+    return mutateYml(root, state.origin, opts, mutators.yml);
+  }
+  return mutateStack(root, opts, mutators.stack);
+}
+
+async function mutateYml(
+  root: string,
+  origin: string,
+  opts: ModifyOptions,
+  apply: (doc: Document) => boolean,
+): Promise<ModifyResult> {
+  const ymlPath = configPath(origin, opts.workbenchRoot);
+  const oldText = await readUtf8OrThrow(
+    ymlPath,
+    `state.json on ${root} points at config '${origin}' but no yml at ${ymlPath}. Run \`monoceros init <template> ${origin}\` (with the original template) or remove the state file.`,
+  );
+  // Parse the doc twice: the live one we mutate, and a baseline kept
+  // pristine for the diff render. Mutators may bail out (return false)
+  // when the change is a no-op.
+  const parsed = parseConfig(oldText, ymlPath);
+  const changed = apply(parsed.doc);
+  const logger = opts.logger ?? defaultLogger();
+
+  if (!changed) {
+    logger.info('No changes — yml is already in the desired state.');
+    return { status: 'no-change' };
+  }
+
+  // Re-validate via a round-trip so schema violations introduced by the
+  // mutation surface here with the regular field-path error, not later
+  // at apply time.
+  const newText = stringifyConfig(parsed.doc);
+  parseConfig(newText, ymlPath);
+
+  const out = opts.output ?? ((line) => process.stdout.write(line + '\n'));
+  out(
+    createPatch(
+      path.relative(root, ymlPath) || ymlPath,
+      oldText,
+      newText,
+      'before',
+      'after',
+    ),
+  );
+
+  if (!opts.yes) {
+    const confirm = opts.confirm ?? defaultConfirm;
+    const ok = await confirm('Apply these changes to the yml?');
+    if (!ok) {
+      logger.warn('Aborted by user. The yml was not modified.');
+      return { status: 'aborted' };
+    }
+  }
+
+  await fs.writeFile(ymlPath, newText, 'utf8');
+  logger.success(`Updated ${ymlPath}.`);
+  logger.info(
+    'Run `monoceros apply` to rebuild the dev-container and pick up the change.',
+  );
+  return { status: 'updated', changedPaths: [ymlPath] };
+}
+
+async function mutateStack(
+  root: string,
+  opts: ModifyOptions,
+  apply: (stack: StackFile) => StackFile,
+): Promise<ModifyResult> {
   const stackPath = path.join(root, '.monoceros', 'stack.json');
   const oldStackContent = await readUtf8OrThrow(
     stackPath,
