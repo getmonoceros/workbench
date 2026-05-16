@@ -1,16 +1,8 @@
 import { spawn } from 'node:child_process';
-import { existsSync, promises as fs } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
-import { writePostCreateScript } from '../create/scaffold.js';
-import type { CreateOptions, RepoEntry, StackFile } from '../create/types.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
-import { collectGitCredentials, type CredentialsSpawn } from './credentials.js';
-import {
-  collectGitIdentity,
-  type IdentityPrompt,
-  type IdentitySpawn,
-} from './identity.js';
 import { findSolutionRoot } from './locate.js';
 
 export type ComposeSpawn = (args: string[], cwd: string) => Promise<number>;
@@ -160,116 +152,6 @@ export async function runDown(opts: DownOptions = {}): Promise<number> {
   return spawnFn(args, root);
 }
 
-export interface ApplyOptions {
-  cwd?: string;
-  project?: string;
-  // Compose-mode `apply` shells out to a bash one-liner that force-
-  // removes the project's containers and network. Same shape as
-  // ComposeSpawn so tests can inject a fake. Args are `['-c', '<script>']`.
-  cleanupSpawn?: ComposeSpawn;
-  // Both compose- and image-mode `apply` call `devcontainer up` at the
-  // end; this hook covers that side.
-  devcontainerSpawn?: DevcontainerSpawn;
-  // Host-side `git credential fill` for HTTPS repos. Default spawns
-  // real git; tests inject a fake. Skipped when no HTTPS repos in
-  // stack.json.
-  credentialsSpawn?: CredentialsSpawn;
-  // Host-side `git config --global --get` for user.name/user.email.
-  // Default spawns real git; tests inject a fake.
-  identitySpawn?: IdentitySpawn;
-  // Interactive fallback when host has no global identity AND no
-  // persisted gitconfig. Production uses consola.prompt; tests inject.
-  identityPrompt?: IdentityPrompt;
-  logger?: {
-    info: (message: string) => void;
-    warn?: (message: string) => void;
-  };
-}
-
-// `monoceros apply` is the convenience step the builder runs after any
-// `monoceros add-*` to materialise the change in the running container.
-// Internally:
-//   - compose-mode (compose.yaml present): force-remove all containers
-//     carrying the project label, drop the default network, then
-//     `devcontainer up` to rebuild. Named volumes (postgres-data etc.)
-//     survive because the cleanup only touches containers + network.
-//   - image-mode (no compose.yaml): `devcontainer up --remove-existing-container`,
-//     which stops + removes the workspace container and recreates it
-//     in one step.
-//
-// Why a direct label-based cleanup instead of `docker compose down`:
-// docker compose's down only matches containers whose
-// `com.docker.compose.project.config_files` label matches the current
-// compose-file set. When a builder mixes `@devcontainers/cli`-managed
-// containers (via `monoceros start/apply`) with VS Code's
-// "Reopen in Container" extension — both write `project=<solution>_devcontainer`
-// but use different temporary merge files — compose-down silently
-// skips the containers from the "other" tool. The label-based force
-// remove sidesteps that entirely.
-//
-// If the cleanup step fails (non-zero exit), the up step is skipped so
-// the failure surfaces clearly instead of being masked by a successful
-// `up` on a half-broken stack.
-export async function runApply(opts: ApplyOptions = {}): Promise<number> {
-  const cwd = opts.cwd ?? process.cwd();
-  const startDir = opts.project ? path.resolve(cwd, opts.project) : cwd;
-  const root = findSolutionRoot(startDir);
-  if (!root) {
-    throw new Error(
-      `No .devcontainer/ found at or above ${startDir}. Run \`monoceros create\` first or change into a solution directory.`,
-    );
-  }
-  const composeFile = path.join(root, '.devcontainer', 'compose.yaml');
-  const hasCompose = existsSync(composeFile);
-  const logger = opts.logger ?? {
-    info: (msg) => consola.info(msg),
-    warn: (msg) => consola.warn(msg),
-  };
-  const credsLogger = {
-    info: logger.info,
-    warn: logger.warn ?? logger.info,
-  };
-
-  // Step 0a: regenerate post-create.sh from the current scaffold
-  // code. The mutate path (add-*) already does this, but a `monoceros
-  // apply` after a workbench CLI upgrade would otherwise carry a stale
-  // post-create.sh into the rebuilt container.
-  await regeneratePostCreateScript(root);
-
-  // Step 0b: refresh host git identity (user.name + user.email) into
-  // `.monoceros/gitconfig` so the container's git can `commit` without
-  // a manual config step inside.
-  await collectGitIdentity(root, {
-    ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
-    ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),
-    logger: credsLogger,
-  });
-
-  // Step 0b: pull host-side git credentials for any HTTPS repos. Runs
-  // before container teardown so the credentials file is in place
-  // when post-create.sh tries to clone.
-  const repos = await readRepoEntries(root);
-  if (repos.some((r) => r.url.startsWith('https://'))) {
-    await collectGitCredentials(root, repos, {
-      ...(opts.credentialsSpawn ? { spawn: opts.credentialsSpawn } : {}),
-      logger: credsLogger,
-    });
-  }
-
-  return runContainerCycle(root, {
-    hasCompose,
-    cwd,
-    ...(opts.project !== undefined ? { project: opts.project } : {}),
-    ...(opts.cleanupSpawn !== undefined
-      ? { cleanupSpawn: opts.cleanupSpawn }
-      : {}),
-    ...(opts.devcontainerSpawn !== undefined
-      ? { devcontainerSpawn: opts.devcontainerSpawn }
-      : {}),
-    logger,
-  });
-}
-
 export interface RunContainerCycleOptions {
   hasCompose: boolean;
   cwd?: string;
@@ -374,47 +256,4 @@ export function runLogs(opts: LogsOptions = {}): Promise<number> {
     ],
     opts,
   );
-}
-
-async function readRepoEntries(root: string): Promise<RepoEntry[]> {
-  const stack = await readStackJson(root);
-  return stack?.repos ?? [];
-}
-
-async function readStackJson(root: string): Promise<StackFile | undefined> {
-  const stackPath = path.join(root, '.monoceros', 'stack.json');
-  try {
-    const content = await fs.readFile(stackPath, 'utf8');
-    return JSON.parse(content) as StackFile;
-  } catch {
-    return undefined;
-  }
-}
-
-function stackToCreateOptions(stack: StackFile): CreateOptions {
-  return {
-    name: stack.name,
-    languages: stack.languages,
-    services: stack.services,
-    ...(stack.externalServices.postgres !== undefined
-      ? { postgresUrl: stack.externalServices.postgres }
-      : {}),
-    ...(stack.aptPackages && stack.aptPackages.length > 0
-      ? { aptPackages: stack.aptPackages }
-      : {}),
-    ...(stack.features && Object.keys(stack.features).length > 0
-      ? { features: stack.features }
-      : {}),
-    ...(stack.installUrls && stack.installUrls.length > 0
-      ? { installUrls: stack.installUrls }
-      : {}),
-    ...(stack.repos && stack.repos.length > 0 ? { repos: stack.repos } : {}),
-  };
-}
-
-async function regeneratePostCreateScript(root: string): Promise<void> {
-  const stack = await readStackJson(root);
-  if (!stack) return;
-  const opts = stackToCreateOptions(stack);
-  await writePostCreateScript(path.join(root, '.devcontainer'), opts);
 }

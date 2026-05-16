@@ -1,19 +1,18 @@
 import { existsSync, promises as fs } from 'node:fs';
-import path from 'node:path';
 import { consola } from 'consola';
-import { containerConfigPath, containerConfigsDir } from '../config/paths.js';
-import { createDoc, readConfig, writeConfig } from '../config/io.js';
+import { readConfig } from '../config/io.js';
+import {
+  containerConfigPath,
+  containerDir,
+  monocerosHome as defaultMonocerosHome,
+} from '../config/paths.js';
 import { REGEX } from '../config/schema.js';
 import {
   buildStateFile,
   readStateFile,
   writeStateFile,
 } from '../config/state.js';
-import {
-  solutionConfigToCreateOptions,
-  stackFileToSolutionConfig,
-} from '../config/transform.js';
-import type { StackFile } from '../create/types.js';
+import { solutionConfigToCreateOptions } from '../config/transform.js';
 import {
   needsCompose,
   normalizeOptions,
@@ -34,30 +33,33 @@ import {
   type IdentityPrompt,
   type IdentitySpawn,
 } from '../devcontainer/identity.js';
-import { findSolutionRoot } from '../devcontainer/locate.js';
 
 /**
- * `monoceros apply <name> [<pfad>]` — read the yml at
- * `.local/container-configs/<name>.yml`, materialize the devcontainer
- * scaffold at `targetDir` (default cwd), write `.monoceros/state.json`
- * with `origin: <name>`, then teardown + bring the container up.
+ * `monoceros apply <name>` — read the yml at
+ * `<MONOCEROS_HOME>/container-configs/<name>.yml`, materialize the
+ * devcontainer scaffold at `<MONOCEROS_HOME>/container/<name>/`, write
+ * `.monoceros/state.json` with `origin: <name>`, then teardown + bring
+ * the container up.
  *
- * Idempotent: re-running with the same name + path overwrites the
- * scaffold to match the current yml.
+ * The target location is determined by convention, not by cwd or an
+ * explicit path argument. That's deliberate: a config is the source of
+ * truth, the container directory mirrors it 1:1, and the builder never
+ * has to remember "which directory was sandbox materialized into".
  *
- * Refuses to scaffold into a non-empty directory unless it already
- * carries a `.monoceros/state.json` whose `origin` matches the
- * requested name. That guard protects pre-existing data (M1 solutions,
- * unrelated projects) from accidental overwrite.
+ * Idempotent: re-running picks up the current yml, overwrites scaffold
+ * files, restarts the container.
+ *
+ * Refuses to materialize into a non-empty directory whose state.json
+ * points at a different origin — protects against accidental clobber
+ * if a builder somehow seeded `<MONOCEROS_HOME>/container/<name>/`
+ * outside of this command.
  */
 
-export interface RunApplyFromYmlOptions {
-  /** Config name — resolves to `.local/container-configs/<name>.yml`. */
+export interface RunApplyOptions {
+  /** Config name — resolves to `<home>/container-configs/<name>.yml`. */
   name: string;
-  /** Target directory for the devcontainer scaffold. */
-  targetDir: string;
   cliVersion: string;
-  /** Optional override of the workbench root. Tests inject a tmpdir. */
+  /** Override of the user-data home. Tests inject a tmpdir. */
   monocerosHome?: string;
   now?: Date;
   logger?: {
@@ -72,15 +74,17 @@ export interface RunApplyFromYmlOptions {
   identityPrompt?: IdentityPrompt;
 }
 
-export interface RunApplyFromYmlResult {
+export interface RunApplyResult {
+  /** Absolute path to the materialized container directory. */
   targetDir: string;
+  /** Absolute path to the source yml. */
   configPath: string;
+  /** Exit code of the trailing `devcontainer up` step. */
   containerExitCode: number;
 }
 
-export async function runApplyFromYml(
-  opts: RunApplyFromYmlOptions,
-): Promise<RunApplyFromYmlResult> {
+export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
+  const home = opts.monocerosHome ?? defaultMonocerosHome();
   const logger = opts.logger ?? {
     info: (msg) => consola.info(msg),
     success: (msg) => consola.success(msg),
@@ -93,14 +97,14 @@ export async function runApplyFromYml(
     );
   }
 
-  const ymlPath = containerConfigPath(opts.name, opts.monocerosHome);
+  const ymlPath = containerConfigPath(opts.name, home);
   if (!existsSync(ymlPath)) {
     throw new Error(
       `No such config: ${ymlPath}. Run \`monoceros init <template> ${opts.name}\` first.`,
     );
   }
 
-  const targetDir = path.resolve(opts.targetDir);
+  const targetDir = containerDir(opts.name, home);
   await assertSafeTargetDir(targetDir, opts.name);
 
   const parsed = await readConfig(ymlPath);
@@ -164,16 +168,13 @@ export async function runApplyFromYml(
 }
 
 /**
- * The target dir is safe to (re-)materialize into iff:
+ * `<MONOCEROS_HOME>/container/<name>/` is safe to (re-)materialize iff:
  *   - it doesn't exist or is empty (fresh apply), OR
  *   - it already carries `.monoceros/state.json` with the same origin
  *     (re-apply against the same yml).
  *
- * Anything else — unrelated files, legacy `stack.json`, a state.json
- * with a different origin — is an error. Task 7 will add transparent
- * migration of legacy `stack.json`-backed solutions; until then the
- * builder gets a clear instruction to use the legacy `monoceros apply`
- * (no args).
+ * Anything else — unrelated files, or a state.json with a different
+ * origin — is an error.
  */
 async function assertSafeTargetDir(
   targetDir: string,
@@ -187,187 +188,13 @@ async function assertSafeTargetDir(
   if (state) {
     if (state.origin !== expectedOrigin) {
       throw new Error(
-        `${targetDir} is already materialized from config '${state.origin}', not '${expectedOrigin}'. Use \`monoceros apply ${state.origin}\` to re-apply, or delete the directory to re-target.`,
+        `${targetDir} is already materialized from config '${state.origin}', not '${expectedOrigin}'. Delete the directory to re-target, or run \`monoceros apply ${state.origin}\`.`,
       );
     }
     return; // safe: re-apply same origin
   }
 
-  const legacyStack = path.join(targetDir, '.monoceros', 'stack.json');
-  if (existsSync(legacyStack)) {
-    throw new Error(
-      `${targetDir} is a legacy stack.json-backed solution. Migration to the yml model lands in Task 7. Until then, use \`monoceros apply\` (without arguments) from inside it.`,
-    );
-  }
-
   throw new Error(
-    `Refusing to materialize into non-empty directory ${targetDir} (no Monoceros state found). Delete the directory or pick another path.`,
+    `Refusing to materialize into non-empty directory ${targetDir} (no Monoceros state.json found). Delete the directory before re-running.`,
   );
-}
-
-/**
- * `monoceros apply` without positional arguments. Walks up from cwd
- * to find a Monoceros dev-container root (a directory containing
- * `.devcontainer/`), then dispatches by what kind of solution it is:
- *
- *   - state.json present (Phase 3 solution) → re-apply via
- *     `runApplyFromYml({ name: state.origin, targetDir: <root> })`.
- *     The yml is the source of truth, so re-apply picks up any edits
- *     the builder made (or any `monoceros add-*` / `remove-*` calls).
- *
- *   - stack.json present, no state.json (legacy M1 solution) →
- *     `runApplyLegacy` (the stack.json-centric path). Task 7 swaps
- *     this for a transparent stack.json → yml migration.
- *
- *   - neither present → error with the original "no .devcontainer/"
- *     message so the builder knows to `monoceros create` or `init`.
- */
-export interface RunApplyFromCwdOptions {
-  cwd?: string;
-  project?: string;
-  cliVersion: string;
-  logger?: {
-    info: (msg: string) => void;
-    success: (msg: string) => void;
-    warn?: (msg: string) => void;
-  };
-  monocerosHome?: string;
-  cleanupSpawn?: ComposeSpawn;
-  devcontainerSpawn?: DevcontainerSpawn;
-  credentialsSpawn?: CredentialsSpawn;
-  identitySpawn?: IdentitySpawn;
-  identityPrompt?: IdentityPrompt;
-}
-
-export async function runApplyFromCwd(
-  opts: RunApplyFromCwdOptions,
-): Promise<number> {
-  const cwd = opts.cwd ?? process.cwd();
-  const startDir = opts.project ? path.resolve(cwd, opts.project) : cwd;
-  const root = findSolutionRoot(startDir);
-  if (!root) {
-    throw new Error(
-      `No .devcontainer/ found at or above ${startDir}. Run \`monoceros create\` or \`monoceros init <template> <name>\` first.`,
-    );
-  }
-
-  const logger = opts.logger ?? {
-    info: (msg) => consola.info(msg),
-    success: (msg) => consola.success(msg),
-    warn: (msg) => consola.warn(msg),
-  };
-
-  const state = await readStateFile(root);
-  let origin: string;
-  if (state) {
-    origin = state.origin;
-  } else {
-    // No state.json — look for a legacy stack.json and migrate.
-    const stack = await readLegacyStackFile(root);
-    if (!stack) {
-      // Should be unreachable: findSolutionRoot succeeded but neither
-      // state.json nor stack.json is present. Builder must have hand-
-      // crafted a `.devcontainer/`. Surface a clear instruction.
-      throw new Error(
-        `Found ${root}/.devcontainer/ but no .monoceros/state.json or stack.json. Recreate via \`monoceros init <template> <name>\` + \`monoceros apply <name> ${root}\`.`,
-      );
-    }
-    origin = await migrateStackToYml(root, stack, {
-      ...(opts.monocerosHome ? { monocerosHome: opts.monocerosHome } : {}),
-      cliVersion: opts.cliVersion,
-      logger,
-    });
-  }
-
-  const result = await runApplyFromYml({
-    name: origin,
-    targetDir: root,
-    cliVersion: opts.cliVersion,
-    ...(opts.monocerosHome ? { monocerosHome: opts.monocerosHome } : {}),
-    ...(opts.logger ? { logger: opts.logger } : {}),
-    ...(opts.cleanupSpawn ? { cleanupSpawn: opts.cleanupSpawn } : {}),
-    ...(opts.devcontainerSpawn
-      ? { devcontainerSpawn: opts.devcontainerSpawn }
-      : {}),
-    ...(opts.credentialsSpawn
-      ? { credentialsSpawn: opts.credentialsSpawn }
-      : {}),
-    ...(opts.identitySpawn ? { identitySpawn: opts.identitySpawn } : {}),
-    ...(opts.identityPrompt ? { identityPrompt: opts.identityPrompt } : {}),
-  });
-  return result.containerExitCode;
-}
-
-async function readLegacyStackFile(
-  root: string,
-): Promise<StackFile | undefined> {
-  try {
-    const text = await fs.readFile(
-      path.join(root, '.monoceros', 'stack.json'),
-      'utf8',
-    );
-    return JSON.parse(text) as StackFile;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Migrate a legacy M1 solution to the Phase-3 yml model. Writes
- * `.local/container-configs/<stack.name>.yml` from the stack, then
- * archives `.monoceros/stack.json` as `stack.json.legacy` so the next
- * `monoceros apply` doesn't try to migrate again.
- *
- * Returns the chosen config name so the caller can route into
- * runApplyFromYml. state.json is left to runApplyFromYml's normal
- * write step.
- *
- * Refuses to overwrite an existing yml — that situation means the
- * builder already ran `monoceros init <stack.name> …` separately and
- * the migration could clobber hand-edits.
- */
-async function migrateStackToYml(
-  root: string,
-  stack: StackFile,
-  opts: {
-    monocerosHome?: string;
-    cliVersion?: string;
-    logger: { info: (msg: string) => void; success: (msg: string) => void };
-  },
-): Promise<string> {
-  const config = stackFileToSolutionConfig(stack);
-  const ymlPath = containerConfigPath(config.name, opts.monocerosHome);
-
-  if (existsSync(ymlPath)) {
-    throw new Error(
-      `Migration aborted: yml at ${ymlPath} already exists. Delete it or rename the legacy solution (edit stack.json's "name" field) before re-running apply.`,
-    );
-  }
-
-  await fs.mkdir(containerConfigsDir(opts.monocerosHome), { recursive: true });
-  await writeConfig(ymlPath, createDoc(config));
-
-  // Write state.json upfront so the follow-up `runApplyFromYml`
-  // recognizes the directory as "already materialized from <name>" and
-  // passes its safe-dir check. The materializedAt timestamp is the
-  // migration moment, which is good enough — runApplyFromYml will
-  // overwrite it with the actual apply timestamp at the end.
-  await writeStateFile(
-    root,
-    buildStateFile({
-      origin: config.name,
-      cliVersion: opts.cliVersion ?? stack.monocerosCliVersion,
-    }),
-  );
-
-  // Archive the legacy stack.json so subsequent apply runs route
-  // straight into the yml path. Keep the file around (renamed) so a
-  // builder can diff against it if something looks off.
-  const stackPath = path.join(root, '.monoceros', 'stack.json');
-  await fs.rename(stackPath, `${stackPath}.legacy`);
-
-  opts.logger.success(
-    `Migrated ${root} to the yml model. yml: ${ymlPath}, stack.json archived as stack.json.legacy.`,
-  );
-  return config.name;
 }
