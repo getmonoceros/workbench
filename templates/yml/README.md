@@ -19,6 +19,7 @@ sie, nicht das Template hier.
 | `bare`          | Node (Base-Image), sonst nichts             | Minimaler Startpunkt; alles Weitere via `add-*` dazu                |
 | `nodejs-github` | Node (Base) + GitHub CLI (`gh`)             | TypeScript-/Node-Solution mit GitHub-Repos (HTTPS-Auth automatisch) |
 | `python`        | Python (Feature) + lokaler Postgres-Service | Python-App mit lokaler DB; intern erreichbar als Host `postgres`    |
+| `reference`     | Alles auskommentiert, jedes Feld erklärt    | Nachschlagewerk — zeigt jede yml-Option auf einen Blick             |
 
 ## Eine eigene Vorlage hinzufügen
 

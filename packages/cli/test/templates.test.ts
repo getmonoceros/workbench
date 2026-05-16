@@ -20,9 +20,14 @@ async function listTemplateFiles(): Promise<string[]> {
 }
 
 describe('templates/yml', () => {
-  it('has the three initial templates from M2.5 Phase 3', async () => {
+  it('has the four initial templates from M2.5 Phase 3', async () => {
     const files = await listTemplateFiles();
-    expect(files).toEqual(['bare.yml', 'nodejs-github.yml', 'python.yml']);
+    expect(files).toEqual([
+      'bare.yml',
+      'nodejs-github.yml',
+      'python.yml',
+      'reference.yml',
+    ]);
   });
 
   it('parses and validates every shipped template', async () => {
