@@ -1,8 +1,7 @@
 import path from 'node:path';
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
-import { runApplyFromYml } from '../apply/index.js';
-import { runApply } from '../devcontainer/compose.js';
+import { runApplyFromCwd, runApplyFromYml } from '../apply/index.js';
 import { CLI_VERSION } from '../version.js';
 import { dispatch } from './_dispatch.js';
 
@@ -13,25 +12,22 @@ import { dispatch } from './_dispatch.js';
  *     `.local/container-configs/<name>.yml`, materialize the scaffold
  *     at `<path>` (default cwd), write state.json, then container-up.
  *
- *   - Without arguments: legacy path. Walk up from cwd to find a
- *     `.devcontainer/` + `.monoceros/stack.json`, regenerate
- *     post-create.sh from stack.json, then teardown + up.
- *
- * Task 4 will collapse the no-args branch onto state.json (read
- * `origin` and re-route to the Phase-3 path); Task 7 then migrates
- * legacy `stack.json` solutions transparently on first apply.
+ *   - Without arguments: walk up from cwd to find a Monoceros dev-
+ *     container root, then re-apply against the yml referenced by its
+ *     `.monoceros/state.json` (Phase-3 solution) or fall back to the
+ *     legacy stack.json-based apply (until Task 7 migrates).
  */
 export const applyCommand = defineCommand({
   meta: {
     name: 'apply',
     description:
-      'Materialize a yml config into a dev-container (when given a config name) or rebuild the current dev-container against its existing stack.json (when run with no args). Close any VS Code Remote Containers session for the target first — the extension auto-recreates and races with apply.',
+      'Materialize a yml config into a dev-container (when given a config name) or re-apply the current dev-container against its config (when run with no args). Close any VS Code Remote Containers session for the target first — the extension auto-recreates and races with apply.',
   },
   args: {
     name: {
       type: 'positional',
       description:
-        'Config name to apply. Resolves to .local/container-configs/<name>.yml. Omit to fall back to the legacy stack.json-based apply in the current directory.',
+        'Config name to apply. Resolves to .local/container-configs/<name>.yml. Omit to re-apply the current directory against its state.json (or fall back to its stack.json).',
       required: false,
     },
     target: {
@@ -43,7 +39,7 @@ export const applyCommand = defineCommand({
     project: {
       type: 'string',
       description:
-        'Legacy: override the auto-detected solution root for the no-args path. Ignored when <name> is given.',
+        'Override the auto-detected solution root for the no-args path. Ignored when <name> is given.',
     },
   },
   run({ args }) {
@@ -68,8 +64,9 @@ export const applyCommand = defineCommand({
         return 2;
       }
 
-      return runApply({
-        project: typeof args.project === 'string' ? args.project : undefined,
+      return runApplyFromCwd({
+        cliVersion: CLI_VERSION,
+        ...(typeof args.project === 'string' ? { project: args.project } : {}),
       });
     });
   },

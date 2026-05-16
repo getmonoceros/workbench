@@ -17,7 +17,9 @@ import {
   writeScaffold,
 } from '../create/scaffold.js';
 import {
+  type ApplyOptions,
   type ComposeSpawn,
+  runApply as runApplyLegacy,
   runContainerCycle,
 } from '../devcontainer/compose.js';
 import {
@@ -30,6 +32,7 @@ import {
   type IdentityPrompt,
   type IdentitySpawn,
 } from '../devcontainer/identity.js';
+import { findSolutionRoot } from '../devcontainer/locate.js';
 
 /**
  * `monoceros apply <name> [<pfad>]` — read the yml at
@@ -198,4 +201,89 @@ async function assertSafeTargetDir(
   throw new Error(
     `Refusing to materialize into non-empty directory ${targetDir} (no Monoceros state found). Delete the directory or pick another path.`,
   );
+}
+
+/**
+ * `monoceros apply` without positional arguments. Walks up from cwd
+ * to find a Monoceros dev-container root (a directory containing
+ * `.devcontainer/`), then dispatches by what kind of solution it is:
+ *
+ *   - state.json present (Phase 3 solution) → re-apply via
+ *     `runApplyFromYml({ name: state.origin, targetDir: <root> })`.
+ *     The yml is the source of truth, so re-apply picks up any edits
+ *     the builder made (or any `monoceros add-*` / `remove-*` calls).
+ *
+ *   - stack.json present, no state.json (legacy M1 solution) →
+ *     `runApplyLegacy` (the stack.json-centric path). Task 7 swaps
+ *     this for a transparent stack.json → yml migration.
+ *
+ *   - neither present → error with the original "no .devcontainer/"
+ *     message so the builder knows to `monoceros create` or `init`.
+ */
+export interface RunApplyFromCwdOptions {
+  cwd?: string;
+  project?: string;
+  cliVersion: string;
+  logger?: {
+    info: (msg: string) => void;
+    success: (msg: string) => void;
+    warn?: (msg: string) => void;
+  };
+  workbenchRoot?: string;
+  cleanupSpawn?: ComposeSpawn;
+  devcontainerSpawn?: DevcontainerSpawn;
+  credentialsSpawn?: CredentialsSpawn;
+  identitySpawn?: IdentitySpawn;
+  identityPrompt?: IdentityPrompt;
+}
+
+export async function runApplyFromCwd(
+  opts: RunApplyFromCwdOptions,
+): Promise<number> {
+  const cwd = opts.cwd ?? process.cwd();
+  const startDir = opts.project ? path.resolve(cwd, opts.project) : cwd;
+  const root = findSolutionRoot(startDir);
+  if (!root) {
+    throw new Error(
+      `No .devcontainer/ found at or above ${startDir}. Run \`monoceros create\` or \`monoceros init <template> <name>\` first.`,
+    );
+  }
+
+  const state = await readStateFile(root);
+  if (state) {
+    const result = await runApplyFromYml({
+      name: state.origin,
+      targetDir: root,
+      cliVersion: opts.cliVersion,
+      ...(opts.workbenchRoot ? { workbenchRoot: opts.workbenchRoot } : {}),
+      ...(opts.logger ? { logger: opts.logger } : {}),
+      ...(opts.cleanupSpawn ? { cleanupSpawn: opts.cleanupSpawn } : {}),
+      ...(opts.devcontainerSpawn
+        ? { devcontainerSpawn: opts.devcontainerSpawn }
+        : {}),
+      ...(opts.credentialsSpawn
+        ? { credentialsSpawn: opts.credentialsSpawn }
+        : {}),
+      ...(opts.identitySpawn ? { identitySpawn: opts.identitySpawn } : {}),
+      ...(opts.identityPrompt ? { identityPrompt: opts.identityPrompt } : {}),
+    });
+    return result.containerExitCode;
+  }
+
+  // No state.json — assume legacy stack.json. Task 7 migrates it.
+  const legacyOpts: ApplyOptions = {
+    cwd,
+    ...(opts.project !== undefined ? { project: opts.project } : {}),
+    ...(opts.cleanupSpawn ? { cleanupSpawn: opts.cleanupSpawn } : {}),
+    ...(opts.devcontainerSpawn
+      ? { devcontainerSpawn: opts.devcontainerSpawn }
+      : {}),
+    ...(opts.credentialsSpawn
+      ? { credentialsSpawn: opts.credentialsSpawn }
+      : {}),
+    ...(opts.identitySpawn ? { identitySpawn: opts.identitySpawn } : {}),
+    ...(opts.identityPrompt ? { identityPrompt: opts.identityPrompt } : {}),
+    ...(opts.logger ? { logger: opts.logger } : {}),
+  };
+  return runApplyLegacy(legacyOpts);
 }
