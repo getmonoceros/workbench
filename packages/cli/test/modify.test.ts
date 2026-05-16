@@ -13,6 +13,11 @@ import {
   runAddLanguage,
   runAddRepo,
   runAddService,
+  runRemoveAptPackages,
+  runRemoveFeature,
+  runRemoveLanguage,
+  runRemoveRepo,
+  runRemoveService,
 } from '../src/modify/index.js';
 
 const silentLogger = {
@@ -951,5 +956,148 @@ describe('runAddRepo', () => {
       devcontainer.mounts?.some((m) => m.includes('${localEnv:SSH_AUTH_SOCK}')),
     ).toBe(false);
     expect(devcontainer.containerEnv).toBeUndefined();
+  });
+});
+
+describe('remove-* on legacy stack.json solutions', () => {
+  let cwd: string;
+
+  beforeEach(async () => {
+    cwd = await mkdtemp(path.join(tmpdir(), 'monoceros-remove-legacy-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  it('removeLanguage strips the language and drops the feature entry', async () => {
+    const solution = await scaffold(cwd, {
+      name: 'demo',
+      languages: ['python'],
+    });
+    await runRemoveLanguage({
+      ...baseModifyOpts,
+      cwd: solution,
+      language: 'python',
+    });
+    const stack = await readJson<StackFile>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.languages).toEqual([]);
+    const devcontainer = await readJson<{ features?: Record<string, unknown> }>(
+      path.join(solution, '.devcontainer', 'devcontainer.json'),
+    );
+    expect(devcontainer.features).toBeUndefined();
+  });
+
+  it('removeService demotes a single-service solution back to image-mode', async () => {
+    const solution = await scaffold(cwd, {
+      name: 'demo',
+      services: ['postgres'],
+    });
+    await runRemoveService({
+      ...baseModifyOpts,
+      cwd: solution,
+      service: 'postgres',
+    });
+    // compose.yaml is removed when the last service goes away.
+    await expect(
+      fs.access(path.join(solution, '.devcontainer', 'compose.yaml')),
+    ).rejects.toThrow();
+    const stack = await readJson<StackFile>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.services).toEqual([]);
+  });
+
+  it('removeAptPackages drops aptPackages when the last entry is removed', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddAptPackages({
+      ...baseModifyOpts,
+      cwd: solution,
+      packages: ['jq', 'make'],
+    });
+    await runRemoveAptPackages({
+      ...baseModifyOpts,
+      cwd: solution,
+      packages: ['jq', 'make'],
+    });
+    const stack = await readJson<{ aptPackages?: string[] }>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.aptPackages).toBeUndefined();
+  });
+
+  it('removeFeature drops a feature and prunes the features map', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddFeature({
+      ...baseModifyOpts,
+      cwd: solution,
+      ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
+      options: { version: 'latest' },
+    });
+    await runRemoveFeature({
+      ...baseModifyOpts,
+      cwd: solution,
+      ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
+    });
+    const stack = await readJson<{ features?: Record<string, unknown> }>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.features).toBeUndefined();
+  });
+
+  it('removeRepo by URL drops the entry and unmounts SSH-agent when no repos remain', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'git@github.com:foo/bar.git',
+    });
+    await runRemoveRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      target: 'git@github.com:foo/bar.git',
+    });
+    const stack = await readJson<{ repos?: unknown[] }>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.repos).toBeUndefined();
+    const devcontainer = await readJson<{
+      mounts?: string[];
+      containerEnv?: Record<string, string>;
+    }>(path.join(solution, '.devcontainer', 'devcontainer.json'));
+    expect(
+      devcontainer.mounts?.some((m) => m.includes('${localEnv:SSH_AUTH_SOCK}')),
+    ).toBe(false);
+  });
+
+  it('removeRepo by derived name works too', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    await runAddRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      url: 'git@github.com:foo/bar.git',
+    });
+    expect(deriveRepoName('git@github.com:foo/bar.git')).toBe('bar');
+    await runRemoveRepo({
+      ...baseModifyOpts,
+      cwd: solution,
+      target: 'bar',
+    });
+    const stack = await readJson<{ repos?: unknown[] }>(
+      path.join(solution, '.monoceros', 'stack.json'),
+    );
+    expect(stack.repos).toBeUndefined();
+  });
+
+  it('removeLanguage is a no-op when the language is not present', async () => {
+    const solution = await scaffold(cwd, { name: 'demo' });
+    const result = await runRemoveLanguage({
+      ...baseModifyOpts,
+      cwd: solution,
+      language: 'python',
+    });
+    expect(result.status).toBe('no-change');
   });
 });

@@ -10,6 +10,12 @@ import {
   runAddLanguage,
   runAddRepo,
   runAddService,
+  runRemoveAptPackages,
+  runRemoveFeature,
+  runRemoveFromUrl,
+  runRemoveLanguage,
+  runRemoveRepo,
+  runRemoveService,
 } from '../src/modify/index.js';
 
 const silentLogger = {
@@ -263,5 +269,212 @@ describe('add-* via state.json (Phase-3 path)', () => {
         workbenchRoot: workbench,
       }),
     ).rejects.toThrow(/no yml/);
+  });
+});
+
+describe('remove-* via state.json (Phase-3 path)', () => {
+  let workbench: string;
+  let solutionRoot: string;
+
+  afterEach(() => {
+    if (workbench && existsSync(workbench)) {
+      rmSync(workbench, { recursive: true, force: true });
+    }
+  });
+
+  async function setup(yml: string, name = 'demo'): Promise<void> {
+    const ws = await makeWorkspace({ name, yml });
+    workbench = ws.workbench;
+    solutionRoot = ws.solutionRoot;
+  }
+
+  it('removes a language entry and drops the now-empty list', async () => {
+    await setup(
+      [
+        '# my notes',
+        'schemaVersion: 1',
+        'name: demo',
+        'languages:',
+        '  - python',
+        '',
+      ].join('\n'),
+    );
+    const result = await runRemoveLanguage({
+      ...baseOpts,
+      language: 'python',
+      cwd: solutionRoot,
+      workbenchRoot: workbench,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf(workbench, 'demo');
+    expect(yml).toContain('# my notes');
+    expect(yml).not.toContain('python');
+    // Pruned because the list is now empty.
+    expect(yml).not.toContain('languages:');
+  });
+
+  it('removes a service while leaving other services intact', async () => {
+    await setup(
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - postgres',
+        '  - redis',
+        '',
+      ].join('\n'),
+    );
+    await runRemoveService({
+      ...baseOpts,
+      service: 'postgres',
+      cwd: solutionRoot,
+      workbenchRoot: workbench,
+    });
+    const yml = await ymlOf(workbench, 'demo');
+    expect(yml).toContain('- redis');
+    expect(yml).not.toContain('postgres');
+  });
+
+  it('is a no-op when removing an absent entry', async () => {
+    await setup('schemaVersion: 1\nname: demo\n');
+    const result = await runRemoveLanguage({
+      ...baseOpts,
+      language: 'python',
+      cwd: solutionRoot,
+      workbenchRoot: workbench,
+    });
+    expect(result.status).toBe('no-change');
+  });
+
+  it('runRemoveAptPackages strips multiple at once, preserving an unrelated entry', async () => {
+    await setup(
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'aptPackages:',
+        '  - make',
+        '  - jq # JSON in shell',
+        '  - curl',
+        '',
+      ].join('\n'),
+    );
+    await runRemoveAptPackages({
+      ...baseOpts,
+      packages: ['make', 'curl'],
+      cwd: solutionRoot,
+      workbenchRoot: workbench,
+    });
+    const yml = await ymlOf(workbench, 'demo');
+    expect(yml).toContain('- jq # JSON in shell');
+    expect(yml).not.toContain('- make');
+    expect(yml).not.toContain('- curl');
+  });
+
+  it('runRemoveFeature drops a feature entry by ref', async () => {
+    await setup(
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'features:',
+        '  - ref: ghcr.io/devcontainers/features/docker-in-docker:2',
+        '    options:',
+        '      version: latest',
+        '',
+      ].join('\n'),
+    );
+    await runRemoveFeature({
+      ...baseOpts,
+      ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
+      cwd: solutionRoot,
+      workbenchRoot: workbench,
+    });
+    const yml = await ymlOf(workbench, 'demo');
+    expect(yml).not.toContain('docker-in-docker');
+    expect(yml).not.toContain('features:');
+  });
+
+  it('runRemoveFromUrl drops an install URL', async () => {
+    await setup(
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'installUrls:',
+        '  - https://example.com/a',
+        '  - https://example.com/b',
+        '',
+      ].join('\n'),
+    );
+    await runRemoveFromUrl({
+      ...baseOpts,
+      url: 'https://example.com/a',
+      cwd: solutionRoot,
+      workbenchRoot: workbench,
+    });
+    const yml = await ymlOf(workbench, 'demo');
+    expect(yml).toContain('- https://example.com/b');
+    expect(yml).not.toContain('- https://example.com/a');
+  });
+
+  it('runRemoveRepo matches by url', async () => {
+    await setup(
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'repos:',
+        '  - url: git@github.com:foo/bar.git',
+        '  - url: git@github.com:foo/baz.git',
+        '',
+      ].join('\n'),
+    );
+    await runRemoveRepo({
+      ...baseOpts,
+      target: 'git@github.com:foo/bar.git',
+      cwd: solutionRoot,
+      workbenchRoot: workbench,
+    });
+    const yml = await ymlOf(workbench, 'demo');
+    expect(yml).toContain('baz.git');
+    expect(yml).not.toContain('bar.git');
+  });
+
+  it('runRemoveRepo matches by derived (URL-default) name', async () => {
+    await setup(
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'repos:',
+        '  - url: git@github.com:foo/bar.git',
+        '',
+      ].join('\n'),
+    );
+    await runRemoveRepo({
+      ...baseOpts,
+      target: 'bar',
+      cwd: solutionRoot,
+      workbenchRoot: workbench,
+    });
+    const yml = await ymlOf(workbench, 'demo');
+    expect(yml).not.toContain('repos:');
+  });
+
+  it('runRemoveRepo matches by explicit name', async () => {
+    await setup(
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'repos:',
+        '  - url: https://github.com/foo/bar.git',
+        '    name: ui',
+        '',
+      ].join('\n'),
+    );
+    await runRemoveRepo({
+      ...baseOpts,
+      target: 'ui',
+      cwd: solutionRoot,
+      workbenchRoot: workbench,
+    });
+    const yml = await ymlOf(workbench, 'demo');
+    expect(yml).not.toContain('repos:');
   });
 });

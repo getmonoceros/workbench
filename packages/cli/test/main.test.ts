@@ -28,6 +28,12 @@ describe('monoceros main command', () => {
       'add-feature',
       'add-from-url',
       'add-repo',
+      'remove-service',
+      'remove-language',
+      'remove-apt-packages',
+      'remove-feature',
+      'remove-from-url',
+      'remove-repo',
     ];
 
     const subCommands = main.subCommands;

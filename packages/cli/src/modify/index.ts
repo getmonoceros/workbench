@@ -37,6 +37,12 @@ import {
   addLanguageToDoc,
   addRepoToDoc,
   addServiceToDoc,
+  removeAptPackagesFromDoc,
+  removeFeatureFromDoc,
+  removeInstallUrlFromDoc,
+  removeLanguageFromDoc,
+  removeRepoFromDoc,
+  removeServiceFromDoc,
 } from './yml.js';
 
 export interface ModifyLogger {
@@ -84,6 +90,26 @@ export interface AddRepoInput extends ModifyOptions {
   url: string;
   name?: string;
   branch?: string;
+}
+
+export interface RemoveLanguageInput extends ModifyOptions {
+  language: string;
+}
+export interface RemoveServiceInput extends ModifyOptions {
+  service: string;
+}
+export interface RemoveAptPackagesInput extends ModifyOptions {
+  packages: string[];
+}
+export interface RemoveFeatureInput extends ModifyOptions {
+  ref: string;
+}
+export interface RemoveFromUrlInput extends ModifyOptions {
+  url: string;
+}
+export interface RemoveRepoInput extends ModifyOptions {
+  /** url or (effective) name — `monoceros remove-repo` accepts either. */
+  target: string;
 }
 
 export type ModifyResult =
@@ -261,6 +287,126 @@ export async function runAddFeature(
   });
 }
 
+// ─── remove-* ─────────────────────────────────────────────────────
+//
+// Symmetric to the add-* family. Each removes one entry from the yml
+// (and the legacy stack.json) and returns `no-change` when the target
+// is already absent. Builders then run `monoceros apply` to rebuild
+// the dev-container.
+
+export async function runRemoveLanguage(
+  input: RemoveLanguageInput,
+): Promise<ModifyResult> {
+  return mutate(input, {
+    yml: (doc) => removeLanguageFromDoc(doc, input.language),
+    stack: (stack) => ({
+      ...stack,
+      languages: stack.languages.filter((l) => l !== input.language),
+    }),
+  });
+}
+
+export async function runRemoveService(
+  input: RemoveServiceInput,
+): Promise<ModifyResult> {
+  return mutate(input, {
+    yml: (doc) => removeServiceFromDoc(doc, input.service),
+    stack: (stack) => ({
+      ...stack,
+      services: stack.services.filter((s) => s !== input.service),
+    }),
+  });
+}
+
+export async function runRemoveAptPackages(
+  input: RemoveAptPackagesInput,
+): Promise<ModifyResult> {
+  if (input.packages.length === 0) {
+    throw new Error(
+      'No package names given. Usage: monoceros remove-apt-packages <pkg> [<pkg> …].',
+    );
+  }
+  const drop = new Set(input.packages);
+  return mutate(input, {
+    yml: (doc) => removeAptPackagesFromDoc(doc, input.packages),
+    stack: (stack) => ({
+      ...stack,
+      aptPackages: (stack.aptPackages ?? []).filter((p) => !drop.has(p)),
+    }),
+  });
+}
+
+export async function runRemoveFeature(
+  input: RemoveFeatureInput,
+): Promise<ModifyResult> {
+  const ref = input.ref.trim();
+  if (ref.length === 0) {
+    throw new Error(
+      'Missing feature ref. Usage: monoceros remove-feature <ref>.',
+    );
+  }
+  return mutate(input, {
+    yml: (doc) => removeFeatureFromDoc(doc, ref),
+    stack: (stack) => {
+      if (!stack.features || !(ref in stack.features)) return stack;
+      const { [ref]: _dropped, ...rest } = stack.features;
+      // Explicit construction (no `...stack`) so `features` actually
+      // drops when `rest` is empty. The `...stack` pattern would carry
+      // the old `features` forward into mutateStack's draftOptions
+      // pass — same trap the newStack builder fell into before.
+      const next: StackFile = {
+        name: stack.name,
+        createdAt: stack.createdAt,
+        monocerosCliVersion: stack.monocerosCliVersion,
+        languages: stack.languages,
+        services: stack.services,
+        externalServices: stack.externalServices,
+        ...(stack.aptPackages ? { aptPackages: stack.aptPackages } : {}),
+        ...(Object.keys(rest).length > 0 ? { features: rest } : {}),
+        ...(stack.installUrls ? { installUrls: stack.installUrls } : {}),
+        ...(stack.repos ? { repos: stack.repos } : {}),
+      };
+      return next;
+    },
+  });
+}
+
+export async function runRemoveFromUrl(
+  input: RemoveFromUrlInput,
+): Promise<ModifyResult> {
+  const url = input.url.trim();
+  if (url.length === 0) {
+    throw new Error('Missing URL. Usage: monoceros remove-from-url <url>.');
+  }
+  return mutate(input, {
+    yml: (doc) => removeInstallUrlFromDoc(doc, url),
+    stack: (stack) => ({
+      ...stack,
+      installUrls: (stack.installUrls ?? []).filter((u) => u !== url),
+    }),
+  });
+}
+
+export async function runRemoveRepo(
+  input: RemoveRepoInput,
+): Promise<ModifyResult> {
+  const target = input.target.trim();
+  if (target.length === 0) {
+    throw new Error(
+      'Missing repo identifier. Usage: monoceros remove-repo <url-or-name>.',
+    );
+  }
+  return mutate(input, {
+    yml: (doc) => removeRepoFromDoc(doc, target),
+    stack: (stack) => ({
+      ...stack,
+      repos: (stack.repos ?? []).filter(
+        (r) => r.url !== target && r.name !== target,
+      ),
+    }),
+  });
+}
+
 interface PlannedChange {
   relPath: string;
   absPath: string;
@@ -386,14 +532,19 @@ async function mutateStack(
   validateOptions(draftOptions);
   const normalized = normalizeOptions(draftOptions);
 
+  // Build newStack explicitly (no `...oldStack`) so removing an entry
+  // from an optional field actually drops it. The previous spread-and-
+  // conditionally-add pattern leaked stale optional fields from oldStack
+  // when the normalized value was empty.
   const newStack: StackFile = {
-    ...oldStack,
+    name: oldStack.name,
+    createdAt: oldStack.createdAt,
+    monocerosCliVersion: opts.cliVersion,
     languages: normalized.languages,
     services: normalized.services,
     externalServices: normalized.postgresUrl
       ? { postgres: normalized.postgresUrl }
       : {},
-    monocerosCliVersion: opts.cliVersion,
     ...(normalized.aptPackages && normalized.aptPackages.length > 0
       ? { aptPackages: normalized.aptPackages }
       : {}),

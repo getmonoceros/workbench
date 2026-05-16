@@ -10,6 +10,12 @@ import { createCommand } from './commands/create.js';
 import { downCommand } from './commands/down.js';
 import { initCommand } from './commands/init.js';
 import { logsCommand } from './commands/logs.js';
+import { removeAptPackagesCommand } from './commands/remove-apt-packages.js';
+import { removeFeatureCommand } from './commands/remove-feature.js';
+import { removeFromUrlCommand } from './commands/remove-from-url.js';
+import { removeLanguageCommand } from './commands/remove-language.js';
+import { removeRepoCommand } from './commands/remove-repo.js';
+import { removeServiceCommand } from './commands/remove-service.js';
 import { runCommand } from './commands/run.js';
 import { shellCommand } from './commands/shell.js';
 import { startCommand } from './commands/start.js';
@@ -41,5 +47,11 @@ export const main = defineCommand({
     'add-feature': addFeatureCommand,
     'add-from-url': addFromUrlCommand,
     'add-repo': addRepoCommand,
+    'remove-service': removeServiceCommand,
+    'remove-language': removeLanguageCommand,
+    'remove-apt-packages': removeAptPackagesCommand,
+    'remove-feature': removeFeatureCommand,
+    'remove-from-url': removeFromUrlCommand,
+    'remove-repo': removeRepoCommand,
   },
 });

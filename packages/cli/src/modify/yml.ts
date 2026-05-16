@@ -171,6 +171,18 @@ export function removeAptPackageFromDoc(doc: Document, pkg: string): boolean {
   return removeScalarFromSeq(doc, 'aptPackages', pkg);
 }
 
+/** Plural form — for `monoceros remove-apt-packages a b c`. */
+export function removeAptPackagesFromDoc(
+  doc: Document,
+  packages: string[],
+): boolean {
+  let changed = false;
+  for (const pkg of packages) {
+    if (removeAptPackageFromDoc(doc, pkg)) changed = true;
+  }
+  return changed;
+}
+
 export function removeInstallUrlFromDoc(doc: Document, url: string): boolean {
   return removeScalarFromSeq(doc, 'installUrls', url);
 }
