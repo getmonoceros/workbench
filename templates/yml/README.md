@@ -14,11 +14,11 @@ sie, nicht das Template hier.
 
 ## Verfügbare Templates
 
-| Template        | Stack                                                | Wofür                                                            |
-| --------------- | ---------------------------------------------------- | ---------------------------------------------------------------- |
-| `bare`          | Node (Base-Image), sonst nichts                      | Minimaler Startpunkt; alles Weitere via `add-*` dazu             |
-| `nodejs-github` | Node + `make` + `jq`, SSH-Agent-Forwarding für Klone | TypeScript-/Node-Solution mit GitHub-Repos in `projects/`        |
-| `python`        | Python (Feature) + lokaler Postgres-Service          | Python-App mit lokaler DB; intern erreichbar als Host `postgres` |
+| Template        | Stack                                       | Wofür                                                               |
+| --------------- | ------------------------------------------- | ------------------------------------------------------------------- |
+| `bare`          | Node (Base-Image), sonst nichts             | Minimaler Startpunkt; alles Weitere via `add-*` dazu                |
+| `nodejs-github` | Node (Base) + GitHub CLI (`gh`)             | TypeScript-/Node-Solution mit GitHub-Repos (HTTPS-Auth automatisch) |
+| `python`        | Python (Feature) + lokaler Postgres-Service | Python-App mit lokaler DB; intern erreichbar als Host `postgres`    |
 
 ## Eine eigene Vorlage hinzufügen
 

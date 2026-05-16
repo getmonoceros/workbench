@@ -1,25 +1,34 @@
 # Monoceros solution-config — `nodejs-github` template.
 #
 # Profile for a TypeScript/Node-first solution backed by GitHub repos.
-# Node is in the base image (no feature needed). The container forwards
-# the host SSH-agent automatically as soon as `repos:` is non-empty, so
-# `git@github.com:…` URLs Just Work — provided your host has the right
-# key loaded.
+# Bundles the GitHub CLI (`gh`) as a devcontainer feature. Standard
+# tools `git`, `curl`, `ssh`, `jq`, `make` are already in the base
+# image — no apt-packages entries needed for them.
 #
-# Uncomment the `repos:` entry and edit it for your first repo, then
-# run `monoceros apply <name>` from a fresh container directory.
+# HTTPS is the recommended default for `repos:` — `monoceros apply`
+# fetches credentials from your host git credential helper (osxkeychain
+# on macOS, GCM on Windows, libsecret on Linux, …). If `git clone`
+# works on your host, it works in the container.
+#
+# Uncomment `repos:` and `services:` for your needs, then run
+# `monoceros apply <name> <dir>` from a fresh container directory.
 
 schemaVersion: 1
 name: nodejs-github
 
-# Extras the base image doesn't ship. `make` is handy for repo-side
-# Makefile targets; `jq` for shell-pipelining JSON.
-aptPackages:
-  - make
-  - jq
+features:
+  - ref: ghcr.io/devcontainers/features/github-cli:1
 
 # Add your first repo here. `name` defaults to the basename of the URL
 # (`bar.git` → `bar`) — override only when you need a different folder
 # under `projects/`.
 # repos:
-#   - url: git@github.com:your-org/your-repo.git
+#   - url: https://github.com/your-org/your-repo.git
+
+# Add a local Postgres service if your solution needs a DB. Inside the
+# container the DB is reachable as host `postgres`:
+#   postgresql://monoceros:monoceros@postgres:5432/monoceros
+# Switch to an external DB by replacing this with
+# `externalServices.postgres: postgresql://…`.
+# services:
+#   - postgres

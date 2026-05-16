@@ -44,7 +44,7 @@ monoceros init <template> <name>
 | Template        | Stack                                       |
 | --------------- | ------------------------------------------- |
 | `bare`          | Node (Base-Image), sonst nichts             |
-| `nodejs-github` | Node + `make` + `jq`, SSH-Agent-Forwarding  |
+| `nodejs-github` | Node (Base) + GitHub CLI (`gh`)             |
 | `python`        | Python (Feature) + lokaler Postgres-Service |
 
 Weitere Templates können unter `templates/yml/` ergänzt werden — siehe
