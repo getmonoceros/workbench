@@ -1,4 +1,5 @@
 import { defineCommand } from 'citty';
+import { containerDir } from '../config/paths.js';
 import { runDown } from '../devcontainer/compose.js';
 import { dispatch } from './_dispatch.js';
 
@@ -6,13 +7,14 @@ export const downCommand = defineCommand({
   meta: {
     name: 'down',
     description:
-      "Remove the solution's containers and project network so a fresh `monoceros start` picks up image changes. Pass --volumes/-v to also drop volumes (postgres data, …).",
+      "Remove the named dev-container's containers and project network so a fresh `monoceros start` picks up image changes. Pass --volumes/-v to also drop volumes (postgres data, …).",
   },
   args: {
-    project: {
-      type: 'string',
+    name: {
+      type: 'positional',
       description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
+      required: true,
     },
     volumes: {
       type: 'boolean',
@@ -25,7 +27,7 @@ export const downCommand = defineCommand({
   run({ args }) {
     return dispatch(() =>
       runDown({
-        project: typeof args.project === 'string' ? args.project : undefined,
+        root: containerDir(args.name),
         volumes: args.volumes,
       }),
     );

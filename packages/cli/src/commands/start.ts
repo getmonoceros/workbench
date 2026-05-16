@@ -1,4 +1,5 @@
 import { defineCommand } from 'citty';
+import { containerDir } from '../config/paths.js';
 import { runStart } from '../devcontainer/compose.js';
 import { dispatch } from './_dispatch.js';
 
@@ -6,20 +7,17 @@ export const startCommand = defineCommand({
   meta: {
     name: 'start',
     description:
-      'Bring the devcontainer up via `devcontainer up` (workspace + runServices, postCreate, features).',
+      'Bring the named dev-container up via `devcontainer up` (workspace + runServices, postCreate, features).',
   },
   args: {
-    project: {
-      type: 'string',
+    name: {
+      type: 'positional',
       description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
+      required: true,
     },
   },
   run({ args }) {
-    return dispatch(() =>
-      runStart({
-        project: typeof args.project === 'string' ? args.project : undefined,
-      }),
-    );
+    return dispatch(() => runStart({ root: containerDir(args.name) }));
   },
 });

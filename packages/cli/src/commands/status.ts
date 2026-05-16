@@ -1,4 +1,5 @@
 import { defineCommand } from 'citty';
+import { containerDir } from '../config/paths.js';
 import { runStatus } from '../devcontainer/compose.js';
 import { dispatch } from './_dispatch.js';
 
@@ -6,13 +7,14 @@ export const statusCommand = defineCommand({
   meta: {
     name: 'status',
     description:
-      'Show whether the compose services for the current solution are running.',
+      'Show whether the compose services for the named dev-container are running.',
   },
   args: {
-    project: {
-      type: 'string',
+    name: {
+      type: 'positional',
       description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
+      required: true,
     },
     service: {
       type: 'string',
@@ -23,8 +25,8 @@ export const statusCommand = defineCommand({
   run({ args }) {
     return dispatch(() =>
       runStatus({
-        project: typeof args.project === 'string' ? args.project : undefined,
-        service: typeof args.service === 'string' ? args.service : undefined,
+        root: containerDir(args.name),
+        ...(typeof args.service === 'string' ? { service: args.service } : {}),
       }),
     );
   },

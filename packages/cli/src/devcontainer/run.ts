@@ -1,15 +1,14 @@
-import path from 'node:path';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
-import { findSolutionRoot } from './locate.js';
+import { assertContainerExists } from './shell.js';
 
 export interface RunInContainerOptions {
+  /** Container root: `<MONOCEROS_HOME>/container/<name>/`. */
+  root: string;
   command: string[];
-  cwd?: string;
-  project?: string;
   spawn?: DevcontainerSpawn;
 }
 
-// Run a one-off command inside the solution's devcontainer. Brings the
+// Run a one-off command inside the named container. Brings the
 // container up if needed (silently — only the inner command's stdio is
 // passed through), then forwards the command verbatim to
 // `devcontainer exec`. The inner command's exit code is propagated.
@@ -18,24 +17,21 @@ export async function runInContainer(
 ): Promise<number> {
   if (opts.command.length === 0) {
     throw new Error(
-      'No command provided. Usage: `monoceros run -- <cmd> [args…]`.',
+      'No command provided. Usage: `monoceros run <containername> -- <cmd> [args…]`.',
     );
   }
-  const cwd = opts.cwd ?? process.cwd();
-  const startDir = opts.project ? path.resolve(cwd, opts.project) : cwd;
-  const root = findSolutionRoot(startDir);
-  if (!root) {
-    throw new Error(
-      `No .devcontainer/ found at or above ${startDir}. Run \`monoceros create\` first or change into a solution directory.`,
-    );
-  }
-
+  assertContainerExists(opts.root);
   const spawnFn = opts.spawn ?? spawnDevcontainer;
 
-  const upCode = await spawnFn(['up', '--workspace-folder', root], root, {
-    quiet: true,
-  });
+  const upCode = await spawnFn(
+    ['up', '--workspace-folder', opts.root],
+    opts.root,
+    { quiet: true },
+  );
   if (upCode !== 0) return upCode;
 
-  return spawnFn(['exec', '--workspace-folder', root, ...opts.command], root);
+  return spawnFn(
+    ['exec', '--workspace-folder', opts.root, ...opts.command],
+    opts.root,
+  );
 }

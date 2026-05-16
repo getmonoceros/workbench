@@ -3,7 +3,6 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
-import { findSolutionRoot } from './locate.js';
 
 export type ComposeSpawn = (args: string[], cwd: string) => Promise<number>;
 
@@ -37,43 +36,44 @@ export const spawnBash: ComposeSpawn = (args, cwd) => {
 };
 
 interface ResolvedCompose {
-  root: string;
   composeFile: string;
   projectName: string;
 }
 
 // Match the project name `@devcontainers/cli` derives when it brings a
-// compose-mode devcontainer up: `<solution-folder-basename>_devcontainer`.
-// Aligning here means `monoceros start/stop/status/logs` and the implicit
-// `devcontainer up` from `monoceros run/shell` act on the same compose
-// project — without it docker would create two parallel stacks.
+// compose-mode devcontainer up: `<root-basename>_devcontainer`.
+// Aligning here means `monoceros start/stop/status/logs` and the
+// implicit `devcontainer up` from `monoceros run/shell` act on the
+// same compose project — without it docker would create two parallel
+// stacks.
 export function composeProjectName(root: string): string {
   return `${path.basename(root)}_devcontainer`;
 }
 
-export function resolveCompose(
-  cwd: string,
-  project: string | undefined,
-): ResolvedCompose {
-  const startDir = project ? path.resolve(cwd, project) : cwd;
-  const root = findSolutionRoot(startDir);
-  if (!root) {
+/**
+ * Resolve compose-mode metadata for the container rooted at `root`.
+ * `root` is `<MONOCEROS_HOME>/container/<name>/` and must already
+ * exist with a `.devcontainer/compose.yaml` inside. The compose-only
+ * lifecycle commands (`start/stop/status/logs/down`) error when the
+ * file is missing.
+ */
+export function resolveCompose(root: string): ResolvedCompose {
+  if (!existsSync(path.join(root, '.devcontainer'))) {
     throw new Error(
-      `No .devcontainer/ found at or above ${startDir}. Run \`monoceros create\` first or change into a solution directory.`,
+      `No .devcontainer/ at ${root}. Run \`monoceros apply <name>\` first.`,
     );
   }
   const composeFile = path.join(root, '.devcontainer', 'compose.yaml');
   if (!existsSync(composeFile)) {
     throw new Error(
-      `No compose.yaml at ${composeFile}. \`start\` / \`stop\` / \`status\` / \`logs\` require services configured via \`monoceros add-service\`. Use \`monoceros shell\` to enter the container directly.`,
+      `No compose.yaml at ${composeFile}. \`start\` / \`stop\` / \`status\` / \`logs\` require services configured via \`monoceros add-service <name> <svc>\`. Use \`monoceros shell <name>\` to enter the container directly.`,
     );
   }
-  return { root, composeFile, projectName: composeProjectName(root) };
+  return { composeFile, projectName: composeProjectName(root) };
 }
 
 export interface ComposeActionOptions {
-  cwd?: string;
-  project?: string;
+  root: string;
   service?: string;
   spawn?: ComposeSpawn;
 }
@@ -82,16 +82,14 @@ async function runComposeAction(
   buildSubArgs: (service: string | undefined) => string[],
   opts: ComposeActionOptions,
 ): Promise<number> {
-  const cwd = opts.cwd ?? process.cwd();
-  const { root, composeFile, projectName } = resolveCompose(cwd, opts.project);
+  const { composeFile, projectName } = resolveCompose(opts.root);
   const spawnFn = opts.spawn ?? spawnDockerCompose;
   const subArgs = buildSubArgs(opts.service);
-  return spawnFn(['-f', composeFile, '-p', projectName, ...subArgs], root);
+  return spawnFn(['-f', composeFile, '-p', projectName, ...subArgs], opts.root);
 }
 
 export interface StartOptions {
-  cwd?: string;
-  project?: string;
+  root: string;
   spawn?: DevcontainerSpawn;
   logger?: { info: (message: string) => void };
 }
@@ -106,31 +104,16 @@ export interface StartOptions {
 //   - it triggers the postCreateCommand once.
 // The auxiliary services come up alongside because the generated
 // devcontainer.json lists them under `runServices`.
-export async function runStart(opts: StartOptions = {}): Promise<number> {
-  const cwd = opts.cwd ?? process.cwd();
-  const startDir = opts.project ? path.resolve(cwd, opts.project) : cwd;
-  const root = findSolutionRoot(startDir);
-  if (!root) {
-    throw new Error(
-      `No .devcontainer/ found at or above ${startDir}. Run \`monoceros create\` first or change into a solution directory.`,
-    );
-  }
-  const composeFile = path.join(root, '.devcontainer', 'compose.yaml');
-  if (!existsSync(composeFile)) {
-    throw new Error(
-      `No compose.yaml at ${composeFile}. \`monoceros start\` is only meaningful with services configured via \`monoceros add-service\`. Use \`monoceros shell\` to enter an image-mode container directly.`,
-    );
-  }
+export async function runStart(opts: StartOptions): Promise<number> {
+  resolveCompose(opts.root); // throws if no compose.yaml
   const logger = opts.logger ?? { info: (msg) => consola.info(msg) };
   const spawnFn = opts.spawn ?? spawnDevcontainer;
-
-  logger.info(`Bringing devcontainer up at ${root}…`);
-  return spawnFn(['up', '--workspace-folder', root], root);
+  logger.info(`Bringing devcontainer up at ${opts.root}…`);
+  return spawnFn(['up', '--workspace-folder', opts.root], opts.root);
 }
 
 export interface DownOptions {
-  cwd?: string;
-  project?: string;
+  root: string;
   // When true, also drop named volumes (postgres-data etc.). Default
   // is false — `down` removes containers and the project network so a
   // subsequent `start` recreates the workspace from the current image,
@@ -140,22 +123,18 @@ export interface DownOptions {
 }
 
 // `monoceros down` removes containers + network for the project so a
-// fresh `start` picks up image changes (after `pnpm image:rebuild`,
-// after edits to compose.yaml, …). `stop` alone leaves the container
-// in place and `devcontainer up` will reuse it.
-export async function runDown(opts: DownOptions = {}): Promise<number> {
-  const cwd = opts.cwd ?? process.cwd();
-  const { root, composeFile, projectName } = resolveCompose(cwd, opts.project);
+// fresh `start` picks up image changes. `stop` alone leaves the
+// container in place and `devcontainer up` will reuse it.
+export async function runDown(opts: DownOptions): Promise<number> {
+  const { composeFile, projectName } = resolveCompose(opts.root);
   const spawnFn = opts.spawn ?? spawnDockerCompose;
   const args = ['-f', composeFile, '-p', projectName, 'down'];
   if (opts.volumes) args.push('-v');
-  return spawnFn(args, root);
+  return spawnFn(args, opts.root);
 }
 
 export interface RunContainerCycleOptions {
   hasCompose: boolean;
-  cwd?: string;
-  project?: string;
   cleanupSpawn?: ComposeSpawn;
   devcontainerSpawn?: DevcontainerSpawn;
   logger: {
@@ -166,16 +145,13 @@ export interface RunContainerCycleOptions {
 
 /**
  * Container teardown + up for a devcontainer rooted at `root`.
- * Extracted from `runApply` so the Phase-3 `runApplyFromYml` path can
- * call it after writing scaffold + state.json without going back
- * through the stack.json-centric pre-flight.
+ * Used by `runApply` (apply/index.ts) after writing the scaffold.
  */
 export async function runContainerCycle(
   root: string,
   opts: RunContainerCycleOptions,
 ): Promise<number> {
   const { hasCompose, logger } = opts;
-  const cwd = opts.cwd ?? process.cwd();
 
   if (hasCompose) {
     const projectName = composeProjectName(root);
@@ -185,17 +161,12 @@ export async function runContainerCycle(
     const cleanupSpawn = opts.cleanupSpawn ?? spawnBash;
     // Two-step removal so a container with stale/missing labels still
     // gets caught:
-    //   - by docker-compose project label (covers tool-managed
-    //     containers from @devcontainers/cli or VS Code's Remote
-    //     Containers extension)
-    //   - by container-name prefix `<project>-*` (covers leftover
-    //     containers whose labels drifted or were never set)
-    // Each command is guarded with `|| true` so a missing target
-    // (empty list, no such network) doesn't abort the whole script.
-    // After removal we re-query: if anything remains, VS Code's
-    // Remote Containers extension is the most likely culprit
-    // (auto-recreates on container loss), so we abort with a clear
-    // hint rather than letting `devcontainer up` collide.
+    //   - by docker-compose project label
+    //   - by container-name prefix `<project>-*`
+    // After removal we re-query: if anything remains, VS Code's Remote
+    // Containers extension is the likely culprit (auto-recreates on
+    // container loss); we abort with a clear hint rather than letting
+    // `devcontainer up` collide.
     const script = [
       `set -u`,
       `echo "[cleanup] checking project ${projectName}…"`,
@@ -213,8 +184,7 @@ export async function runContainerCycle(
     if (cleanupCode !== 0) return cleanupCode;
 
     return runStart({
-      cwd,
-      ...(opts.project !== undefined ? { project: opts.project } : {}),
+      root,
       ...(opts.devcontainerSpawn ? { spawn: opts.devcontainerSpawn } : {}),
       logger,
     });
@@ -228,14 +198,14 @@ export async function runContainerCycle(
   );
 }
 
-export function runStop(opts: ComposeActionOptions = {}): Promise<number> {
+export function runStop(opts: ComposeActionOptions): Promise<number> {
   return runComposeAction(
     (service) => ['stop', ...(service ? [service] : [])],
     opts,
   );
 }
 
-export function runStatus(opts: ComposeActionOptions = {}): Promise<number> {
+export function runStatus(opts: ComposeActionOptions): Promise<number> {
   return runComposeAction(
     (service) => ['ps', ...(service ? [service] : [])],
     opts,
@@ -246,7 +216,7 @@ export interface LogsOptions extends ComposeActionOptions {
   follow?: boolean;
 }
 
-export function runLogs(opts: LogsOptions = {}): Promise<number> {
+export function runLogs(opts: LogsOptions): Promise<number> {
   const follow = opts.follow ?? true;
   return runComposeAction(
     (service) => [

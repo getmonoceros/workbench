@@ -154,7 +154,6 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
   const exitCode = await runContainerCycle(targetDir, {
     hasCompose: needsCompose(createOpts),
-    cwd: targetDir,
     ...(opts.cleanupSpawn !== undefined
       ? { cleanupSpawn: opts.cleanupSpawn }
       : {}),

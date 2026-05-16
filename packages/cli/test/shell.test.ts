@@ -36,43 +36,31 @@ describe('findSolutionRoot', () => {
     await fs.mkdir(deeper, { recursive: true });
     expect(findSolutionRoot(deeper)).toBe(solution);
   });
-
-  it('resolves from a projects/<name>/ subfolder to the solution root', async () => {
-    // The new workspace layout puts user repos under `projects/`. The
-    // pipeline runs from cwd inside a project — `findSolutionRoot` must
-    // walk back up to where `.devcontainer/` lives, not stop at the
-    // project boundary.
-    const solution = path.join(root, 'demo');
-    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
-    const projectDir = path.join(solution, 'projects', 'my-repo');
-    await fs.mkdir(projectDir, { recursive: true });
-    expect(findSolutionRoot(projectDir)).toBe(solution);
-  });
 });
 
 describe('runShell', () => {
-  let root: string;
+  let tmp: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(path.join(tmpdir(), 'monoceros-shell-run-'));
+    tmp = await mkdtemp(path.join(tmpdir(), 'monoceros-shell-run-'));
   });
 
   afterEach(async () => {
-    await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(tmp, { recursive: true, force: true });
   });
 
-  it('throws when no .devcontainer/ is found at or above cwd', async () => {
-    await expect(runShell({ cwd: root, spawn: async () => 0 })).rejects.toThrow(
-      /No \.devcontainer\/ found/,
+  it('throws when the container root has no .devcontainer/', async () => {
+    await expect(runShell({ root: tmp, spawn: async () => 0 })).rejects.toThrow(
+      /No \.devcontainer\/ at/,
     );
   });
 
   it('invokes devcontainer up then exec bash with the workspace folder', async () => {
-    const solution = path.join(root, 'demo');
+    const solution = path.join(tmp, 'demo');
     await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
     const calls: { args: string[]; cwd: string }[] = [];
     const exitCode = await runShell({
-      cwd: solution,
+      root: solution,
       spawn: async (args, cwd) => {
         calls.push({ args, cwd });
         return 0;
@@ -89,11 +77,11 @@ describe('runShell', () => {
   });
 
   it('short-circuits and propagates the exit code when up fails', async () => {
-    const solution = path.join(root, 'demo');
+    const solution = path.join(tmp, 'demo');
     await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
     const calls: string[][] = [];
     const exitCode = await runShell({
-      cwd: solution,
+      root: solution,
       spawn: async (args) => {
         calls.push(args);
         return 7;
@@ -102,24 +90,5 @@ describe('runShell', () => {
     expect(exitCode).toBe(7);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[0]).toBe('up');
-  });
-
-  it('honors --project when locating the solution', async () => {
-    const solution = path.join(root, 'sibling');
-    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
-    const elsewhere = path.join(root, 'elsewhere');
-    await fs.mkdir(elsewhere, { recursive: true });
-
-    const calls: { args: string[]; cwd: string }[] = [];
-    await runShell({
-      cwd: elsewhere,
-      project: path.relative(elsewhere, solution),
-      spawn: async (args, cwd) => {
-        calls.push({ args, cwd });
-        return 0;
-      },
-    });
-    expect(calls[0]?.cwd).toBe(solution);
-    expect(calls[0]?.args).toContain(solution);
   });
 });

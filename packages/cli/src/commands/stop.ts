@@ -1,4 +1,5 @@
 import { defineCommand } from 'citty';
+import { containerDir } from '../config/paths.js';
 import { runStop } from '../devcontainer/compose.js';
 import { dispatch } from './_dispatch.js';
 
@@ -6,13 +7,14 @@ export const stopCommand = defineCommand({
   meta: {
     name: 'stop',
     description:
-      'Stop the compose services for the current solution. Volumes are preserved.',
+      'Stop the compose services for the named dev-container. Volumes are preserved.',
   },
   args: {
-    project: {
-      type: 'string',
+    name: {
+      type: 'positional',
       description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
+      required: true,
     },
     service: {
       type: 'string',
@@ -23,8 +25,8 @@ export const stopCommand = defineCommand({
   run({ args }) {
     return dispatch(() =>
       runStop({
-        project: typeof args.project === 'string' ? args.project : undefined,
-        service: typeof args.service === 'string' ? args.service : undefined,
+        root: containerDir(args.name),
+        ...(typeof args.service === 'string' ? { service: args.service } : {}),
       }),
     );
   },
