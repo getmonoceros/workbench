@@ -218,13 +218,6 @@ interface DevcontainerImageMode {
   name: string;
   image: string;
   remoteUser: string;
-  // Explicit workspace mount/folder so devcontainer-cli mounts only
-  // `<name>/` (the directory of `.devcontainer/`) instead of walking
-  // up to the nearest git repo and mounting that whole tree. Critical
-  // when the dev-container directory lives inside another git checkout
-  // (the workbench itself during development, or any monorepo).
-  workspaceMount: string;
-  workspaceFolder: string;
   mounts: string[];
   // Required so the runtime image's entrypoint can configure iptables
   // egress rules. Without it the entrypoint logs a warning and falls
@@ -345,8 +338,6 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     name: opts.name,
     image: BASE_IMAGE,
     remoteUser: 'node',
-    workspaceMount: `source=\${localWorkspaceFolder},target=/workspaces/${opts.name},type=bind,consistency=cached`,
-    workspaceFolder: `/workspaces/${opts.name}`,
     mounts: [
       'source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,consistency=cached',
       `source=${workbenchRoot()},target=${WORKBENCH_CONTAINER_PATH},type=bind,consistency=cached`,
