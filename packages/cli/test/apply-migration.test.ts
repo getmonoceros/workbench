@@ -68,7 +68,7 @@ describe('stack.json → yml migration on first apply', () => {
     const exit = await runApplyFromCwd({
       ...baseRunOpts,
       cwd: solution,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     expect(exit).toBe(0);
 
@@ -116,7 +116,7 @@ describe('stack.json → yml migration on first apply', () => {
     await runApplyFromCwd({
       ...baseRunOpts,
       cwd: solution,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
 
     const yml = await fs.readFile(
@@ -154,7 +154,7 @@ describe('stack.json → yml migration on first apply', () => {
     await runApplyFromCwd({
       ...baseRunOpts,
       cwd: solution,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await fs.readFile(
       path.join(workbench, '.local', 'container-configs', 'extdb.yml'),
@@ -175,7 +175,7 @@ describe('stack.json → yml migration on first apply', () => {
     await runApplyFromCwd({
       ...baseRunOpts,
       cwd: solution,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     // Touch the yml so we can prove the second apply re-reads it.
     const ymlPath = path.join(
@@ -190,7 +190,7 @@ describe('stack.json → yml migration on first apply', () => {
     await runApplyFromCwd({
       ...baseRunOpts,
       cwd: solution,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const devcontainer = JSON.parse(
       await fs.readFile(
@@ -234,7 +234,7 @@ describe('stack.json → yml migration on first apply', () => {
       runApplyFromCwd({
         ...baseRunOpts,
         cwd: solution,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/Migration aborted.*already exists/);
 

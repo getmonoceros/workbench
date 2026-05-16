@@ -1,7 +1,7 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
-import { configPath, configsDir } from '../config/paths.js';
+import { containerConfigPath, containerConfigsDir } from '../config/paths.js';
 import { createDoc, readConfig, writeConfig } from '../config/io.js';
 import { REGEX } from '../config/schema.js';
 import {
@@ -58,7 +58,7 @@ export interface RunApplyFromYmlOptions {
   targetDir: string;
   cliVersion: string;
   /** Optional override of the workbench root. Tests inject a tmpdir. */
-  workbenchRoot?: string;
+  monocerosHome?: string;
   now?: Date;
   logger?: {
     info: (msg: string) => void;
@@ -93,7 +93,7 @@ export async function runApplyFromYml(
     );
   }
 
-  const ymlPath = configPath(opts.name, opts.workbenchRoot);
+  const ymlPath = containerConfigPath(opts.name, opts.monocerosHome);
   if (!existsSync(ymlPath)) {
     throw new Error(
       `No such config: ${ymlPath}. Run \`monoceros init <template> ${opts.name}\` first.`,
@@ -231,7 +231,7 @@ export interface RunApplyFromCwdOptions {
     success: (msg: string) => void;
     warn?: (msg: string) => void;
   };
-  workbenchRoot?: string;
+  monocerosHome?: string;
   cleanupSpawn?: ComposeSpawn;
   devcontainerSpawn?: DevcontainerSpawn;
   credentialsSpawn?: CredentialsSpawn;
@@ -273,7 +273,7 @@ export async function runApplyFromCwd(
       );
     }
     origin = await migrateStackToYml(root, stack, {
-      ...(opts.workbenchRoot ? { workbenchRoot: opts.workbenchRoot } : {}),
+      ...(opts.monocerosHome ? { monocerosHome: opts.monocerosHome } : {}),
       cliVersion: opts.cliVersion,
       logger,
     });
@@ -283,7 +283,7 @@ export async function runApplyFromCwd(
     name: origin,
     targetDir: root,
     cliVersion: opts.cliVersion,
-    ...(opts.workbenchRoot ? { workbenchRoot: opts.workbenchRoot } : {}),
+    ...(opts.monocerosHome ? { monocerosHome: opts.monocerosHome } : {}),
     ...(opts.logger ? { logger: opts.logger } : {}),
     ...(opts.cleanupSpawn ? { cleanupSpawn: opts.cleanupSpawn } : {}),
     ...(opts.devcontainerSpawn
@@ -330,13 +330,13 @@ async function migrateStackToYml(
   root: string,
   stack: StackFile,
   opts: {
-    workbenchRoot?: string;
+    monocerosHome?: string;
     cliVersion?: string;
     logger: { info: (msg: string) => void; success: (msg: string) => void };
   },
 ): Promise<string> {
   const config = stackFileToSolutionConfig(stack);
-  const ymlPath = configPath(config.name, opts.workbenchRoot);
+  const ymlPath = containerConfigPath(config.name, opts.monocerosHome);
 
   if (existsSync(ymlPath)) {
     throw new Error(
@@ -344,7 +344,7 @@ async function migrateStackToYml(
     );
   }
 
-  await fs.mkdir(configsDir(opts.workbenchRoot), { recursive: true });
+  await fs.mkdir(containerConfigsDir(opts.monocerosHome), { recursive: true });
   await writeConfig(ymlPath, createDoc(config));
 
   // Write state.json upfront so the follow-up `runApplyFromYml`

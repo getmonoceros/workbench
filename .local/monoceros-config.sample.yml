@@ -1,0 +1,21 @@
+# Monoceros — sample für `monoceros-config.yml`.
+#
+# Kopiere diese Datei nebenan als `monoceros-config.yml` und passe die
+# Werte an. Die echte Datei ist gitignored. In Produktion liegt sie
+# unter `~/.monoceros/monoceros-config.yml` (oder wo `MONOCEROS_HOME`
+# hinzeigt).
+#
+# Diese Datei dient gleichzeitig als Detection-Marker für das
+# workbench-interne `MONOCEROS_HOME` — bitte nicht umbenennen oder
+# löschen.
+
+schemaVersion: 1
+
+# Defaults, die beim Materialisieren einer Solution-Config genommen
+# werden, wenn die Container-yml selbst nichts angibt UND der Host
+# kein global-Wert hat.
+defaults:
+  git:
+    user:
+      name: Your Name
+      email: you@example.com

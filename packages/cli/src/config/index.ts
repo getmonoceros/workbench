@@ -27,6 +27,12 @@ export type { ParsedConfig } from './io.js';
 export {
   configPath,
   configsDir,
+  containerConfigPath,
+  containerConfigsDir,
+  containerDir,
+  containersDir,
+  monocerosConfigPath,
+  monocerosHome,
   templatePath,
   templatesDir,
   workbenchRoot,

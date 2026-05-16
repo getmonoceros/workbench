@@ -105,7 +105,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       language: 'python',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
 
     expect(result.status).toBe('updated');
@@ -133,7 +133,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       service: 'postgres',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     expect(result.status).toBe('no-change');
   });
@@ -153,7 +153,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       packages: ['jq', 'curl'],
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     expect(result.status).toBe('updated');
     const yml = await ymlOf(workbench, 'demo');
@@ -169,7 +169,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       url: 'https://example.com/install',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).toContain('installUrls:');
@@ -183,7 +183,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
       ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
       options: { version: 'latest' },
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).toContain(
@@ -200,7 +200,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
       ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
       options: { version: 'latest' },
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     await expect(
       runAddFeature({
@@ -208,7 +208,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
         ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
         options: { version: '20.10' },
         cwd: solutionRoot,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/different options/);
   });
@@ -219,7 +219,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       url: 'git@github.com:foo/bar.git',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).toContain('repos:');
@@ -235,7 +235,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
       url: 'https://github.com/foo/bar.git',
       name: 'ui',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).toContain('name: ui');
@@ -249,7 +249,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
       confirm: async () => false,
       language: 'python',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     expect(result.status).toBe('aborted');
     const yml = await ymlOf(workbench, 'demo');
@@ -266,7 +266,7 @@ describe('add-* via state.json (Phase-3 path)', () => {
         ...baseOpts,
         language: 'python',
         cwd: solutionRoot,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/no yml/);
   });
@@ -303,7 +303,7 @@ describe('remove-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       language: 'python',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     expect(result.status).toBe('updated');
     const yml = await ymlOf(workbench, 'demo');
@@ -328,7 +328,7 @@ describe('remove-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       service: 'postgres',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).toContain('- redis');
@@ -341,7 +341,7 @@ describe('remove-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       language: 'python',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     expect(result.status).toBe('no-change');
   });
@@ -362,7 +362,7 @@ describe('remove-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       packages: ['make', 'curl'],
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).toContain('- jq # JSON in shell');
@@ -386,7 +386,7 @@ describe('remove-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).not.toContain('docker-in-docker');
@@ -408,7 +408,7 @@ describe('remove-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       url: 'https://example.com/a',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).toContain('- https://example.com/b');
@@ -430,7 +430,7 @@ describe('remove-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       target: 'git@github.com:foo/bar.git',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).toContain('baz.git');
@@ -451,7 +451,7 @@ describe('remove-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       target: 'bar',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).not.toContain('repos:');
@@ -472,7 +472,7 @@ describe('remove-* via state.json (Phase-3 path)', () => {
       ...baseOpts,
       target: 'ui',
       cwd: solutionRoot,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const yml = await ymlOf(workbench, 'demo');
     expect(yml).not.toContain('repos:');

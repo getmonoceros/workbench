@@ -4,7 +4,7 @@ import { consola } from 'consola';
 import { createPatch } from 'diff';
 import type { Document } from 'yaml';
 import { parseConfig, stringifyConfig } from '../config/io.js';
-import { configPath } from '../config/paths.js';
+import { containerConfigPath } from '../config/paths.js';
 import { readStateFile } from '../config/state.js';
 import {
   BUILTIN_LANGUAGES,
@@ -62,7 +62,7 @@ export interface ModifyOptions {
   output?: (line: string) => void;
   confirm?: ConfirmFn;
   /** Override workbench root (used by Phase-3 yml lookup). Tests inject. */
-  workbenchRoot?: string;
+  monocerosHome?: string;
 }
 
 export interface AddLanguageInput extends ModifyOptions {
@@ -447,7 +447,7 @@ async function mutateYml(
   opts: ModifyOptions,
   apply: (doc: Document) => boolean,
 ): Promise<ModifyResult> {
-  const ymlPath = configPath(origin, opts.workbenchRoot);
+  const ymlPath = containerConfigPath(origin, opts.monocerosHome);
   const oldText = await readUtf8OrThrow(
     ymlPath,
     `state.json on ${root} points at config '${origin}' but no yml at ${ymlPath}. Run \`monoceros init <template> ${origin}\` (with the original template) or remove the state file.`,

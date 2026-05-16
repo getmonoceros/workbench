@@ -67,7 +67,7 @@ describe('runApplyFromYml', () => {
       ...baseRunOpts,
       name: 'demo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
 
     expect(result.containerExitCode).toBe(0);
@@ -105,7 +105,7 @@ describe('runApplyFromYml', () => {
       ...baseRunOpts,
       name: 'pgdemo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
 
     const composeText = await readFile(
@@ -121,7 +121,7 @@ describe('runApplyFromYml', () => {
       ...baseRunOpts,
       name: 'demo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
       cliVersion: '1.2.3',
       now: new Date('2026-05-16T10:00:00Z'),
     });
@@ -140,7 +140,7 @@ describe('runApplyFromYml', () => {
       ...baseRunOpts,
       name: 'demo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
 
     // Add a service to the yml and re-apply.
@@ -154,7 +154,7 @@ describe('runApplyFromYml', () => {
       ...baseRunOpts,
       name: 'demo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
 
     const composeText = await readFile(
@@ -175,14 +175,14 @@ describe('runApplyFromYml', () => {
       ...baseRunOpts,
       name: 'demo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runApplyFromYml({
       ...baseRunOpts,
       name: 'demo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     await expect(
       readFile(path.join(targetDir, '.devcontainer', 'compose.yaml')),
@@ -195,7 +195,7 @@ describe('runApplyFromYml', () => {
         ...baseRunOpts,
         name: 'missing',
         targetDir,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/No such config.*missing\.yml/);
   });
@@ -207,7 +207,7 @@ describe('runApplyFromYml', () => {
         ...baseRunOpts,
         name: 'demo',
         targetDir,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/schemaVersion/);
   });
@@ -227,7 +227,7 @@ describe('runApplyFromYml', () => {
         ...baseRunOpts,
         name: 'demo',
         targetDir,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/Unknown language: klingon/);
   });
@@ -241,7 +241,7 @@ describe('runApplyFromYml', () => {
         ...baseRunOpts,
         name: 'demo',
         targetDir,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/Refusing to materialize/);
   });
@@ -253,14 +253,14 @@ describe('runApplyFromYml', () => {
       ...baseRunOpts,
       name: 'demo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     await expect(
       runApplyFromYml({
         ...baseRunOpts,
         name: 'other',
         targetDir,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/already materialized from config 'demo'/);
   });
@@ -277,7 +277,7 @@ describe('runApplyFromYml', () => {
         ...baseRunOpts,
         name: 'demo',
         targetDir,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/legacy stack\.json/);
   });
@@ -288,7 +288,7 @@ describe('runApplyFromYml', () => {
         ...baseRunOpts,
         name: 'has space',
         targetDir,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/Invalid config name/);
   });

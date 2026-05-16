@@ -4,8 +4,9 @@ import { consola } from 'consola';
 import { Scalar } from 'yaml';
 import { parseConfig, stringifyConfig } from '../config/io.js';
 import {
-  configPath,
-  configsDir,
+  containerConfigPath,
+  containerConfigsDir,
+  monocerosHome as defaultMonocerosHome,
   templatePath,
   templatesDir,
   workbenchRoot as defaultWorkbenchRoot,
@@ -14,8 +15,9 @@ import { REGEX } from '../config/schema.js';
 
 /**
  * Copies a shipped template from `templates/yml/<template>.yml` to
- * `.local/container-configs/<name>.yml`, rewriting the `name:` field
- * to `<name>` and preserving every comment in the template.
+ * `<MONOCEROS_HOME>/container-configs/<name>.yml`, rewriting the
+ * `name:` field to `<name>` and preserving every comment in the
+ * template.
  *
  * Errors loudly if:
  *   - the requested template doesn't exist
@@ -31,8 +33,10 @@ import { REGEX } from '../config/schema.js';
 export interface RunInitOptions {
   template: string;
   name: string;
-  /** Optional override of the workbench root. Tests inject a tmpdir. */
+  /** Override of the CLI-bundle root that holds `templates/yml/`. */
   workbenchRoot?: string;
+  /** Override of the user-data home that owns `container-configs/`. */
+  monocerosHome?: string;
   logger?: {
     success: (msg: string) => void;
     info: (msg: string) => void;
@@ -45,7 +49,8 @@ export interface RunInitResult {
 }
 
 export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
-  const root = opts.workbenchRoot ?? defaultWorkbenchRoot();
+  const workbench = opts.workbenchRoot ?? defaultWorkbenchRoot();
+  const home = opts.monocerosHome ?? defaultMonocerosHome();
   const logger = opts.logger ?? {
     success: (msg) => consola.success(msg),
     info: (msg) => consola.info(msg),
@@ -62,9 +67,9 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     );
   }
 
-  const src = templatePath(opts.template, root);
+  const src = templatePath(opts.template, workbench);
   if (!existsSync(src)) {
-    const dir = templatesDir(root);
+    const dir = templatesDir(workbench);
     const available = existsSync(dir)
       ? (await fs.readdir(dir))
           .filter((f) => f.endsWith('.yml'))
@@ -78,7 +83,7 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     throw new Error(`Unknown template: ${opts.template}.${hint}`);
   }
 
-  const dest = configPath(opts.name, root);
+  const dest = containerConfigPath(opts.name, home);
   if (existsSync(dest)) {
     throw new Error(
       `Config already exists: ${dest}. Delete it manually before re-running \`monoceros init\` — this protects any hand-edits.`,
@@ -102,14 +107,14 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     parsed.doc.set('name', opts.name);
   }
 
-  await fs.mkdir(configsDir(root), { recursive: true });
+  await fs.mkdir(containerConfigsDir(home), { recursive: true });
   await fs.writeFile(dest, stringifyConfig(parsed.doc), 'utf8');
 
   logger.success(
-    `Copied template '${opts.template}' to ${path.relative(root, dest)}`,
+    `Copied template '${opts.template}' to ${path.relative(home, dest) || dest}`,
   );
   logger.info(
-    `Edit the file, then run \`monoceros apply ${opts.name} <dir>\` to materialize a dev-container.`,
+    `Edit the file, then run \`monoceros apply ${opts.name}\` to materialize a dev-container.`,
   );
 
   return { templatePath: src, configPath: dest };

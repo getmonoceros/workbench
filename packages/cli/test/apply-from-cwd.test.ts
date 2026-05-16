@@ -58,7 +58,7 @@ describe('runApplyFromCwd', () => {
       ...baseRunOpts,
       name: 'demo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
 
     // …then edit the yml and run apply (no args) from inside the target.
@@ -71,7 +71,7 @@ describe('runApplyFromCwd', () => {
     const exit = await runApplyFromCwd({
       ...baseRunOpts,
       cwd: targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     expect(exit).toBe(0);
 
@@ -92,14 +92,14 @@ describe('runApplyFromCwd', () => {
       ...baseRunOpts,
       name: 'demo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     const nested = path.join(targetDir, 'projects', 'whatever');
     await mkdir(nested, { recursive: true });
     const exit = await runApplyFromCwd({
       ...baseRunOpts,
       cwd: nested,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     expect(exit).toBe(0);
   });
@@ -131,7 +131,7 @@ describe('runApplyFromCwd', () => {
     const exit = await runApplyFromCwd({
       ...baseRunOpts,
       cwd: targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
     expect(exit).toBe(0);
   });
@@ -143,7 +143,7 @@ describe('runApplyFromCwd', () => {
       runApplyFromCwd({
         ...baseRunOpts,
         cwd: orphan,
-        workbenchRoot: workbench,
+        monocerosHome: path.join(workbench, '.local'),
       }),
     ).rejects.toThrow(/No \.devcontainer\/ found/);
   });
@@ -158,7 +158,7 @@ describe('runApplyFromCwd', () => {
       ...baseRunOpts,
       name: 'demo',
       targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
 
     await writeFile(
@@ -174,7 +174,7 @@ describe('runApplyFromCwd', () => {
     await runApplyFromCwd({
       ...baseRunOpts,
       cwd: targetDir,
-      workbenchRoot: workbench,
+      monocerosHome: path.join(workbench, '.local'),
     });
 
     const postCreate = await readFile(

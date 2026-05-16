@@ -51,6 +51,7 @@ describe('runInit', () => {
       template: 'bare',
       name: 'sandbox',
       workbenchRoot: root,
+      monocerosHome: path.join(root, '.local'),
       logger: silentLogger,
     });
 
@@ -72,6 +73,7 @@ describe('runInit', () => {
       template: 'bare',
       name: 'sandbox',
       workbenchRoot: root,
+      monocerosHome: path.join(root, '.local'),
       logger: silentLogger,
     });
     const text = await readFile(
@@ -87,6 +89,7 @@ describe('runInit', () => {
       template: 'python',
       name: 'my-py',
       workbenchRoot: root,
+      monocerosHome: path.join(root, '.local'),
       logger: silentLogger,
     });
     const text = await readFile(
@@ -104,6 +107,7 @@ describe('runInit', () => {
         template: 'rust',
         name: 'demo',
         workbenchRoot: root,
+        monocerosHome: path.join(root, '.local'),
         logger: silentLogger,
       }),
     ).rejects.toThrow(/Unknown template: rust.*bare.*python/s);
@@ -114,6 +118,7 @@ describe('runInit', () => {
       template: 'bare',
       name: 'sandbox',
       workbenchRoot: root,
+      monocerosHome: path.join(root, '.local'),
       logger: silentLogger,
     });
     await expect(
@@ -121,6 +126,7 @@ describe('runInit', () => {
         template: 'bare',
         name: 'sandbox',
         workbenchRoot: root,
+        monocerosHome: path.join(root, '.local'),
         logger: silentLogger,
       }),
     ).rejects.toThrow(/already exists/);
@@ -132,6 +138,7 @@ describe('runInit', () => {
         template: 'bare',
         name: 'has space',
         workbenchRoot: root,
+        monocerosHome: path.join(root, '.local'),
         logger: silentLogger,
       }),
     ).rejects.toThrow(/Invalid config name/);
@@ -143,6 +150,7 @@ describe('runInit', () => {
         template: 'has space',
         name: 'sandbox',
         workbenchRoot: root,
+        monocerosHome: path.join(root, '.local'),
         logger: silentLogger,
       }),
     ).rejects.toThrow(/Invalid template name/);
@@ -158,6 +166,7 @@ describe('runInit', () => {
         template: 'broken',
         name: 'demo',
         workbenchRoot: root,
+        monocerosHome: path.join(root, '.local'),
         logger: silentLogger,
       }),
     ).rejects.toThrow(/schemaVersion/);

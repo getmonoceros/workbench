@@ -1,53 +1,112 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 /**
  * Path helpers for the M2.5 Phase 3 yml-profile model.
  *
- *   <workbench-root>/
- *     templates/yml/<template>.yml          ← shipped read-only templates
- *     .local/container-configs/<name>.yml   ← builder-owned user configs
+ * Two distinct roots:
  *
- * During dev/test the workbench is a git checkout and both directories
- * live inside it. Distribution channel (M4) may move the user-config
- * dir elsewhere (e.g. `~/.monoceros/container-configs/`) — the rest of
- * the code goes through these helpers so that move is a one-file
- * change.
+ *   - `workbenchRoot()` — where the **CLI bundle** lives. In dev that's
+ *     the monoceros-workbench checkout (so `templates/yml/` is reachable
+ *     and the workbench can be bind-mounted into generated containers
+ *     as `/opt/monoceros-workbench`). In prod (post-M4) this is the
+ *     installed package directory.
+ *
+ *   - `monocerosHome()` — where **user data** lives: container-configs,
+ *     materialized containers, the global `monoceros-config.yml`.
+ *
+ * The two used to be conflated under one `workbenchRoot()`; splitting
+ * them is what lets `monoceros apply <name>` resolve a fixed
+ * `<MONOCEROS_HOME>/container/<name>/` location without any cwd
+ * magic, while the CLI itself still knows where its bundled templates
+ * live.
+ *
+ * Layout under `<MONOCEROS_HOME>/`:
+ *   container-configs/<name>.yml          ← yml-Profile (`monoceros init`)
+ *   container/<name>/                     ← materialized dev-containers
+ *   monoceros-config.yml                  ← optional, user-edited defaults
+ *   monoceros-config.sample.yml           ← marker (in dev) + template (in prod)
  */
 
+const MONOCEROS_HOME_MARKER = 'monoceros-config.sample.yml';
+const WORKBENCH_MARKER = path.join('templates', 'yml', 'README.md');
+
 let cachedWorkbenchRoot: string | null = null;
+let cachedMonocerosHome: string | null = null;
 
 /**
  * Walk upwards from this module until we find the workbench checkout's
- * marker file. We pick `templates/yml/README.md` because it ships with
- * the Phase-3 work and is unlikely to be deleted; if it ever goes
- * away, the create-scaffold side has its own marker so this function
- * is the only one to update.
+ * marker (`templates/yml/README.md`). In dev that hits the workbench
+ * root reliably; in production the file does not exist outside the
+ * shipped CLI package, so callers that need a workbench root for
+ * dev-only purposes (bind-mounting `/opt/monoceros-workbench`) get a
+ * clear error.
  */
 export function workbenchRoot(): string {
   if (cachedWorkbenchRoot) return cachedWorkbenchRoot;
   let dir = path.dirname(fileURLToPath(import.meta.url));
   while (true) {
-    const marker = path.join(dir, 'templates', 'yml', 'README.md');
-    if (existsSync(marker)) {
+    if (existsSync(path.join(dir, WORKBENCH_MARKER))) {
       cachedWorkbenchRoot = dir;
       return dir;
     }
     const parent = path.dirname(dir);
     if (parent === dir) {
       throw new Error(
-        'Could not locate monoceros workbench root (no templates/yml/README.md found by walking up). Run the CLI from a workbench checkout.',
+        'Could not locate the monoceros workbench checkout (no templates/yml/README.md found by walking up). Run the CLI from a workbench checkout.',
       );
     }
     dir = parent;
   }
 }
 
-/** Reset the cached workbench-root lookup. Test-only. */
-export function _resetWorkbenchRootForTests(): void {
-  cachedWorkbenchRoot = null;
+/**
+ * Resolve `MONOCEROS_HOME` (where user data lives):
+ *
+ *   1. Honor the `MONOCEROS_HOME` env-var if set.
+ *   2. Walk upwards from this module and accept the first
+ *      `<dir>/.local/monoceros-config.sample.yml` we find; the
+ *      containing `<dir>/.local` is treated as the home. This is the
+ *      dev-workbench detection path.
+ *   3. Fall back to `~/.monoceros`.
+ *
+ * Caches the result for the lifetime of the process — flip `force` to
+ * recompute (tests do this between cases).
+ */
+export function monocerosHome(opts: { force?: boolean } = {}): string {
+  if (!opts.force && cachedMonocerosHome) return cachedMonocerosHome;
+
+  const fromEnv = process.env.MONOCEROS_HOME;
+  if (fromEnv && fromEnv.length > 0) {
+    cachedMonocerosHome = path.resolve(fromEnv);
+    return cachedMonocerosHome;
+  }
+
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  while (true) {
+    const candidate = path.join(dir, '.local');
+    if (existsSync(path.join(candidate, MONOCEROS_HOME_MARKER))) {
+      cachedMonocerosHome = candidate;
+      return candidate;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  cachedMonocerosHome = path.join(os.homedir(), '.monoceros');
+  return cachedMonocerosHome;
 }
+
+/** Reset cached lookups. Test-only. */
+export function _resetPathCachesForTests(): void {
+  cachedWorkbenchRoot = null;
+  cachedMonocerosHome = null;
+}
+
+// ─── CLI-bundle paths (templates) ─────────────────────────────────
 
 export function templatesDir(root: string = workbenchRoot()): string {
   return path.join(root, 'templates', 'yml');
@@ -60,13 +119,37 @@ export function templatePath(
   return path.join(templatesDir(root), `${template}.yml`);
 }
 
-export function configsDir(root: string = workbenchRoot()): string {
-  return path.join(root, '.local', 'container-configs');
+// ─── User-home paths (configs, containers, global config) ────────
+
+export function containerConfigsDir(home: string = monocerosHome()): string {
+  return path.join(home, 'container-configs');
 }
 
-export function configPath(
+export function containerConfigPath(
   name: string,
-  root: string = workbenchRoot(),
+  home: string = monocerosHome(),
 ): string {
-  return path.join(configsDir(root), `${name}.yml`);
+  return path.join(containerConfigsDir(home), `${name}.yml`);
 }
+
+export function containersDir(home: string = monocerosHome()): string {
+  return path.join(home, 'container');
+}
+
+export function containerDir(
+  name: string,
+  home: string = monocerosHome(),
+): string {
+  return path.join(containersDir(home), name);
+}
+
+export function monocerosConfigPath(home: string = monocerosHome()): string {
+  return path.join(home, 'monoceros-config.yml');
+}
+
+// ─── Legacy aliases — to be removed once all callers migrate ──────
+
+/** @deprecated Use {@link containerConfigsDir}. */
+export const configsDir = containerConfigsDir;
+/** @deprecated Use {@link containerConfigPath}. */
+export const configPath = containerConfigPath;

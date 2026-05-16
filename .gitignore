@@ -31,6 +31,11 @@ pnpm-debug.log*
 # TypeScript
 *.tsbuildinfo
 
-# Local scratch space (test plan, manual experiments). Anything you put
-# under .local/ is ephemeral — `rm -rf .local` resets cleanly.
-.local/
+# Local scratch space — during development this folder doubles as the
+# dev-time MONOCEROS_HOME (container-configs/, container/, the user's
+# monoceros-config.yml). Almost everything in here is ephemeral and
+# gitignored, EXCEPT the README + sample-config that mark the folder
+# as the workbench-internal home.
+.local/*
+!.local/README.md
+!.local/monoceros-config.sample.yml
