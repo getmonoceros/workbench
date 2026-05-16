@@ -1,22 +1,27 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
 import { runAddRepo } from '../modify/index.js';
-import { CLI_VERSION } from '../version.js';
 
 export const addRepoCommand = defineCommand({
   meta: {
     name: 'add-repo',
     description:
-      'Register a git repo to be cloned into projects/<name>/ on container build. Idempotent — existing project subfolders are left alone. Name derived from URL by default; override with --name. SSH-auth ergonomics (agent forwarding) is not yet automated — use HTTPS URLs for public/PAT-authed access.',
+      'Add a git repo to the container config. Cloned into projects/<folder>/ on container build. Idempotent — existing project subfolders are left alone. Folder name derived from URL by default; override with --as.',
   },
   args: {
+    name: {
+      type: 'positional',
+      description:
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
+      required: true,
+    },
     url: {
       type: 'positional',
       description:
         'Git URL (HTTPS or SSH/git@ form). E.g. https://github.com/foo/bar.git, git@github.com:foo/bar.git.',
       required: true,
     },
-    name: {
+    as: {
       type: 'string',
       description:
         'Folder name under projects/. Default: derived from URL (e.g. bar.git → bar).',
@@ -24,11 +29,6 @@ export const addRepoCommand = defineCommand({
     branch: {
       type: 'string',
       description: 'Specific branch to clone (default: repo default branch).',
-    },
-    project: {
-      type: 'string',
-      description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
     },
     yes: {
       type: 'boolean',
@@ -40,12 +40,11 @@ export const addRepoCommand = defineCommand({
   async run({ args }) {
     try {
       const result = await runAddRepo({
-        url: String(args.url),
-        name: typeof args.name === 'string' ? args.name : undefined,
-        branch: typeof args.branch === 'string' ? args.branch : undefined,
-        project: typeof args.project === 'string' ? args.project : undefined,
+        name: args.name,
+        url: args.url,
+        ...(typeof args.as === 'string' ? { repoName: args.as } : {}),
+        ...(typeof args.branch === 'string' ? { branch: args.branch } : {}),
         yes: args.yes,
-        cliVersion: CLI_VERSION,
       });
       process.exit(result.status === 'aborted' ? 1 : 0);
     } catch (err) {

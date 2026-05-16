@@ -1,24 +1,24 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
 import { runRemoveRepo } from '../modify/index.js';
-import { CLI_VERSION } from '../version.js';
 
 export const removeRepoCommand = defineCommand({
   meta: {
     name: 'remove-repo',
     description:
-      'Remove a repo from the solution config (matches by URL or by the projects/<name> folder name). Does NOT delete the existing projects/<name> folder — local edits are preserved; the builder cleans it up manually.',
+      'Remove a repo from the container config (matches by URL or by its projects/<folder> name). Does NOT delete the existing projects/<folder> directory — local edits are preserved; clean it up manually.',
   },
   args: {
-    target: {
+    name: {
       type: 'positional',
-      description: 'Repo URL or its projects/<name> folder name. Either works.',
+      description:
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
       required: true,
     },
-    project: {
-      type: 'string',
-      description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
+    target: {
+      type: 'positional',
+      description: 'Repo URL or its projects/<folder> name. Either works.',
+      required: true,
     },
     yes: {
       type: 'boolean',
@@ -30,10 +30,9 @@ export const removeRepoCommand = defineCommand({
   async run({ args }) {
     try {
       const result = await runRemoveRepo({
+        name: args.name,
         target: args.target,
-        project: typeof args.project === 'string' ? args.project : undefined,
         yes: args.yes,
-        cliVersion: CLI_VERSION,
       });
       process.exit(result.status === 'aborted' ? 1 : 0);
     } catch (err) {

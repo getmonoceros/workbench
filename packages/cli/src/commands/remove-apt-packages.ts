@@ -2,19 +2,19 @@ import { defineCommand } from 'citty';
 import { consola } from 'consola';
 import { getInnerArgs } from '../inner-args.js';
 import { runRemoveAptPackages } from '../modify/index.js';
-import { CLI_VERSION } from '../version.js';
 
 export const removeAptPackagesCommand = defineCommand({
   meta: {
     name: 'remove-apt-packages',
     description:
-      'Remove apt packages from the solution config. Pass package names after `--` (e.g. `monoceros remove-apt-packages -- make jq`). Idempotent, prints a diff before writing.',
+      'Remove apt packages from the container config. Pass package names after `--` (e.g. `monoceros remove-apt-packages sandbox -- make jq`). Idempotent, prints a diff before writing.',
   },
   args: {
-    project: {
-      type: 'string',
+    name: {
+      type: 'positional',
       description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
+      required: true,
     },
     yes: {
       type: 'boolean',
@@ -27,16 +27,15 @@ export const removeAptPackagesCommand = defineCommand({
     const packages = [...getInnerArgs()];
     if (packages.length === 0) {
       consola.error(
-        'No package names given. Usage: `monoceros remove-apt-packages [--yes] [--project=<path>] -- <pkg> [<pkg> …]`.',
+        'No package names given. Usage: `monoceros remove-apt-packages <containername> [--yes] -- <pkg> [<pkg> …]`.',
       );
       process.exit(1);
     }
     try {
       const result = await runRemoveAptPackages({
+        name: args.name,
         packages,
-        project: typeof args.project === 'string' ? args.project : undefined,
         yes: args.yes,
-        cliVersion: CLI_VERSION,
       });
       process.exit(result.status === 'aborted' ? 1 : 0);
     } catch (err) {

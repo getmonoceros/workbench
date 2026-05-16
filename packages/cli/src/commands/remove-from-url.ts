@@ -1,24 +1,24 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
 import { runRemoveFromUrl } from '../modify/index.js';
-import { CLI_VERSION } from '../version.js';
 
 export const removeFromUrlCommand = defineCommand({
   meta: {
     name: 'remove-from-url',
     description:
-      'Remove a previously-added install URL from the solution config. Idempotent, prints a diff before writing. The URL is dropped from post-create.sh on the next `monoceros apply`.',
+      'Remove a previously-added install URL from the container config. Idempotent, prints a diff before writing. The URL is dropped from post-create.sh on the next `monoceros apply`.',
   },
   args: {
+    name: {
+      type: 'positional',
+      description:
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
+      required: true,
+    },
     url: {
       type: 'positional',
       description: 'Install URL to remove (must match the original exactly).',
       required: true,
-    },
-    project: {
-      type: 'string',
-      description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
     },
     yes: {
       type: 'boolean',
@@ -30,10 +30,9 @@ export const removeFromUrlCommand = defineCommand({
   async run({ args }) {
     try {
       const result = await runRemoveFromUrl({
+        name: args.name,
         url: args.url,
-        project: typeof args.project === 'string' ? args.project : undefined,
         yes: args.yes,
-        cliVersion: CLI_VERSION,
       });
       process.exit(result.status === 'aborted' ? 1 : 0);
     } catch (err) {

@@ -1,8 +1,8 @@
-import { existsSync, promises as fs, mkdtempSync, rmSync } from 'node:fs';
+import { promises as fs, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   runAddAptPackages,
   runAddFeature,
@@ -24,122 +24,72 @@ const silentLogger = {
   warn: () => {},
 };
 
-const NEVER_PROMPT_CONFIRM = async () => true;
-const NEVER_OUTPUT = () => {};
-
 const baseOpts = {
-  cliVersion: '0.0.0',
   yes: true,
   logger: silentLogger,
-  confirm: NEVER_PROMPT_CONFIRM,
-  output: NEVER_OUTPUT,
+  confirm: async () => true,
+  output: () => {},
 };
 
-/**
- * Build a minimal Phase-3 workspace: workbench root with the yml at
- * `.local/container-configs/<name>.yml` and a solution dir at
- * `<workbench>/.local/play/<name>/` with `.devcontainer/` and
- * `.monoceros/state.json` pointing back at the yml.
- */
-async function makeWorkspace(opts: {
-  name: string;
-  yml: string;
-}): Promise<{ workbench: string; solutionRoot: string }> {
-  const workbench = mkdtempSync(path.join(tmpdir(), 'monoceros-modify-yml-'));
-  // Tests don't go through workbenchRoot() — we pass workbenchRoot
-  // explicitly via opts — so a templates marker isn't strictly needed,
-  // but keep it consistent with the real layout.
-  await mkdir(path.join(workbench, 'templates', 'yml'), { recursive: true });
-  await writeFile(path.join(workbench, 'templates', 'yml', 'README.md'), '#\n');
+describe('add-*/remove-* against the yml', () => {
+  let home: string;
 
-  const configsDir = path.join(workbench, '.local', 'container-configs');
-  await mkdir(configsDir, { recursive: true });
-  await writeFile(path.join(configsDir, `${opts.name}.yml`), opts.yml);
-
-  const solutionRoot = path.join(workbench, '.local', 'play', opts.name);
-  await mkdir(path.join(solutionRoot, '.devcontainer'), { recursive: true });
-  await mkdir(path.join(solutionRoot, '.monoceros'), { recursive: true });
-  // Empty devcontainer.json — just needs to exist for findSolutionRoot.
-  await writeFile(
-    path.join(solutionRoot, '.devcontainer', 'devcontainer.json'),
-    '{}',
-  );
-  await writeFile(
-    path.join(solutionRoot, '.monoceros', 'state.json'),
-    JSON.stringify({
-      schemaVersion: 1,
-      origin: opts.name,
-      monocerosCliVersion: '0.0.0',
-      materializedAt: '2026-05-16T00:00:00.000Z',
-    }),
-  );
-  return { workbench, solutionRoot };
-}
-
-async function ymlOf(workbench: string, name: string): Promise<string> {
-  return fs.readFile(
-    path.join(workbench, '.local', 'container-configs', `${name}.yml`),
-    'utf8',
-  );
-}
-
-describe('add-* via state.json (Phase-3 path)', () => {
-  let workbench: string;
-  let solutionRoot: string;
+  beforeEach(async () => {
+    home = mkdtempSync(path.join(tmpdir(), 'monoceros-modify-'));
+    await mkdir(path.join(home, 'container-configs'), { recursive: true });
+  });
 
   afterEach(() => {
-    if (workbench && existsSync(workbench)) {
-      rmSync(workbench, { recursive: true, force: true });
-    }
+    if (home && existsSync(home))
+      rmSync(home, { recursive: true, force: true });
   });
 
-  async function setup(yml: string, name = 'demo'): Promise<void> {
-    const ws = await makeWorkspace({ name, yml });
-    workbench = ws.workbench;
-    solutionRoot = ws.solutionRoot;
+  async function writeYml(name: string, yml: string): Promise<void> {
+    await writeFile(path.join(home, 'container-configs', `${name}.yml`), yml);
   }
-
-  it('runAddLanguage edits the yml and leaves container files alone', async () => {
-    await setup('# my notes\nschemaVersion: 1\nname: demo\n');
-    const result = await runAddLanguage({
-      ...baseOpts,
-      language: 'python',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
-    });
-
-    expect(result.status).toBe('updated');
-    const yml = await ymlOf(workbench, 'demo');
-    expect(yml).toContain('# my notes'); // comment preserved
-    expect(yml).toContain('languages:');
-    expect(yml).toContain('- python');
-
-    // Container files NOT touched — Phase 3 defers materialization to
-    // `monoceros apply`.
-    const devcontainerText = await fs.readFile(
-      path.join(solutionRoot, '.devcontainer', 'devcontainer.json'),
+  async function ymlOf(name: string): Promise<string> {
+    return fs.readFile(
+      path.join(home, 'container-configs', `${name}.yml`),
       'utf8',
     );
-    expect(devcontainerText).toBe('{}');
+  }
+
+  // ─── add-* ────────────────────────────────────────────────────────
+
+  it('runAddLanguage appends and preserves the comment block', async () => {
+    await writeYml('demo', '# my notes\nschemaVersion: 1\nname: demo\n');
+    const result = await runAddLanguage({
+      ...baseOpts,
+      name: 'demo',
+      language: 'python',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('# my notes');
+    expect(yml).toContain('languages:');
+    expect(yml).toContain('- python');
   });
 
-  it('runAddService is idempotent when the service is already present', async () => {
-    await setup(
+  it('runAddService is a no-op when the service is already present', async () => {
+    await writeYml(
+      'demo',
       ['schemaVersion: 1', 'name: demo', 'services:', '  - postgres', ''].join(
         '\n',
       ),
     );
     const result = await runAddService({
       ...baseOpts,
+      name: 'demo',
       service: 'postgres',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
     expect(result.status).toBe('no-change');
   });
 
-  it('runAddAptPackages appends only the new packages, preserving comments', async () => {
-    await setup(
+  it('runAddAptPackages appends only the new packages and preserves inline comments', async () => {
+    await writeYml(
+      'demo',
       [
         'schemaVersion: 1',
         'name: demo',
@@ -151,41 +101,40 @@ describe('add-* via state.json (Phase-3 path)', () => {
     );
     const result = await runAddAptPackages({
       ...baseOpts,
+      name: 'demo',
       packages: ['jq', 'curl'],
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
     expect(result.status).toBe('updated');
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).toContain('# build essential');
     expect(yml).toContain('- curl');
-    // jq already present → only one entry, not duplicated.
     expect(yml.match(/- jq\b/g)).toHaveLength(1);
   });
 
   it('runAddFromUrl appends to installUrls', async () => {
-    await setup('schemaVersion: 1\nname: demo\n');
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFromUrl({
       ...baseOpts,
+      name: 'demo',
       url: 'https://example.com/install',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).toContain('installUrls:');
     expect(yml).toContain('- https://example.com/install');
   });
 
   it('runAddFeature writes a structured entry with options', async () => {
-    await setup('schemaVersion: 1\nname: demo\n');
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({
       ...baseOpts,
+      name: 'demo',
       ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
       options: { version: 'latest' },
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).toContain(
       '- ref: ghcr.io/devcontainers/features/docker-in-docker:2',
     );
@@ -194,102 +143,94 @@ describe('add-* via state.json (Phase-3 path)', () => {
   });
 
   it('runAddFeature errors when re-adding with different options', async () => {
-    await setup('schemaVersion: 1\nname: demo\n');
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({
       ...baseOpts,
+      name: 'demo',
       ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
       options: { version: 'latest' },
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
     await expect(
       runAddFeature({
         ...baseOpts,
+        name: 'demo',
         ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
         options: { version: '20.10' },
-        cwd: solutionRoot,
-        monocerosHome: path.join(workbench, '.local'),
+        monocerosHome: home,
       }),
     ).rejects.toThrow(/different options/);
   });
 
   it('runAddRepo appends a repo entry, omitting redundant name', async () => {
-    await setup('schemaVersion: 1\nname: demo\n');
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddRepo({
       ...baseOpts,
+      name: 'demo',
       url: 'git@github.com:foo/bar.git',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).toContain('repos:');
     expect(yml).toContain('- url: git@github.com:foo/bar.git');
-    // name was derived from URL → not persisted as a redundant field.
     expect(yml).not.toMatch(/name: bar\b/);
   });
 
-  it('runAddRepo persists a non-default name', async () => {
-    await setup('schemaVersion: 1\nname: demo\n');
+  it('runAddRepo persists a non-default name via repoName', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddRepo({
       ...baseOpts,
+      name: 'demo',
       url: 'https://github.com/foo/bar.git',
-      name: 'ui',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      repoName: 'ui',
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).toContain('name: ui');
   });
 
   it('aborts cleanly when the user declines the prompt', async () => {
-    await setup('schemaVersion: 1\nname: demo\n');
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     const result = await runAddLanguage({
       ...baseOpts,
       yes: false,
       confirm: async () => false,
+      name: 'demo',
       language: 'python',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
     expect(result.status).toBe('aborted');
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).not.toContain('python');
   });
 
-  it('errors when state.json points at a missing yml', async () => {
-    await setup('schemaVersion: 1\nname: demo\n');
-    await fs.unlink(
-      path.join(workbench, '.local', 'container-configs', 'demo.yml'),
-    );
+  it('errors when the named config does not exist', async () => {
     await expect(
       runAddLanguage({
         ...baseOpts,
+        name: 'nope',
         language: 'python',
-        cwd: solutionRoot,
-        monocerosHome: path.join(workbench, '.local'),
+        monocerosHome: home,
       }),
-    ).rejects.toThrow(/no yml/);
-  });
-});
-
-describe('remove-* via state.json (Phase-3 path)', () => {
-  let workbench: string;
-  let solutionRoot: string;
-
-  afterEach(() => {
-    if (workbench && existsSync(workbench)) {
-      rmSync(workbench, { recursive: true, force: true });
-    }
+    ).rejects.toThrow(/No such config.*nope\.yml/);
   });
 
-  async function setup(yml: string, name = 'demo'): Promise<void> {
-    const ws = await makeWorkspace({ name, yml });
-    workbench = ws.workbench;
-    solutionRoot = ws.solutionRoot;
-  }
+  it('rejects an invalid container name without touching disk', async () => {
+    await expect(
+      runAddLanguage({
+        ...baseOpts,
+        name: 'has space',
+        language: 'python',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Invalid container name/);
+  });
 
-  it('removes a language entry and drops the now-empty list', async () => {
-    await setup(
+  // ─── remove-* ─────────────────────────────────────────────────────
+
+  it('runRemoveLanguage removes the entry and drops the empty array', async () => {
+    await writeYml(
+      'demo',
       [
         '# my notes',
         'schemaVersion: 1',
@@ -301,20 +242,20 @@ describe('remove-* via state.json (Phase-3 path)', () => {
     );
     const result = await runRemoveLanguage({
       ...baseOpts,
+      name: 'demo',
       language: 'python',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
     expect(result.status).toBe('updated');
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).toContain('# my notes');
     expect(yml).not.toContain('python');
-    // Pruned because the list is now empty.
     expect(yml).not.toContain('languages:');
   });
 
-  it('removes a service while leaving other services intact', async () => {
-    await setup(
+  it('runRemoveService removes one service while leaving others intact', async () => {
+    await writeYml(
+      'demo',
       [
         'schemaVersion: 1',
         'name: demo',
@@ -326,28 +267,29 @@ describe('remove-* via state.json (Phase-3 path)', () => {
     );
     await runRemoveService({
       ...baseOpts,
+      name: 'demo',
       service: 'postgres',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).toContain('- redis');
     expect(yml).not.toContain('postgres');
   });
 
-  it('is a no-op when removing an absent entry', async () => {
-    await setup('schemaVersion: 1\nname: demo\n');
+  it('runRemoveLanguage is a no-op when the entry is missing', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     const result = await runRemoveLanguage({
       ...baseOpts,
+      name: 'demo',
       language: 'python',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
     expect(result.status).toBe('no-change');
   });
 
-  it('runRemoveAptPackages strips multiple at once, preserving an unrelated entry', async () => {
-    await setup(
+  it('runRemoveAptPackages strips multiple, preserving comments on survivors', async () => {
+    await writeYml(
+      'demo',
       [
         'schemaVersion: 1',
         'name: demo',
@@ -360,18 +302,19 @@ describe('remove-* via state.json (Phase-3 path)', () => {
     );
     await runRemoveAptPackages({
       ...baseOpts,
+      name: 'demo',
       packages: ['make', 'curl'],
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).toContain('- jq # JSON in shell');
     expect(yml).not.toContain('- make');
     expect(yml).not.toContain('- curl');
   });
 
   it('runRemoveFeature drops a feature entry by ref', async () => {
-    await setup(
+    await writeYml(
+      'demo',
       [
         'schemaVersion: 1',
         'name: demo',
@@ -384,17 +327,18 @@ describe('remove-* via state.json (Phase-3 path)', () => {
     );
     await runRemoveFeature({
       ...baseOpts,
+      name: 'demo',
       ref: 'ghcr.io/devcontainers/features/docker-in-docker:2',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).not.toContain('docker-in-docker');
     expect(yml).not.toContain('features:');
   });
 
   it('runRemoveFromUrl drops an install URL', async () => {
-    await setup(
+    await writeYml(
+      'demo',
       [
         'schemaVersion: 1',
         'name: demo',
@@ -406,17 +350,18 @@ describe('remove-* via state.json (Phase-3 path)', () => {
     );
     await runRemoveFromUrl({
       ...baseOpts,
+      name: 'demo',
       url: 'https://example.com/a',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).toContain('- https://example.com/b');
     expect(yml).not.toContain('- https://example.com/a');
   });
 
   it('runRemoveRepo matches by url', async () => {
-    await setup(
+    await writeYml(
+      'demo',
       [
         'schemaVersion: 1',
         'name: demo',
@@ -428,17 +373,18 @@ describe('remove-* via state.json (Phase-3 path)', () => {
     );
     await runRemoveRepo({
       ...baseOpts,
+      name: 'demo',
       target: 'git@github.com:foo/bar.git',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).toContain('baz.git');
     expect(yml).not.toContain('bar.git');
   });
 
   it('runRemoveRepo matches by derived (URL-default) name', async () => {
-    await setup(
+    await writeYml(
+      'demo',
       [
         'schemaVersion: 1',
         'name: demo',
@@ -449,16 +395,17 @@ describe('remove-* via state.json (Phase-3 path)', () => {
     );
     await runRemoveRepo({
       ...baseOpts,
+      name: 'demo',
       target: 'bar',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).not.toContain('repos:');
   });
 
   it('runRemoveRepo matches by explicit name', async () => {
-    await setup(
+    await writeYml(
+      'demo',
       [
         'schemaVersion: 1',
         'name: demo',
@@ -470,11 +417,11 @@ describe('remove-* via state.json (Phase-3 path)', () => {
     );
     await runRemoveRepo({
       ...baseOpts,
+      name: 'demo',
       target: 'ui',
-      cwd: solutionRoot,
-      monocerosHome: path.join(workbench, '.local'),
+      monocerosHome: home,
     });
-    const yml = await ymlOf(workbench, 'demo');
+    const yml = await ymlOf('demo');
     expect(yml).not.toContain('repos:');
   });
 });

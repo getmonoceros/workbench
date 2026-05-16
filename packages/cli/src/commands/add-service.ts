@@ -1,24 +1,24 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
 import { runAddService } from '../modify/index.js';
-import { CLI_VERSION } from '../version.js';
 
 export const addServiceCommand = defineCommand({
   meta: {
     name: 'add-service',
     description:
-      'Add a compose service (e.g. postgres, redis) to an existing solution. Idempotent, prints a diff before writing.',
+      'Add a compose service (postgres, mysql, redis, …) to the container config. Idempotent, prints a diff before writing.',
   },
   args: {
-    service: {
+    name: {
       type: 'positional',
-      description: 'Service identifier from the snippet whitelist.',
+      description:
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
       required: true,
     },
-    project: {
-      type: 'string',
-      description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
+    service: {
+      type: 'positional',
+      description: 'Service identifier (postgres, mysql, redis).',
+      required: true,
     },
     yes: {
       type: 'boolean',
@@ -30,10 +30,9 @@ export const addServiceCommand = defineCommand({
   async run({ args }) {
     try {
       const result = await runAddService({
+        name: args.name,
         service: args.service,
-        project: typeof args.project === 'string' ? args.project : undefined,
         yes: args.yes,
-        cliVersion: CLI_VERSION,
       });
       process.exit(result.status === 'aborted' ? 1 : 0);
     } catch (err) {

@@ -1,25 +1,25 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
 import { runAddFromUrl } from '../modify/index.js';
-import { CLI_VERSION } from '../version.js';
 
 export const addFromUrlCommand = defineCommand({
   meta: {
     name: 'add-from-url',
     description:
-      'Add an https:// install URL that gets piped to bash on every container rebuild (`bash <(curl -fsSL <url>)`). Loudly warns about remote-code execution before persisting. Idempotent.',
+      'Add an https:// install URL to the container config. The URL gets piped to sh on every container rebuild. Loudly warns about remote-code execution before persisting. Idempotent.',
   },
   args: {
+    name: {
+      type: 'positional',
+      description:
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
+      required: true,
+    },
     url: {
       type: 'positional',
       description:
-        'https:// URL of an install script (e.g. https://teamwork-graph.atlassian.com/cli/install).',
+        'https:// URL of an install script (e.g. https://starship.rs/install.sh).',
       required: true,
-    },
-    project: {
-      type: 'string',
-      description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
     },
     yes: {
       type: 'boolean',
@@ -30,21 +30,14 @@ export const addFromUrlCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const url = String(args.url);
-
-    // Loud security warning. Print before runAddFromUrl so the builder
-    // sees it above the diff preview (which appears as part of the
-    // normal mutate flow).
     if (!args.yes) {
-      printSecurityWarning(url);
+      printSecurityWarning(args.url);
     }
-
     try {
       const result = await runAddFromUrl({
-        url,
-        project: typeof args.project === 'string' ? args.project : undefined,
+        name: args.name,
+        url: args.url,
         yes: args.yes,
-        cliVersion: CLI_VERSION,
       });
       process.exit(result.status === 'aborted' ? 1 : 0);
     } catch (err) {
@@ -61,7 +54,7 @@ function printSecurityWarning(url: string): void {
   w('');
   w(`  URL: ${url}`);
   w('');
-  w('  This URL will be fetched and piped to bash on every container rebuild.');
+  w('  This URL will be fetched and piped to sh on every container rebuild.');
   w(
     '  Remote-code execution against a URL you do not control is a supply-chain',
   );

@@ -3,25 +3,25 @@ import { consola } from 'consola';
 import type { FeatureOptions } from '../create/types.js';
 import { getInnerArgs } from '../inner-args.js';
 import { runAddFeature } from '../modify/index.js';
-import { CLI_VERSION } from '../version.js';
 
 export const addFeatureCommand = defineCommand({
   meta: {
     name: 'add-feature',
     description:
-      'Add a devcontainer feature by ref (e.g. `ghcr.io/devcontainers/features/docker-in-docker:2`). Options follow `--` as `key=value` pairs. Idempotent (same ref + same options is a no-op). Adding the same ref with different options is an error.',
+      'Add a devcontainer feature by ref to the container config. Options follow `--` as `key=value` pairs. Idempotent (same ref + same options is a no-op). Adding the same ref with different options is an error.',
   },
   args: {
+    name: {
+      type: 'positional',
+      description:
+        'Container name (yml in $MONOCEROS_HOME/container-configs/).',
+      required: true,
+    },
     ref: {
       type: 'positional',
       description:
         'Devcontainer feature ref (OCI image style, e.g. `ghcr.io/devcontainers/features/docker-in-docker:2`).',
       required: true,
-    },
-    project: {
-      type: 'string',
-      description:
-        'Override the auto-detected project (path, absolute or relative to cwd).',
     },
     yes: {
       type: 'boolean',
@@ -31,7 +31,6 @@ export const addFeatureCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const ref = String(args.ref);
     let options: FeatureOptions;
     try {
       options = parseOptionsAfterDashes(getInnerArgs());
@@ -41,11 +40,10 @@ export const addFeatureCommand = defineCommand({
     }
     try {
       const result = await runAddFeature({
-        ref,
+        name: args.name,
+        ref: args.ref,
         options,
-        project: typeof args.project === 'string' ? args.project : undefined,
         yes: args.yes,
-        cliVersion: CLI_VERSION,
       });
       process.exit(result.status === 'aborted' ? 1 : 0);
     } catch (err) {
@@ -58,10 +56,7 @@ export const addFeatureCommand = defineCommand({
 /**
  * Parse `key=value` tokens (one per arg) into a feature options hash.
  * Coerces `true`/`false` to booleans and pure-integer strings to
- * numbers; everything else stays a string. Devcontainer features
- * typically accept strings, but a few require booleans (e.g. the
- * docker-in-docker feature's `installDockerBuildx`) and the JSON value
- * must be the right type.
+ * numbers; everything else stays a string.
  */
 function parseOptionsAfterDashes(tokens: readonly string[]): FeatureOptions {
   const result: FeatureOptions = {};
