@@ -31,3 +31,11 @@ export {
   templatesDir,
   workbenchRoot,
 } from './paths.js';
+export {
+  buildStateFile,
+  readStateFile,
+  stateFilePath,
+  writeStateFile,
+} from './state.js';
+export type { StateFile } from './state.js';
+export { solutionConfigToCreateOptions } from './transform.js';

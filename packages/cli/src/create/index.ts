@@ -7,16 +7,11 @@ import {
   type IdentitySpawn,
 } from '../devcontainer/identity.js';
 import {
-  buildClaudeSettings,
-  buildCodeWorkspaceJson,
-  buildComposeYaml,
-  buildDevcontainerJson,
   buildReadmeStub,
   buildStackJson,
-  needsCompose,
   normalizeOptions,
   validateOptions,
-  writePostCreateScript,
+  writeScaffold,
 } from './scaffold.js';
 import type { CreateOptions, StackFile } from './types.js';
 
@@ -85,64 +80,23 @@ export async function runCreate(
     );
   }
 
-  const devcontainerDir = path.join(targetDir, '.devcontainer');
+  // Materialize devcontainer + compose + post-create + .code-workspace +
+  // .claude/settings.json + .monoceros/.gitignore + projects/.gitkeep.
+  // Shared with `runApplyFromYml`.
+  await writeScaffold(opts, targetDir);
+
+  // README.md is a once-only stub — runApplyFromYml deliberately does
+  // NOT touch it on re-apply (builder may have edited).
+  await fs.writeFile(path.join(targetDir, 'README.md'), buildReadmeStub(opts));
+
+  // stack.json is the legacy M2 source of truth. Phase 3 replaces it
+  // with `state.json` + an external yml, but `runCreate` keeps writing
+  // it until Task 7 migrates the create path too.
   const monocerosDir = path.join(targetDir, '.monoceros');
-  const projectsDir = path.join(targetDir, 'projects');
-  await fs.mkdir(devcontainerDir, { recursive: true });
-  await fs.mkdir(monocerosDir, { recursive: true });
-  await fs.mkdir(projectsDir, { recursive: true });
-  // Empty .gitkeep so `projects/` survives a fresh git clone before any
-  // sub-project has been added. Harmless when the solution itself isn't
-  // a git repo.
-  await fs.writeFile(path.join(projectsDir, '.gitkeep'), '');
-  // `.monoceros/.gitignore` keeps per-builder runtime state out of any
-  // git repo the builder might wrap around the dev-container:
-  //   - git-credentials*: tokens fetched per apply (mode 0o600)
-  //   - gitconfig: identity (user.name/email) extracted from host
-  await fs.writeFile(
-    path.join(monocerosDir, '.gitignore'),
-    'git-credentials*\ngitconfig\n',
-  );
-
-  const devcontainerJson = buildDevcontainerJson(opts);
-  await fs.writeFile(
-    path.join(devcontainerDir, 'devcontainer.json'),
-    JSON.stringify(devcontainerJson, null, 2) + '\n',
-  );
-
-  await writePostCreateScript(devcontainerDir, opts);
-
-  if (needsCompose(opts)) {
-    await fs.writeFile(
-      path.join(devcontainerDir, 'compose.yaml'),
-      buildComposeYaml(opts),
-    );
-  }
-
   const stack = buildStackJson(opts, runOpts.cliVersion, runOpts.now);
   await fs.writeFile(
     path.join(monocerosDir, 'stack.json'),
     JSON.stringify(stack, null, 2) + '\n',
-  );
-
-  await fs.writeFile(path.join(targetDir, 'README.md'), buildReadmeStub(opts));
-
-  // VS Code multi-root workspace file. Lists `.` as the only root at
-  // create time; `monoceros add-repo` appends each project subfolder
-  // later so they appear as sibling roots in the Explorer.
-  await fs.writeFile(
-    path.join(targetDir, `${opts.name}.code-workspace`),
-    JSON.stringify(buildCodeWorkspaceJson(opts), null, 2) + '\n',
-  );
-
-  // Register the Monoceros plugin via Claude Code's plugin/marketplace
-  // system. Same mechanism is read by the terminal CLI and the VS
-  // Code Extension, so slash commands appear in both surfaces.
-  const claudeDir = path.join(targetDir, '.claude');
-  await fs.mkdir(claudeDir, { recursive: true });
-  await fs.writeFile(
-    path.join(claudeDir, 'settings.json'),
-    JSON.stringify(buildClaudeSettings(), null, 2) + '\n',
   );
 
   // Capture host git identity (user.name + user.email) into

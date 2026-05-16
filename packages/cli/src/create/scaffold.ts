@@ -669,3 +669,80 @@ export function buildClaudeSettings(): Record<string, unknown> {
     },
   };
 }
+
+/**
+ * Materialize the full devcontainer scaffold for `opts` into
+ * `targetDir`. Idempotent overwrite — re-running with different opts
+ * produces the new scaffold and overwrites any older files.
+ *
+ * Writes (no `stack.json` — caller decides whether to write that or a
+ * Phase-3 `state.json` instead):
+ *   - `.devcontainer/devcontainer.json`
+ *   - `.devcontainer/post-create.sh`
+ *   - `.devcontainer/compose.yaml` (only when services are configured)
+ *   - `.monoceros/.gitignore`
+ *   - `projects/.gitkeep`
+ *   - `<name>.code-workspace`
+ *   - `.claude/settings.json`
+ *
+ * Does NOT write `README.md` — the README is a once-only stub that
+ * `runCreate` produces but `runApplyFromYml` should leave alone (the
+ * builder may have edited it).
+ *
+ * Caller is responsible for `validateOptions(opts)` and
+ * `normalizeOptions(opts)`; this function trusts the input.
+ */
+export async function writeScaffold(
+  opts: CreateOptions,
+  targetDir: string,
+): Promise<void> {
+  const devcontainerDir = path.join(targetDir, '.devcontainer');
+  const monocerosDir = path.join(targetDir, '.monoceros');
+  const projectsDir = path.join(targetDir, 'projects');
+  await fs.mkdir(devcontainerDir, { recursive: true });
+  await fs.mkdir(monocerosDir, { recursive: true });
+  await fs.mkdir(projectsDir, { recursive: true });
+
+  // `.gitkeep` so `projects/` survives a fresh git clone before any
+  // sub-project has been added.
+  const gitkeep = path.join(projectsDir, '.gitkeep');
+  if (!existsSync(gitkeep)) {
+    await fs.writeFile(gitkeep, '');
+  }
+
+  // `.monoceros/.gitignore` keeps per-builder runtime state out of any
+  // wrapping git repo. Always overwrite — content is fixed.
+  await fs.writeFile(
+    path.join(monocerosDir, '.gitignore'),
+    'git-credentials*\ngitconfig\n',
+  );
+
+  const devcontainerJson = buildDevcontainerJson(opts);
+  await fs.writeFile(
+    path.join(devcontainerDir, 'devcontainer.json'),
+    JSON.stringify(devcontainerJson, null, 2) + '\n',
+  );
+
+  await writePostCreateScript(devcontainerDir, opts);
+
+  const composePath = path.join(devcontainerDir, 'compose.yaml');
+  if (needsCompose(opts)) {
+    await fs.writeFile(composePath, buildComposeYaml(opts));
+  } else if (existsSync(composePath)) {
+    // Services dropped from the yml — clean up the now-stale file so a
+    // later `monoceros start` doesn't pick it up.
+    await fs.rm(composePath);
+  }
+
+  await fs.writeFile(
+    path.join(targetDir, `${opts.name}.code-workspace`),
+    JSON.stringify(buildCodeWorkspaceJson(opts), null, 2) + '\n',
+  );
+
+  const claudeDir = path.join(targetDir, '.claude');
+  await fs.mkdir(claudeDir, { recursive: true });
+  await fs.writeFile(
+    path.join(claudeDir, 'settings.json'),
+    JSON.stringify(buildClaudeSettings(), null, 2) + '\n',
+  );
+}

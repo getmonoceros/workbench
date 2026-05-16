@@ -256,6 +256,45 @@ export async function runApply(opts: ApplyOptions = {}): Promise<number> {
     });
   }
 
+  return runContainerCycle(root, {
+    hasCompose,
+    cwd,
+    ...(opts.project !== undefined ? { project: opts.project } : {}),
+    ...(opts.cleanupSpawn !== undefined
+      ? { cleanupSpawn: opts.cleanupSpawn }
+      : {}),
+    ...(opts.devcontainerSpawn !== undefined
+      ? { devcontainerSpawn: opts.devcontainerSpawn }
+      : {}),
+    logger,
+  });
+}
+
+export interface RunContainerCycleOptions {
+  hasCompose: boolean;
+  cwd?: string;
+  project?: string;
+  cleanupSpawn?: ComposeSpawn;
+  devcontainerSpawn?: DevcontainerSpawn;
+  logger: {
+    info: (message: string) => void;
+    warn?: (message: string) => void;
+  };
+}
+
+/**
+ * Container teardown + up for a devcontainer rooted at `root`.
+ * Extracted from `runApply` so the Phase-3 `runApplyFromYml` path can
+ * call it after writing scaffold + state.json without going back
+ * through the stack.json-centric pre-flight.
+ */
+export async function runContainerCycle(
+  root: string,
+  opts: RunContainerCycleOptions,
+): Promise<number> {
+  const { hasCompose, logger } = opts;
+  const cwd = opts.cwd ?? process.cwd();
+
   if (hasCompose) {
     const projectName = composeProjectName(root);
     logger.info(
