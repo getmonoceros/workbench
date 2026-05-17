@@ -229,8 +229,8 @@ konkreter Anwendungsfall ruft.
 
 ## Was bewusst nicht ins Produkt gehört
 
-- **Cloud-Hosting / SaaS-Variante** — gegen das Prinzip lokaler
-  Sandboxing-Souveränität
+- **Cloud-Hosting / SaaS-Variante** — gegen das Prinzip
+  „dein Docker, deine Daten, kein Mietzwang"
 - **Eigene Web-UI** — die CLI ist die UI, der Container-Workspace ist
   die Arbeitsumgebung
 - **Eingebauter Iteration-Workflow** — `monoceros iterate` etc. sind
