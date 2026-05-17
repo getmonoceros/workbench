@@ -1,264 +1,272 @@
 # Monoceros — Konzept
 
-Dieses Dokument beschreibt das Produkt, die Re-Positionierung gegenüber
-den Vorgänger-Iterationen und die Architektur der Workbench. Es ist die
-gemeinsame Quelle, auf die `CLAUDE.md` und `docs/backlog.md` verweisen.
+Dieses Dokument beschreibt das Produkt nach der Schärfung am
+**2026-05-17**: was Monoceros ist, was es nicht ist, wie die Werkbank
+aufgebaut ist, und welche Wetten dahinter stehen. Es ist die
+gemeinsame Quelle, auf die `CLAUDE.md` und `docs/backlog.md`
+verweisen.
 
-## Geschichte (warum es vier Iterationen gab)
+## Geschichte (warum es fünf Iterationen gab)
 
 Monoceros hat einen Weg hinter sich:
 
-1. **AI-first Alternative zu Jira/Confluence/Notion/Linear** — gestartet
-   als breiter Workspace-Anspruch.
+1. **AI-first Alternative zu Jira/Confluence/Notion/Linear** —
+   gestartet als breiter Workspace-Anspruch.
 2. **„Brauchen wir noch ein Kanban-Tool?"** — Frage nach dem
    Differenzierungs-Kern.
-3. **Erster Versuch mit vielen Artefakten** — Flows, Personas, Decisions,
-   Domain Model, alles als Top-Level-Citizens. Die App fühlte sich an wie
-   Confluence mit Status-Pills.
-4. **Solution Builder mit Container-Run + Plan/Generate/Review** — der
-   Stand vor diesem Reset. Validierte das Sandbox-Asset und die
+3. **Erster Versuch mit vielen Artefakten** — Flows, Personas,
+   Decisions, Domain Model, alles als Top-Level-Citizens. Die App
+   fühlte sich an wie Confluence mit Status-Pills.
+4. **Solution Builder mit Container-Run + Plan/Generate/Review** —
+   der Vorgänger-Stand. Validierte das Sandbox-Asset und die
    3-Phasen-Pipeline, kämpfte aber mit IA-Komplexität (Studio-UI,
    Routing-Modell, Auth-Enrollment) und hartkodiertem Tech-Stack.
+5. **Workbench (2026-05-10)** — Reset auf nur zwei
+   Differenzierungs-Assets: die Devcontainer-Sandbox und die
+   Iteration-Pipeline.
 
-Der Lakmus-Test im Mai 2026: derselbe Brief (Studio-Hummel-Demo) wurde
-einmal durch Monoceros gejagt und einmal direkt mit Claude Code aus
-einem leeren Verzeichnis gebaut. Die Claude-Code-Variante war um
-Dimensionen besser. Diagnose: das Stack-Template hat die Architektur
-festgelegt, _bevor_ der Brief verstanden war (Postgres-Backend für eine
-App, die nach Brief eindeutig localStorage-only sein sollte). Das
-Iteration-Budget des Generators wurde von Plumbing gefressen, nicht für
-UI-Qualität investiert.
+Beim Bau der Workbench wurde im Mai 2026 klar, dass selbst diese
+Reduzierung noch zu breit war. Die Plan/Generate/Review-Pipeline
+brachte ungelöste Designfragen mit (autonomer Loop ja/nein,
+Side-Topic-Memory wertvoll oder nicht, Tracking-Adapter sinnvoll?).
+Parallel hat Claude Code mit `/goal` und ähnlichen Mechaniken
+eigene strukturierte-Iterations-Konzepte hervorgebracht, die
+unseren Eigenbau möglicherweise redundant machen.
 
-## Die Re-Positionierung (Mai 2026)
+Daher die fünfte Iteration als Schärfung: die Iteration-Pipeline
+fliegt raus (archiviert in
+`../monoceros-iterate_archive-2026-05-17/`), Monoceros fokussiert
+sich auf das Asset das **heute** trägt — die lokale, abgesicherte
+Dev-Container-Box mit erstklassiger AI-Tool-Integration.
 
-Aus den vier Iterationen haben sich zwei genuin wertvolle Assets
-herauskristallisiert:
+## Die Re-Positionierung (2026-05-17)
 
-- **Die abgesicherte Devcontainer-Sandbox** — beliebige Node/Python/Java/…
-  -Apps inklusive Postgres entwickeln, ohne den lokalen Rechner zu
-  gefährden.
-- **Die strukturierte 3-Phasen-Pipeline (Plan/Generate/Review)** —
-  Reviewer findet Risiken und macht Reviews in einer Form, die Claude
-  Code von sich aus nicht macht.
+> **Monoceros ist eine lokale, abgesicherte Dev-Container-Box mit
+> AI-Coding-Tooling. Builder beschreibt deklarativ was im Container
+> liegen soll, Monoceros materialisiert das. Sprach- und
+> Stack-agnostisch. Kein Cloud, kein SaaS, kein eingebauter
+> Workflow-Zwang.**
 
-Alles andere (Studio-UI, Plan→Flow als Daten-Modell, Stack-Templates,
-Multi-User-Architektur, Cloud-Anbindung) hat sich nicht bewährt. Die
-neue Positionierung dreht das um:
+Differenzierung gegenüber den naheliegenden Alternativen:
 
-> **Monoceros ist eine lokale, abgesicherte Entwicklungsumgebung mit
-> AI-Coding-Tooling und strukturierter Iteration-Disziplin. Sprach- und
-> Stack-agnostisch. Kein Cloud, kein SaaS.**
+| Konkurrent         | Was sie anders machen                         | Was Monoceros besser kann                                   |
+| ------------------ | --------------------------------------------- | ----------------------------------------------------------- |
+| GitHub Codespaces  | Cloud-Only, Vendor-Lock-in, Kosten pro Stunde | Lokal, kein Mietzwang, Daten bleiben auf der Maschine       |
+| Cursor Cloud       | Cloud-Workspace, fester Tooling-Stack         | Lokal, Tools sind eine Builder-Entscheidung                 |
+| Plain Devcontainer | Funktioniert; man baut alles selbst           | Vorgebaute Werkbank mit Egress-Allowlist + deklarativer yml |
+| Lokale Dev-Setup   | Kein Sandboxing, voller PC-Zugriff            | NET_ADMIN + iptables-Allowlist, alles isoliert              |
 
-Das ist ein _größerer_ adressierbarer Markt als der vorherige
-Anspruch — nicht nur Node-Builder, sondern jede:r, die/der mit AI
-sicher in beliebiger Sprache bauen will. Gleichzeitig _weniger_ direkte
-Konkurrenz mit Cursor/Claude Code (die _Werkzeuge_ sind, nicht
-_Umgebungen_).
+Die zwei Dinge, die zusammen das Produkt machen:
+
+1. **Egress-Allowlist im Runtime-Image** — der Container kommt nur
+   an die Hosts, die explizit erlaubt sind. AI-Agents können nicht
+   versehentlich Daten exfiltrieren oder beliebige APIs aufrufen.
+2. **Deklaratives yml-Modell** — eine Datei beschreibt den Container,
+   `monoceros apply` materialisiert ihn. Reproduzierbar zwischen
+   Maschinen, versionierbar, diffbar.
 
 ## Die drei Bausteine
 
-### 1. Devcontainer-Sandbox
+### 1. Werkbank-Runtime-Image
 
-Lokaler Docker-Container nach
-[Devcontainer-Spec](https://containers.dev/) — der Industriestandard,
-den VS Code, Cursor, JetBrains und Claude Code alle nativ unterstützen.
-
+Lokales Docker-Image (Stand: `monoceros-runtime:dev`, später GHCR-
+publiziert), aufgebaut auf
+[`mcr.microsoft.com/devcontainers/typescript-node`](https://hub.docker.com/_/microsoft-vscode-devcontainers).
 Inhalt:
 
-- Linux-Basis mit Docker-in-Docker
-- Claude-Code-CLI vorinstalliert (später opencode parallel)
-- pnpm für Node-Solutions, sonst je nach gewähltem Sprach-Feature
-- Komponierbare Services über `compose.yaml`: Postgres, MySQL, SQLite,
-  Redis nach Bedarf
-- Komponierbare Sprach-Toolchains über
-  [Devcontainer-Features](https://containers.dev/features) — `python`,
-  `java`, `dotnet`, `rust`, `go`, alle aus der offiziellen
-  Community-Sammlung, nichts selbst pflegen
-- Egress-Whitelist und non-root-User mit sudo (aus dem Archiv übernommen)
+- Debian Bookworm + Node 22 + pnpm + corepack
+- iptables-Tooling und ein Entrypoint, der vor dem Drop auf den
+  `node`-User eine Egress-Allowlist installiert (siehe ADR 0002)
+- `gosu` für sauberen User-Switch nach Entrypoint
+- Standard-Dev-Tools aus dem Base-Image: `git`, `curl`, `ssh`, `jq`,
+  `make`
 
-Auth-Pass-Through: das Container-Setup mountet `~/.claude/` vom Host als
-Bind-Mount, damit der Builder mit seinem normalen Claude-Account
-(Subscription oder API-Key) im Container eingeloggt ist. Kein doppelter
-Login, kein API-Key-in-Env-Setup.
+**Was nicht im Image liegt** (Stand 2026-05-17):
 
-Persistenz pro Projekt: jeder Devcontainer hat seine eigene
-`compose.yaml` mit eigenen Service-Containern und Volumes. Reset eines
-Projekts = `docker compose down -v` und alle Daten sind weg.
-External-DB-URL ist der Escape-Hatch (`monoceros create … --postgres-url=…`).
+- Keine AI-CLIs vorinstalliert. Claude Code, OpenCode, Rovo Dev,
+  Codex etc. werden über Devcontainer-Features in den Container
+  gezogen, nicht ins Image gebacken.
+- Keine Sprach-Toolchains außer Node — Python, Java, Go etc.
+  kommen ebenfalls über Features.
 
-### 2. Strukturierte Iteration-Pipeline
+Dadurch bleibt das Image schlank und sprach-/tool-neutral. Der
+Builder sieht im yml _explizit_ was im Container liegt.
 
-Die Plan/Generate/Review-Mechanik aus dem Archiv, neu verpackt als
-Claude-Code-Plugin (Slash-Commands + Hooks) statt zentraler Service.
+### 2. Deklaratives yml-Modell
 
-Drei Phasen pro Iteration:
+Eine Container-Konfig lebt unter
+`$MONOCEROS_HOME/container-configs/<name>.yml`. Schema-validiert
+(Zod), comment-preserving editierbar, mit klarem Lifecycle:
 
-- **Planner** — liest den User-Prompt, inspiziert den Workspace,
-  produziert einen Plan mit Acceptance Criteria, Risks, Out-of-Scope
-- **Generator** — setzt den Plan in Code-Änderungen um, läuft Tests,
-  führt Live-App-Probe durch
-- **Reviewer** — bewertet das Ergebnis, produziert Findings mit
-  Severity, gibt eine Recommendation (approve / request_changes / reject)
+```yaml
+schemaVersion: 1
+name: sandbox
 
-Alle drei Phasen laufen via `claude --print` mit phasen-spezifischem
-System-Prompt im selben Container. Output ist Zod-validiert. Bei
-Schema-Verletzung läuft ein Retry mit Validation-Feedback.
+languages: [python]
+services: [postgres]
 
-Wesentliche Änderung gegenüber dem Archiv: die Prompts sind
-**Stack-agnostisch**. Statt „nutze Drizzle, Zod, Vite" sagt der Prompt
-„lies 3-5 repräsentative Files (z.B. `package.json` / `pyproject.toml` /
-`pom.xml` / `go.mod` / `Cargo.toml`), identifiziere Test-Framework, ORM,
-Conventions, folge dem was du dort findest". Der
-`ARCHITECTURE_PHILOSOPHY_BLOCK` (lean, schema-first, plain functions,
-defaultlos) bleibt — das sind sprachinvariante Prinzipien.
+features:
+  - ref: ghcr.io/kamann/monoceros-features/claude-code:1
+  - ref: ghcr.io/kamann/monoceros-features/atlassian:1
+    options:
+      rovo_dev: true
+      twg: true
 
-Optional pro Projekt: eine `.monoceros/conventions.md`, in die der
-Builder Stack-Eigenheiten schreiben kann, die nicht aus 3 Files ablesbar
-sind („wir nutzen Result-Types, kein Throw"). Reines Override für
-Edge-Cases.
+repos:
+  - url: https://github.com/your-org/api.git
+```
 
-### 3. Side-Topic-Memory
+`monoceros apply sandbox` materialisiert das nach
+`$MONOCEROS_HOME/container/sandbox/` als Devcontainer mit allem
+Drum und Dran. Ein zweiter Apply nach einer Edit überschreibt
+deterministisch.
 
-Die Pipeline produziert von sich aus eine Menge Material, das heute im
-Archiv-Stand pro Iteration in einer Reportcard angezeigt und dann im
-JSONL begraben wird:
+Container-Identity über die Konvention `<MONOCEROS_HOME>/container/<name>/`:
+ein Konfig → ein Container, 1:1. cwd ist irrelevant; alle Befehle
+funktionieren von überall mit `monoceros <command> <containername>`.
 
-- Reviewer-Findings (mit Severity, Empfehlung)
-- Generator-Concerns (was bemerkt wurde aber nicht gemacht)
-- Generator-Plan-Deviations (warum vom Plan abgewichen wurde)
-- Planner-Risks (wo's brennen kann)
+### 3. AI-Tools als Devcontainer-Features
 
-Die Re-Positionierung hebt das hervor: **das Side-Topic-Backlog ist kein
-zusätzliches Tool, sondern automatischer Output der Pipeline**. Capture
-ist Null-Friktion. Der Builder _kuratiert_ nur — markiert Items als
-„jetzt", „später", „verworfen", oder triggert eine Folge-Iteration die
-genau das Item adressiert.
+Jedes AI-Tool ist ein Devcontainer-Feature unter
+`ghcr.io/kamann/monoceros-features/<tool>:1`. Builder wählt explizit
+aus, was im Container liegt. Konsistenter mentaler Modell:
 
-Speicherort: `.monoceros/findings/*.md`, `.monoceros/concerns/*.md`,
-`.monoceros/risks/*.md`, `.monoceros/iterations/*.json` (Audit-Trail).
-Alles versioniert mit dem Code, wandert mit Branches mit, Code-Reviews
-zeigen Findings-Diffs nebenbei.
+```yaml
+features:
+  - ref: ghcr.io/kamann/monoceros-features/claude-code:1
+  - ref: ghcr.io/kamann/monoceros-features/opencode:1
+```
 
-Spätere Tracking-Adapter (M3) spiegeln dieselben Items in externe
-Systeme: GitHub Issues, Jira, Notion, Linear. Die Markdown-Files bleiben
-Source of Truth, der Adapter synchronisiert.
+Geplanter Feature-Katalog (siehe `backlog.md` für Reihenfolge):
+
+| Feature       | Tool                                          | Status       |
+| ------------- | --------------------------------------------- | ------------ |
+| `claude-code` | Anthropic Claude Code CLI                     | erste Etappe |
+| `atlassian`   | Atlassian-Stack — Rovo Dev (`acli`) + TWG-CLI | erste Etappe |
+| `opencode`    | sst OpenCode (Multi-Model, OSS)               | Folge-Etappe |
+| `codex`       | OpenAI Codex CLI                              | Folge-Etappe |
+| `gh-copilot`  | GitHub Copilot CLI                            | Folge-Etappe |
+| `aider`       | Aider (Python, OSS)                           | Folge-Etappe |
+
+**Credentials für AI-Tools** liegen unter
+`$MONOCEROS_HOME/monoceros-config.yml` (gitignored, builder-lokal).
+Beispiel:
+
+```yaml
+defaults:
+  git:
+    user:
+      name: Thorsten Kamann
+      email: thorsten.kamann@conciso.de
+  atlassian:
+    instance: your-org.atlassian.net
+    email: you@example.com
+    apiToken: ATATT3xFf…
+```
+
+`monoceros apply` liest diese Defaults aus und reicht sie an die
+Container-Features durch — der Builder logged sich nie manuell ein.
 
 ## CLI-Shape
 
-Die Workbench ist primär eine CLI. Vier Befehl-Familien:
+Alle Befehle folgen einem einheitlichen Schema:
 
-```bash
-# Projekt-Lifecycle
-monoceros create <name> [--languages=node,python] [--services=postgres]
-monoceros shell                    # in den Container, aus cwd abgeleitet
-monoceros run -- <cmd>             # one-off im Container
-monoceros logs [<service>]         # tail
-monoceros stop / start / status
-
-# Iteration (in M2 mit Plugin-Integration)
-monoceros iterate "<prompt>"       # P/G/R-Pipeline
-monoceros findings                 # offene Findings auflisten
-monoceros triage                   # Batch-Markierung (später optional TUI)
-
-# Service-Management (post-create)
-monoceros add-service redis
-monoceros add-language python
+```sh
+monoceros <command> <containername> [<args> …]
 ```
 
-Working-Directory-Awareness: alle Befehle leiten den Container aus der
-cwd ab (suchen aufwärts nach `.devcontainer/`/`.monoceros/`). Kein
-Name-Parameter notwendig. `--project=<name>` als Override für
-Cross-Project-Skripte.
+Drei Familien:
+
+```sh
+# Konfig + Lifecycle
+monoceros init <template> <name>          # yml aus Vorlage erstellen
+monoceros apply <name>                    # materialisieren + Container hochfahren
+monoceros start|stop|down|status <name>   # Compose-Lifecycle
+monoceros shell <name>                    # interaktive bash
+monoceros run <name> -- <cmd>             # one-off-Befehl
+monoceros logs <name> [<service>]         # tail
+
+# Konfig editieren (yml-AST-Mutation, comment-preserving)
+monoceros add-language|service|apt-packages|feature|from-url|repo <name> …
+monoceros remove-… <name> …
+```
+
+cwd ist irrelevant — alles geht über Konvention.
 
 ## Code-Layout der Workbench
 
-Mono-Repo mit pnpm-Workspaces (Vorgänger-Pattern):
+Mit dem Pivot vom 2026-05-17 ist die Workbench auf ein einziges
+Paket geschrumpft:
 
 ```
 monoceros-workbench/
 ├── packages/
-│   ├── cli/                # M1: das `monoceros`-CLI
-│   ├── core/               # geteilt: Iteration-Prompts, Orchestrator, Types
-│   ├── plugin/             # M2: Claude-Code-Plugin
-│   ├── adapter-local/      # M2: Findings als Markdown
-│   ├── adapter-github/     # M3
-│   ├── adapter-jira/       # M3
-│   ├── adapter-linear/     # M3
-│   └── adapter-notion/     # M3
+│   └── cli/                # die einzige Code-Komponente
 ├── images/
-│   └── runtime/            # Dockerfile fürs Base-Image
+│   └── runtime/            # Dockerfile fürs Werkbank-Image
 ├── templates/
-│   └── default/            # Devcontainer-Default-Template (minimal)
+│   └── yml/                # init-Vorlagen (bare, nodejs-github, python, reference)
 └── docs/
 ```
 
-Begründung: M1/M2/M3 teilen Kern-Code (Iteration-Prompts,
-Finding-Schemas), das ist im Mono-Repo ein Workspace-Import statt
-npm-Versionierung. Atomare Cross-Package-Änderungen ohne PR-Choreografie.
-Splitten geht später, mergen ist Schmerz.
+Was nicht mehr da ist (siehe Archiv-Verweis oben): `packages/core/`,
+`packages/plugin/`, `packages/adapter-local/` — die Iteration-
+Pipeline-Strukturen. Die kommen erst zurück (und dann als eigenes
+Projekt), wenn die offenen Designfragen geklärt sind und ein
+konkreter Anwendungsfall ruft.
 
-## Was bewusst nicht ins MVP gehört
+## Was bewusst nicht ins Produkt gehört
 
-- Eigene Web-UI für Findings-Triage (nur CLI / Markdown-Files; TUI nur
-  wenn Markdown-Strecke sich als zu zäh erweist)
-- Multi-User / Shared-State (jede:r Builder lokal, Repo-basierte Sync
-  über git)
-- Cloud-Hosting / SaaS-Variante
-- Eigene Auth-Infrastruktur (Bind-Mount von `~/.claude/` reicht)
-- Fixe Stack-Templates (`vite-react-pg` und Co.) — nur das minimale
-  Default-Template, alles andere kommt aus Devcontainer-Features +
-  Service-Snippets, die der Builder kombiniert
-- Plan→Flow-Datenmodell als zentraler Artefakt-Anker (Findings ersetzt
-  das)
+- **Cloud-Hosting / SaaS-Variante** — gegen das Prinzip lokaler
+  Sandboxing-Souveränität
+- **Eigene Web-UI** — die CLI ist die UI, der Container-Workspace ist
+  die Arbeitsumgebung
+- **Eingebauter Iteration-Workflow** — `monoceros iterate` etc. sind
+  raus, weil unklar war ob/wie sie Mehrwert über Claude Codes
+  eigene Mechaniken liefern
+- **Multi-User / Shared State** — jede:r Builder hat eigene
+  Container-Configs unter `$MONOCEROS_HOME`. Synchronisation ist eine
+  Frage von git-Repos und Team-Konventionen, nicht von Monoceros
+- **Fixe Stack-Templates** (`vite-react-pg`, etc.) — die Vorlagen
+  bleiben minimal; was im Container liegt, baut der Builder über
+  `add-*`-Befehle oder Hand-Edits zusammen
+- **Eigene Auth-Infrastruktur** — Bind-Mount von `~/.claude/` plus
+  optional `monoceros-config.yml`-Defaults reichen
 
-## Form-Faktor-Diskussion
+## VS-Code-Server-Frage (offen, später)
 
-Vor dem Reset wurden drei Form-Faktoren erwogen:
-
-1. Claude-Code-Plugin + Devcontainer-Konvention (gewählt)
-2. MCP-Server + dünne Web-UI für Backlog
-3. Standalone-Suite wie das Vorgänger-Projekt
-
-Form-Faktor 1 ist gewählt, weil er den größten Anteil des
-Vorgänger-Codes obsolet macht — alle IA-, Auth-, Routing-, Multi-User-,
-Reverse-Proxy-Komplexität verschwindet, weil der Container lokal läuft.
-Was bleibt (Iteration-Prompts, Orchestrator-Mechanik, Runtime-Image) ist
-direkt aus dem Archiv übernehmbar.
-
-Wenn das MVP mehrere Solutions trägt und eine echte Triage-UI fehlt
-fühlt, ist Form-Faktor 2 die natürliche Erweiterung — ein kleines Web-UI
-über denselben Core. Der Mono-Repo-Aufbau verhindert nichts davon, das
-ist eine spätere Ebene.
+Die Idee, den `code-server` (Coder's browser-IDE) als Feature
+beizulegen, sodass der Builder _gar nichts_ lokal mehr braucht
+außer Docker und einem Browser, ist real und nicht-trivial — aber
+**bewusst nicht jetzt**. Erst wenn die heutige Werkbank ein paar
+echte Builder findet und das Bedarf zeigt, wird das als Feature
+implementiert (`ghcr.io/kamann/monoceros-features/code-server:1`).
+Bis dahin: VS Code Desktop + Dev-Containers-Extension, oder
+Claude Code direkt im Container per `monoceros shell`.
 
 ## Validierungs-Hypothesen
 
-Der Cut auf Form-Faktor 1 ist eine Wette. Drei Dinge, die nach den
-ersten 2-3 selbst gebauten Solutions klar werden:
+Der Cut auf „Werkbank ohne Iterate" ist eine Wette. Drei Dinge, die
+nach den ersten 2-3 selbst betriebenen Container-Setups klar werden:
 
-1. **Reicht Markdown-Files für Findings-Triage?** Wenn nach 3 Iterationen
-   `.monoceros/findings/` 15-20 echte Items hat, die der Builder
-   _aktiv_ sortieren will → Hypothese bestätigt. Wenn 3 nichtssagende
-   Stichworte → die ganze Side-Topic-These war eine Illusion.
-2. **Ist die Stack-Agnostik der Prompts gut genug?** Test: eine
-   Spring-Boot- oder Python-Solution mit derselben Pipeline bauen.
-   Output muss spürbar besser sein als „generic AI-generated code".
-3. **Ist Devcontainer-Auth-Pass-Through robust?** Test: ein:e zweite:r
-   Builder mit eigenem Claude-Account macht das Setup von Null und
-   kommt durch ohne manuelles Auth-Geknete.
+1. **Reichen die Devcontainer-Features als Tool-Distribution?**
+   Klare Antwort: ja, wenn der Builder Claude Code + Atlassian-Stack
+   in unter 30 Sekunden frisch hochziehen kann.
+2. **Ist die Egress-Allowlist eine echte Schutz-Schicht oder nur
+   gefühlte Sicherheit?** Ein Builder testet versucht von innen
+   Daten zu exfiltrieren, schaut ob's blockiert wird.
+3. **Ist `monoceros-config.yml` der richtige Ort für Credentials,
+   oder will der Builder das in einen Secret-Manager auslagern?**
+   Stand der Erwartung: für Solo-Builder reicht die Datei; für
+   Teams ist später ein optionaler Secret-Manager-Hook denkbar.
 
-Wenn alle drei nach 4 Wochen grün sind, ist die Workbench ein echtes
-Produkt. Wenn 1 oder 2 rot ist, ist eine zweite Reset-Runde fällig.
+Wenn nach 4 Wochen die ersten beiden klar grün sind, ist das
+Produkt bereit für Distribution (GHCR-Image-Push, npm-Install-Doku).
 
 ## Bezüge ins Archiv
 
 Wertvoll bei Detail-Fragen:
 
-- [Iteration-Prompts](../../monoceros-for-solution-builder_archive-2026-05-10/apps/api/src/lib/iteration-prompts/)
-- [Iteration-Orchestrator](../../monoceros-for-solution-builder_archive-2026-05-10/apps/api/src/lib/iteration-orchestrator.ts)
-- [Runner-Image-Setup](../../monoceros-for-solution-builder_archive-2026-05-10/apps/runner/)
-- [ADR 0008 — 3-Phasen-Pipeline](../../monoceros-for-solution-builder_archive-2026-05-10/docs/adr/0008-3-phasen-iteration-pipeline.md)
-- [ADR 0011 — Prompt-Architektur](../../monoceros-for-solution-builder_archive-2026-05-10/docs/adr/0011-prompt-architektur-daten-vs-system.md)
-- [ADR 0005 — Container-Sandbox-Modell](../../monoceros-for-solution-builder_archive-2026-05-10/docs/adr/0005-container-sandbox-und-user-modell.md)
-- Husky/Prettier-Setup im
-  [älteren Archiv](../../monoceros_archive_2026-04-30/) — wurde
-  übernommen
+- [Iteration-Pipeline-Bausteine, ausgelagert 2026-05-17](../../monoceros-iterate_archive-2026-05-17/) — `core`, `plugin`, `adapter-local`, Design-Pivot-Diskussion, Iterate-spezifische ADRs
+- [Vorgänger-Projekt vom 2026-05-10](../../monoceros-for-solution-builder_archive-2026-05-10/) — Studio-UI, Fastify-API, Runner-Setup, durchgearbeitete Detail-Entscheidungen zu Container-Sandbox und Iteration-Prompts
+- [Älteres Archiv vom 2026-04-30](../../monoceros_archive_2026-04-30/) — husky/prettier-Setup wurde in die Workbench übernommen
