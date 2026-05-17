@@ -85,25 +85,35 @@ describe('runApply', () => {
       name: 'with-feature',
       monocerosHome: home,
     });
+    const devcontainerDir = path.join(
+      home,
+      'container',
+      'with-feature',
+      '.devcontainer',
+    );
     const devcontainer = JSON.parse(
+      await readFile(path.join(devcontainerDir, 'devcontainer.json'), 'utf8'),
+    );
+    // During dev the workbench has the feature on disk → the ref is
+    // rewritten to a relative path inside .devcontainer/, and the
+    // feature directory is copied into the container scaffold so
+    // devcontainer-cli builds from the local source. (Absolute paths
+    // to local features are rejected by devcontainer-cli.)
+    expect(devcontainer.features).toEqual({
+      './features/claude-code': {},
+    });
+    const copiedManifest = JSON.parse(
       await readFile(
         path.join(
-          home,
-          'container',
-          'with-feature',
-          '.devcontainer',
-          'devcontainer.json',
+          devcontainerDir,
+          'features',
+          'claude-code',
+          'devcontainer-feature.json',
         ),
         'utf8',
       ),
     );
-    // During dev the workbench has the feature on disk → the ref is
-    // rewritten to an absolute filesystem path so devcontainer-cli
-    // builds from the local source.
-    const featureKeys = Object.keys(devcontainer.features ?? {});
-    expect(featureKeys).toHaveLength(1);
-    expect(featureKeys[0]).toMatch(/\/images\/features\/claude-code$/);
-    expect(featureKeys[0]).toMatch(/^\//); // absolute
+    expect(copiedManifest.id).toBe('claude-code');
   });
 
   it('passes through Monoceros feature refs verbatim when the local copy is absent', async () => {

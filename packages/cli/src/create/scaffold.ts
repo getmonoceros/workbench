@@ -234,57 +234,84 @@ function buildRepoAuthEnv(): Record<string, string> {
 export type DevcontainerJson = DevcontainerImageMode | DevcontainerComposeMode;
 
 /**
- * Resolve a yml feature ref to whatever string `devcontainer-cli`
- * expects in `devcontainer.json` → `features`.
- *
- * The yml always carries the canonical OCI ref, e.g.
- * `ghcr.io/monoceros/features/claude-code:1`. Same ref in dev and in
- * production — the yml never changes between environments.
- *
- * Dev-mode short-circuit: when the ref points at the Monoceros feature
- * library AND the local workbench has the feature on disk, the resolver
- * swaps in the absolute filesystem path. `devcontainer-cli` reads
- * absolute paths as local features, so the build uses the in-tree
- * source instead of pulling from GHCR. Once GHCR is published in M4,
- * the local file disappears in non-workbench installs and the ref
- * passes through unchanged.
- *
- * Third-party refs (`ghcr.io/devcontainers/...`, etc.) always pass
- * through verbatim.
+ * Match `ghcr.io/monoceros/features/<name>:<tag>` — the canonical
+ * shape Monoceros-owned features use in yml.
  */
 const MONOCEROS_FEATURE_RE =
   /^ghcr\.io\/monoceros\/features\/([a-z0-9._-]+):[a-z0-9._-]+$/;
 
-export function resolveFeatureRef(ref: string): string {
-  const match = MONOCEROS_FEATURE_RE.exec(ref);
-  if (!match) return ref;
-  const localPath = path.join(workbenchRoot(), 'images', 'features', match[1]!);
-  return existsSync(localPath) ? localPath : ref;
+/**
+ * Per-feature plan for the container build.
+ *
+ *  - `devcontainerKey` — the key used in `devcontainer.json → features`.
+ *  - `localSourceDir` / `localName` — set when the workbench has the
+ *    feature on disk. `writeScaffold` copies the directory into
+ *    `<container>/.devcontainer/features/<name>/` and uses the
+ *    relative path `./features/<name>` in devcontainer.json.
+ *    (devcontainer-cli accepts relative paths from `.devcontainer/`
+ *    but rejects absolute filesystem paths to local features.)
+ */
+interface ResolvedFeature {
+  devcontainerKey: string;
+  options: Record<string, unknown>;
+  localSourceDir?: string;
+  localName?: string;
+}
+
+/**
+ * Compute the feature list for `opts`. Detects Monoceros-owned refs
+ * (`ghcr.io/monoceros/features/<name>:<tag>`) and, if the workbench
+ * has the feature on disk, rewrites the key to `./features/<name>`
+ * and records the source for the copy step.
+ *
+ * Third-party refs and Monoceros refs without a local source pass
+ * through verbatim — devcontainer-cli pulls them from the registry.
+ */
+export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
+  const resolved: ResolvedFeature[] = [];
+
+  for (const lang of opts.languages) {
+    if (BUILTIN_LANGUAGES.has(lang)) continue;
+    const entry = LANGUAGE_CATALOG[lang];
+    if (entry) resolved.push({ devcontainerKey: entry.feature, options: {} });
+  }
+  if (opts.aptPackages && opts.aptPackages.length > 0) {
+    resolved.push({
+      devcontainerKey: 'ghcr.io/devcontainers-contrib/features/apt-packages:1',
+      options: { packages: opts.aptPackages.join(',') },
+    });
+  }
+  if (opts.features) {
+    for (const [rawRef, options] of Object.entries(opts.features)) {
+      const match = MONOCEROS_FEATURE_RE.exec(rawRef);
+      if (match) {
+        const name = match[1]!;
+        const localSourceDir = path.join(
+          workbenchRoot(),
+          'images',
+          'features',
+          name,
+        );
+        if (existsSync(localSourceDir)) {
+          resolved.push({
+            devcontainerKey: `./features/${name}`,
+            options,
+            localSourceDir,
+            localName: name,
+          });
+          continue;
+        }
+      }
+      resolved.push({ devcontainerKey: rawRef, options });
+    }
+  }
+  return resolved;
 }
 
 export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
   const features: Record<string, Record<string, unknown>> = {};
-  for (const lang of opts.languages) {
-    if (BUILTIN_LANGUAGES.has(lang)) continue;
-    const entry = LANGUAGE_CATALOG[lang];
-    if (entry) features[entry.feature] = {};
-  }
-  if (opts.aptPackages && opts.aptPackages.length > 0) {
-    // The apt-packages devcontainer feature accepts a comma-separated
-    // list of package names. Spaces in the value would trip apt-get, so
-    // we join exactly as the feature expects.
-    features['ghcr.io/devcontainers-contrib/features/apt-packages:1'] = {
-      packages: opts.aptPackages.join(','),
-    };
-  }
-  // Custom features (via `monoceros add-feature` or directly in the
-  // yml) are merged last and win on ref collision. Refs starting with
-  // `./features/<name>` are rewritten to absolute paths into the
-  // workbench's `images/features/` library.
-  if (opts.features) {
-    for (const [ref, options] of Object.entries(opts.features)) {
-      features[resolveFeatureRef(ref)] = options;
-    }
+  for (const f of resolveFeatures(opts)) {
+    features[f.devcontainerKey] = f.options;
   }
 
   const featuresField =
@@ -559,6 +586,28 @@ export async function writeScaffold(
     path.join(devcontainerDir, 'devcontainer.json'),
     JSON.stringify(devcontainerJson, null, 2) + '\n',
   );
+
+  // Copy any Monoceros-owned features that the workbench has on disk
+  // into `<devcontainerDir>/features/<name>/`. The devcontainer.json
+  // references them via the relative path `./features/<name>` — the
+  // devcontainer-cli accepts relative paths from the `.devcontainer/`
+  // directory but rejects absolute filesystem paths to local features.
+  //
+  // We always rebuild the whole `features/` directory: drop the old
+  // copy and recreate from current sources, so a feature that was
+  // removed from the yml doesn't linger as stale on-disk content that
+  // devcontainer-cli would still see.
+  const featuresDir = path.join(devcontainerDir, 'features');
+  if (existsSync(featuresDir)) {
+    await fs.rm(featuresDir, { recursive: true, force: true });
+  }
+  const resolvedFeatures = resolveFeatures(opts);
+  for (const f of resolvedFeatures) {
+    if (!f.localSourceDir || !f.localName) continue;
+    const dest = path.join(featuresDir, f.localName);
+    await fs.mkdir(dest, { recursive: true });
+    await fs.cp(f.localSourceDir, dest, { recursive: true });
+  }
 
   await writePostCreateScript(devcontainerDir, opts);
 
