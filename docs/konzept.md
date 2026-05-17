@@ -168,8 +168,8 @@ Beispiel:
 defaults:
   git:
     user:
-      name: Thorsten Kamann
-      email: thorsten.kamann@conciso.de
+      name: Your Name
+      email: you@example.com
   atlassian:
     instance: your-org.atlassian.net
     email: you@example.com

@@ -150,8 +150,8 @@ Resultat landet in `<dev-container>/.monoceros/gitconfig`:
 
 ```
 [user]
-    name = Thorsten Kamann
-    email = thorsten@example.com
+    name = Your Name
+    email = you@example.com
 ```
 
 post-create.sh setzt `git config --global include.path /workspaces/<name>/.monoceros/gitconfig`,

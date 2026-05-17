@@ -37,15 +37,15 @@ describe('readMonocerosConfig', () => {
         'defaults:',
         '  git:',
         '    user:',
-        '      name: Thorsten Kamann',
-        '      email: thorsten@conciso.de',
+        '      name: Your Name',
+        '      email: you@example.com',
         '',
       ].join('\n'),
     );
     const result = await readMonocerosConfig({ monocerosHome: home });
     expect(result?.defaults?.git?.user).toEqual({
-      name: 'Thorsten Kamann',
-      email: 'thorsten@conciso.de',
+      name: 'Your Name',
+      email: 'you@example.com',
     });
   });
 

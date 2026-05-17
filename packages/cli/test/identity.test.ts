@@ -22,26 +22,26 @@ describe('collectGitIdentity', () => {
       spawn: async (key) => {
         calls.push(key);
         if (key === 'user.name') {
-          return { value: 'Thorsten Kamann', exitCode: 0 };
+          return { value: 'Your Name', exitCode: 0 };
         }
         if (key === 'user.email') {
-          return { value: 'thorsten@conciso.de', exitCode: 0 };
+          return { value: 'you@example.com', exitCode: 0 };
         }
         return { value: '', exitCode: 1 };
       },
     });
 
     expect(calls).toEqual(['user.name', 'user.email']);
-    expect(result.name).toBe('Thorsten Kamann');
-    expect(result.email).toBe('thorsten@conciso.de');
+    expect(result.name).toBe('Your Name');
+    expect(result.email).toBe('you@example.com');
 
     const contents = await fs.readFile(
       path.join(cwd, '.monoceros', 'gitconfig'),
       'utf8',
     );
     expect(contents).toContain('[user]');
-    expect(contents).toContain('name = Thorsten Kamann');
-    expect(contents).toContain('email = thorsten@conciso.de');
+    expect(contents).toContain('name = Your Name');
+    expect(contents).toContain('email = you@example.com');
   });
 
   it('writes only the keys host-git has set (missing email)', async () => {
@@ -49,7 +49,7 @@ describe('collectGitIdentity', () => {
     const result = await collectGitIdentity(cwd, {
       spawn: async (key) => {
         if (key === 'user.name') {
-          return { value: 'Thorsten', exitCode: 0 };
+          return { value: 'Solo', exitCode: 0 };
         }
         // user.email unset → git exits 1 with empty stdout.
         return { value: '', exitCode: 1 };
@@ -61,7 +61,7 @@ describe('collectGitIdentity', () => {
       },
     });
 
-    expect(result.name).toBe('Thorsten');
+    expect(result.name).toBe('Solo');
     expect(result.email).toBeUndefined();
     expect(warnings.some((w) => w.includes('user.email'))).toBe(true);
 
@@ -69,7 +69,7 @@ describe('collectGitIdentity', () => {
       path.join(cwd, '.monoceros', 'gitconfig'),
       'utf8',
     );
-    expect(contents).toContain('name = Thorsten');
+    expect(contents).toContain('name = Solo');
     expect(contents).not.toContain('email = ');
   });
 

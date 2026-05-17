@@ -40,8 +40,8 @@ repos:
     branch: develop
 git:
   user:
-    name: Thorsten Kamann
-    email: thorsten.kamann@conciso.de
+    name: Your Name
+    email: you@example.com
 `;
 
 describe('validateConfig', () => {
@@ -165,8 +165,8 @@ describe('validateConfig', () => {
       ],
       git: {
         user: {
-          name: 'Thorsten Kamann',
-          email: 'thorsten.kamann@conciso.de',
+          name: 'Your Name',
+          email: 'you@example.com',
         },
       },
     });
@@ -174,7 +174,7 @@ describe('validateConfig', () => {
     expect(cfg.features[0]!.options).toEqual({ version: 'latest' });
     expect(cfg.repos).toHaveLength(2);
     expect(cfg.repos[1]!.branch).toBe('develop');
-    expect(cfg.git?.user?.email).toBe('thorsten.kamann@conciso.de');
+    expect(cfg.git?.user?.email).toBe('you@example.com');
   });
 });
 
@@ -194,7 +194,7 @@ describe('parseConfig', () => {
     expect(parsed.config.features[0]!.ref).toBe(
       'ghcr.io/devcontainers/features/docker-in-docker:2',
     );
-    expect(parsed.config.git?.user?.name).toBe('Thorsten Kamann');
+    expect(parsed.config.git?.user?.name).toBe('Your Name');
   });
 
   it('surfaces yaml syntax errors with source path', () => {
