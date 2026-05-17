@@ -51,6 +51,43 @@ anders heißen, ist's ein globales sed über das Repo.
 
 ## Aktuelle Features
 
-| Ordner        | Tool                      | Status |
-| ------------- | ------------------------- | ------ |
-| `claude-code` | Anthropic Claude Code CLI | live   |
+| Ordner        | Tool                                  | Status |
+| ------------- | ------------------------------------- | ------ |
+| `claude-code` | Anthropic Claude Code CLI             | live   |
+| `atlassian`   | Atlassian CLI (`acli`, inkl. rovodev) | live   |
+
+## Monoceros-Konventionen oberhalb des Devcontainer-Feature-Specs
+
+Zusätzlich zu den Standardfeldern werten die Monoceros-Scaffolder
+ein Extension-Feld `x-monoceros` in der `devcontainer-feature.json`
+aus:
+
+```jsonc
+{
+  "id": "claude-code",
+  ...
+  "x-monoceros": {
+    "persistentHomePaths": [".claude"]
+  }
+}
+```
+
+- **`persistentHomePaths`** — Liste von Subpfaden unterhalb von
+  `/home/node/`, die der Container persistent halten soll. Beim
+  `monoceros apply` wird unter `<container-dir>/home/<path>` ein
+  Hostverzeichnis angelegt und in die `devcontainer.json` als
+  Bind-Mount eingetragen. Damit überlebt Login + Tool-State jeden
+  Apply-Rebuild und bleibt pro Container isoliert. Details:
+  [`docs/adr/0003-container-state-model.md`](../../docs/adr/0003-container-state-model.md).
+
+### Post-Create-Hooks
+
+`install.sh` läuft beim Image-Build und sieht die Bind-Mounts noch
+nicht — d.h. ein Auth-Login der in `/home/node/.config/...`
+schreiben soll, gehört nicht ins `install.sh`. Stattdessen darf
+`install.sh` ein Skript unter
+`/usr/local/share/monoceros/post-create.d/<feature>.sh` ablegen;
+das vom Scaffold generierte `post-create.sh` ruft alle Skripte dort
+beim Container-Start auf. Konvention für solche Hooks: idempotent
+(skip wenn schon eingeloggt), klare Logzeilen, exit 0 wenn nichts
+zu tun.

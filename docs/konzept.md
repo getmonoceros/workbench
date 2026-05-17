@@ -160,24 +160,45 @@ Geplanter Feature-Katalog (siehe `backlog.md` für Reihenfolge):
 | `gh-copilot`  | GitHub Copilot CLI                            | Folge-Etappe |
 | `aider`       | Aider (Python, OSS)                           | Folge-Etappe |
 
-**Credentials für AI-Tools** liegen unter
-`$MONOCEROS_HOME/monoceros-config.yml` (gitignored, builder-lokal).
-Beispiel:
+**Credentials für AI-Tools** werden direkt am Feature-Eintrag in der
+Container-yml hinterlegt — dort, wo das Tool aktiviert wird:
+
+```yaml
+features:
+  - ref: ghcr.io/<org>/monoceros-features/atlassian:1
+    options:
+      email: you@example.com
+      apiToken: ATATT3xFf… # Site/Instance fragt `acli rovodev run` einmalig selbst ab
+  - ref: ghcr.io/<org>/monoceros-features/claude-code:1
+    options:
+      apiKey: sk-ant-… # optional → API-Modus statt OAuth/Subscription
+```
+
+Damit dieselben Atlassian/Anthropic-Daten nicht in jeder Container-yml
+wiederholt werden müssen, hält `monoceros-config.yml` Defaults pro
+Feature-Ref:
 
 ```yaml
 defaults:
-  git:
-    user:
-      name: Your Name
+  features:
+    ghcr.io/<org>/monoceros-features/atlassian:1:
       email: you@example.com
-  atlassian:
-    instance: your-org.atlassian.net
-    email: you@example.com
-    apiToken: ATATT3xFf…
+      apiToken: ATATT3xFf…
 ```
 
-`monoceros apply` liest diese Defaults aus und reicht sie an die
-Container-Features durch — der Builder logged sich nie manuell ein.
+`monoceros apply` merged Per-Container-Optionen über die globalen
+Defaults — Container-yml gewinnt, fehlende Werte werden aus dem
+globalen Block aufgefüllt.
+
+### Container-State überlebt apply
+
+Jeder Container hat ein sichtbares Home-Verzeichnis auf der Host-Disk
+unter `$MONOCEROS_HOME/container/<name>/home/`. Features deklarieren
+über `x-monoceros.persistentHomePaths` welche Unterordner persistent
+sein sollen (z.B. `.claude`, `.config/acli`). Beim Apply wird das als
+Bind-Mount in die `devcontainer.json` eingetragen, sodass Login,
+Session-History und tool-spezifischer State über `monoceros apply`
+hinweg erhalten bleiben. Details: [ADR 0003](adr/0003-container-state-model.md).
 
 ## CLI-Shape
 

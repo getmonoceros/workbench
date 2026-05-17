@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainerFeature.schema.json",
+  "id": "atlassian",
+  "name": "Atlassian CLI (acli)",
+  "version": "0.2.0",
+  "description": "Installs the Atlassian Command Line Interface (`acli`) on Linux. Includes the Rovo Dev agent as the `acli rovodev` subcommand. ACLI's config and credential files live at /home/node/.config/acli, which Monoceros bind-mounts from <container-dir>/home/.config/acli so the login survives `monoceros apply` rebuilds. When `email` and `apiToken` options are provided, the feature performs a non-interactive Rovo Dev login on first start; the site/instance is asked by Rovo Dev itself on first `acli rovodev run`.",
+  "documentationURL": "https://developer.atlassian.com/cloud/acli/",
+  "options": {
+    "email": {
+      "type": "string",
+      "default": "",
+      "description": "Email address tied to your Atlassian account. Required for non-interactive Rovo Dev login (used together with apiToken)."
+    },
+    "apiToken": {
+      "type": "string",
+      "default": "",
+      "description": "Atlassian API token from id.atlassian.com → Security → API tokens. Required for non-interactive Rovo Dev login (used together with email). The site/instance is asked by Rovo Dev itself on first `acli rovodev run` and persisted under /home/node/.config/acli."
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["Atlassian.atlascode"]
+    }
+  },
+  "x-monoceros": {
+    "persistentHomePaths": [".config/acli"]
+  }
+}

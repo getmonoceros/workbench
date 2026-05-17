@@ -2,26 +2,27 @@
   "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainerFeature.schema.json",
   "id": "claude-code",
   "name": "Claude Code CLI",
-  "version": "1.0.0",
-  "description": "Installs the Anthropic Claude Code CLI globally via npm. Auth is inherited from the host by bind-mounting ~/.claude — works with both the subscription login and an API-key login.",
+  "version": "1.1.0",
+  "description": "Installs the Anthropic Claude Code CLI globally via npm. Login (subscription / OAuth) lives inside the container under /home/node/.claude, which Monoceros bind-mounts from <container-dir>/home/.claude — so the login survives `monoceros apply` rebuilds and stays per-container. If an `apiKey` option is provided, ANTHROPIC_API_KEY is exported instead and the OAuth flow is bypassed.",
   "documentationURL": "https://docs.anthropic.com/en/docs/claude-code",
   "options": {
     "version": {
       "type": "string",
       "default": "latest",
       "description": "npm-style version spec for @anthropic-ai/claude-code (e.g. 'latest', '0.4.2', '^0.4')."
+    },
+    "apiKey": {
+      "type": "string",
+      "default": "",
+      "description": "Optional Anthropic API key. When set, exported as ANTHROPIC_API_KEY for all shells in the container, which makes Claude Code use API auth instead of the subscription/OAuth flow."
     }
   },
-  "mounts": [
-    {
-      "source": "${localEnv:HOME}/.claude",
-      "target": "/home/node/.claude",
-      "type": "bind"
-    }
-  ],
   "customizations": {
     "vscode": {
       "extensions": ["anthropic.claude-code"]
     }
+  },
+  "x-monoceros": {
+    "persistentHomePaths": [".claude"]
   }
 }

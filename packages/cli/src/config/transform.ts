@@ -17,13 +17,22 @@ import type { SolutionConfig } from './schema.js';
  * `externalServices.postgres` → `postgresUrl` (the CreateOptions
  * field name predates the yml schema; rename would touch every M1
  * caller, so the translator absorbs the diff here).
+ *
+ * `featureDefaults` (optional) — `defaults.features` from
+ * `monoceros-config.yml`. Per-container options always override these;
+ * keys not set per-container fall back to the default. A feature ref
+ * that exists only in `featureDefaults` (not in the container yml)
+ * does NOT get included — the container yml is what decides whether
+ * a feature is active at all; the defaults only fill in option values.
  */
 export function solutionConfigToCreateOptions(
   config: SolutionConfig,
+  featureDefaults: Record<string, FeatureOptions> = {},
 ): CreateOptions {
   const featureRecord: Record<string, FeatureOptions> = {};
   for (const entry of config.features) {
-    featureRecord[entry.ref] = entry.options ?? {};
+    const defaults = featureDefaults[entry.ref] ?? {};
+    featureRecord[entry.ref] = { ...defaults, ...(entry.options ?? {}) };
   }
 
   const result: CreateOptions = {

@@ -1,4 +1,4 @@
-import { existsSync, promises as fs } from 'node:fs';
+import { existsSync, readFileSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { workbenchRoot } from '../config/paths.js';
 import {
@@ -256,6 +256,13 @@ interface ResolvedFeature {
   options: Record<string, unknown>;
   localSourceDir?: string;
   localName?: string;
+  /**
+   * Subpaths of `/home/node/` that this feature wants to persist
+   * across container rebuilds. Each one is bind-mounted from
+   * `<container-dir>/home/<path>` into `/home/node/<path>`. Read from
+   * the feature manifest's `x-monoceros.persistentHomePaths` array.
+   */
+  persistentHomePaths: string[];
 }
 
 /**
@@ -273,12 +280,18 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
   for (const lang of opts.languages) {
     if (BUILTIN_LANGUAGES.has(lang)) continue;
     const entry = LANGUAGE_CATALOG[lang];
-    if (entry) resolved.push({ devcontainerKey: entry.feature, options: {} });
+    if (entry)
+      resolved.push({
+        devcontainerKey: entry.feature,
+        options: {},
+        persistentHomePaths: [],
+      });
   }
   if (opts.aptPackages && opts.aptPackages.length > 0) {
     resolved.push({
       devcontainerKey: 'ghcr.io/devcontainers-contrib/features/apt-packages:1',
       options: { packages: opts.aptPackages.join(',') },
+      persistentHomePaths: [],
     });
   }
   if (opts.features) {
@@ -298,24 +311,82 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
             options,
             localSourceDir,
             localName: name,
+            persistentHomePaths: readPersistentHomePaths(localSourceDir),
           });
           continue;
         }
       }
-      resolved.push({ devcontainerKey: rawRef, options });
+      resolved.push({
+        devcontainerKey: rawRef,
+        options,
+        persistentHomePaths: [],
+      });
     }
   }
   return resolved;
 }
 
+/**
+ * Read `x-monoceros.persistentHomePaths` from a feature's manifest
+ * on disk. Returns `[]` when the file doesn't exist, can't be parsed,
+ * or the field is missing — always best-effort, never throws. The
+ * paths are validated to be safe relative subpaths (no `..`, no
+ * absolute, no shell metacharacters) — anything else is dropped with
+ * no further fuss, since a bad value here is a feature-author bug,
+ * not something a builder can fix.
+ */
+function readPersistentHomePaths(localSourceDir: string): string[] {
+  const manifestPath = path.join(localSourceDir, 'devcontainer-feature.json');
+  try {
+    const text = readFileSync(manifestPath, 'utf8');
+    const parsed = JSON.parse(text) as {
+      'x-monoceros'?: { persistentHomePaths?: unknown };
+    };
+    const raw = parsed['x-monoceros']?.persistentHomePaths;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (p): p is string =>
+        typeof p === 'string' &&
+        p.length > 0 &&
+        !p.startsWith('/') &&
+        !p.includes('..') &&
+        HOME_SUBPATH_RE.test(p),
+    );
+  } catch {
+    return [];
+  }
+}
+
+// Home subpaths: dot-prefixed dirs and config-like sub-dirs.
+// Restrictive on purpose — only `.foo`, `.foo/bar`, `foo`, `foo/bar`,
+// no whitespace, no shell metacharacters.
+const HOME_SUBPATH_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
+
 export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
+  const resolvedFeatures = resolveFeatures(opts);
   const features: Record<string, Record<string, unknown>> = {};
-  for (const f of resolveFeatures(opts)) {
+  for (const f of resolvedFeatures) {
     features[f.devcontainerKey] = f.options;
   }
 
   const featuresField =
     Object.keys(features).length > 0 ? { features } : undefined;
+
+  // Bind-mounts for per-feature persistent home subpaths. Source on
+  // the host is `<container-dir>/home/<subpath>` (under the
+  // localWorkspaceFolder); target inside the container is the same
+  // subpath under `/home/node/`. devcontainer-cli auto-creates the
+  // source dir if missing, but we pre-create it in writeScaffold so
+  // the dir's owner matches the host user (otherwise on Linux it'd be
+  // root from Docker, breaking writes inside).
+  const homeMounts: string[] = [];
+  for (const f of resolvedFeatures) {
+    for (const sub of f.persistentHomePaths) {
+      homeMounts.push(
+        `source=\${localWorkspaceFolder}/home/${sub},target=/home/node/${sub},type=bind`,
+      );
+    }
+  }
 
   // No scaffold-level VS Code customizations today — extension hints
   // belong with the feature that needs them (e.g. the claude-code
@@ -325,9 +396,11 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
   const repoAuthEnv = wantsRepoAuth ? { containerEnv: buildRepoAuthEnv() } : {};
 
   if (needsCompose(opts)) {
-    // Compose-mode: SSH-agent mount goes onto the workspace service in
-    // compose.yaml (see buildComposeYaml); devcontainer.json just
-    // forwards the env vars.
+    // Compose-mode: per-feature persistent home mounts go onto the
+    // workspace service in compose.yaml (see buildComposeYaml).
+    // SSH-agent mount and repo-auth env vars also live on the compose
+    // service. The devcontainer.json just references compose and
+    // forwards env vars.
     return {
       name: opts.name,
       dockerComposeFile: 'compose.yaml',
@@ -342,11 +415,12 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     };
   }
 
-  // Build the mounts array. Today only repo-auth (SSH-agent) needs an
-  // explicit scaffold-level mount; everything else (Claude Code's
-  // ~/.claude bind, future tool host-deps) is the responsibility of
-  // the devcontainer feature that pulls the tool in.
-  const mounts: string[] = wantsRepoAuth ? buildRepoAuthMounts() : [];
+  // Image-mode mounts: SSH-agent forward (only when repos are
+  // configured) plus per-feature persistent-home binds.
+  const mounts: string[] = [
+    ...(wantsRepoAuth ? buildRepoAuthMounts() : []),
+    ...homeMounts,
+  ];
   const mountsField = mounts.length > 0 ? { mounts } : {};
 
   return {
@@ -378,6 +452,15 @@ export function buildComposeYaml(opts: CreateOptions): string {
   lines.push('      - NET_ADMIN');
   lines.push('    volumes:');
   lines.push(`      - ..:/workspaces/${opts.name}:cached`);
+  // Per-feature persistent home subpaths. Paths inside compose.yaml
+  // are relative to the .devcontainer/ directory; `..` walks up to
+  // the container root, where `home/` lives.
+  const resolvedFeatures = resolveFeatures(opts);
+  for (const f of resolvedFeatures) {
+    for (const sub of f.persistentHomePaths) {
+      lines.push(`      - ../home/${sub}:/home/node/${sub}`);
+    }
+  }
   const wantsRepoAuth = (opts.repos?.length ?? 0) > 0;
   if (wantsRepoAuth) {
     // `:-/dev/null` fallback so the compose-up doesn't error when the
@@ -465,6 +548,21 @@ export function buildPostCreateScript(opts: CreateOptions): string {
     "# git config loads first; the include below merges the host's",
     '# identity values in.',
     `git config --global include.path "/workspaces/${opts.name}/.monoceros/gitconfig"`,
+    '',
+    '# Per-feature post-create hooks. Each Monoceros-curated feature',
+    '# may drop a script into /usr/local/share/monoceros/post-create.d/',
+    '# during its install.sh — typical job is a non-interactive login',
+    '# against bind-mounted state under /home/node, using the option',
+    '# values the feature received as env vars at install time. Scripts',
+    '# run in lexicographic order, each in its own subshell, and a',
+    '# failure aborts post-create (set -e is in effect).',
+    'if [ -d /usr/local/share/monoceros/post-create.d ]; then',
+    '  for hook in /usr/local/share/monoceros/post-create.d/*.sh; do',
+    '    [ -f "$hook" ] || continue',
+    '    echo "→ post-create hook: $(basename "$hook")"',
+    '    bash "$hook"',
+    '  done',
+    'fi',
     '',
     '# Bring up Node dependencies if the workspace has a package.json.',
     'if [ -f package.json ]; then',
@@ -563,9 +661,22 @@ export async function writeScaffold(
   const devcontainerDir = path.join(targetDir, '.devcontainer');
   const monocerosDir = path.join(targetDir, '.monoceros');
   const projectsDir = path.join(targetDir, 'projects');
+  const homeDir = path.join(targetDir, 'home');
   await fs.mkdir(devcontainerDir, { recursive: true });
   await fs.mkdir(monocerosDir, { recursive: true });
   await fs.mkdir(projectsDir, { recursive: true });
+  await fs.mkdir(homeDir, { recursive: true });
+
+  // Container-root `.gitignore`. Excludes the two directories that
+  // hold builder-private state: `home/` (logins, sessions, secrets
+  // baked into tool config files) and `.monoceros/` (git-credentials
+  // captured from the host helper, machine-local gitconfig include).
+  // Inside `projects/<repo>/` builders have their own `.git` and any
+  // wrapping git operation should be at that level, not at the
+  // container root — but a stray `git init` at the root is exactly
+  // the accident this .gitignore protects against.
+  const containerGitignore = path.join(targetDir, '.gitignore');
+  await fs.writeFile(containerGitignore, '/home/\n/.monoceros/\n');
 
   // `.gitkeep` so `projects/` survives a fresh git clone before any
   // sub-project has been added.
@@ -607,6 +718,16 @@ export async function writeScaffold(
     const dest = path.join(featuresDir, f.localName);
     await fs.mkdir(dest, { recursive: true });
     await fs.cp(f.localSourceDir, dest, { recursive: true });
+  }
+
+  // Pre-create persistent home subpaths so docker doesn't auto-mkdir
+  // them as root at container start. We only ensure the dirs exist;
+  // any existing content survives, which is the whole point — apply
+  // never touches `home/<sub>` once it's there.
+  for (const f of resolvedFeatures) {
+    for (const sub of f.persistentHomePaths) {
+      await fs.mkdir(path.join(homeDir, sub), { recursive: true });
+    }
   }
 
   await writePostCreateScript(devcontainerDir, opts);

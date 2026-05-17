@@ -116,6 +116,218 @@ describe('runApply', () => {
     expect(copiedManifest.id).toBe('claude-code');
   });
 
+  it('creates home/ and .gitignore at the container root on every apply', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runApply({ ...baseRunOpts, name: 'demo', monocerosHome: home });
+    const containerRoot = path.join(home, 'container', 'demo');
+    const homeStat = await readFile(
+      path.join(containerRoot, '.gitignore'),
+      'utf8',
+    );
+    expect(homeStat).toContain('/home/');
+    expect(homeStat).toContain('/.monoceros/');
+    // home/ exists as a directory even when no feature requests a
+    // persistent path — the convention is stable regardless of yml.
+    await expect(
+      readFile(path.join(containerRoot, 'home', '.placeholder'), 'utf8').catch(
+        () => null,
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it('generates per-feature persistent-home mounts in image-mode devcontainer.json', async () => {
+    await writeYml(
+      'with-claude',
+      [
+        'schemaVersion: 1',
+        'name: with-claude',
+        'features:',
+        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'with-claude',
+      monocerosHome: home,
+    });
+    const containerRoot = path.join(home, 'container', 'with-claude');
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(containerRoot, '.devcontainer', 'devcontainer.json'),
+        'utf8',
+      ),
+    );
+    expect(devcontainer.mounts).toContain(
+      'source=${localWorkspaceFolder}/home/.claude,target=/home/node/.claude,type=bind',
+    );
+    // Pre-created on the host so docker doesn't auto-mkdir as root.
+    const claudeDir = path.join(containerRoot, 'home', '.claude');
+    await expect(
+      readFile(path.join(claudeDir, '.does-not-need-to-exist')).catch(
+        () => null,
+      ),
+    ).resolves.toBeNull();
+    // The dir itself should exist — readdir succeeds.
+    await expect(
+      (await import('node:fs/promises')).readdir(claudeDir),
+    ).resolves.toEqual([]);
+  });
+
+  it('preserves home/<subpath> content across re-apply', async () => {
+    await writeYml(
+      'persists',
+      [
+        'schemaVersion: 1',
+        'name: persists',
+        'features:',
+        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '',
+      ].join('\n'),
+    );
+    await runApply({ ...baseRunOpts, name: 'persists', monocerosHome: home });
+    const credentialsPath = path.join(
+      home,
+      'container',
+      'persists',
+      'home',
+      '.claude',
+      '.credentials.json',
+    );
+    await writeFile(credentialsPath, '{"fake":"token"}');
+    // Re-apply should leave the on-disk login alone.
+    await runApply({ ...baseRunOpts, name: 'persists', monocerosHome: home });
+    const after = await readFile(credentialsPath, 'utf8');
+    expect(after).toBe('{"fake":"token"}');
+  });
+
+  it('emits the post-create hook-runner block', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runApply({ ...baseRunOpts, name: 'demo', monocerosHome: home });
+    const postCreate = await readFile(
+      path.join(home, 'container', 'demo', '.devcontainer', 'post-create.sh'),
+      'utf8',
+    );
+    expect(postCreate).toContain('/usr/local/share/monoceros/post-create.d');
+    expect(postCreate).toMatch(/for hook in .*post-create\.d\/\*\.sh/);
+  });
+
+  it('merges defaults.features from monoceros-config.yml into per-container options', async () => {
+    await writeFile(
+      path.join(home, 'monoceros-config.yml'),
+      [
+        'schemaVersion: 1',
+        'defaults:',
+        '  features:',
+        '    ghcr.io/monoceros/features/claude-code:1:',
+        '      apiKey: sk-ant-from-defaults',
+        '',
+      ].join('\n'),
+    );
+    await writeYml(
+      'merged',
+      [
+        'schemaVersion: 1',
+        'name: merged',
+        'features:',
+        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '    options:',
+        '      version: "0.5.1"',
+        '',
+      ].join('\n'),
+    );
+    await runApply({ ...baseRunOpts, name: 'merged', monocerosHome: home });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'merged',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    // apiKey came from defaults, version was overridden per-container.
+    expect(devcontainer.features['./features/claude-code']).toEqual({
+      apiKey: 'sk-ant-from-defaults',
+      version: '0.5.1',
+    });
+  });
+
+  it('per-container options win over defaults.features for the same key', async () => {
+    await writeFile(
+      path.join(home, 'monoceros-config.yml'),
+      [
+        'schemaVersion: 1',
+        'defaults:',
+        '  features:',
+        '    ghcr.io/monoceros/features/claude-code:1:',
+        '      apiKey: sk-ant-default',
+        '',
+      ].join('\n'),
+    );
+    await writeYml(
+      'override',
+      [
+        'schemaVersion: 1',
+        'name: override',
+        'features:',
+        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '    options:',
+        '      apiKey: sk-ant-per-container',
+        '',
+      ].join('\n'),
+    );
+    await runApply({ ...baseRunOpts, name: 'override', monocerosHome: home });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'override',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(devcontainer.features['./features/claude-code']).toEqual({
+      apiKey: 'sk-ant-per-container',
+    });
+  });
+
+  it("does not include a defaults-only feature that's not in the container yml", async () => {
+    await writeFile(
+      path.join(home, 'monoceros-config.yml'),
+      [
+        'schemaVersion: 1',
+        'defaults:',
+        '  features:',
+        '    ghcr.io/monoceros/features/claude-code:1:',
+        '      apiKey: sk-ant-default',
+        '',
+      ].join('\n'),
+    );
+    // No features: at all in the container yml.
+    await writeYml('bare', 'schemaVersion: 1\nname: bare\n');
+    await runApply({ ...baseRunOpts, name: 'bare', monocerosHome: home });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'bare',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(devcontainer.features).toBeUndefined();
+  });
+
   it('passes through Monoceros feature refs verbatim when the local copy is absent', async () => {
     // Unknown feature name → no local file → ref passes through so
     // devcontainer-cli would pull from GHCR. (Behaves like prod, where

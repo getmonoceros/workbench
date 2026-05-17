@@ -147,43 +147,67 @@ Tool sauber installiert. Eigene Feature-Library unter
 1. **Feature-Library-Verzeichnis** — Layout unter `images/features/<tool>/`
    mit `devcontainer-feature.json` + `install.sh`. Publish-Pipeline
    skizzieren (anfangs manuell via `devcontainer features publish`,
-   später GH Action).
+   später GH Action). _(erledigt)_
 
 2. **Feature `claude-code`** — installiert `@anthropic-ai/claude-code`
    via npm global. Options:
    - `version: 'latest' | <semver>` (Default `latest`)
-   - Auth bleibt über den `~/.claude/`-Bind-Mount (M1-Mechanik)
+   - `apiKey: '<sk-ant-…>'` (optional) → schreibt
+     `ANTHROPIC_API_KEY` per `/etc/profile.d/` → Claude Code im
+     API-Modus statt OAuth/Subscription
+   - State (Login, Sessions, Skills) unter `home/.claude/` via
+     `x-monoceros.persistentHomePaths`. _(erledigt)_
 
 3. **Runtime-Image abrüsten** — `npm install -g @anthropic-ai/claude-code`
    aus dem Dockerfile entfernen. Image-Rebuild. Alle bestehenden
-   Templates ergänzen um `features: [- ref: …/claude-code:1]`.
+   Templates ergänzen um `features: [- ref: …/claude-code:1]`. _(erledigt)_
 
-4. **Feature `atlassian`** — installiert `acli` (mit Rovo Dev Agent)
-   und/oder TWG-CLI. Options:
-   - `rovo_dev: true | false` (Default `false`)
-   - `twg: true | false` (Default `false`)
-   - Login via `monoceros apply`-Pre-Step: `monoceros-config.yml` →
-     `defaults.atlassian.{instance,email,apiToken}` → `.monoceros/atlassian-credentials`
-     (Mode 0600) → Feature-`install.sh` liest die Datei und führt
-     `acli auth login` / `twg config` aus
+4. **Container-State-Modell** — pro Container ein eigenes
+   `home/`-Verzeichnis unter `<container-dir>/home/`, bind-gemountet
+   nach `/home/node/` für die in `x-monoceros.persistentHomePaths`
+   genannten Subpfade. Apply lässt `home/` und `projects/` bei
+   re-Apply unangetastet. `.gitignore` am Container-Root schließt
+   `/home/` und `/.monoceros/` aus. Siehe
+   [ADR 0003](adr/0003-container-state-model.md). _(erledigt)_
 
-5. **`monoceros-config.yml`-Schema erweitern** — neuer Block
-   `defaults.atlassian` mit Zod-Validierung; CLI liest und reicht
-   beim Apply durch. Sample-Datei ergänzen.
+5. **Feature `atlassian`** — installiert `acli` (mit Rovo Dev Agent).
+   Options:
+   - `email`, `apiToken` — beide gesetzt → das Feature dropt ein
+     Post-Create-Skript unter
+     `/usr/local/share/monoceros/post-create.d/atlassian.sh` ab, das
+     beim Container-Start non-interaktiv einloggt (idempotent: skip
+     wenn `home/.config/acli/rovodev_config.yaml` schon ein Token
+     enthält). Die Atlassian-Site fragt `acli rovodev run` beim
+     ersten Lauf selbst ab und persistiert sie im Home-Mount.
+   - State unter `home/.config/acli/` via
+     `x-monoceros.persistentHomePaths`. _(erledigt)_
+   - **TWG-Variante** als eigenes Feature, separat, später.
 
-6. **Template-Variante `atlassian`** — `templates/yml/atlassian.yml`
-   mit aktiviertem atlassian-Feature, gutem Comment-Block als
-   Inline-Doku.
+6. **`monoceros-config.yml`-Schema erweitern** — neuer Block
+   `defaults.features: Record<ref, Record<option, value>>` mit
+   Zod-Validierung; Apply merged Per-Container-Optionen über die
+   globalen Defaults (Per-Container gewinnt). _(erledigt)_
 
-7. **Doku** — `docs/commands/`-Eintrag für die neue Mechanik (kein
-   neuer Befehl, aber das Feature-Modell erklärt); kurzes
-   `docs/ai-tools.md` als Übersicht über die Library + Roadmap der
-   weiteren Features.
+7. **Post-Create-Hook-Mechanik im Scaffold** — generierte
+   `post-create.sh` ruft alle Skripte unter
+   `/usr/local/share/monoceros/post-create.d/*.sh` in lexikographischer
+   Reihenfolge auf. Damit kann jedes Feature seinen eigenen
+   First-Run-Login einbringen, ohne dass der Scaffold feature-Wissen
+   braucht. _(erledigt)_
 
-8. **Tests** — Schema-Tests für die neuen Config-Felder; Feature-
-   Installation manuell verifiziert (es gibt keinen sauberen Unit-Test
-   für „Feature im Container materialisiert sich" — Stage C des
-   Test-Plans deckt das ab).
+8. **Template-Variante `atlassian`** — `templates/yml/atlassian.yml`
+   mit aktiviertem atlassian-Feature, Default-Optionen leer, mit
+   gutem Comment-Block als Inline-Doku.
+
+9. **Doku** — `docs/commands/`-Eintrag für die neue Mechanik (kein
+   neuer Befehl, aber das Feature-Modell + State-Modell erklärt);
+   kurzes `docs/ai-tools.md` als Übersicht über die Library + Roadmap
+   der weiteren Features.
+
+10. **Tests** — Schema-Tests für die neuen Config-Felder; Feature-
+    Installation manuell verifiziert (es gibt keinen sauberen Unit-Test
+    für „Feature im Container materialisiert sich" — Stage C des
+    Test-Plans deckt das ab).
 
 ### Bewusst nicht in M3
 
@@ -192,15 +216,22 @@ Tool sauber installiert. Eigene Feature-Library unter
   `claude-code`
 - VS-Code-Server / browser-IDE als Feature — siehe „Vorgemerkt für
   später"
+- TWG-CLI als Feature — TWG-Auth-Pfade müssen erst empirisch
+  verifiziert werden (analog zur Rovo-Dev-Recherche)
+- `monoceros duplicate <a> <b>` — Klon-Befehl für Container, der
+  `home/` mitkopiert (Login bleibt erhalten) aber `projects/` und
+  `.devcontainer/` zurücksetzt. Idee aus dem M3-Designgespräch,
+  vorgemerkt für später
 
 ### Definition of Done
 
 - ✅ `monoceros init nodejs-github sandbox && monoceros apply sandbox`
   installiert Claude Code via Feature (nicht aus dem Image)
+- ✅ Container-Login (Claude, ACLI) überlebt `monoceros apply`
 - ✅ `monoceros init atlassian sandbox && monoceros apply sandbox`
-  liefert einen Container, in dem `acli` + `twg` ohne weiteres
-  manuelles Auth-Setup funktionieren (sofern `monoceros-config.yml`
-  die Credentials hält)
+  liefert einen Container, in dem `acli rovodev` ohne weiteres
+  manuelles Auth-Setup funktioniert (sofern Container-yml oder
+  `monoceros-config.yml` die Credentials hält)
 - ✅ Feature-Library im GHCR auffindbar unter
   `ghcr.io/<org>/monoceros-features/{claude-code,atlassian}`
 - ✅ Stage C des Test-Plans erweitert um Feature-Pfad

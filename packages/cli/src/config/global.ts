@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
 import { parseDocument } from 'yaml';
-import { GitUserSchema } from './schema.js';
+import { FeatureOptionValueSchema, GitUserSchema, REGEX } from './schema.js';
 import { monocerosConfigPath, monocerosHome } from './paths.js';
 
 /**
@@ -19,6 +19,15 @@ import { monocerosConfigPath, monocerosHome } from './paths.js';
 
 const SCHEMA_VERSION = 1 as const;
 
+/**
+ * `defaults.features` — map of devcontainer feature ref to a default
+ * option object. When a container yml references the same feature ref
+ * without overriding a specific option, the value from here is used.
+ * Per-container options always win.
+ *
+ * Typical use: stash the Atlassian apiToken / Anthropic apiKey here
+ * once globally instead of repeating them in every container yml.
+ */
 export const MonocerosConfigSchema = z.object({
   schemaVersion: z.literal(SCHEMA_VERSION),
   defaults: z
@@ -27,6 +36,17 @@ export const MonocerosConfigSchema = z.object({
         .object({
           user: GitUserSchema.optional(),
         })
+        .optional(),
+      features: z
+        .record(
+          z
+            .string()
+            .regex(
+              REGEX.featureRef,
+              "Invalid feature ref. Expected an OCI-image-style ref like 'ghcr.io/monoceros/features/<name>:<tag>'.",
+            ),
+          z.record(z.string(), FeatureOptionValueSchema),
+        )
         .optional(),
     })
     .optional(),

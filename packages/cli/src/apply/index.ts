@@ -109,11 +109,19 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   await assertSafeTargetDir(targetDir, opts.name);
 
   const parsed = await readConfig(ymlPath);
+  // Read global defaults early — feature option defaults from
+  // `monoceros-config.yml` need to be merged before scaffold codegen,
+  // and the git identity logic later in this function also needs the
+  // global config.
+  const globalConfig = await readMonocerosConfig({ monocerosHome: home });
   // Shape validation happened in readConfig; catalog validation
   // (which language/service exists) happens here against
   // create/scaffold's known set.
   const createOpts = normalizeOptions(
-    solutionConfigToCreateOptions(parsed.config),
+    solutionConfigToCreateOptions(
+      parsed.config,
+      globalConfig?.defaults?.features ?? {},
+    ),
   );
   validateOptions(createOpts);
 
@@ -136,7 +144,6 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     info: logger.info,
     warn: logger.warn ?? logger.info,
   };
-  const globalConfig = await readMonocerosConfig({ monocerosHome: home });
   await collectGitIdentity(targetDir, {
     ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
     ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),

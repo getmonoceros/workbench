@@ -19,3 +19,19 @@ defaults:
     user:
       name: Your Name
       email: you@example.com
+
+  # Default options for Monoceros-curated devcontainer features, keyed
+  # by the OCI ref. Per-container yml options override these. The
+  # feature itself decides what to do with the values — typically a
+  # post-create hook does a non-interactive login.
+  #
+  # Uncomment and fill in the parts you actually use.
+  # features:
+  #   ghcr.io/monoceros/features/claude-code:1:
+  #     apiKey: sk-ant-…              # optional → API-Modus
+  #                                   # weglassen für Subscription/OAuth-Login
+  #   ghcr.io/monoceros/features/atlassian:1:
+  #     email: you@example.com
+  #     apiToken: ATATT3xFf…
+  #     # Atlassian-Site fragt `acli rovodev run` beim ersten Lauf
+  #     # selbst ab und merkt sie sich im persistenten home-Mount.
