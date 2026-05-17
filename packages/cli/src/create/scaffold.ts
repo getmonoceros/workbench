@@ -269,11 +269,20 @@ interface ResolvedFeature {
    * than directories. Necessary for tools that keep state in a
    * dotfile next to (not inside) their config directory — e.g.
    * Claude Code's `~/.claude.json` lives alongside `~/.claude/`.
-   * Each entry is bind-mounted as a file and pre-created as an
-   * empty file on the host. Read from the feature manifest's
-   * `x-monoceros.persistentHomeFiles` array.
+   *
+   * Each entry can be a bare path string (file pre-created empty)
+   * or `{ path, initialContent }` so a feature author can seed
+   * valid initial content. The latter is needed for tools that
+   * refuse to parse an empty file: Claude Code, for instance, errors
+   * on an empty `.claude.json` and demands at least `{}`. Read from
+   * the feature manifest's `x-monoceros.persistentHomeFiles` array.
    */
-  persistentHomeFiles: string[];
+  persistentHomeFiles: PersistentHomeFile[];
+}
+
+interface PersistentHomeFile {
+  path: string;
+  initialContent: string;
 }
 
 /**
@@ -354,7 +363,7 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
  */
 function readPersistentHomeEntries(localSourceDir: string): {
   paths: string[];
-  files: string[];
+  files: PersistentHomeFile[];
 } {
   const manifestPath = path.join(localSourceDir, 'devcontainer-feature.json');
   try {
@@ -367,7 +376,7 @@ function readPersistentHomeEntries(localSourceDir: string): {
     };
     return {
       paths: filterSubpaths(parsed['x-monoceros']?.persistentHomePaths),
-      files: filterSubpaths(parsed['x-monoceros']?.persistentHomeFiles),
+      files: filterFileEntries(parsed['x-monoceros']?.persistentHomeFiles),
     };
   } catch {
     return { paths: [], files: [] };
@@ -383,6 +392,48 @@ function filterSubpaths(raw: unknown): string[] {
       !p.startsWith('/') &&
       !p.includes('..') &&
       HOME_SUBPATH_RE.test(p),
+  );
+}
+
+/**
+ * Accept either bare strings or `{path, initialContent}` objects in
+ * `persistentHomeFiles`. Bare string is shorthand for "create an
+ * empty file"; the object form lets feature authors provide initial
+ * content (e.g. `{}` for a JSON config that the tool refuses to
+ * parse when empty).
+ */
+function filterFileEntries(raw: unknown): PersistentHomeFile[] {
+  if (!Array.isArray(raw)) return [];
+  const result: PersistentHomeFile[] = [];
+  for (const entry of raw) {
+    if (typeof entry === 'string') {
+      if (isValidHomeSubpath(entry)) {
+        result.push({ path: entry, initialContent: '' });
+      }
+      continue;
+    }
+    if (
+      entry !== null &&
+      typeof entry === 'object' &&
+      'path' in entry &&
+      typeof (entry as { path: unknown }).path === 'string'
+    ) {
+      const e = entry as { path: string; initialContent?: unknown };
+      if (!isValidHomeSubpath(e.path)) continue;
+      const initialContent =
+        typeof e.initialContent === 'string' ? e.initialContent : '';
+      result.push({ path: e.path, initialContent });
+    }
+  }
+  return result;
+}
+
+function isValidHomeSubpath(p: string): boolean {
+  return (
+    p.length > 0 &&
+    !p.startsWith('/') &&
+    !p.includes('..') &&
+    HOME_SUBPATH_RE.test(p)
   );
 }
 
@@ -412,7 +463,11 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
   // requested **file** bind doesn't get spawned as a directory.
   const homeMounts: string[] = [];
   for (const f of resolvedFeatures) {
-    for (const sub of [...f.persistentHomePaths, ...f.persistentHomeFiles]) {
+    const allSubs = [
+      ...f.persistentHomePaths,
+      ...f.persistentHomeFiles.map((entry) => entry.path),
+    ];
+    for (const sub of allSubs) {
       homeMounts.push(
         `source=\${localWorkspaceFolder}/home/${sub},target=/home/node/${sub},type=bind`,
       );
@@ -490,7 +545,11 @@ export function buildComposeYaml(opts: CreateOptions): string {
   // the mount target inside the container is a file or a directory.
   const resolvedFeatures = resolveFeatures(opts);
   for (const f of resolvedFeatures) {
-    for (const sub of [...f.persistentHomePaths, ...f.persistentHomeFiles]) {
+    const allSubs = [
+      ...f.persistentHomePaths,
+      ...f.persistentHomeFiles.map((entry) => entry.path),
+    ];
+    for (const sub of allSubs) {
       lines.push(`      - ../home/${sub}:/home/node/${sub}`);
     }
   }
@@ -764,12 +823,14 @@ export async function writeScaffold(
     for (const sub of f.persistentHomePaths) {
       await fs.mkdir(path.join(homeDir, sub), { recursive: true });
     }
-    for (const sub of f.persistentHomeFiles) {
-      const filePath = path.join(homeDir, sub);
+    for (const entry of f.persistentHomeFiles) {
+      const filePath = path.join(homeDir, entry.path);
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       if (!existsSync(filePath)) {
-        const fh = await fs.open(filePath, 'a');
-        await fh.close();
+        // Seed with the feature-author's initial content (defaults
+        // to empty). For JSON configs this should be at least `{}`
+        // so the tool doesn't choke on an unparseable empty file.
+        await fs.writeFile(filePath, entry.initialContent);
       }
     }
   }

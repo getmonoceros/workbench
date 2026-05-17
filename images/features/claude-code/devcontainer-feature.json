@@ -24,6 +24,11 @@
   },
   "x-monoceros": {
     "persistentHomePaths": [".claude"],
-    "persistentHomeFiles": [".claude.json"]
+    "persistentHomeFiles": [
+      {
+        "path": ".claude.json",
+        "initialContent": "{}\n"
+      }
+    ]
   }
 }
