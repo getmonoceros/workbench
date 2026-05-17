@@ -1,36 +1,47 @@
 # Monoceros Workbench
 
-Frischer Start am **2026-05-10**. Die Vorgänger-Codebasis liegt unter
+Frischer Start am **2026-05-10**, geschärfter Pivot am
+**2026-05-17**. Die Vorgänger-Codebasis liegt unter
 [`../monoceros-for-solution-builder_archive-2026-05-10/`](../monoceros-for-solution-builder_archive-2026-05-10/),
 das ältere Archiv unter
-[`../monoceros_archive_2026-04-30/`](../monoceros_archive_2026-04-30/).
+[`../monoceros_archive_2026-04-30/`](../monoceros_archive_2026-04-30/),
+und die ausgelagerte Iteration-Pipeline unter
+[`../monoceros-iterate_archive-2026-05-17/`](../monoceros-iterate_archive-2026-05-17/).
 
 Das Produkt heißt weiterhin **Monoceros**. Das Verzeichnis heißt
-`monoceros-workbench`, weil es der gemeinsame Stamm für CLI, Plugin und
-Tracking-Adapter ist — also mehr als nur ein Tool, eine Werkbank.
+`monoceros-workbench`, weil wir die Werkbank bauen — den Rahmen, in
+dem der Builder seinen Dev-Container baut, ohne dass die Werkbank
+selbst vorschreibt was drin liegt.
 
-## Was Monoceros ist (Stand 2026-05-10)
+## Was Monoceros ist (Stand 2026-05-17)
 
-Eine **lokale, abgesicherte Entwicklungsumgebung mit AI-Coding-Tooling**
-für Solution Builder. Drei Bausteine:
+Eine **lokale, abgesicherte Dev-Container-Box mit AI-Coding-Tooling**.
+Builder beschreibt deklarativ, was im Container liegen soll
+(Sprache, Services, AI-Tools, Repos), Monoceros materialisiert das.
+Sprach- und Stack-agnostisch — Node, Python, Java, Rust, Go, .NET
+laufen alle.
 
-1. **Sichere Devcontainer-Sandbox** — Linux-Container mit Claude Code
-   (später opencode), komponierbaren Services (Postgres, MySQL, …) und
-   Sprach-Toolchains via Devcontainer-Features. Sprach- und
-   Stack-agnostisch — Node, Python, Java, Rust, Go, .NET laufen alle.
-2. **Strukturierte Iteration-Pipeline** — der Plan/Generate/Review-Workflow
-   aus dem Vorgängerprojekt als Claude-Code-Plugin. Der Reviewer findet
-   Risiken und Concerns, die Claude Code allein nicht von sich aus sieht.
-3. **Side-Topic-Memory** — Findings, Concerns, Risks, deferred Items werden
-   automatisch aus der Pipeline akkumuliert und im Repo unter `.monoceros/`
-   versioniert. Als Markdown lokal, später optional gespiegelt in GitHub
-   Issues / Jira / Notion / Linear.
+Die Differenzierung gegenüber Cloud-Codespaces / Cursor-Cloud:
 
-Was Monoceros **nicht** ist: keine Cloud-Plattform, kein SaaS, kein
-fester Tech-Stack, keine eigene Web-UI im MVP. Alles läuft lokal beim
-Builder.
+- **lokal** — kein SaaS, kein Mietzwang, keine Datenabflüsse außer
+  bewusst gewählter
+- **abgesichert** — Egress-Allowlist via NET_ADMIN + iptables, Default-
+  Allowlist im Runtime-Image
+- **deklarativ** — die yml ist die Wahrheit, der Container leitet sich
+  daraus ab; reproduzierbar zwischen Maschinen
+- **AI-Tools sind erstklassig** — Claude Code, OpenCode, Rovo Dev,
+  Codex, GitHub Copilot etc. landen als Devcontainer-Features im
+  Container
 
-## CLI-Modell (Stand 2026-05-17, M2.5 Phase 3 done)
+Was Monoceros **nicht** ist:
+
+- keine Cloud-Plattform, kein SaaS, kein fester Tech-Stack
+- keine eigene Web-UI
+- **kein Iteration-Workflow** — die Plan/Generate/Review-Pipeline ist
+  ausgelagert (siehe Archiv-Verweis oben); wenn sie zurückkommt, dann
+  als separates Projekt das auf der Workbench aufsetzt
+
+## CLI-Modell
 
 Alle Befehle folgen der Form:
 
@@ -62,48 +73,33 @@ cwd ist irrelevant — alles geht über Konvention.
 
 ## Lese-Reihenfolge für neue Sessions
 
-1. Diese Datei (kurz, gibt den Reset-Kontext)
-2. [`docs/design-pivot-autonomous-iterate.md`](docs/design-pivot-autonomous-iterate.md)
-   — **offene Design-Diskussion vom 2026-05-13**, die das M2-Modell
-   möglicherweise auf einen autonomen Loop mit PR-Output umstellt.
-   Solange diese Notiz existiert, ist konzept.md _teilweise überholt_:
-   die drei Phasen Plan/Generate/Review bleiben, aber Side-Topic-Memory
-   (Findings/Concerns/Risks) und M3 (Tracking-Adapter) sind in Frage
-   gestellt. Lies das _vor_ konzept.md, damit du den Diskussionsstand
-   mitbekommst
-3. [`docs/konzept.md`](docs/konzept.md) — die ursprüngliche Story: warum
-   so, wie es funktioniert, was bewusst draußen bleibt. Wird überarbeitet,
-   sobald die offenen Fragen aus dem Design-Pivot beantwortet sind
-4. [`docs/backlog.md`](docs/backlog.md) — die drei Milestones mit
-   detaillierten Tasks. Das ist die Roadmap und gleichzeitig
-   Arbeits-Backlog
-5. Bei Detail-Fragen ins Vorgänger-Archiv schauen — viele Entscheidungen
-   (Drizzle, Fastify, Iteration-Prompts, Container-Sandbox-Modell) sind
-   dort durchdacht und teilweise direkt übernehmbar
+1. Diese Datei (kurz, gibt den Reset-Kontext + den Pivot)
+2. [`docs/konzept.md`](docs/konzept.md) — die Story der Workbench,
+   wird im Anschluss an den 2026-05-17-Pivot neu geschnitten
+3. [`docs/backlog.md`](docs/backlog.md) — Milestones + Tasks. Wird im
+   Anschluss an den 2026-05-17-Pivot neu geschnitten
+4. [`docs/commands/README.md`](docs/commands/README.md) — was die
+   CLI heute kann, Stand frisch
+5. Bei Iteration-Pipeline-Fragen ins
+   [`../monoceros-iterate_archive-2026-05-17/`](../monoceros-iterate_archive-2026-05-17/)
+   schauen — alle Strukturen + offene Designfragen dort dokumentiert
 
-## Was aus dem Archiv übernommen wird (geplant)
+## Was aus dem Archiv übernommen wurde
 
-Direkt 1:1:
+Direkt aus
+`../monoceros-for-solution-builder_archive-2026-05-10/`:
 
-- Iteration-Prompts unter
-  [`../monoceros-for-solution-builder_archive-2026-05-10/apps/api/src/lib/iteration-prompts/`](../monoceros-for-solution-builder_archive-2026-05-10/apps/api/src/lib/iteration-prompts/)
-  — werden Stack-agnostisch umgeschrieben (lesen Code statt vorzuschreiben)
-- Zod-Schemas für `IterationPlan`, `GeneratorReport`, `ReviewReport`
-- Orchestrator-Mechanik aus
-  [`iteration-orchestrator.ts`](../monoceros-for-solution-builder_archive-2026-05-10/apps/api/src/lib/iteration-orchestrator.ts)
-  — DB-Persistenz raus, File-Append nach `.monoceros/iterations/` rein
-- Runtime-Dockerfile aus
-  [`apps/runner/`](../monoceros-for-solution-builder_archive-2026-05-10/apps/runner/)
-  — Auth/Enrollment-Kram raus, sonst Basis fürs Devcontainer-Image
+- Runtime-Dockerfile-Basis aus `apps/runner/` — Auth/Enrollment-Kram
+  raus, Egress-Allowlist beibehalten
 - husky + lint-staged + prettier-Setup (aus dem älteren Archiv)
 
-Was **nicht** mitgeht:
+Was **nicht** mit ging (und nicht zurückkommen wird):
 
 - Studio-Frontend (`apps/studio`)
 - Fastify-API als zentraler Service (`apps/api`)
 - Runner als Server mit Reverse-Proxy + Auth (`apps/runner`)
 - BASE_PATH-Routing-Modell, Per-Runner-Secrets, AES-Encryption
-- Plan→Flow-Modell als zentrale Daten-Struktur (Findings ersetzt das)
+- Plan→Flow-Modell als zentrale Daten-Struktur
 
 ## Konventionen
 
@@ -124,17 +120,15 @@ Was **nicht** mitgeht:
   in Spiel kommen, wird das via `.claude/launch.json` konfiguriert
 - **Keine globale git-Config ändern.** Pro Repo lokal, nichts darüber
   hinaus
-- **ADRs** werden ab dem ersten echten Code unter `docs/adr/` abgelegt
-  (Markdown, nummeriert, kurz). Konzept-Dokumente in `docs/`, ADRs sind
-  spezifischer
+- **ADRs** unter `docs/adr/` ablegen (Markdown, nummeriert, kurz).
+  Konzept-Dokumente in `docs/`, ADRs sind spezifischer
 
-## Stack der Workbench selbst (nicht der Solutions, die damit gebaut werden)
+## Stack der Workbench selbst (nicht der Container, die damit gebaut werden)
 
-- pnpm Workspaces (sobald M0 läuft)
+- pnpm Workspaces
 - TypeScript + Node.js 20+
 - Vitest für Tests
 - prettier + eslint via lint-staged + husky
 
-Die Workbench ist sprach-agnostisch _für die Solutions, die mit ihr
-gebaut werden_. Aber die Workbench-Codebasis selbst ist TypeScript —
-wie das Vorgängerprojekt.
+Die Workbench ist sprach-agnostisch _für die Container, die mit ihr
+gebaut werden_. Aber die Workbench-Codebasis selbst ist TypeScript.

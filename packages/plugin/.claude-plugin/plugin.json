@@ -1,8 +1,0 @@
-{
-  "name": "monoceros",
-  "version": "0.1.0-dev",
-  "description": "Plan/Generate/Review iteration pipeline with local Findings triage",
-  "author": {
-    "name": "Monoceros Workbench"
-  }
-}
