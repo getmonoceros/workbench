@@ -118,8 +118,8 @@ languages: [python]
 services: [postgres]
 
 features:
-  - ref: ghcr.io/kamann/monoceros-features/claude-code:1
-  - ref: ghcr.io/kamann/monoceros-features/atlassian:1
+  - ref: ghcr.io/<org>/monoceros-features/claude-code:1
+  - ref: ghcr.io/<org>/monoceros-features/atlassian:1
     options:
       rovo_dev: true
       twg: true
@@ -140,13 +140,13 @@ funktionieren von überall mit `monoceros <command> <containername>`.
 ### 3. AI-Tools als Devcontainer-Features
 
 Jedes AI-Tool ist ein Devcontainer-Feature unter
-`ghcr.io/kamann/monoceros-features/<tool>:1`. Builder wählt explizit
+`ghcr.io/<org>/monoceros-features/<tool>:1`. Builder wählt explizit
 aus, was im Container liegt. Konsistenter mentaler Modell:
 
 ```yaml
 features:
-  - ref: ghcr.io/kamann/monoceros-features/claude-code:1
-  - ref: ghcr.io/kamann/monoceros-features/opencode:1
+  - ref: ghcr.io/<org>/monoceros-features/claude-code:1
+  - ref: ghcr.io/<org>/monoceros-features/opencode:1
 ```
 
 Geplanter Feature-Katalog (siehe `backlog.md` für Reihenfolge):
@@ -252,7 +252,7 @@ beizulegen, sodass der Builder _gar nichts_ lokal mehr braucht
 außer Docker und einem Browser, ist real und nicht-trivial — aber
 **bewusst nicht jetzt**. Erst wenn die heutige Werkbank ein paar
 echte Builder findet und das Bedarf zeigt, wird das als Feature
-implementiert (`ghcr.io/kamann/monoceros-features/code-server:1`).
+implementiert (`ghcr.io/<org>/monoceros-features/code-server:1`).
 Bis dahin: VS Code Desktop + Dev-Containers-Extension, oder
 Claude Code direkt im Container per `monoceros shell`.
 

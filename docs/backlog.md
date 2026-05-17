@@ -134,7 +134,7 @@ gehört M3 dort hin, nicht in die Werkbank.
 **Ziel:** AI-Tools sind erstklassige Bürger in der Container-yml.
 Builder schreibt `features: [- ref: …/claude-code:1]` und kriegt das
 Tool sauber installiert. Eigene Feature-Library unter
-`ghcr.io/kamann/monoceros-features/<tool>:1`.
+`ghcr.io/<org>/monoceros-features/<tool>:1`.
 
 ### Voraussetzung
 
@@ -202,7 +202,7 @@ Tool sauber installiert. Eigene Feature-Library unter
   manuelles Auth-Setup funktionieren (sofern `monoceros-config.yml`
   die Credentials hält)
 - ✅ Feature-Library im GHCR auffindbar unter
-  `ghcr.io/kamann/monoceros-features/{claude-code,atlassian}`
+  `ghcr.io/<org>/monoceros-features/{claude-code,atlassian}`
 - ✅ Stage C des Test-Plans erweitert um Feature-Pfad
 
 ---
@@ -214,7 +214,7 @@ Workbench-Repo selbst klont.
 
 ### Tasks (Skizze)
 
-1. **Runtime-Image nach GHCR pushen** — `ghcr.io/kamann/monoceros-runtime:<tag>`,
+1. **Runtime-Image nach GHCR pushen** — `ghcr.io/<org>/monoceros-runtime:<tag>`,
    Multi-Arch (amd64 + arm64). Templates und scaffold.ts referenzieren
    den GHCR-Tag statt `monoceros-runtime:dev`.
 

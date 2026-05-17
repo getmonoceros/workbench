@@ -528,7 +528,7 @@ export async function writePostCreateScript(
  * file copying.
  *
  * **Dev only.** When the plugin is published in M4 (likely as a
- * GitHub-source marketplace at `kamann/monoceros`, or via a default
+ * GitHub-source marketplace at `<org>/monoceros`, or via a default
  * marketplace listing), this function returns a settings object that
  * points at the published source instead. The wrapping mechanism
  * (`enabledPlugins` + `extraKnownMarketplaces` in the solution's

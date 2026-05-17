@@ -8,7 +8,7 @@
 // iptables-based egress allowlist. Built locally via
 // `cd images/runtime && docker build -t monoceros-runtime:dev .`
 // (see images/runtime/README.md). Once GHCR-published (Task 8c) we
-// switch this to `ghcr.io/kamann/monoceros-runtime:<tag>`.
+// switch this to `ghcr.io/<org>/monoceros-runtime:<tag>`.
 export const BASE_IMAGE = 'monoceros-runtime:dev';
 
 // Container-side path where the workbench repo is bind-mounted so the
