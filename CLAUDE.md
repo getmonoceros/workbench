@@ -15,7 +15,7 @@ selbst vorschreibt was drin liegt.
 
 ## Was Monoceros ist (Stand 2026-05-17)
 
-Eine **lokale, abgesicherte Dev-Container-Box mit AI-Coding-Tooling**.
+Eine **Werkbank für lokale, reproduzierbare Dev-Container mit AI-Coding-Tooling**.
 Builder beschreibt deklarativ, was im Container liegen soll
 (Sprache, Services, AI-Tools, Repos), Monoceros materialisiert das.
 Sprach- und Stack-agnostisch — Node, Python, Java, Rust, Go, .NET

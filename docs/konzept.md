@@ -36,8 +36,8 @@ unseren Eigenbau möglicherweise redundant machen.
 Daher die fünfte Iteration als Schärfung: die Iteration-Pipeline
 fliegt raus (archiviert in
 `../monoceros-iterate_archive-2026-05-17/`), Monoceros fokussiert
-sich auf das Asset das **heute** trägt — die lokale, abgesicherte
-Dev-Container-Box mit erstklassiger AI-Tool-Integration.
+sich auf das Asset das **heute** trägt — die Werkbank für lokale,
+reproduzierbare Dev-Container mit erstklassiger AI-Tool-Integration.
 
 ## Die Re-Positionierung (2026-05-17)
 
