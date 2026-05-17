@@ -9,26 +9,19 @@ Features. Jedes Feature ist ein Unterordner mit zwei Dateien:
 
 ## Referenzierung in einer Container-yml
 
-Lokale Referenz während der Entwicklung (relativ zum
-Workbench-Checkout):
+Templates und Builder-yml-Dateien nutzen **immer** den vollen OCI-Ref:
 
 ```yaml
 features:
-  - ref: ./features/claude-code
+  - ref: ghcr.io/monoceros/features/claude-code:1
 ```
 
-Der Scaffold löst `./features/<name>` zum absoluten Pfad
-`<workbench>/images/features/<name>` auf, bevor er das in die
-generierte `devcontainer.json` schreibt. devcontainer-cli akzeptiert
-absolute Filesystem-Pfade als Feature-Refs.
-
-Sobald die Features publiziert sind (M4 — Distribution), wechseln
-Templates auf den vollen OCI-Ref:
-
-```yaml
-features:
-  - ref: ghcr.io/<org>/monoceros-features/claude-code:1
-```
+Derselbe Ref funktioniert in dev und in prod. Während der Entwicklung
+am Workbench-Repo prüft der Scaffold, ob `images/features/<name>/`
+lokal existiert; wenn ja, wird der Build-Pfad transparent auf die
+lokale Kopie umgebogen, sodass Änderungen am Feature ohne GHCR-Push
+testbar sind. In einer Installation ohne Workbench-Checkout läuft die
+Auflösung über den echten GHCR-Pull.
 
 ## Publishen (manuell, später per CI)
 
@@ -36,11 +29,13 @@ Mit `@devcontainers/cli`:
 
 ```sh
 npx -y @devcontainers/cli features publish \
-  --namespace <org>/monoceros-features \
+  --namespace monoceros/features \
   ./images/features/claude-code
 ```
 
-Der Namespace ist in M4 noch nicht final entschieden (siehe Backlog).
+Der finale GitHub-Org-Name wird in M4 entschieden; im Code ist heute
+`monoceros` als Platzhalter verdrahtet. Sollte die Org beim Publish
+anders heißen, ist's ein globales sed über das Repo.
 
 ## Ein neues Feature dazulegen
 

@@ -17,7 +17,7 @@ languages:
   - python
 
 features:
-  - ref: ./features/claude-code
+  - ref: ghcr.io/monoceros/features/claude-code:1
 
 services:
   - postgres

@@ -17,14 +17,11 @@ import type { CreateOptions } from './types.js';
 // arbitrary shell into the apt-packages feature config.
 const APT_PACKAGE_NAME_RE = /^[a-z0-9][a-z0-9.+-]*$/;
 
-// Devcontainer feature refs come in two flavors:
-//   - OCI: <registry>/<namespace>/<feature>:<tag>
-//     e.g. ghcr.io/devcontainers/features/python:1
-//   - Local path: starts with `./` or `/`, no `:tag` required.
-//     `./features/<name>` is the workbench-internal convention that
-//     `resolveFeatureRef` later rewrites to an absolute path.
-const FEATURE_REF_RE =
-  /^(?:\.?\/[A-Za-z0-9._/-]+|[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+)$/;
+// Devcontainer feature refs are OCI-style:
+//   <registry>/<namespace>/<feature>:<tag>
+// e.g. ghcr.io/devcontainers/features/python:1
+//      ghcr.io/monoceros/features/claude-code:1
+const FEATURE_REF_RE = /^[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+$/;
 
 // Install URLs must be https:// (no plain http, no other schemes) and
 // contain only URL-safe characters. We deliberately reject shell
@@ -240,26 +237,29 @@ export type DevcontainerJson = DevcontainerImageMode | DevcontainerComposeMode;
  * Resolve a yml feature ref to whatever string `devcontainer-cli`
  * expects in `devcontainer.json` → `features`.
  *
- * Refs starting with `./features/<name>` are Monoceros-owned local
- * features and get rewritten to the absolute filesystem path of
- * `<workbench>/images/features/<name>`. `devcontainer-cli` reads
- * such absolute paths as local features (per the devcontainer-feature
- * spec).
+ * The yml always carries the canonical OCI ref, e.g.
+ * `ghcr.io/monoceros/features/claude-code:1`. Same ref in dev and in
+ * production — the yml never changes between environments.
  *
- * Anything else (full OCI refs like
- * `ghcr.io/devcontainers/features/python:1`, third-party refs, or
- * absolute paths the builder already wrote) passes through verbatim.
+ * Dev-mode short-circuit: when the ref points at the Monoceros feature
+ * library AND the local workbench has the feature on disk, the resolver
+ * swaps in the absolute filesystem path. `devcontainer-cli` reads
+ * absolute paths as local features, so the build uses the in-tree
+ * source instead of pulling from GHCR. Once GHCR is published in M4,
+ * the local file disappears in non-workbench installs and the ref
+ * passes through unchanged.
  *
- * The `./features/<name>` indirection lets templates stay portable
- * across machines during dev (only the workbench root differs). Once
- * the Monoceros feature library is GHCR-published in M4, templates
- * can switch to full OCI refs and this resolver becomes a no-op for
- * them.
+ * Third-party refs (`ghcr.io/devcontainers/...`, etc.) always pass
+ * through verbatim.
  */
+const MONOCEROS_FEATURE_RE =
+  /^ghcr\.io\/monoceros\/features\/([a-z0-9._-]+):[a-z0-9._-]+$/;
+
 export function resolveFeatureRef(ref: string): string {
-  const match = /^\.\/features\/(.+?)\/?$/.exec(ref);
+  const match = MONOCEROS_FEATURE_RE.exec(ref);
   if (!match) return ref;
-  return path.join(workbenchRoot(), 'images', 'features', match[1]!);
+  const localPath = path.join(workbenchRoot(), 'images', 'features', match[1]!);
+  return existsSync(localPath) ? localPath : ref;
 }
 
 export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {

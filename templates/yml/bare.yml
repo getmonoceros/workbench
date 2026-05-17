@@ -12,4 +12,4 @@ schemaVersion: 1
 name: bare
 
 features:
-  - ref: ./features/claude-code
+  - ref: ghcr.io/monoceros/features/claude-code:1

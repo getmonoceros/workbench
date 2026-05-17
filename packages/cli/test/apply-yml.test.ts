@@ -69,14 +69,14 @@ describe('runApply', () => {
     expect(state?.schemaVersion).toBe(1);
   });
 
-  it('rewrites ./features/<name> refs to absolute workbench paths', async () => {
+  it('redirects ghcr.io/monoceros/features/<name>:<tag> to the local workbench copy when present', async () => {
     await writeYml(
       'with-feature',
       [
         'schemaVersion: 1',
         'name: with-feature',
         'features:',
-        '  - ref: ./features/claude-code',
+        '  - ref: ghcr.io/monoceros/features/claude-code:1',
         '',
       ].join('\n'),
     );
@@ -97,16 +97,52 @@ describe('runApply', () => {
         'utf8',
       ),
     );
-    // The local ref must be expanded to an absolute path pointing at
-    // <workbench>/images/features/claude-code so devcontainer-cli can
-    // resolve it as a local feature.
+    // During dev the workbench has the feature on disk → the ref is
+    // rewritten to an absolute filesystem path so devcontainer-cli
+    // builds from the local source.
     const featureKeys = Object.keys(devcontainer.features ?? {});
     expect(featureKeys).toHaveLength(1);
     expect(featureKeys[0]).toMatch(/\/images\/features\/claude-code$/);
     expect(featureKeys[0]).toMatch(/^\//); // absolute
   });
 
-  it('passes through OCI feature refs verbatim', async () => {
+  it('passes through Monoceros feature refs verbatim when the local copy is absent', async () => {
+    // Unknown feature name → no local file → ref passes through so
+    // devcontainer-cli would pull from GHCR. (Behaves like prod, where
+    // the workbench checkout isn't present.)
+    await writeYml(
+      'unknown-feature',
+      [
+        'schemaVersion: 1',
+        'name: unknown-feature',
+        'features:',
+        '  - ref: ghcr.io/monoceros/features/not-built-yet:1',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'unknown-feature',
+      monocerosHome: home,
+    });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'unknown-feature',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(devcontainer.features).toEqual({
+      'ghcr.io/monoceros/features/not-built-yet:1': {},
+    });
+  });
+
+  it('passes through third-party OCI feature refs verbatim', async () => {
     await writeYml(
       'oci-feature',
       [

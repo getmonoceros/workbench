@@ -20,7 +20,7 @@ schemaVersion: 1
 name: nodejs-github
 
 features:
-  - ref: ./features/claude-code
+  - ref: ghcr.io/monoceros/features/claude-code:1
   - ref: ghcr.io/devcontainers/features/github-cli:1
 
 # Add your first repo here. `name` defaults to the basename of the URL

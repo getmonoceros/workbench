@@ -25,19 +25,16 @@ name: reference
 # aptPackages:
 #   - postgresql-client
 
-# Devcontainer features. Each entry takes a ref + optional `options`
-# map (string / number / boolean values).
+# Devcontainer features. Each entry takes an OCI-style ref + optional
+# `options` map (string / number / boolean values).
 #
-# Three flavors of ref:
-#   - Monoceros-owned features (in this workbench): `./features/<name>`
-#     — scaffold rewrites the path at apply time to an absolute path
-#     into `<workbench>/images/features/<name>`.
-#   - Third-party features published to GHCR: full OCI ref like
-#     `ghcr.io/devcontainers/features/<name>:<tag>`.
-#   - Local features outside the workbench: absolute filesystem path.
+# Monoceros features live under `ghcr.io/monoceros/features/<name>:<tag>`.
+# Same ref works in dev and in production — during dev the scaffold
+# silently swaps in the local copy from the workbench's
+# `images/features/<name>/` directory if it exists.
 #
 # features:
-#   - ref: ./features/claude-code
+#   - ref: ghcr.io/monoceros/features/claude-code:1
 #     options:
 #       version: latest
 #   - ref: ghcr.io/devcontainers/features/github-cli:1
