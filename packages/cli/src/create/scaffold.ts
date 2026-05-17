@@ -6,7 +6,6 @@ import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
   SERVICE_CATALOG,
-  WORKBENCH_CONTAINER_PATH,
   knownLanguages,
   knownServices,
 } from './catalog.js';
@@ -18,10 +17,14 @@ import type { CreateOptions } from './types.js';
 // arbitrary shell into the apt-packages feature config.
 const APT_PACKAGE_NAME_RE = /^[a-z0-9][a-z0-9.+-]*$/;
 
-// Devcontainer feature refs are OCI image refs:
-// `<registry>/<namespace>/<feature>:<tag>`. Permissive but no shell
-// metacharacters or spaces.
-const FEATURE_REF_RE = /^[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+$/;
+// Devcontainer feature refs come in two flavors:
+//   - OCI: <registry>/<namespace>/<feature>:<tag>
+//     e.g. ghcr.io/devcontainers/features/python:1
+//   - Local path: starts with `./` or `/`, no `:tag` required.
+//     `./features/<name>` is the workbench-internal convention that
+//     `resolveFeatureRef` later rewrites to an absolute path.
+const FEATURE_REF_RE =
+  /^(?:\.?\/[A-Za-z0-9._/-]+|[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+)$/;
 
 // Install URLs must be https:// (no plain http, no other schemes) and
 // contain only URL-safe characters. We deliberately reject shell
@@ -172,24 +175,21 @@ export function needsCompose(opts: CreateOptions): boolean {
   return opts.services.length > 0;
 }
 
-interface DevcontainerCustomizations {
-  vscode?: {
-    extensions?: string[];
-  };
-}
-
 interface DevcontainerImageMode {
   name: string;
   image: string;
   remoteUser: string;
-  mounts: string[];
-  // Required so the runtime image's entrypoint can configure iptables
-  // egress rules. Without it the entrypoint logs a warning and falls
-  // through to unrestricted egress (no silent fail-open). See ADR 0002.
+  // Scaffold-level mounts: only the SSH-agent forward for git auth when
+  // the yml lists repos. Tool-specific mounts (e.g. ~/.claude for the
+  // claude-code feature) come from the feature's own manifest, not from
+  // here.
+  mounts?: string[];
+  // Required so the runtime image's entrypoint can install iptables
+  // rules if MONOCEROS_EGRESS=enforce is set. Default mode is `off`
+  // (see ADR 0002) so the cap is harmless when unused.
   runArgs: string[];
   forwardPorts: number[];
   postCreateCommand: string;
-  customizations: DevcontainerCustomizations;
   features?: Record<string, Record<string, unknown>>;
   // Env vars injected into the workspace container at start time
   // (inherited by postCreateCommand). Used by add-repo to wire the
@@ -209,7 +209,6 @@ interface DevcontainerComposeMode {
   remoteUser: string;
   forwardPorts: number[];
   postCreateCommand: string;
-  customizations: DevcontainerCustomizations;
   features?: Record<string, Record<string, unknown>>;
 }
 
@@ -237,6 +236,32 @@ function buildRepoAuthEnv(): Record<string, string> {
 
 export type DevcontainerJson = DevcontainerImageMode | DevcontainerComposeMode;
 
+/**
+ * Resolve a yml feature ref to whatever string `devcontainer-cli`
+ * expects in `devcontainer.json` → `features`.
+ *
+ * Refs starting with `./features/<name>` are Monoceros-owned local
+ * features and get rewritten to the absolute filesystem path of
+ * `<workbench>/images/features/<name>`. `devcontainer-cli` reads
+ * such absolute paths as local features (per the devcontainer-feature
+ * spec).
+ *
+ * Anything else (full OCI refs like
+ * `ghcr.io/devcontainers/features/python:1`, third-party refs, or
+ * absolute paths the builder already wrote) passes through verbatim.
+ *
+ * The `./features/<name>` indirection lets templates stay portable
+ * across machines during dev (only the workbench root differs). Once
+ * the Monoceros feature library is GHCR-published in M4, templates
+ * can switch to full OCI refs and this resolver becomes a no-op for
+ * them.
+ */
+export function resolveFeatureRef(ref: string): string {
+  const match = /^\.\/features\/(.+?)\/?$/.exec(ref);
+  if (!match) return ref;
+  return path.join(workbenchRoot(), 'images', 'features', match[1]!);
+}
+
 export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
   const features: Record<string, Record<string, unknown>> = {};
   for (const lang of opts.languages) {
@@ -252,29 +277,22 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
       packages: opts.aptPackages.join(','),
     };
   }
-  // Custom features (via `monoceros add-feature`) are merged last. If
-  // they collide with a curated feature ref (e.g. the apt-packages
-  // feature also managed via add-apt-packages), the custom entry wins —
-  // the builder added it explicitly.
+  // Custom features (via `monoceros add-feature` or directly in the
+  // yml) are merged last and win on ref collision. Refs starting with
+  // `./features/<name>` are rewritten to absolute paths into the
+  // workbench's `images/features/` library.
   if (opts.features) {
     for (const [ref, options] of Object.entries(opts.features)) {
-      features[ref] = options;
+      features[resolveFeatureRef(ref)] = options;
     }
   }
 
   const featuresField =
     Object.keys(features).length > 0 ? { features } : undefined;
 
-  // VS Code customizations: auto-install the Claude Code extension when
-  // the workspace opens in a Dev Container. Aligns the IDE story with
-  // the workbench's positioning around AI-assisted coding. Builders who
-  // prefer a different agent (Cline, Continue, …) can edit the
-  // extension list in their solution's devcontainer.json.
-  const customizations: DevcontainerCustomizations = {
-    vscode: {
-      extensions: ['anthropic.claude-code'],
-    },
-  };
+  // No scaffold-level VS Code customizations today — extension hints
+  // belong with the feature that needs them (e.g. the claude-code
+  // feature itself recommends `anthropic.claude-code`).
 
   const wantsRepoAuth = (opts.repos?.length ?? 0) > 0;
   const repoAuthEnv = wantsRepoAuth ? { containerEnv: buildRepoAuthEnv() } : {};
@@ -292,25 +310,26 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
       remoteUser: 'node',
       forwardPorts: [3000, 4000],
       postCreateCommand: '.devcontainer/post-create.sh',
-      customizations,
       ...(featuresField ?? {}),
       ...repoAuthEnv,
     };
   }
 
+  // Build the mounts array. Today only repo-auth (SSH-agent) needs an
+  // explicit scaffold-level mount; everything else (Claude Code's
+  // ~/.claude bind, future tool host-deps) is the responsibility of
+  // the devcontainer feature that pulls the tool in.
+  const mounts: string[] = wantsRepoAuth ? buildRepoAuthMounts() : [];
+  const mountsField = mounts.length > 0 ? { mounts } : {};
+
   return {
     name: opts.name,
     image: BASE_IMAGE,
     remoteUser: 'node',
-    mounts: [
-      'source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,consistency=cached',
-      `source=${workbenchRoot()},target=${WORKBENCH_CONTAINER_PATH},type=bind,consistency=cached`,
-      ...(wantsRepoAuth ? buildRepoAuthMounts() : []),
-    ],
+    ...mountsField,
     runArgs: ['--cap-add=NET_ADMIN'],
     forwardPorts: [3000, 4000],
     postCreateCommand: '.devcontainer/post-create.sh',
-    customizations,
     ...(featuresField ?? {}),
     ...repoAuthEnv,
   };
@@ -332,8 +351,6 @@ export function buildComposeYaml(opts: CreateOptions): string {
   lines.push('      - NET_ADMIN');
   lines.push('    volumes:');
   lines.push(`      - ..:/workspaces/${opts.name}:cached`);
-  lines.push('      - ${HOME}/.claude:/home/node/.claude');
-  lines.push(`      - ${workbenchRoot()}:${WORKBENCH_CONTAINER_PATH}:cached`);
   const wantsRepoAuth = (opts.repos?.length ?? 0) > 0;
   if (wantsRepoAuth) {
     // `:-/dev/null` fallback so the compose-up doesn't error when the
@@ -406,11 +423,10 @@ export function buildCodeWorkspaceJson(opts: CreateOptions): CodeWorkspaceFile {
 }
 
 /**
- * Generate the `post-create.sh` content for a solution. The base
- * sections (pnpm install, monoceros-plugin wiring) are fixed. The
- * `installUrls` section is appended only when the solution has at
- * least one URL — keeping the script byte-identical with previous
- * versions for the common case.
+ * Generate the `post-create.sh` content for a solution. Base sections
+ * (git include + pnpm install) are fixed. The `installUrls` and
+ * `repos` sections are appended only when those yml fields are
+ * populated.
  */
 export function buildPostCreateScript(opts: CreateOptions): string {
   const lines: string[] = [
@@ -418,40 +434,14 @@ export function buildPostCreateScript(opts: CreateOptions): string {
     'set -euo pipefail',
     '',
     '# Inherit host-side git identity (user.name / user.email) captured',
-    '# into .monoceros/gitconfig by `monoceros create` / `monoceros apply`.',
-    '# Container-local git config (this file: /home/node/.gitconfig) loads',
-    "# first; the include below merges the host's identity values in.",
+    '# into .monoceros/gitconfig by `monoceros apply`. Container-local',
+    "# git config loads first; the include below merges the host's",
+    '# identity values in.',
     `git config --global include.path "/workspaces/${opts.name}/.monoceros/gitconfig"`,
     '',
-    '# Claude Code CLI is preinstalled in monoceros-runtime:dev. Only thing',
-    '# left for postCreate is bringing Node dependencies if the workspace',
-    '# has a package.json.',
+    '# Bring up Node dependencies if the workspace has a package.json.',
     'if [ -f package.json ]; then',
     '  pnpm install',
-    'fi',
-    '',
-    '# Wire `monoceros-plugin` into PATH when the workbench is bind-mounted',
-    "# at /opt/monoceros-workbench. The workbench's pnpm install must have",
-    '# been run host-side first; the workspace symlinks under node_modules/',
-    "# come along via the bind mount. pnpm's supportedArchitectures config",
-    '# (in pnpm-workspace.yaml) pulls linux esbuild binaries host-side so',
-    '# tsx works in the container.',
-    '#',
-    '# Failing to wire here is non-fatal — the slash commands will surface',
-    '# a clear error message at first use.',
-    'WORKBENCH=/opt/monoceros-workbench',
-    'BIN_PATH=/usr/local/bin/monoceros-plugin',
-    'MAIN_TS=$WORKBENCH/packages/plugin/src/main.ts',
-    'TSX=$WORKBENCH/node_modules/.bin/tsx',
-    'if [ -f "$MAIN_TS" ] && [ -x "$TSX" ]; then',
-    '  sudo tee "$BIN_PATH" > /dev/null <<EOF',
-    '#!/usr/bin/env bash',
-    'exec "$TSX" "$MAIN_TS" "\\$@"',
-    'EOF',
-    '  sudo chmod 0755 "$BIN_PATH"',
-    'elif [ -d "$WORKBENCH/packages/plugin" ]; then',
-    '  echo "warn: monoceros-plugin not wired into PATH." >&2',
-    '  echo "warn: run \\`pnpm install\\` in the workbench host-side, then restart the container." >&2',
     'fi',
   ];
 
@@ -520,52 +510,17 @@ export async function writePostCreateScript(
 }
 
 /**
- * The `.claude/settings.json` we write into each solution. Registers
- * the workbench checkout as a `directory`-source marketplace and
- * enables the in-tree `monoceros` plugin. Claude Code reads this
- * settings file at session start (terminal CLI and VS Code Extension
- * alike), so the plugin's slash commands appear without per-solution
- * file copying.
- *
- * **Dev only.** When the plugin is published in M4 (likely as a
- * GitHub-source marketplace at `<org>/monoceros`, or via a default
- * marketplace listing), this function returns a settings object that
- * points at the published source instead. The wrapping mechanism
- * (`enabledPlugins` + `extraKnownMarketplaces` in the solution's
- * `.claude/settings.json`) stays the same; only the marketplace
- * source descriptor changes. Plan tracked in
- * [docs/backlog.md](../../../../../docs/backlog.md) under "M4 — Go-Live".
- */
-export function buildClaudeSettings(): Record<string, unknown> {
-  return {
-    extraKnownMarketplaces: {
-      'monoceros-workbench': {
-        source: {
-          source: 'directory',
-          path: WORKBENCH_CONTAINER_PATH,
-        },
-      },
-    },
-    enabledPlugins: {
-      'monoceros@monoceros-workbench': true,
-    },
-  };
-}
-
-/**
  * Materialize the full devcontainer scaffold for `opts` into
  * `targetDir`. Idempotent overwrite — re-running with different opts
  * produces the new scaffold and overwrites any older files.
  *
- * Writes (no `stack.json` — caller decides whether to write that or a
- * Phase-3 `state.json` instead):
+ * Writes:
  *   - `.devcontainer/devcontainer.json`
  *   - `.devcontainer/post-create.sh`
  *   - `.devcontainer/compose.yaml` (only when services are configured)
  *   - `.monoceros/.gitignore`
  *   - `projects/.gitkeep`
  *   - `<name>.code-workspace`
- *   - `.claude/settings.json`
  *
  * Does NOT write `README.md` — the README is a once-only stub that
  * `runCreate` produces but `runApplyFromYml` should leave alone (the
@@ -619,12 +574,5 @@ export async function writeScaffold(
   await fs.writeFile(
     path.join(targetDir, `${opts.name}.code-workspace`),
     JSON.stringify(buildCodeWorkspaceJson(opts), null, 2) + '\n',
-  );
-
-  const claudeDir = path.join(targetDir, '.claude');
-  await fs.mkdir(claudeDir, { recursive: true });
-  await fs.writeFile(
-    path.join(claudeDir, 'settings.json'),
-    JSON.stringify(buildClaudeSettings(), null, 2) + '\n',
   );
 }

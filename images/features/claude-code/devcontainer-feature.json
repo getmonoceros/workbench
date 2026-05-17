@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainerFeature.schema.json",
+  "id": "claude-code",
+  "name": "Claude Code CLI",
+  "version": "1.0.0",
+  "description": "Installs the Anthropic Claude Code CLI globally via npm. Auth is inherited from the host by bind-mounting ~/.claude — works with both the subscription login and an API-key login.",
+  "documentationURL": "https://docs.anthropic.com/en/docs/claude-code",
+  "options": {
+    "version": {
+      "type": "string",
+      "default": "latest",
+      "description": "npm-style version spec for @anthropic-ai/claude-code (e.g. 'latest', '0.4.2', '^0.4')."
+    }
+  },
+  "mounts": [
+    {
+      "source": "${localEnv:HOME}/.claude",
+      "target": "/home/node/.claude",
+      "type": "bind"
+    }
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": ["anthropic.claude-code"]
+    }
+  }
+}

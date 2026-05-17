@@ -25,7 +25,13 @@ import { z } from 'zod';
 
 const SOLUTION_NAME_RE = /^[A-Za-z0-9._-]+$/;
 const APT_PACKAGE_NAME_RE = /^[a-z0-9][a-z0-9.+-]*$/;
-const FEATURE_REF_RE = /^[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+$/;
+// Feature refs come in two flavors:
+//   - OCI: <registry>/<namespace>/<feature>:<tag>
+//     e.g. ghcr.io/devcontainers/features/python:1
+//   - Local: starts with `./` or `/`, no `:tag` required.
+//     e.g. ./features/claude-code (workbench-relative)
+const FEATURE_REF_RE =
+  /^(?:\.?\/[A-Za-z0-9._/-]+|[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+)$/;
 const INSTALL_URL_RE = /^https:\/\/[A-Za-z0-9.\-_~/:?#[\]@!&'()*+,;=%]+$/;
 const REPO_URL_RE = /^[A-Za-z0-9@:/+_~.#=&?-]+$/;
 const REPO_NAME_RE = /^[A-Za-z0-9._-]+$/;

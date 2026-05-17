@@ -1,21 +1,13 @@
 // Catalogs of supported language toolchains and backing services for
-// `monoceros create`. Curated whitelists keep the surface small and
+// the yml profile. Curated whitelists keep the surface small and
 // reviewable; unknown values are rejected up front rather than passed
 // through to devcontainer / compose.
 
 // Monoceros runtime image — thin layer on top of Microsoft's
-// typescript-node base, adding the Claude Code CLI and an
-// iptables-based egress allowlist. Built locally via
-// `cd images/runtime && docker build -t monoceros-runtime:dev .`
-// (see images/runtime/README.md). Once GHCR-published (Task 8c) we
-// switch this to `ghcr.io/<org>/monoceros-runtime:<tag>`.
+// typescript-node base (see images/runtime/Dockerfile). Built locally
+// via `pnpm image:build`. Once GHCR-published (M4) we switch this to
+// `ghcr.io/<org>/monoceros-runtime:<tag>`.
 export const BASE_IMAGE = 'monoceros-runtime:dev';
-
-// Container-side path where the workbench repo is bind-mounted so the
-// solution's devcontainer can find @monoceros/plugin and its slash
-// commands. Distribution is M4-scoped — this approach (bind-mount the
-// dev checkout) is the MVP for M2 Task 7. See backlog.
-export const WORKBENCH_CONTAINER_PATH = '/opt/monoceros-workbench';
 
 export interface LanguageEntry {
   id: string;

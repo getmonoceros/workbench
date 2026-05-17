@@ -1,9 +1,12 @@
 # Monoceros solution-config — `nodejs-github` template.
 #
 # Profile for a TypeScript/Node-first solution backed by GitHub repos.
-# Bundles the GitHub CLI (`gh`) as a devcontainer feature. Standard
-# tools `git`, `curl`, `ssh`, `jq`, `make` are already in the base
-# image — no apt-packages entries needed for them.
+# Bundles:
+#   - Claude Code (Monoceros feature) — Anthropic's CLI
+#   - GitHub CLI (`gh`) — official devcontainers feature
+#
+# Standard tools `git`, `curl`, `ssh`, `jq`, `make` are already in the
+# base image — no apt-packages entries needed for them.
 #
 # HTTPS is the recommended default for `repos:` — `monoceros apply`
 # fetches credentials from your host git credential helper (osxkeychain
@@ -11,12 +14,13 @@
 # works on your host, it works in the container.
 #
 # Uncomment `repos:` and `services:` for your needs, then run
-# `monoceros apply <name> <dir>` from a fresh container directory.
+# `monoceros apply <name>` after `monoceros init`.
 
 schemaVersion: 1
 name: nodejs-github
 
 features:
+  - ref: ./features/claude-code
   - ref: ghcr.io/devcontainers/features/github-cli:1
 
 # Add your first repo here. `name` defaults to the basename of the URL

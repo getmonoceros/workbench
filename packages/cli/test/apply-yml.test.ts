@@ -69,6 +69,76 @@ describe('runApply', () => {
     expect(state?.schemaVersion).toBe(1);
   });
 
+  it('rewrites ./features/<name> refs to absolute workbench paths', async () => {
+    await writeYml(
+      'with-feature',
+      [
+        'schemaVersion: 1',
+        'name: with-feature',
+        'features:',
+        '  - ref: ./features/claude-code',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'with-feature',
+      monocerosHome: home,
+    });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'with-feature',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    // The local ref must be expanded to an absolute path pointing at
+    // <workbench>/images/features/claude-code so devcontainer-cli can
+    // resolve it as a local feature.
+    const featureKeys = Object.keys(devcontainer.features ?? {});
+    expect(featureKeys).toHaveLength(1);
+    expect(featureKeys[0]).toMatch(/\/images\/features\/claude-code$/);
+    expect(featureKeys[0]).toMatch(/^\//); // absolute
+  });
+
+  it('passes through OCI feature refs verbatim', async () => {
+    await writeYml(
+      'oci-feature',
+      [
+        'schemaVersion: 1',
+        'name: oci-feature',
+        'features:',
+        '  - ref: ghcr.io/devcontainers/features/github-cli:1',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'oci-feature',
+      monocerosHome: home,
+    });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'oci-feature',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(devcontainer.features).toEqual({
+      'ghcr.io/devcontainers/features/github-cli:1': {},
+    });
+  });
+
   it('materializes a compose-mode scaffold when services are configured', async () => {
     await writeYml(
       'pgdemo',

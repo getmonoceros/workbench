@@ -16,5 +16,8 @@ name: python
 languages:
   - python
 
+features:
+  - ref: ./features/claude-code
+
 services:
   - postgres

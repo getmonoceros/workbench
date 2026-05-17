@@ -1,22 +1,22 @@
 # syntax=docker/dockerfile:1.6
 #
 # Monoceros runtime image. A thin layer on top of Microsoft's
-# devcontainer-typescript-node base, adding:
-#   - the Claude Code CLI globally (saves the 5–10s post-create install
-#     on first start)
-#   - iptables tooling and an entrypoint that configures an egress
-#     allowlist before dropping privileges to the `node` user
+# devcontainer-typescript-node base.
 #
-# The base image already provides:
+# The base image provides:
 #   - Debian Bookworm with Node 22 + corepack + pnpm
 #   - non-root `node` user with passwordless sudo
 #   - common dev tools (git, curl, jq, ssh, …)
 #
-# To use this image, the workspace service in compose.yaml must be
-# started with `cap_add: [NET_ADMIN]` so the entrypoint can install
-# iptables rules. Without the capability the entrypoint logs a warning
-# and falls through to unrestricted egress — never silently fails-open
-# without saying so.
+# We add:
+#   - iptables tooling + entrypoint that can install an egress
+#     allowlist (opt-in via MONOCEROS_EGRESS=enforce; default off —
+#     see ADR 0002 for context on why it's not enabled by default)
+#   - `gosu` for the entrypoint's privilege drop to `node`
+#
+# AI coding tools (Claude Code, OpenCode, …) are NOT baked into the
+# image. They come in per container as devcontainer features so the
+# yml-Profile is explicit about what's installed.
 
 FROM mcr.microsoft.com/devcontainers/typescript-node:22-bookworm
 
@@ -31,19 +31,6 @@ RUN apt-get update \
       dnsutils \
       gosu \
  && rm -rf /var/lib/apt/lists/*
-
-# Pin the Claude Code CLI to whatever was current when the image was
-# built. Override at run time with `npm install -g @anthropic-ai/claude-code@latest`
-# inside the container if you need newer.
-#
-# The Monoceros plugin is loaded via the proper Claude Code plugin
-# system, not by wrapping the `claude` binary: `monoceros create`
-# writes a `.claude/settings.json` into each generated solution that
-# registers the workbench checkout as a `directory`-source
-# marketplace and enables the `monoceros` plugin. That mechanism is
-# read by both the terminal CLI and the VS Code extension, so no
-# binary shadowing is needed.
-RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code
 
 RUN install -d /etc/monoceros
 COPY egress-allow.default.txt /etc/monoceros/egress-allow.default.txt
