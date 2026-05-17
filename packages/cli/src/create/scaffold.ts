@@ -257,12 +257,23 @@ interface ResolvedFeature {
   localSourceDir?: string;
   localName?: string;
   /**
-   * Subpaths of `/home/node/` that this feature wants to persist
-   * across container rebuilds. Each one is bind-mounted from
-   * `<container-dir>/home/<path>` into `/home/node/<path>`. Read from
-   * the feature manifest's `x-monoceros.persistentHomePaths` array.
+   * Subdirectories of `/home/node/` that this feature wants to
+   * persist across container rebuilds. Each entry is bind-mounted
+   * from `<container-dir>/home/<path>` into `/home/node/<path>` and
+   * pre-created as an empty directory on the host. Read from the
+   * feature manifest's `x-monoceros.persistentHomePaths` array.
    */
   persistentHomePaths: string[];
+  /**
+   * Like `persistentHomePaths`, but for individual **files** rather
+   * than directories. Necessary for tools that keep state in a
+   * dotfile next to (not inside) their config directory — e.g.
+   * Claude Code's `~/.claude.json` lives alongside `~/.claude/`.
+   * Each entry is bind-mounted as a file and pre-created as an
+   * empty file on the host. Read from the feature manifest's
+   * `x-monoceros.persistentHomeFiles` array.
+   */
+  persistentHomeFiles: string[];
 }
 
 /**
@@ -285,6 +296,7 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
         devcontainerKey: entry.feature,
         options: {},
         persistentHomePaths: [],
+        persistentHomeFiles: [],
       });
   }
   if (opts.aptPackages && opts.aptPackages.length > 0) {
@@ -292,6 +304,7 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
       devcontainerKey: 'ghcr.io/devcontainers-contrib/features/apt-packages:1',
       options: { packages: opts.aptPackages.join(',') },
       persistentHomePaths: [],
+      persistentHomeFiles: [],
     });
   }
   if (opts.features) {
@@ -306,12 +319,14 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
           name,
         );
         if (existsSync(localSourceDir)) {
+          const { paths, files } = readPersistentHomeEntries(localSourceDir);
           resolved.push({
             devcontainerKey: `./features/${name}`,
             options,
             localSourceDir,
             localName: name,
-            persistentHomePaths: readPersistentHomePaths(localSourceDir),
+            persistentHomePaths: paths,
+            persistentHomeFiles: files,
           });
           continue;
         }
@@ -320,6 +335,7 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
         devcontainerKey: rawRef,
         options,
         persistentHomePaths: [],
+        persistentHomeFiles: [],
       });
     }
   }
@@ -327,34 +343,47 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
 }
 
 /**
- * Read `x-monoceros.persistentHomePaths` from a feature's manifest
- * on disk. Returns `[]` when the file doesn't exist, can't be parsed,
- * or the field is missing — always best-effort, never throws. The
- * paths are validated to be safe relative subpaths (no `..`, no
- * absolute, no shell metacharacters) — anything else is dropped with
- * no further fuss, since a bad value here is a feature-author bug,
- * not something a builder can fix.
+ * Read `x-monoceros.persistentHomePaths` and
+ * `x-monoceros.persistentHomeFiles` from a feature's manifest on
+ * disk. Returns `{paths: [], files: []}` when the manifest doesn't
+ * exist, can't be parsed, or the fields are missing — always
+ * best-effort, never throws. Both arrays are validated to contain
+ * only safe relative subpaths (no `..`, no absolute, no shell
+ * metacharacters); anything else is silently dropped, since a bad
+ * value here is a feature-author bug, not something a builder can fix.
  */
-function readPersistentHomePaths(localSourceDir: string): string[] {
+function readPersistentHomeEntries(localSourceDir: string): {
+  paths: string[];
+  files: string[];
+} {
   const manifestPath = path.join(localSourceDir, 'devcontainer-feature.json');
   try {
     const text = readFileSync(manifestPath, 'utf8');
     const parsed = JSON.parse(text) as {
-      'x-monoceros'?: { persistentHomePaths?: unknown };
+      'x-monoceros'?: {
+        persistentHomePaths?: unknown;
+        persistentHomeFiles?: unknown;
+      };
     };
-    const raw = parsed['x-monoceros']?.persistentHomePaths;
-    if (!Array.isArray(raw)) return [];
-    return raw.filter(
-      (p): p is string =>
-        typeof p === 'string' &&
-        p.length > 0 &&
-        !p.startsWith('/') &&
-        !p.includes('..') &&
-        HOME_SUBPATH_RE.test(p),
-    );
+    return {
+      paths: filterSubpaths(parsed['x-monoceros']?.persistentHomePaths),
+      files: filterSubpaths(parsed['x-monoceros']?.persistentHomeFiles),
+    };
   } catch {
-    return [];
+    return { paths: [], files: [] };
   }
+}
+
+function filterSubpaths(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (p): p is string =>
+      typeof p === 'string' &&
+      p.length > 0 &&
+      !p.startsWith('/') &&
+      !p.includes('..') &&
+      HOME_SUBPATH_RE.test(p),
+  );
 }
 
 // Home subpaths: dot-prefixed dirs and config-like sub-dirs.
@@ -372,16 +401,18 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
   const featuresField =
     Object.keys(features).length > 0 ? { features } : undefined;
 
-  // Bind-mounts for per-feature persistent home subpaths. Source on
+  // Bind-mounts for per-feature persistent home entries. Source on
   // the host is `<container-dir>/home/<subpath>` (under the
   // localWorkspaceFolder); target inside the container is the same
-  // subpath under `/home/node/`. devcontainer-cli auto-creates the
-  // source dir if missing, but we pre-create it in writeScaffold so
-  // the dir's owner matches the host user (otherwise on Linux it'd be
-  // root from Docker, breaking writes inside).
+  // subpath under `/home/node/`. Files and directories both go through
+  // the same `type=bind` syntax — docker decides from the source's
+  // on-disk type. We pre-create both kinds in writeScaffold so the
+  // owner matches the host user (otherwise docker auto-creates as
+  // root on Linux, breaking writes inside the container) and so a
+  // requested **file** bind doesn't get spawned as a directory.
   const homeMounts: string[] = [];
   for (const f of resolvedFeatures) {
-    for (const sub of f.persistentHomePaths) {
+    for (const sub of [...f.persistentHomePaths, ...f.persistentHomeFiles]) {
       homeMounts.push(
         `source=\${localWorkspaceFolder}/home/${sub},target=/home/node/${sub},type=bind`,
       );
@@ -452,12 +483,14 @@ export function buildComposeYaml(opts: CreateOptions): string {
   lines.push('      - NET_ADMIN');
   lines.push('    volumes:');
   lines.push(`      - ..:/workspaces/${opts.name}:cached`);
-  // Per-feature persistent home subpaths. Paths inside compose.yaml
-  // are relative to the .devcontainer/ directory; `..` walks up to
-  // the container root, where `home/` lives.
+  // Per-feature persistent home subpaths (dirs and files alike).
+  // Paths inside compose.yaml are relative to the .devcontainer/
+  // directory; `..` walks up to the container root, where `home/`
+  // lives. Docker reads the host-side inode type to decide whether
+  // the mount target inside the container is a file or a directory.
   const resolvedFeatures = resolveFeatures(opts);
   for (const f of resolvedFeatures) {
-    for (const sub of f.persistentHomePaths) {
+    for (const sub of [...f.persistentHomePaths, ...f.persistentHomeFiles]) {
       lines.push(`      - ../home/${sub}:/home/node/${sub}`);
     }
   }
@@ -720,13 +753,24 @@ export async function writeScaffold(
     await fs.cp(f.localSourceDir, dest, { recursive: true });
   }
 
-  // Pre-create persistent home subpaths so docker doesn't auto-mkdir
-  // them as root at container start. We only ensure the dirs exist;
-  // any existing content survives, which is the whole point — apply
-  // never touches `home/<sub>` once it's there.
+  // Pre-create persistent home entries so docker doesn't auto-mkdir
+  // them as root at container start. We only ensure existence; any
+  // existing content survives, which is the whole point — apply
+  // never touches `home/<sub>` once it's there. Directories get
+  // mkdir; files get an empty touch (only when missing — already-
+  // populated files like a complete .claude.json must not be
+  // truncated on re-apply).
   for (const f of resolvedFeatures) {
     for (const sub of f.persistentHomePaths) {
       await fs.mkdir(path.join(homeDir, sub), { recursive: true });
+    }
+    for (const sub of f.persistentHomeFiles) {
+      const filePath = path.join(homeDir, sub);
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      if (!existsSync(filePath)) {
+        const fh = await fs.open(filePath, 'a');
+        await fh.close();
+      }
     }
   }
 

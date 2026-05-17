@@ -23,6 +23,6 @@
     }
   },
   "x-monoceros": {
-    "persistentHomePaths": [".config/acli"]
+    "persistentHomePaths": [".config/acli", ".rovodev"]
   }
 }

@@ -23,6 +23,7 @@
     }
   },
   "x-monoceros": {
-    "persistentHomePaths": [".claude"]
+    "persistentHomePaths": [".claude"],
+    "persistentHomeFiles": [".claude.json"]
   }
 }
