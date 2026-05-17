@@ -1,30 +1,33 @@
 # `monoceros init`
 
-Erstellt eine **wiederverwendbare Container-Konfig** unter
-`.local/container-configs/<name>.yml` aus einer mitgelieferten Vorlage.
+Erstellt eine Container-Konfig unter
+`$MONOCEROS_HOME/container-configs/<name>.yml` aus einer mitgelieferten
+Vorlage.
+
+```sh
+monoceros init <template> <name>
+```
 
 ## Zweck
 
-Eine Konfig ist die Wahrheit eines Dev-Containers. Sie liegt **außerhalb**
-des Dev-Container-Verzeichnisses und kann von mehreren Containern
-gleichzeitig referenziert werden. Edits an der Konfig propagieren beim
-nächsten `monoceros apply` in jeden Container, der sie nutzt.
+Eine Konfig ist die Wahrheit eines Dev-Containers. Sie liegt
+**außerhalb** des Container-Verzeichnisses und kann frei editiert
+werden, bevor `monoceros apply <name>` daraus konkret einen Container
+materialisiert.
 
 `monoceros init` ist der Erst-Setup-Schritt:
 
-1. kopiert eine Template-Datei aus `templates/yml/<template>.yml` nach
-   `.local/container-configs/<name>.yml`,
-2. überschreibt das `name`-Feld im Ziel-File mit `<name>`,
-3. preserved jeden Kommentar im Template — Builder lesen die yml danach
+1. Kopiert eine Template-Datei aus `templates/yml/<template>.yml` nach
+   `$MONOCEROS_HOME/container-configs/<name>.yml`.
+2. Überschreibt das `name`-Feld in der Ziel-Datei mit `<name>`.
+3. Preserved jeden Kommentar im Template — Builder lesen die yml danach
    als Inline-Doku und können sie hand-editieren.
 
 Was es **nicht** ist:
 
-- Kein Dev-Container-Setup (das macht `monoceros apply`)
-- Keine Erst-Bootstrap-Routine im klassischen Sinn — du kannst die
-  Konfig auch händisch anlegen, `init` ist nur der schnelle Weg
-- Kein Auto-Update bei Template-Änderungen — die Kopie ist eigenständig
-  ab dem Init-Aufruf
+- Kein Dev-Container-Setup — das macht `monoceros apply`
+- Keine Auto-Update-Routine bei Template-Änderungen — die Kopie ist
+  ab dem Init-Aufruf eigenständig
 
 ## Synopsis
 
@@ -37,7 +40,7 @@ monoceros init <template> <name>
 | Argument     | Bedeutung                                                                      |
 | ------------ | ------------------------------------------------------------------------------ |
 | `<template>` | Template-Name. Datei-Basename unter `templates/yml/` (z. B. `bare`, `python`). |
-| `<name>`     | Wunschname für die Konfig. Landet als `.local/container-configs/<name>.yml`.   |
+| `<name>`     | Wunschname für die Konfig. Landet als `container-configs/<name>.yml`.          |
 
 ## Mitgelieferte Templates
 
@@ -46,6 +49,7 @@ monoceros init <template> <name>
 | `bare`          | Node (Base-Image), sonst nichts             |
 | `nodejs-github` | Node (Base) + GitHub CLI (`gh`)             |
 | `python`        | Python (Feature) + lokaler Postgres-Service |
+| `reference`     | Nachschlagewerk mit jedem Feld dokumentiert |
 
 Weitere Templates können unter `templates/yml/` ergänzt werden — siehe
 [`templates/yml/README.md`](../../templates/yml/README.md).
@@ -53,68 +57,58 @@ Weitere Templates können unter `templates/yml/` ergänzt werden — siehe
 ## Mechanik
 
 1. **Template-Lookup** in `templates/yml/<template>.yml`. Fehlt das
-   File, error mit Liste aller verfügbaren Templates.
-2. **Schema-Validierung** des Templates (catch malformed templates
-   ohne, die du beim Anpassen erst später beim Apply gemerkt hättest).
-3. **Ziel-Existenz-Prüfung**: wenn `.local/container-configs/<name>.yml`
-   schon da ist, error. Das verhindert versehentliches Überschreiben
-   einer hand-editierten Konfig.
-4. **AST-Rewrite** des `name`-Felds: Template-Default (z. B. `name: bare`)
-   wird durch `<name>` ersetzt. Der Rest der yml — speziell der
-   Kommentar-Block am Anfang — bleibt 1:1 erhalten.
-5. **Write** nach `.local/container-configs/<name>.yml`.
+   File, Error mit Liste aller verfügbaren Templates.
+2. **Schema-Validierung** des Templates (catch malformed templates).
+3. **Ziel-Existenz-Prüfung**: wenn
+   `$MONOCEROS_HOME/container-configs/<name>.yml` schon existiert,
+   Error. Das verhindert versehentliches Überschreiben einer
+   hand-editierten Konfig.
+4. **AST-Rewrite** des `name`-Felds: der Template-Default-Name
+   (z. B. `name: bare`) wird durch `<name>` ersetzt. Der Rest der yml
+   — speziell der Kommentar-Block am Anfang — bleibt 1:1 erhalten.
+5. **Write** nach `$MONOCEROS_HOME/container-configs/<name>.yml`.
 
 ## Beispiel
 
 ```sh
 $ monoceros init nodejs-github sandbox
-✔ Copied template 'nodejs-github' to .local/container-configs/sandbox.yml
-ℹ Edit the file, then run `monoceros apply sandbox <dir>` to materialize a dev-container.
+✔ Copied template 'nodejs-github' to container-configs/sandbox.yml
+ℹ Edit the file, then run `monoceros apply sandbox` to materialize a dev-container.
 ```
 
 Resultat:
 
 ```yaml
 # Monoceros solution-config — `nodejs-github` template.
-#
-# Profile for a TypeScript/Node-first solution backed by GitHub repos.
 # …
 schemaVersion: 1
 name: sandbox
 
-aptPackages:
-  - make
-  - jq
+features:
+  - ref: ghcr.io/devcontainers/features/github-cli:1
 
 # repos:
-#   - url: git@github.com:your-org/your-repo.git
+#   - url: https://github.com/your-org/your-repo.git
 ```
 
 Danach kannst du die Konfig:
 
 - direkt editieren (z. B. `repos:` einkommentieren),
-- via `monoceros add-repo <url>` mutieren (aus jedem Container, der
-  diese Konfig nutzt — der Befehl findet die Konfig über state.json),
-- mit `monoceros apply sandbox <dir>` in einem konkreten
-  Dev-Container-Verzeichnis materialisieren.
+- via `monoceros add-* sandbox …` mutieren (Comment-preserving),
+- mit `monoceros apply sandbox` als Dev-Container materialisieren.
 
 ## Verwandte Befehle
 
-- `monoceros apply <name> <dir>` — materialisiert die Konfig in einem
-  Dev-Container-Verzeichnis (siehe [apply.md](./apply.md))
-- `monoceros add-*` / `monoceros remove-*` — editieren die Konfig, auf
-  die der aktive Dev-Container via `state.json` zeigt
+- `monoceros apply <name>` — materialisiert die Konfig ([apply.md](./apply.md))
+- `monoceros add-*` / `monoceros remove-*` — editieren die Konfig
 
 ## Fail-Modi
 
-- **`Unknown template: <name>`** — Tippfehler oder neues Template
-  fehlt. Verfügbare Templates werden in der Fehlermeldung gelistet.
+- **`Unknown template: <name>`** — Tippfehler oder Template fehlt.
+  Verfügbare Templates werden in der Fehlermeldung gelistet.
 - **`Config already exists: <path>`** — die Ziel-Datei existiert
   schon. Lösung: alte manuell löschen, oder anderen `<name>` wählen.
-- **`Invalid config name`** — `<name>` enthält Slash, Space oder Shell-
-  Meta. Nur `[A-Za-z0-9._-]+` erlaubt.
-- **`Invalid template name`** — `<template>` enthält ungültige
-  Zeichen (gleiche Regel wie `<name>`).
+- **`Invalid config name`** — `<name>` enthält Slash, Space oder
+  Shell-Meta. Nur `[A-Za-z0-9._-]+` erlaubt.
 - **Template-Schema-Fehler** — das ausgelieferte Template ist kaputt.
-  Bug-Report öffnen; ein zusätzlicher Lauf der `templates.test.ts`
-  sollte das vor dem Release fangen.
+  Bug-Report öffnen.

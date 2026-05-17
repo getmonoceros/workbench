@@ -22,22 +22,25 @@ Was es **nicht** ist:
 ## Synopsis
 
 ```sh
-monoceros add-repo <url> [--name=<n>] [--branch=<b>] [--yes] [--project=<path>]
+monoceros add-repo <containername> <url> [--as=<folder>] [--branch=<b>] [--yes]
 ```
 
 ## Optionen
 
-| Flag               | Bedeutung                                                                                      |
-| ------------------ | ---------------------------------------------------------------------------------------------- |
-| `--name=<n>`       | Override des Folder-Namens unter `projects/`. Default: aus URL abgeleitet (`bar.git` → `bar`). |
-| `--branch=<b>`     | Spezifischen Branch klonen. Default: Repo-Default-Branch.                                      |
-| `--yes` / `-y`     | Confirm-Prompt überspringen                                                                    |
-| `--project=<path>` | Solution-Root explizit                                                                         |
+| Flag           | Bedeutung                                                                                      |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| `--as=<n>`     | Override des Folder-Namens unter `projects/`. Default: aus URL abgeleitet (`bar.git` → `bar`). |
+| `--branch=<b>` | Spezifischen Branch klonen. Default: Repo-Default-Branch.                                      |
+| `--yes` / `-y` | Confirm-Prompt überspringen                                                                    |
 
 ## Mechanik
 
-1. **stack.json** bekommt einen Eintrag in `repos: Array<{ url, name, branch? }>`. Reihenfolge bleibt erhalten — wenn Klone aufeinander aufbauen, in der gewünschten Reihenfolge hinzufügen.
-2. **`.devcontainer/post-create.sh`** bekommt am Ende einen Idempotenz-Block pro Repo:
+1. Die Container-yml `$MONOCEROS_HOME/container-configs/<containername>.yml`
+   bekommt einen Eintrag in `repos:`. Reihenfolge bleibt erhalten —
+   wenn Klone aufeinander aufbauen, in der gewünschten Reihenfolge
+   hinzufügen. Kommentare und andere Felder bleiben unangetastet.
+2. Beim nächsten `monoceros apply <containername>` regeneriert sich
+   `.devcontainer/post-create.sh`. Pro Repo kommt ein Idempotenz-Block:
    ```bash
    if [ ! -d "projects/bar" ]; then
      echo "→ Cloning bar from https://github.com/foo/bar.git…"
@@ -47,60 +50,66 @@ monoceros add-repo <url> [--name=<n>] [--branch=<b>] [--yes] [--project=<path>]
    fi
    ```
    Bei `--branch develop` kommt `--branch develop` ans `git clone` dran.
-3. **`<solution>.code-workspace`** bekommt einen zusätzlichen Folder-Root für `projects/<name>/`. Beim Öffnen in VS Code erscheint das Repo als eigene Spalte im Explorer.
-4. Beim nächsten `monoceros apply` läuft `git clone`. Dafür braucht der Container `git` im PATH — kommt im Default-Runtime-Image mit.
+3. `<containername>.code-workspace` bekommt einen zusätzlichen Folder-
+   Root für `projects/<folder>/`. Beim Öffnen in VS Code erscheint das
+   Repo als eigene Spalte im Explorer.
+4. Beim Container-Build läuft `git clone`. Dafür braucht der Container
+   `git` im PATH — kommt im Default-Runtime-Image mit.
 
 ## Idempotenz
 
 - **Selbe URL, selber Name, selber Branch** → no-op
-- **Selber Name, andere URL** → Validierungsfehler (`Duplicate repo name`). `--name` zur Disambiguierung nutzen.
-- **Wenn der Folder unter `projects/<name>/` schon existiert** → der Clone-Step skippt; deine lokalen Änderungen bleiben unangetastet. Auch nach `monoceros apply` mit Container-Rebuild — der Bind-Mount des Workspace-Folders überlebt das.
+- **Selber Name, andere URL** → Validierungsfehler beim Apply
+  (`Duplicate repo name`). `--as` zur Disambiguierung nutzen.
+- **Wenn der Folder unter `projects/<folder>/` schon existiert** → der
+  Clone-Step skippt; deine lokalen Änderungen bleiben unangetastet.
+  Auch nach `monoceros apply` mit Container-Rebuild — der Bind-Mount
+  des Workspace-Folders überlebt das.
 
 ## Name-Derivation
 
 Aus URL wird der Folder-Name automatisch abgeleitet (Last-Segment, `.git` entfernt):
 
-| URL                                   | abgeleiteter Name |
-| ------------------------------------- | ----------------- |
-| `https://github.com/foo/bar.git`      | `bar`             |
-| `https://github.com/foo/bar`          | `bar`             |
-| `git@github.com:foo/bar.git`          | `bar`             |
-| `ssh://git@github.com:22/foo/bar.git` | `bar`             |
+| URL                                   | abgeleiteter Folder-Name |
+| ------------------------------------- | ------------------------ |
+| `https://github.com/foo/bar.git`      | `bar`                    |
+| `https://github.com/foo/bar`          | `bar`                    |
+| `git@github.com:foo/bar.git`          | `bar`                    |
+| `ssh://git@github.com:22/foo/bar.git` | `bar`                    |
 
-Override via `--name=<n>` wenn der Default-Name ungünstig ist
-(`docs.git` → `docs` ist klar, aber zwei Repos namens `cli` aus
-unterschiedlichen Orgs kollidieren).
+Override via `--as=<n>` wenn der Default-Name ungünstig ist (zwei
+Repos namens `cli` aus unterschiedlichen Orgs kollidieren).
 
 ## Beispiele
 
 Einzelnes öffentliches Repo:
 
 ```sh
-monoceros add-repo https://github.com/foo/bar.git
-monoceros apply
-ls projects/bar/
+monoceros add-repo sandbox https://github.com/foo/bar.git
+monoceros apply sandbox
+ls $MONOCEROS_HOME/container/sandbox/projects/bar/
 ```
 
-Mit Branch und Custom-Name:
+Mit Branch und Custom-Folder:
 
 ```sh
-monoceros add-repo --name=ui --branch=develop https://github.com/foo/bar.git
-monoceros apply
+monoceros add-repo sandbox https://github.com/foo/bar.git --as=ui --branch=develop
+monoceros apply sandbox
 ```
 
 Mehrere Repos:
 
 ```sh
-monoceros add-repo https://github.com/myorg/api.git
-monoceros add-repo https://github.com/myorg/web.git
-monoceros add-repo --name=shared https://github.com/myorg/types.git
-monoceros apply
+monoceros add-repo sandbox https://github.com/myorg/api.git
+monoceros add-repo sandbox https://github.com/myorg/web.git
+monoceros add-repo sandbox https://github.com/myorg/types.git --as=shared
+monoceros apply sandbox
 ```
 
-Workspace-Layout danach:
+Layout im materialisierten Container danach:
 
 ```
-sandbox/
+$MONOCEROS_HOME/container/sandbox/
   .claude/  .devcontainer/  .monoceros/
   sandbox.code-workspace
   projects/
@@ -117,7 +126,7 @@ sandbox/
 
 ## Auth
 
-Sobald in `stack.json.repos` mindestens ein Eintrag steht, wird der
+Sobald in `der `repos:`-Liste der Container-yml` mindestens ein Eintrag steht, wird der
 Dev-Container automatisch so vorbereitet, dass git im Container
 dieselben Auth-Wege nutzen kann wie auf dem Host. **Du musst nichts
 host-seitig neu konfigurieren** — wenn `git clone <url>` auf deinem
@@ -179,7 +188,7 @@ Host-gefetchte ersetzt.
 
 ### SSH-URLs (`git@github.com:foo/bar.git`, `ssh://…`)
 
-Sobald in `stack.json.repos` mindestens ein Eintrag steht, schreibt
+Sobald in `der `repos:`-Liste der Container-yml` mindestens ein Eintrag steht, schreibt
 `monoceros create` / `monoceros add-repo` automatisch SSH-Agent-
 Forwarding in den Devcontainer:
 
@@ -227,14 +236,15 @@ erneut.
 
 ## Verwandte Befehle
 
-- `monoceros apply` — Container neu bauen, damit die Klone wirklich passieren
-- `monoceros run -- git status` — Git-Operationen im Container (cwd via `monoceros shell` + `cd projects/<name>`)
+- `monoceros apply <name>` — Container neu bauen, damit die Klone wirklich passieren
+- `monoceros run <name> -- git status` — Git-Operationen im Container
+- `monoceros remove-repo <name> <url-or-folder>` — Inverse
 
 ## Fail-Modi
 
 - **`Invalid repo URL`** — URL enthält verbotene Zeichen. Häufige Ursachen: versehentlich kopierte Anführungszeichen, Tab im String.
-- **`Invalid repo name`** — Name enthält Slash oder Space. Mit `--name=safer-name` overriden.
-- **`Duplicate repo name`** — zwei Repos beanspruchen denselben `projects/<name>/`-Slot. Mit `--name` einen davon umbenennen.
-- **Clone scheitert mit `Permission denied (publickey)`** — SSH-Agent läuft host-seitig nicht oder hat den falschen Key. Host: `ssh-add -l` sollte den Key zeigen; falls leer, `ssh-add ~/.ssh/id_ed25519` (macOS: `--apple-use-keychain` mit dazu). Danach `monoceros apply` erneut.
-- **`Could not open a connection to your authentication agent`** im Container — der SSH-Agent-Socket-Mount ist leer (Host hatte keinen Agent zur Compose-Up-Zeit). Compose fällt auf `/dev/null` zurück; ssh weiß damit nichts anzufangen. Host-Agent starten, dann `monoceros apply`.
+- **`Invalid repo name`** — Folder-Name enthält Slash oder Space. Mit `--as=safer-name` overriden.
+- **`Duplicate repo name`** — zwei Repos beanspruchen denselben `projects/<folder>/`-Slot. Mit `--as` einen davon umbenennen.
+- **Clone scheitert mit `Permission denied (publickey)`** — SSH-Agent läuft host-seitig nicht oder hat den falschen Key. Host: `ssh-add -l` sollte den Key zeigen; falls leer, `ssh-add ~/.ssh/id_ed25519` (macOS: `--apple-use-keychain` mit dazu). Danach `monoceros apply <name>` erneut.
+- **`Could not open a connection to your authentication agent`** im Container — der SSH-Agent-Socket-Mount ist leer (Host hatte keinen Agent zur Compose-Up-Zeit). Host-Agent starten, dann `monoceros apply <name>`.
 - **Clone scheitert mit `Repository not found`** — URL falsch oder Repo privat. Auth-Setup prüfen.

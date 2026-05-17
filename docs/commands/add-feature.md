@@ -17,19 +17,20 @@ eigenes Devcontainer-Feature haben und damit mehr machen als nur
 ## Synopsis
 
 ```sh
-monoceros add-feature <ref> [--yes] [--project=<path>] [-- <key>=<value> …]
+monoceros add-feature <containername> <ref> [--yes] [-- <key>=<value> …]
 ```
 
+- `<containername>` — Konfig-Name unter
+  `$MONOCEROS_HOME/container-configs/<name>.yml`
 - `<ref>` — OCI-Image-Ref des Features (z. B.
   `ghcr.io/devcontainers/features/docker-in-docker:2`)
 - Optionen nach `--` als `key=value`-Paare
 
 ## Optionen
 
-| Flag               | Bedeutung                   |
-| ------------------ | --------------------------- |
-| `--yes` / `-y`     | Confirm-Prompt überspringen |
-| `--project=<path>` | Solution-Root explizit      |
+| Flag           | Bedeutung                   |
+| -------------- | --------------------------- |
+| `--yes` / `-y` | Confirm-Prompt überspringen |
 
 ## Feature-Katalog
 
@@ -85,26 +86,26 @@ erwarten (`{ "moby": true }`, nicht `{ "moby": "true" }`):
 Einfaches Feature ohne Optionen:
 
 ```sh
-monoceros add-feature ghcr.io/devcontainers/features/github-cli:1 --yes
-monoceros apply
-monoceros run -- gh --version
+monoceros add-feature sandbox ghcr.io/devcontainers/features/github-cli:1 --yes
+monoceros apply sandbox
+monoceros run sandbox -- gh --version
 ```
 
 Mit Optionen:
 
 ```sh
-monoceros add-feature ghcr.io/devcontainers/features/docker-in-docker:2 \
+monoceros add-feature sandbox ghcr.io/devcontainers/features/docker-in-docker:2 \
   --yes -- version=latest moby=true installDockerBuildx=true
-monoceros apply
+monoceros apply sandbox
 ```
 
 Mehrere Features akkumulieren:
 
 ```sh
-monoceros add-feature ghcr.io/devcontainers/features/github-cli:1 --yes
-monoceros add-feature ghcr.io/devcontainers/features/kubectl-helm-minikube:1 --yes
-monoceros add-feature ghcr.io/devcontainers/features/aws-cli:1 --yes
-monoceros apply
+monoceros add-feature sandbox ghcr.io/devcontainers/features/github-cli:1 --yes
+monoceros add-feature sandbox ghcr.io/devcontainers/features/kubectl-helm-minikube:1 --yes
+monoceros add-feature sandbox ghcr.io/devcontainers/features/aws-cli:1 --yes
+monoceros apply sandbox
 ```
 
 Beim Container-Build laufen alle Features in Reihe — Reihenfolge wird
@@ -115,8 +116,8 @@ vom Devcontainer-CLI nach Feature-Spec-Dependencies bestimmt.
 - **Selbe Ref, identische Options** → no-op, kein Schreibvorgang.
 - **Selbe Ref, abweichende Options** → **Fehler.** Begründung: stilles
   Überschreiben einer getuneten Options-Map ist gefährlich. Wenn du
-  Options ändern willst, editiere `stack.json` direkt oder warte auf
-  `monoceros remove-feature` (geplant).
+  Options ändern willst, erst
+  `monoceros remove-feature <name> <ref>`, dann `add-feature` neu.
 - **Andere Ref** → Feature wird hinzugefügt, Liste akkumuliert.
 
 ## Validierung
@@ -133,12 +134,14 @@ falsch interpretiert wird.
 
 ## Verwandte Befehle
 
-- `monoceros add-language <lang>` — kuratierte Sprach-Features (Python,
-  Java, Go, Rust, .NET). Ergonomischer als der volle Feature-Ref, wenn
-  ein Feature in der Whitelist ist.
-- `monoceros add-apt-packages -- <pkg> …` — wenn das Tool kein eigenes
-  Feature hat und schlicht `apt install` reicht.
-- `monoceros apply` — Container neu bauen, damit das Feature drinlandet.
+- `monoceros add-language <name> <lang>` — kuratierte Sprach-Features
+  (Python, Java, Go, Rust, .NET). Ergonomischer als der volle Feature-Ref.
+- `monoceros add-apt-packages <name> -- <pkg> …` — wenn das Tool kein
+  eigenes Feature hat und schlicht `apt install` reicht.
+- `monoceros remove-feature <name> <ref>` — Inverse, auch der Weg
+  Options zu ändern.
+- `monoceros apply <name>` — Container neu bauen, damit das Feature
+  drinlandet.
 
 ## Fail-Modi
 
@@ -147,8 +150,8 @@ falsch interpretiert wird.
   `…/feature:1`), Tippfehler im Pfad, Leerzeichen.
 - **`Feature ${ref} is already configured with different options`** —
   Du versuchst dieselbe Ref mit anderen Options-Values hinzuzufügen.
-  Lösung: `stack.json` direkt editieren oder die Feature-Zeile dort
-  entfernen, dann erneut `add-feature`.
+  Lösung: erst `monoceros remove-feature <name> <ref>`, dann
+  `add-feature` neu.
 - **`Invalid option: "…". Expected key=value`** — Token nach `--` ist
   kein `key=value`-Paar. Schreibweise prüfen, evtl. shell-Quoting
   (`"key=value with spaces"`).

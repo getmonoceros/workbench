@@ -30,6 +30,36 @@ Was Monoceros **nicht** ist: keine Cloud-Plattform, kein SaaS, kein
 fester Tech-Stack, keine eigene Web-UI im MVP. Alles läuft lokal beim
 Builder.
 
+## CLI-Modell (Stand 2026-05-17, M2.5 Phase 3 done)
+
+Alle Befehle folgen der Form:
+
+```sh
+monoceros <command> <containername> [<args> …]
+```
+
+Layout unter `$MONOCEROS_HOME` (dev: `<workbench>/.local`, prod:
+`~/.monoceros`):
+
+```
+container-configs/<name>.yml   ← yml-Profil (Quelle der Wahrheit)
+container/<name>/              ← materialisierter Dev-Container
+monoceros-config.yml           ← optionale globale Defaults
+monoceros-config.sample.yml    ← Marker + Vorlage (committed in dev)
+```
+
+Workflow:
+
+```sh
+monoceros init <template> <name>          # yml aus Vorlage
+monoceros apply <name>                    # → container/<name>/
+monoceros shell <name>                    # darin arbeiten
+monoceros add-feature <name> <ref>        # yml editieren
+monoceros apply <name>                    # neu bauen
+```
+
+cwd ist irrelevant — alles geht über Konvention.
+
 ## Lese-Reihenfolge für neue Sessions
 
 1. Diese Datei (kurz, gibt den Reset-Kontext)

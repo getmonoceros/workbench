@@ -1,38 +1,37 @@
 # `monoceros remove-language`
 
-Inverse zu [`add-language`](./add-language.md). Entfernt einen
-Sprach-Eintrag aus der Konfig.
+Inverse zu [`add-language`](../README.md#hinzufügen). Entfernt einen
+Sprach-Eintrag aus der Container-Konfig.
 
 ## Synopsis
 
 ```sh
-monoceros remove-language <lang> [--yes] [--project=<path>]
+monoceros remove-language <containername> <lang> [--yes]
 ```
 
 ## Mechanik
 
-Bei einem Phase-3-Container (state.json vorhanden) editiert der Befehl
-die yml, auf die `state.json.origin` zeigt. Comment-preserving. Bei
-einer Legacy-Solution wird stattdessen die `stack.json` mutiert und
-devcontainer.json/`compose.yaml`/`post-create.sh` direkt neu
-generiert.
+Editiert die yml unter `$MONOCEROS_HOME/container-configs/<name>.yml`:
+der Eintrag in `languages:` wird entfernt; wird die Liste leer, fällt
+das Feld komplett raus. Comment-preserving — andere Einträge und
+Kommentare bleiben unverändert.
 
-Nach dem Aufruf muss `monoceros apply` laufen, damit der Container die
-Änderung übernimmt.
+Nach dem Aufruf muss `monoceros apply <containername>` laufen, damit
+der Container die Änderung übernimmt.
 
 ## Idempotenz
 
-`remove-language python` zweimal in Folge → zweiter Aufruf ist
+`remove-language sandbox python` zweimal in Folge → zweiter Aufruf ist
 no-change.
 
 ## Beispiel
 
 ```sh
-monoceros remove-language python --yes
-monoceros apply
+monoceros remove-language sandbox python --yes
+monoceros apply sandbox
 ```
 
 ## Verwandte Befehle
 
 - `monoceros add-language` — Inverse
-- `monoceros apply` — Materialisierung nach der Edit
+- `monoceros apply <name>` — Materialisierung nach der Edit

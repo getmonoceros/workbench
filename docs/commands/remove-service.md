@@ -1,44 +1,43 @@
 # `monoceros remove-service`
 
-Inverse zu [`add-service`](./add-service.md). Entfernt einen
-Compose-Service aus der Konfig.
+Inverse zu [`add-service`](../README.md#hinzufügen). Entfernt einen
+Compose-Service aus der Container-Konfig.
 
 ## Synopsis
 
 ```sh
-monoceros remove-service <service> [--yes] [--project=<path>]
+monoceros remove-service <containername> <service> [--yes]
 ```
 
 ## Mechanik
 
-- Bei Phase-3: yml-Eintrag in `services:` wird entfernt.
-- Bei Legacy: `stack.json` mutiert; wenn dadurch keine Services mehr
-  übrig sind, wird `compose.yaml` weggeräumt und der Devcontainer
-  fällt auf Image-Mode zurück.
+yml-Eintrag in `services:` wird entfernt. Wenn dadurch keine Services
+mehr übrig sind, fällt der Container beim nächsten Apply auf Image-Mode
+zurück und `compose.yaml` wird weggeräumt.
 
 **Wichtig:** Volumes (z. B. `postgres-data`) bleiben bestehen und
 werden **nicht** automatisch entfernt. Wenn du wirklich auch die Daten
 loswerden willst:
 
 ```sh
-monoceros down --volumes
-monoceros remove-service postgres --yes
-monoceros apply
+monoceros down sandbox --volumes
+monoceros remove-service sandbox postgres --yes
+monoceros apply sandbox
 ```
 
 ## Idempotenz
 
-Wenn der Service nicht in der Liste steht → no-change.
+Service nicht in der Liste → no-change.
 
 ## Beispiel
 
 ```sh
-monoceros remove-service redis --yes
-monoceros apply
+monoceros remove-service sandbox redis --yes
+monoceros apply sandbox
 ```
 
 ## Verwandte Befehle
 
 - `monoceros add-service` — Inverse
-- `monoceros down --volumes` — Service-Daten manuell entfernen
-- `monoceros apply` — Materialisierung
+- `monoceros down <name> --volumes` — Service-Daten manuell entfernen
+- `monoceros apply <name>` — Materialisierung

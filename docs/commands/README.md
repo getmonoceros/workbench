@@ -12,72 +12,88 @@ Aufruf der Docs vom Container aus:
 less /opt/monoceros-workbench/docs/commands/<name>.md
 ```
 
-## Das Konfig-Modell (Stand M2.5 Phase 3)
+## Das Konfig-Modell
 
-Eine **Container-Konfig** liegt unter
-`.local/container-configs/<name>.yml` und ist die Wahrheit eines
-Dev-Containers. Dev-Container-Verzeichnisse referenzieren ihre Konfig
-über `.monoceros/state.json` (`origin: <name>`). Mehrere Container
-können dieselbe Konfig nutzen.
-
-Typischer Lebenszyklus:
+Alle Befehle folgen einem einheitlichen Schema:
 
 ```sh
-monoceros init <template> <name>          # Konfig erstellen
-vim .local/container-configs/<name>.yml   # anpassen
-monoceros apply <name> <dir>              # in ein Verzeichnis materialisieren
-cd <dir>
-monoceros add-feature …                   # Konfig editieren
-monoceros apply                           # gegen die aktuelle Konfig neu bauen
+monoceros <command> <containername> [<args> …]
 ```
 
-Legacy-Solutions (mit `stack.json` aus M1/M2) werden beim ersten
-`monoceros apply` automatisch migriert. Details: [apply.md](./apply.md).
+`<containername>` ist immer das erste positional Argument. cwd spielt
+keine Rolle — Monoceros findet alles über Konvention. Das Layout:
+
+```
+$MONOCEROS_HOME/
+├── monoceros-config.yml               ← optionale, persönliche Defaults
+├── monoceros-config.sample.yml        ← committed (Marker + Vorlage)
+├── container-configs/
+│   └── <name>.yml                     ← Container-Konfig (`monoceros init`)
+└── container/
+    └── <name>/                        ← materialisierter Dev-Container
+                                         (`monoceros apply`)
+```
+
+`MONOCEROS_HOME` wird in dieser Reihenfolge aufgelöst:
+
+1. Env-Var `MONOCEROS_HOME`
+2. Dev-Detection: aufwärts vom CLI-Modul suchen nach
+   `<dir>/.local/monoceros-config.sample.yml` → `<dir>/.local`
+3. Fallback `~/.monoceros`
+
+## Typischer Lebenszyklus
+
+```sh
+monoceros init <template> <name>          # Konfig aus Vorlage erstellen
+vim $MONOCEROS_HOME/container-configs/<name>.yml   # anpassen (optional)
+monoceros apply <name>                    # Dev-Container materialisieren + hochfahren
+monoceros shell <name>                    # darin arbeiten
+monoceros add-feature <name> <ref>        # Konfig editieren
+monoceros apply <name>                    # neu bauen, picks up the change
+```
 
 ## Solution anlegen + Lifecycle
 
-| Befehl                         | Zweck                                                                     | Doku                   |
-| ------------------------------ | ------------------------------------------------------------------------- | ---------------------- |
-| `monoceros init <tpl> <name>`  | Konfig aus Vorlage erstellen (`.local/container-configs/<name>.yml`)      | [init.md](./init.md)   |
-| `monoceros apply <name> [<p>]` | Konfig in einem Verzeichnis materialisieren + Container hochfahren        | [apply.md](./apply.md) |
-| `monoceros apply`              | Aktuellen Dev-Container gegen seine Konfig neu anwenden (auch Migrations) | [apply.md](./apply.md) |
-| `monoceros create <name>`      | Legacy-Pfad — direkt einen Dev-Container scaffolden (Migrationsziel: yml) | _TODO_                 |
-| `monoceros start`              | Devcontainer hochfahren (`devcontainer up` + Services)                    | _TODO_                 |
-| `monoceros stop`               | Compose-Services stoppen, Volumes erhalten                                | _TODO_                 |
-| `monoceros down [--volumes]`   | Container + Network entfernen, optional Volumes                           | _TODO_                 |
-| `monoceros status`             | Compose-Status anzeigen                                                   | _TODO_                 |
-| `monoceros logs [--service]`   | Compose-Logs verfolgen                                                    | _TODO_                 |
+| Befehl                        | Zweck                                                  | Doku                   |
+| ----------------------------- | ------------------------------------------------------ | ---------------------- |
+| `monoceros init <tpl> <name>` | Konfig aus Vorlage erstellen                           | [init.md](./init.md)   |
+| `monoceros apply <name>`      | Konfig materialisieren + Container hochfahren          | [apply.md](./apply.md) |
+| `monoceros start <name>`      | Devcontainer hochfahren (`devcontainer up` + Services) | _TODO_                 |
+| `monoceros stop <name>`       | Compose-Services stoppen, Volumes erhalten             | _TODO_                 |
+| `monoceros down <name> [-v]`  | Container + Network entfernen, optional Volumes        | _TODO_                 |
+| `monoceros status <name>`     | Compose-Status anzeigen                                | _TODO_                 |
+| `monoceros logs <name> [...]` | Compose-Logs verfolgen                                 | _TODO_                 |
 
 ## Im Container arbeiten
 
-| Befehl                   | Zweck                                                             | Doku   |
-| ------------------------ | ----------------------------------------------------------------- | ------ |
-| `monoceros shell`        | Interaktive Bash-Session im Container öffnen                      | _TODO_ |
-| `monoceros run -- <cmd>` | One-off-Befehl im Container ausführen (Exit-Code wird propagiert) | _TODO_ |
+| Befehl                          | Zweck                                                   | Doku   |
+| ------------------------------- | ------------------------------------------------------- | ------ |
+| `monoceros shell <name>`        | Interaktive Bash-Session im Container                   | _TODO_ |
+| `monoceros run <name> -- <cmd>` | One-off-Befehl im Container (Exit-Code wird propagiert) | _TODO_ |
 
 ## Konfiguration ändern
 
 ### Hinzufügen
 
-| Befehl                            | Zweck                                                                 | Doku                                         |
-| --------------------------------- | --------------------------------------------------------------------- | -------------------------------------------- |
-| `monoceros add-language <lang>`   | Sprach-Toolchain als Devcontainer-Feature ergänzen (kuratierte Liste) | _TODO_                                       |
-| `monoceros add-service <svc>`     | Compose-Service ergänzen (Postgres, Redis, MySQL — kuratierte Liste)  | _TODO_                                       |
-| `monoceros add-apt-packages -- …` | Beliebige apt-Pakete ergänzen (kein Whitelist)                        | [add-apt-packages.md](./add-apt-packages.md) |
-| `monoceros add-feature <ref>`     | Beliebiges Devcontainer-Feature ergänzen (kein Whitelist)             | [add-feature.md](./add-feature.md)           |
-| `monoceros add-from-url <url>`    | HTTPS-Install-Script per `bash <(curl -fsSL …)` registrieren          | [add-from-url.md](./add-from-url.md)         |
-| `monoceros add-repo <url>`        | Git-Repo nach `projects/<name>/` klonen (idempotent, post-create)     | [add-repo.md](./add-repo.md)                 |
+| Befehl                                      | Zweck                                                                 | Doku                                         |
+| ------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------- |
+| `monoceros add-language <name> <lang>`      | Sprach-Toolchain als Devcontainer-Feature ergänzen (kuratierte Liste) | _TODO_                                       |
+| `monoceros add-service <name> <svc>`        | Compose-Service ergänzen (Postgres, Redis, MySQL — kuratierte Liste)  | _TODO_                                       |
+| `monoceros add-apt-packages <name> -- …`    | Beliebige apt-Pakete ergänzen (kein Whitelist)                        | [add-apt-packages.md](./add-apt-packages.md) |
+| `monoceros add-feature <name> <ref> [-- …]` | Beliebiges Devcontainer-Feature ergänzen                              | [add-feature.md](./add-feature.md)           |
+| `monoceros add-from-url <name> <url>`       | HTTPS-Install-Script per `curl … \| sh` registrieren                  | [add-from-url.md](./add-from-url.md)         |
+| `monoceros add-repo <name> <url> [--as=…]`  | Git-Repo nach `projects/<folder>/` klonen (idempotent, post-create)   | [add-repo.md](./add-repo.md)                 |
 
 ### Entfernen
 
-| Befehl                                | Zweck                                                                  | Doku                                               |
-| ------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------- |
-| `monoceros remove-language <lang>`    | Sprach-Toolchain entfernen                                             | [remove-language.md](./remove-language.md)         |
-| `monoceros remove-service <svc>`      | Compose-Service entfernen (Volumes bleiben — manuelles Cleanup)        | [remove-service.md](./remove-service.md)           |
-| `monoceros remove-apt-packages -- …`  | apt-Pakete entfernen                                                   | [remove-apt-packages.md](./remove-apt-packages.md) |
-| `monoceros remove-feature <ref>`      | Devcontainer-Feature entfernen                                         | [remove-feature.md](./remove-feature.md)           |
-| `monoceros remove-from-url <url>`     | Install-URL entfernen (Install-Resultat bleibt im aktuellen Container) | [remove-from-url.md](./remove-from-url.md)         |
-| `monoceros remove-repo <url-or-name>` | Repo-Eintrag entfernen (lokaler `projects/<name>/`-Folder bleibt)      | [remove-repo.md](./remove-repo.md)                 |
+| Befehl                                       | Zweck                                                                  | Doku                                               |
+| -------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------- |
+| `monoceros remove-language <name> <lang>`    | Sprach-Toolchain entfernen                                             | [remove-language.md](./remove-language.md)         |
+| `monoceros remove-service <name> <svc>`      | Compose-Service entfernen (Volumes bleiben — manuelles Cleanup)        | [remove-service.md](./remove-service.md)           |
+| `monoceros remove-apt-packages <name> -- …`  | apt-Pakete entfernen                                                   | [remove-apt-packages.md](./remove-apt-packages.md) |
+| `monoceros remove-feature <name> <ref>`      | Devcontainer-Feature entfernen                                         | [remove-feature.md](./remove-feature.md)           |
+| `monoceros remove-from-url <name> <url>`     | Install-URL entfernen (Install-Resultat bleibt im aktuellen Container) | [remove-from-url.md](./remove-from-url.md)         |
+| `monoceros remove-repo <name> <url-or-name>` | Repo-Eintrag entfernen (lokaler `projects/<folder>/`-Folder bleibt)    | [remove-repo.md](./remove-repo.md)                 |
 
 ## Konventionen für alle Konfig-Befehle
 
@@ -86,22 +102,30 @@ zweimal → zweite Mal keine Datei-Änderung. Vor dem Schreiben zeigt
 jeder Aufruf eine Unified-Diff-Vorschau; `--yes` (oder `-y`)
 überspringt den Confirm-Prompt für Skripte.
 
-**Phase-3-Container** (mit `state.json`): Die Befehle editieren die yml,
-auf die `state.json.origin` zeigt. Kommentare in der yml werden
-preserved. Container-Files werden **nicht direkt** geändert — sie
-regenerieren sich beim nächsten `monoceros apply` aus der yml.
-
-**Legacy-Container** (mit `stack.json`, kein `state.json`): Die
-Befehle mutieren `stack.json` direkt und regenerieren
-`devcontainer.json`/`compose.yaml`/`post-create.sh` in-place — wie
-in M2. Das erste `monoceros apply` migriert den Container danach
-in das yml-Modell.
-
-In beiden Fällen muss `monoceros apply` laufen, damit die Änderungen
-im laufenden Container wirksam werden:
+Die Befehle editieren die yml unter `container-configs/<name>.yml` —
+Kommentare und Layout der Datei bleiben **erhalten**. Container-Files
+(devcontainer.json, compose.yaml, post-create.sh) werden **nicht
+direkt** geändert; sie regenerieren sich beim nächsten
+`monoceros apply <name>` aus der yml.
 
 ```sh
-monoceros add-feature ghcr.io/devcontainers/features/github-cli:1 --yes
-monoceros add-apt-packages --yes -- make jq
-monoceros apply
+monoceros add-feature sandbox ghcr.io/devcontainers/features/github-cli:1 --yes
+monoceros add-apt-packages sandbox --yes -- htop tmux
+monoceros apply sandbox
 ```
+
+## Globale Defaults: `monoceros-config.yml`
+
+Optional unter `$MONOCEROS_HOME/monoceros-config.yml`. Heute trägt sie
+genau ein Feld: Default-Git-Identity, die in jedem materialisierten
+Container greift, wenn die Container-yml selbst nichts angibt und der
+Host kein global `git config` hat. Eine Sample-Vorlage liegt unter
+`monoceros-config.sample.yml` neben dran.
+
+Priorität der Git-Identity-Auflösung (`monoceros apply`):
+
+1. `git.user` in der Container-yml (höchste Priorität)
+2. `defaults.git.user` in `monoceros-config.yml`
+3. `git config --global --get user.name|email` auf dem Host
+4. Wert aus früherem Apply in `.monoceros/gitconfig`
+5. Interaktiver Prompt (übersprungen in nicht-TTY-Umgebungen)

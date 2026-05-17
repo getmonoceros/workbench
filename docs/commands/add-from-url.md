@@ -38,24 +38,22 @@ versionierten Quellen.
 ## Synopsis
 
 ```sh
-monoceros add-from-url <url> [--yes] [--project=<path>]
+monoceros add-from-url <containername> <url> [--yes]
 ```
-
-`<url>` ist ein positionelles Argument. Anders als `add-apt-packages` /
-`add-feature` braucht `add-from-url` _kein_ `--` davor, weil URLs nicht
-wie Flags aussehen.
 
 ## Optionen
 
-| Flag               | Bedeutung                                                                      |
-| ------------------ | ------------------------------------------------------------------------------ |
-| `--yes` / `-y`     | Security-Warnung _und_ Diff-Confirm überspringen. Nur in auditierten Skripten. |
-| `--project=<path>` | Solution-Root explizit                                                         |
+| Flag           | Bedeutung                                                                      |
+| -------------- | ------------------------------------------------------------------------------ |
+| `--yes` / `-y` | Security-Warnung _und_ Diff-Confirm überspringen. Nur in auditierten Skripten. |
 
 ## Mechanik
 
-1. Die URL wird in `stack.json.installUrls` aufgenommen (Reihenfolge bleibt erhalten — Installs können aufeinander aufbauen).
-2. `.devcontainer/post-create.sh` wird regeneriert. Ans Ende kommt:
+1. Die URL wird in `installUrls:` der Container-yml aufgenommen
+   (Reihenfolge bleibt erhalten — Installs können aufeinander aufbauen).
+   Kommentare in der yml bleiben unangetastet.
+2. Beim nächsten `monoceros apply <containername>` regeneriert sich
+   `.devcontainer/post-create.sh`. Ans Ende kommt:
 
    ```bash
    echo "→ Running N install URL(s) added via add-from-url…"
@@ -98,32 +96,33 @@ Mehrere URLs hinzufügen → akkumuliert in der angegebenen Reihenfolge.
 Einzelne URL hinzufügen:
 
 ```sh
-monoceros add-from-url https://teamwork-graph.atlassian.com/cli/install
+monoceros add-from-url sandbox https://teamwork-graph.atlassian.com/cli/install
 # … Security-Warnung lesen … y zum Bestätigen
-monoceros apply
-monoceros run -- twg --version
+monoceros apply sandbox
+monoceros run sandbox -- twg --version
 ```
 
 Mehrere Installs, der zweite baut auf dem ersten auf:
 
 ```sh
-monoceros add-from-url https://example.com/install-base
-monoceros add-from-url https://example.com/install-extras   # läuft NACH install-base
-monoceros apply
+monoceros add-from-url sandbox https://example.com/install-base
+monoceros add-from-url sandbox https://example.com/install-extras   # läuft NACH install-base
+monoceros apply sandbox
 ```
 
 In einem Skript (URL ist auditiert):
 
 ```sh
-monoceros add-from-url --yes https://my-trusted-cdn.com/install
-monoceros apply
+monoceros add-from-url sandbox --yes https://my-trusted-cdn.com/install
+monoceros apply sandbox
 ```
 
 ## Verwandte Befehle
 
-- `monoceros add-apt-packages` — bevorzugen, wenn das Tool in den Distro-Repos liegt
-- `monoceros add-feature` — bevorzugen, wenn ein Devcontainer-Feature existiert
-- `monoceros apply` — Container neu bauen, damit die URL wirklich gefetched + ausgeführt wird
+- `monoceros add-apt-packages <name>` — bevorzugen, wenn das Tool in den Distro-Repos liegt
+- `monoceros add-feature <name>` — bevorzugen, wenn ein Devcontainer-Feature existiert
+- `monoceros remove-from-url <name> <url>` — Inverse
+- `monoceros apply <name>` — Container neu bauen, damit die URL wirklich gefetched + ausgeführt wird
 
 ## Fail-Modi
 
@@ -135,4 +134,4 @@ monoceros apply
   selbst hat einen Fehler oder die URL ist nicht erreichbar. Diagnose:
   URL manuell mit `curl -fsSL <url> | less` host-seitig oder in einer
   Throwaway-Shell prüfen. Wenn die URL temporär unten ist:
-  `stack.json.installUrls` händisch trimmen und apply erneut.
+  `monoceros remove-from-url <name> <url>` und apply erneut.
