@@ -174,6 +174,32 @@ describe('runApply', () => {
     ).resolves.toEqual([]);
   });
 
+  it('seeds the persistent .claude.json with valid JSON on first apply', async () => {
+    await writeYml(
+      'fresh',
+      [
+        'schemaVersion: 1',
+        'name: fresh',
+        'features:',
+        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '',
+      ].join('\n'),
+    );
+    await runApply({ ...baseRunOpts, name: 'fresh', monocerosHome: home });
+    const claudeJsonPath = path.join(
+      home,
+      'container',
+      'fresh',
+      'home',
+      '.claude.json',
+    );
+    const content = await readFile(claudeJsonPath, 'utf8');
+    // Valid JSON — Claude Code refuses to start when this file is
+    // 0-byte / unparseable, so seeding it with `{}` is critical.
+    expect(() => JSON.parse(content)).not.toThrow();
+    expect(content.trim()).toBe('{}');
+  });
+
   it('preserves home/<subpath> content across re-apply', async () => {
     await writeYml(
       'persists',
