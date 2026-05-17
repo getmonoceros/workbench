@@ -48,8 +48,11 @@ Tasks (historisch, alle erledigt):
   Postgres/MySQL/Redis)
 - ✅ `monoceros shell` / `run` / `start` / `stop` / `down` / `status` /
   `logs`
-- ✅ Runtime-Image-Setup mit Egress-Allowlist via NET_ADMIN + iptables
-  (siehe [ADR 0002](./adr/0002-egress-whitelist-runtime-image.md))
+- ✅ Runtime-Image-Setup (dünner Layer über Microsoft typescript-node).
+  Eine opt-in iptables-Egress-Allowlist liegt aus historischen Gründen
+  noch im Image, ist im Default-Workflow aber deaktiviert — siehe
+  [ADR 0002](./adr/0002-egress-whitelist-runtime-image.md) für den
+  vollständigen Hintergrund.
 - ✅ `add-service` / `add-language` / `add-apt-packages` / `add-feature` /
   `add-from-url` / `add-repo` (alle imperativ, Diff-Preview,
   idempotent)
@@ -270,8 +273,9 @@ beschrieben.
    `add-language` / `add-service` ergänzen.
 4. **Beispiel-Workflows** — kurze how-to-Dokumente für die häufigsten
    Stacks (Node-API, Python-Pipeline, Atlassian-Forge-Setup).
-5. **Egress-Allowlist-Tuning** — Default-Allowlist auditieren, gute
-   Dokumentation wie man sie pro Container erweitert.
+5. **Image-Aufräumen** — entscheiden, ob die dormant Egress-iptables-
+   Mechanik im Image bleibt (opt-in für CI/headless) oder ganz raus
+   kann. Heute beides möglich, kein akuter Druck.
 
 ---
 

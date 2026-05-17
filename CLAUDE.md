@@ -25,13 +25,14 @@ Die Differenzierung gegenüber Cloud-Codespaces / Cursor-Cloud:
 
 - **lokal** — kein SaaS, kein Mietzwang, keine Datenabflüsse außer
   bewusst gewählter
-- **abgesichert** — Egress-Allowlist via NET_ADMIN + iptables, Default-
-  Allowlist im Runtime-Image
 - **deklarativ** — die yml ist die Wahrheit, der Container leitet sich
   daraus ab; reproduzierbar zwischen Maschinen
 - **AI-Tools sind erstklassig** — Claude Code, OpenCode, Rovo Dev,
   Codex, GitHub Copilot etc. landen als Devcontainer-Features im
   Container
+- **Container-Isolation als Default** — alles läuft in einem
+  Linux-Container, nicht auf dem Host. Bewusst gemounteter Workspace
+  ist exponiert, der Rest des Hosts nicht.
 
 Was Monoceros **nicht** ist:
 
@@ -90,7 +91,7 @@ Direkt aus
 `../monoceros-for-solution-builder_archive-2026-05-10/`:
 
 - Runtime-Dockerfile-Basis aus `apps/runner/` — Auth/Enrollment-Kram
-  raus, Egress-Allowlist beibehalten
+  raus, dünner Layer über dem Microsoft typescript-node Base-Image
 - husky + lint-staged + prettier-Setup (aus dem älteren Archiv)
 
 Was **nicht** mit ging (und nicht zurückkommen wird):

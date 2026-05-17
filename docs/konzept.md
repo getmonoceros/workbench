@@ -41,29 +41,34 @@ Dev-Container-Box mit erstklassiger AI-Tool-Integration.
 
 ## Die Re-Positionierung (2026-05-17)
 
-> **Monoceros ist eine lokale, abgesicherte Dev-Container-Box mit
-> AI-Coding-Tooling. Builder beschreibt deklarativ was im Container
-> liegen soll, Monoceros materialisiert das. Sprach- und
-> Stack-agnostisch. Kein Cloud, kein SaaS, kein eingebauter
-> Workflow-Zwang.**
+> **Monoceros ist eine Werkbank für lokale, reproduzierbare
+> Dev-Container mit AI-Coding-Tooling. Builder beschreibt deklarativ
+> was im Container liegen soll, Monoceros materialisiert das.
+> Sprach- und Stack-agnostisch. Kein Cloud, kein SaaS, kein
+> eingebauter Workflow-Zwang.**
 
 Differenzierung gegenüber den naheliegenden Alternativen:
 
-| Konkurrent         | Was sie anders machen                         | Was Monoceros besser kann                                   |
-| ------------------ | --------------------------------------------- | ----------------------------------------------------------- |
-| GitHub Codespaces  | Cloud-Only, Vendor-Lock-in, Kosten pro Stunde | Lokal, kein Mietzwang, Daten bleiben auf der Maschine       |
-| Cursor Cloud       | Cloud-Workspace, fester Tooling-Stack         | Lokal, Tools sind eine Builder-Entscheidung                 |
-| Plain Devcontainer | Funktioniert; man baut alles selbst           | Vorgebaute Werkbank mit Egress-Allowlist + deklarativer yml |
-| Lokale Dev-Setup   | Kein Sandboxing, voller PC-Zugriff            | NET_ADMIN + iptables-Allowlist, alles isoliert              |
+| Konkurrent         | Was sie anders machen                         | Was Monoceros besser kann                                                             |
+| ------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| GitHub Codespaces  | Cloud-Only, Vendor-Lock-in, Kosten pro Stunde | Lokal, kein Mietzwang, Daten bleiben auf der Maschine                                 |
+| Cursor Cloud       | Cloud-Workspace, fester Tooling-Stack         | Lokal, Tools sind eine Builder-Entscheidung                                           |
+| Plain Devcontainer | Funktioniert; man baut alles selbst           | Wiederverwendbare yml-Profile, CLI-Boilerplate, kuratierte AI-Tool-Features           |
+| Lokales Dev-Setup  | Voller Host-Zugriff für jedes Tool            | Container-Isolation: AI-Tools laufen in einem getrennten Linux, nicht auf deinem Host |
 
-Die zwei Dinge, die zusammen das Produkt machen:
+Die Dinge, die zusammen das Produkt machen:
 
-1. **Egress-Allowlist im Runtime-Image** — der Container kommt nur
-   an die Hosts, die explizit erlaubt sind. AI-Agents können nicht
-   versehentlich Daten exfiltrieren oder beliebige APIs aufrufen.
-2. **Deklaratives yml-Modell** — eine Datei beschreibt den Container,
+1. **Deklaratives yml-Modell** — eine Datei beschreibt den Container,
    `monoceros apply` materialisiert ihn. Reproduzierbar zwischen
    Maschinen, versionierbar, diffbar.
+2. **AI-Tools sind erstklassig** — Claude Code, OpenCode, Rovo Dev,
+   Codex etc. landen als Devcontainer-Features im Container, vom
+   Builder per yml ausgewählt.
+3. **Container-Isolation als Default** — alles läuft in einem
+   Linux-Container, nicht auf deinem Host. Ein bösartiges npm-Paket
+   oder ein AI-Agent kommt nicht an deine `~/.ssh/`, deinen
+   Browser-State oder Host-Dateien außerhalb des bewusst gemounteten
+   Workspace.
 
 ## Die drei Bausteine
 
@@ -75,11 +80,18 @@ publiziert), aufgebaut auf
 Inhalt:
 
 - Debian Bookworm + Node 22 + pnpm + corepack
-- iptables-Tooling und ein Entrypoint, der vor dem Drop auf den
-  `node`-User eine Egress-Allowlist installiert (siehe ADR 0002)
-- `gosu` für sauberen User-Switch nach Entrypoint
+- `gosu` für sauberen User-Switch im Entrypoint
 - Standard-Dev-Tools aus dem Base-Image: `git`, `curl`, `ssh`, `jq`,
   `make`
+
+Ein opt-in Egress-Allowlist-Mechanismus (iptables-basiert, aktiviert
+über `MONOCEROS_EGRESS=enforce`) liegt aus historischen Gründen noch
+im Image, ist aber im Default-Workflow deaktiviert — die
+Hostname-Snapshot-Variante ist mit rotierenden CDN-IPs (VS Code
+Marketplace etc.) nicht kompatibel. Details in
+[ADR 0002](./adr/0002-egress-whitelist-runtime-image.md). Sandboxing
+ist heute **keine** beworbene Eigenschaft von Monoceros über die
+normale Container-Isolation hinaus.
 
 **Was nicht im Image liegt** (Stand 2026-05-17):
 
@@ -246,21 +258,18 @@ Claude Code direkt im Container per `monoceros shell`.
 
 ## Validierungs-Hypothesen
 
-Der Cut auf „Werkbank ohne Iterate" ist eine Wette. Drei Dinge, die
+Der Cut auf „Werkbank ohne Iterate" ist eine Wette. Zwei Dinge, die
 nach den ersten 2-3 selbst betriebenen Container-Setups klar werden:
 
 1. **Reichen die Devcontainer-Features als Tool-Distribution?**
    Klare Antwort: ja, wenn der Builder Claude Code + Atlassian-Stack
    in unter 30 Sekunden frisch hochziehen kann.
-2. **Ist die Egress-Allowlist eine echte Schutz-Schicht oder nur
-   gefühlte Sicherheit?** Ein Builder testet versucht von innen
-   Daten zu exfiltrieren, schaut ob's blockiert wird.
-3. **Ist `monoceros-config.yml` der richtige Ort für Credentials,
+2. **Ist `monoceros-config.yml` der richtige Ort für Credentials,
    oder will der Builder das in einen Secret-Manager auslagern?**
    Stand der Erwartung: für Solo-Builder reicht die Datei; für
    Teams ist später ein optionaler Secret-Manager-Hook denkbar.
 
-Wenn nach 4 Wochen die ersten beiden klar grün sind, ist das
+Wenn beide nach 4 Wochen klar grün sind, ist das
 Produkt bereit für Distribution (GHCR-Image-Push, npm-Install-Doku).
 
 ## Bezüge ins Archiv
