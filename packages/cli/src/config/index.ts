@@ -25,8 +25,6 @@ export {
 } from './io.js';
 export type { ParsedConfig } from './io.js';
 export {
-  configPath,
-  configsDir,
   containerConfigPath,
   containerConfigsDir,
   containerDir,
@@ -44,7 +42,6 @@ export {
   writeStateFile,
 } from './state.js';
 export type { StateFile } from './state.js';
-export {
-  solutionConfigToCreateOptions,
-  stackFileToSolutionConfig,
-} from './transform.js';
+export { solutionConfigToCreateOptions } from './transform.js';
+export { readMonocerosConfig } from './global.js';
+export type { MonocerosConfig } from './global.js';

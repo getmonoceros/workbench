@@ -1,10 +1,6 @@
 import { deriveRepoName } from '../create/scaffold.js';
-import type {
-  CreateOptions,
-  FeatureOptions,
-  StackFile,
-} from '../create/types.js';
-import { CONFIG_SCHEMA_VERSION, type SolutionConfig } from './schema.js';
+import type { CreateOptions, FeatureOptions } from '../create/types.js';
+import type { SolutionConfig } from './schema.js';
 
 /**
  * Translate a yml-shaped `SolutionConfig` into the `CreateOptions`
@@ -59,50 +55,4 @@ export function solutionConfigToCreateOptions(
     }));
   }
   return result;
-}
-
-/**
- * Inverse direction — turn a legacy M1 StackFile into a Phase-3
- * SolutionConfig. Used by the apply migration path to seed
- * `.local/container-configs/<name>.yml` on first apply of a
- * stack.json-backed solution.
- *
- * Conversions:
- *   - features Record → features[] (each entry only carries `options`
- *     if non-empty, so the generated yml stays minimal)
- *   - externalServices.postgres → externalServices.postgres (1:1)
- *   - repos: explicit `name` is preserved only when it differs from
- *     the URL-derived default, matching the `add-repo` heuristic
- *
- * Fields the stack didn't carry (`git.user`) are omitted; identity
- * still flows through host-side `git config --global` on apply.
- */
-export function stackFileToSolutionConfig(stack: StackFile): SolutionConfig {
-  const features = Object.entries(stack.features ?? {}).map(
-    ([ref, options]) => ({
-      ref,
-      ...(Object.keys(options).length > 0 ? { options } : {}),
-    }),
-  );
-  const repos = (stack.repos ?? []).map((r) => {
-    const derived = deriveRepoName(r.url);
-    return {
-      url: r.url,
-      ...(r.name !== derived ? { name: r.name } : {}),
-      ...(r.branch !== undefined ? { branch: r.branch } : {}),
-    };
-  });
-  return {
-    schemaVersion: CONFIG_SCHEMA_VERSION,
-    name: stack.name,
-    languages: [...stack.languages],
-    aptPackages: [...(stack.aptPackages ?? [])],
-    features,
-    installUrls: [...(stack.installUrls ?? [])],
-    services: [...stack.services],
-    repos,
-    externalServices: stack.externalServices.postgres
-      ? { postgres: stack.externalServices.postgres }
-      : {},
-  };
 }

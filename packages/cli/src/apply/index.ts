@@ -1,5 +1,6 @@
 import { existsSync, promises as fs } from 'node:fs';
 import { consola } from 'consola';
+import { readMonocerosConfig } from '../config/global.js';
 import { readConfig } from '../config/io.js';
 import {
   containerConfigPath,
@@ -129,13 +130,22 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
   // Refresh host git identity and HTTPS credentials before the
   // container teardown so they're in place when post-create.sh runs.
+  // Identity resolution priority: yml override → monoceros-config.yml
+  // defaults → host global → persisted .monoceros/gitconfig → prompt.
   const idLogger = {
     info: logger.info,
     warn: logger.warn ?? logger.info,
   };
+  const globalConfig = await readMonocerosConfig({ monocerosHome: home });
   await collectGitIdentity(targetDir, {
     ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
     ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),
+    ...(parsed.config.git?.user
+      ? { containerOverride: parsed.config.git.user }
+      : {}),
+    ...(globalConfig?.defaults?.git?.user
+      ? { defaults: globalConfig.defaults.git.user }
+      : {}),
     logger: idLogger,
   });
   if (

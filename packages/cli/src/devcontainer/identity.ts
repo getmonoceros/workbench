@@ -65,6 +65,20 @@ export interface CollectIdentityOptions {
    * that auto-skips in non-interactive contexts.
    */
   prompt?: IdentityPrompt;
+  /**
+   * Per-container override from the container's yml `git.user`. Wins
+   * over everything else (host global, workbench-wide defaults,
+   * persisted state, interactive prompt).
+   */
+  containerOverride?: { name?: string; email?: string };
+  /**
+   * Workbench-wide defaults from `<MONOCEROS_HOME>/monoceros-config.yml`
+   * `defaults.git.user`. Wins over host global git config (the
+   * monoceros-config.yml is an explicit builder choice for Monoceros
+   * containers; host global is the catch-all default), loses to the
+   * per-container override.
+   */
+  defaults?: { name?: string; email?: string };
   logger?: { info: (msg: string) => void; warn: (msg: string) => void };
 }
 
@@ -100,23 +114,28 @@ export async function collectGitIdentity(
 
   const existing = await readExistingGitconfig(gitconfigPath);
 
-  // Resolution order per key: host `--global --get` → previously
-  // persisted value → interactive prompt (or undefined in
-  // non-interactive contexts).
-  const name = await resolveKey(
-    'user.name',
+  // Resolution order per key:
+  //   1. containerOverride (yml's `git.user`)
+  //   2. defaults (monoceros-config.yml's `defaults.git.user`)
+  //   3. host `git config --global --get <key>`
+  //   4. previously persisted value (.monoceros/gitconfig)
+  //   5. interactive prompt (skipped in non-TTY contexts)
+  const name = await resolveKey('user.name', {
+    override: options.containerOverride?.name,
+    defaultValue: options.defaults?.name,
     spawnFn,
-    existing.name,
+    persistedValue: existing.name,
     promptFn,
     logger,
-  );
-  const email = await resolveKey(
-    'user.email',
+  });
+  const email = await resolveKey('user.email', {
+    override: options.containerOverride?.email,
+    defaultValue: options.defaults?.email,
     spawnFn,
-    existing.email,
+    persistedValue: existing.email,
     promptFn,
     logger,
-  );
+  });
 
   const lines: string[] = ['[user]'];
   if (name !== undefined) lines.push(`\tname = ${name}`);
@@ -132,24 +151,34 @@ export async function collectGitIdentity(
   };
 }
 
+interface ResolveKeyOpts {
+  override?: string;
+  defaultValue?: string;
+  spawnFn: IdentitySpawn;
+  persistedValue?: string;
+  promptFn: IdentityPrompt;
+  logger: { warn: (msg: string) => void };
+}
+
 async function resolveKey(
   key: 'user.name' | 'user.email',
-  spawnFn: IdentitySpawn,
-  persistedValue: string | undefined,
-  promptFn: IdentityPrompt,
-  logger: { warn: (msg: string) => void },
+  opts: ResolveKeyOpts,
 ): Promise<string | undefined> {
-  const hostValue = await readKeyFromHost(spawnFn, key, logger);
-  if (hostValue !== undefined) return hostValue;
-  if (persistedValue !== undefined && persistedValue.length > 0) {
-    return persistedValue;
+  if (opts.override !== undefined && opts.override.length > 0) {
+    return opts.override;
   }
-  // Interactive fallback. In non-interactive contexts the default
-  // prompt returns undefined and we leave the key unset.
-  const prompted = await promptFn(key);
+  if (opts.defaultValue !== undefined && opts.defaultValue.length > 0) {
+    return opts.defaultValue;
+  }
+  const hostValue = await readKeyFromHost(opts.spawnFn, key, opts.logger);
+  if (hostValue !== undefined) return hostValue;
+  if (opts.persistedValue !== undefined && opts.persistedValue.length > 0) {
+    return opts.persistedValue;
+  }
+  const prompted = await opts.promptFn(key);
   if (prompted !== undefined) return prompted;
-  logger.warn(
-    `Host has no global ${key} and no previously persisted value; container git will have no ${key} until set explicitly. Either run \`git config --global ${key} "..."\` host-side, or edit .monoceros/gitconfig.`,
+  opts.logger.warn(
+    `No ${key} resolvable (yml override, monoceros-config.yml defaults, host \`git config --global\`, persisted .monoceros/gitconfig, prompt). Container git will have no ${key} until set explicitly.`,
   );
   return undefined;
 }

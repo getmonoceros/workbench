@@ -51,36 +51,3 @@ export interface CreateOptions {
    */
   repos?: RepoEntry[];
 }
-
-export interface StackFile {
-  name: string;
-  createdAt: string;
-  monocerosCliVersion: string;
-  languages: string[];
-  services: string[];
-  externalServices: Record<string, string>;
-  /**
-   * Optional list of apt packages added via `monoceros add-apt-packages`.
-   * Reflected as the apt-packages devcontainer feature in
-   * `devcontainer.json` on each regenerate.
-   */
-  aptPackages?: string[];
-  /**
-   * Optional map of custom devcontainer features added via
-   * `monoceros add-feature`. Keys are feature refs, values are option
-   * hashes. Reflected verbatim into `devcontainer.json` → `features`.
-   */
-  features?: Record<string, FeatureOptions>;
-  /**
-   * Optional list of install URLs added via `monoceros add-from-url`.
-   * Each gets piped to `bash` in the generated `post-create.sh`. Order
-   * is preserved across re-adds.
-   */
-  installUrls?: string[];
-  /**
-   * Optional list of git repos added via `monoceros add-repo`. Each
-   * gets cloned (idempotently) into `projects/<name>/` during
-   * post-create.
-   */
-  repos?: RepoEntry[];
-}

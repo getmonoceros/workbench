@@ -146,10 +146,3 @@ export function containerDir(
 export function monocerosConfigPath(home: string = monocerosHome()): string {
   return path.join(home, 'monoceros-config.yml');
 }
-
-// ─── Legacy aliases — to be removed once all callers migrate ──────
-
-/** @deprecated Use {@link containerConfigsDir}. */
-export const configsDir = containerConfigsDir;
-/** @deprecated Use {@link containerConfigPath}. */
-export const configPath = containerConfigPath;

@@ -13,7 +13,6 @@ describe('monoceros main command', () => {
   it('registers the M1 + M2.5 subcommand surface', async () => {
     const expected = [
       'init',
-      'create',
       'shell',
       'run',
       'logs',
