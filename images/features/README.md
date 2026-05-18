@@ -51,10 +51,10 @@ anders heißen, ist's ein globales sed über das Repo.
 
 ## Aktuelle Features
 
-| Ordner        | Tool                                  | Status |
-| ------------- | ------------------------------------- | ------ |
-| `claude-code` | Anthropic Claude Code CLI             | live   |
-| `atlassian`   | Atlassian CLI (`acli`, inkl. rovodev) | live   |
+| Ordner        | Tool                                          | Status |
+| ------------- | --------------------------------------------- | ------ |
+| `claude-code` | Anthropic Claude Code CLI                     | live   |
+| `atlassian`   | Atlassian CLIs (Rovo Dev über `acli` + `twg`) | live   |
 
 ## Monoceros-Konventionen oberhalb des Devcontainer-Feature-Specs
 

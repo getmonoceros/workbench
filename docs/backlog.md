@@ -170,18 +170,23 @@ Tool sauber installiert. Eigene Feature-Library unter
    `/home/` und `/.monoceros/` aus. Siehe
    [ADR 0003](adr/0003-container-state-model.md). _(erledigt)_
 
-5. **Feature `atlassian`** — installiert `acli` (mit Rovo Dev Agent).
+5. **Feature `atlassian`** — installiert `acli` (mit Rovo Dev Agent)
+   und/oder `twg` (Teamwork Graph CLI) als gebündeltes Feature, weil
+   beide Tools denselben Atlassian-Account nutzen.
    Options:
-   - `email`, `apiToken` — beide gesetzt → das Feature dropt ein
-     Post-Create-Skript unter
-     `/usr/local/share/monoceros/post-create.d/atlassian.sh` ab, das
-     beim Container-Start non-interaktiv einloggt (idempotent: skip
-     wenn `home/.config/acli/rovodev_config.yaml` schon ein Token
-     enthält). Die Atlassian-Site fragt `acli rovodev run` beim
-     ersten Lauf selbst ab und persistiert sie im Home-Mount.
-   - State unter `home/.config/acli/` via
-     `x-monoceros.persistentHomePaths`. _(erledigt)_
-   - **TWG-Variante** als eigenes Feature, separat, später.
+   - `rovodev` (boolean, Default `true`) — installiert acli + dropt
+     Post-Create-Hook `atlassian-rovodev.sh` ab, der bei gesetztem
+     `email`/`apiToken` non-interaktiv einloggt. Idempotent. Die
+     Site fragt `acli rovodev run` beim ersten Lauf selbst ab.
+   - `twg` (boolean, Default `false`) — installiert twg + dropt
+     Post-Create-Hook `atlassian-twg.sh` ab, der bei gesetztem
+     `instance`/`email`/`apiToken` via Env-Vars
+     (`TWG_USER`/`TWG_SITE`/`TWG_TOKEN`) und `twg login --force`
+     einloggt. Idempotent.
+   - `instance`, `email`, `apiToken` — geteilte Credentials für
+     beide Tools.
+   - State unter `home/.config/acli/`, `home/.rovodev/`,
+     `home/.config/twg/` via `x-monoceros.persistentHomePaths`. _(erledigt)_
 
 6. **`monoceros-config.yml`-Schema erweitern** — neuer Block
    `defaults.features: Record<ref, Record<option, value>>` mit
@@ -216,8 +221,6 @@ Tool sauber installiert. Eigene Feature-Library unter
   `claude-code`
 - VS-Code-Server / browser-IDE als Feature — siehe „Vorgemerkt für
   später"
-- TWG-CLI als Feature — TWG-Auth-Pfade müssen erst empirisch
-  verifiziert werden (analog zur Rovo-Dev-Recherche)
 - `monoceros duplicate <a> <b>` — Klon-Befehl für Container, der
   `home/` mitkopiert (Login bleibt erhalten) aber `projects/` und
   `.devcontainer/` zurücksetzt. Idee aus dem M3-Designgespräch,

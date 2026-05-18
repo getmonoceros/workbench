@@ -121,7 +121,7 @@ features:
   - ref: ghcr.io/<org>/monoceros-features/claude-code:1
   - ref: ghcr.io/<org>/monoceros-features/atlassian:1
     options:
-      rovo_dev: true
+      rovodev: true
       twg: true
 
 repos:

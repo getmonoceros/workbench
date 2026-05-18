@@ -31,7 +31,10 @@ defaults:
   #     apiKey: sk-ant-…              # optional → API-Modus
   #                                   # weglassen für Subscription/OAuth-Login
   #   ghcr.io/monoceros/features/atlassian:1:
+  #     rovodev: true                # Default true — `acli` + Rovo Dev
+  #     twg: false                   # Default false — Teamwork Graph CLI
+  #     instance: yoursite.atlassian.net  # nötig für twg-Auto-Login
   #     email: you@example.com
   #     apiToken: ATATT3xFf…
-  #     # Atlassian-Site fragt `acli rovodev run` beim ersten Lauf
-  #     # selbst ab und merkt sie sich im persistenten home-Mount.
+  #     # Bei Rovo Dev fragt `acli rovodev run` die Site beim ersten
+  #     # Lauf selbst ab und merkt sie sich im persistenten home-Mount.
