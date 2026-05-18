@@ -55,6 +55,7 @@ anders heißen, ist's ein globales sed über das Repo.
 | ------------- | --------------------------------------------- | ------ |
 | `claude-code` | Anthropic Claude Code CLI                     | live   |
 | `atlassian`   | Atlassian CLIs (Rovo Dev über `acli` + `twg`) | live   |
+| `github-cli`  | GitHub CLI (`gh`)                             | live   |
 
 ## Monoceros-Konventionen oberhalb des Devcontainer-Feature-Specs
 

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainerFeature.schema.json",
+  "id": "github-cli",
+  "name": "GitHub CLI (gh)",
+  "version": "0.1.0",
+  "description": "Installs the official GitHub CLI (`gh`) from the upstream apt repository. When an `apiToken` option is provided, its value is exported as GH_TOKEN via /etc/profile.d/ so `gh` works non-interactively in any login shell. Without a token, `gh` is installed but unauthenticated and the builder runs `gh auth login` once interactively; the resulting credentials persist under /home/node/.config/gh via Monoceros' bind-mount.",
+  "documentationURL": "https://cli.github.com/",
+  "options": {
+    "apiToken": {
+      "type": "string",
+      "default": "",
+      "description": "GitHub Personal Access Token (github.com → Settings → Developer settings → Personal access tokens → classic). Minimum scopes: repo, read:org, gist. When set, exported as GH_TOKEN in every login shell. Named `apiToken` to match the same option on the atlassian feature."
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["github.vscode-pull-request-github"]
+    }
+  },
+  "x-monoceros": {
+    "persistentHomePaths": [".config/gh"]
+  }
+}
