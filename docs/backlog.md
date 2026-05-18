@@ -16,7 +16,7 @@ Konzeptioneller Überbau: [`konzept.md`](konzept.md).
 | ~~M2~~       | Iteration-Pipeline + Plugin                                    | ❌ ausgelagert 2026-05-17 |
 | M2.5         | yml-Profile-Modell (`init`/`apply <name>`, AST-Mutationen)     | ✅ 2026-05-17             |
 | ~~M3 (alt)~~ | Externe Tracking-Adapter                                       | ❌ ausgelagert 2026-05-17 |
-| **M3 (neu)** | AI-Tool-Feature-Library                                        | 🔜 nächste Etappe         |
+| **M3 (neu)** | AI-Tool-Feature-Library                                        | 🚧 in Arbeit              |
 | M4           | Distribution / Go-Live                                         | 🔜                        |
 | M5           | Stabilisierung + Doku                                          | 🔜                        |
 
@@ -129,7 +129,7 @@ gehört M3 dort hin, nicht in die Werkbank.
 
 ---
 
-## 🔜 M3 (neu) — AI-Tool-Feature-Library
+## 🚧 M3 (neu) — AI-Tool-Feature-Library
 
 **Ziel:** AI-Tools sind erstklassige Bürger in der Container-yml.
 Builder schreibt `features: [- ref: …/claude-code:1]` und kriegt das
@@ -176,17 +176,24 @@ Tool sauber installiert. Eigene Feature-Library unter
    Options:
    - `rovodev` (boolean, Default `true`) — installiert acli + dropt
      Post-Create-Hook `atlassian-rovodev.sh` ab, der bei gesetztem
-     `email`/`apiToken` non-interaktiv einloggt. Idempotent. Die
+     `email`/`apiToken` non-interaktiv einloggt. Hook re-läuft bei
+     jedem Apply, damit Token-Rotation in der yml propagiert. Die
      Site fragt `acli rovodev run` beim ersten Lauf selbst ab.
-   - `twg` (boolean, Default `true`) — installiert twg + dropt
-     Post-Create-Hook `atlassian-twg.sh` ab, der bei gesetztem
-     `instance`/`email`/`apiToken` via Env-Vars
-     (`TWG_USER`/`TWG_SITE`/`TWG_TOKEN`) und `twg login --force`
-     einloggt. Idempotent.
+   - `twg` (boolean, Default `true`) — installiert twg via
+     official-install-Script (`--install-dir /usr/local/bin
+--skip-login --skip-skills`, Consent via Heredoc). Dropt
+     Post-Create-Hook `atlassian-twg.sh` ab, der via
+     `TWG_USER`/`TWG_SITE`/`TWG_TOKEN`/`TWG_BBC_TOKEN` und
+     `twg login --force` einloggt und danach
+     `twg skills install --global --yes` ausführt.
    - `instance`, `email`, `apiToken` — geteilte Credentials für
      beide Tools.
+   - `bitbucketToken` — optional, nur für twg's Bitbucket-Pfad.
    - State unter `home/.config/acli/`, `home/.rovodev/`,
-     `home/.config/twg/` via `x-monoceros.persistentHomePaths`. _(erledigt)_
+     `home/.config/twg/`, `home/.agents/` via
+     `x-monoceros.persistentHomePaths`.
+   - VS-Code-Extension `Atlassian.atlascode` über
+     `customizations.vscode.extensions`. _(erledigt)_
 
 6. **`monoceros-config.yml`-Schema erweitern** — neuer Block
    `defaults.features: Record<ref, Record<option, value>>` mit
@@ -202,17 +209,20 @@ Tool sauber installiert. Eigene Feature-Library unter
 
 8. **Template-Variante `atlassian`** — `templates/yml/atlassian.yml`
    mit aktiviertem atlassian-Feature, Default-Optionen leer, mit
-   gutem Comment-Block als Inline-Doku.
+   gutem Comment-Block als Inline-Doku. _(offen)_
 
 9. **Doku** — `docs/commands/`-Eintrag für die neue Mechanik (kein
    neuer Befehl, aber das Feature-Modell + State-Modell erklärt);
    kurzes `docs/ai-tools.md` als Übersicht über die Library + Roadmap
-   der weiteren Features.
+   der weiteren Features. _(offen)_
 
-10. **Tests** — Schema-Tests für die neuen Config-Felder; Feature-
-    Installation manuell verifiziert (es gibt keinen sauberen Unit-Test
-    für „Feature im Container materialisiert sich" — Stage C des
-    Test-Plans deckt das ab).
+10. **Tests** — Schema-Tests für die neuen Config-Felder + Apply-
+    Verhalten (defaults.features-Merge, .gitignore, persistente
+    Home-Pfade + -Files inkl. Seed-Content) sind in
+    `apply-yml.test.ts` / `global-config.test.ts` ergänzt
+    (137/137 grün). Stage C des Test-Plans für „Feature im
+    Container materialisiert sich"-Pfad steht noch aus.
+    _(teilweise erledigt — Unit-Tests done, Stage-C-Update offen)_
 
 ### Bewusst nicht in M3
 
@@ -230,14 +240,18 @@ Tool sauber installiert. Eigene Feature-Library unter
 
 - ✅ `monoceros init nodejs-github sandbox && monoceros apply sandbox`
   installiert Claude Code via Feature (nicht aus dem Image)
-- ✅ Container-Login (Claude, ACLI) überlebt `monoceros apply`
-- ✅ `monoceros init atlassian sandbox && monoceros apply sandbox`
-  liefert einen Container, in dem `acli rovodev` ohne weiteres
-  manuelles Auth-Setup funktioniert (sofern Container-yml oder
-  `monoceros-config.yml` die Credentials hält)
-- ✅ Feature-Library im GHCR auffindbar unter
-  `ghcr.io/<org>/monoceros-features/{claude-code,atlassian}`
-- ✅ Stage C des Test-Plans erweitert um Feature-Pfad
+- ✅ Container-Login (Claude, Rovo Dev, twg) überlebt
+  `monoceros apply`, Token-Rotation in der yml propagiert
+  automatisch
+- ⏳ `monoceros init atlassian sandbox && monoceros apply sandbox`
+  — der Apply-Pfad ist verifiziert (Feature + Hooks funktionieren),
+  aber das Template `atlassian.yml` selbst gibt's noch nicht
+  (siehe Task 8)
+- ⏳ Feature-Library im GHCR auffindbar unter
+  `ghcr.io/<org>/monoceros-features/{claude-code,atlassian}` —
+  GHCR-Publish ist M4-Thema; Feature läuft heute über die
+  Local-Source-Auflösung im Scaffold
+- ⏳ Stage C des Test-Plans erweitert um Feature-Pfad — offen
 
 ---
 
