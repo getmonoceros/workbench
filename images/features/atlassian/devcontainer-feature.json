@@ -13,8 +13,8 @@
     },
     "twg": {
       "type": "boolean",
-      "default": false,
-      "description": "Install the Teamwork Graph CLI (twg). Default false. Set to true to add it alongside (or instead of) rovodev."
+      "default": true,
+      "description": "Install the Teamwork Graph CLI (twg). Default true. Set to false to skip when you only want rovodev."
     },
     "instance": {
       "type": "string",

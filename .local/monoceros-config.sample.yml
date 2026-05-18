@@ -31,8 +31,10 @@ defaults:
   #     apiKey: sk-ant-…              # optional → API-Modus
   #                                   # weglassen für Subscription/OAuth-Login
   #   ghcr.io/monoceros/features/atlassian:1:
-  #     rovodev: true                # Default true — `acli` + Rovo Dev
-  #     twg: false                   # Default false — Teamwork Graph CLI
+  #     # Beide Tools sind defaultmäßig aktiv — auf false setzen
+  #     # wenn du nur eines davon willst.
+  #     # rovodev: false             # `acli` + Rovo Dev
+  #     # twg: false                 # Teamwork Graph CLI
   #     instance: yoursite.atlassian.net  # nötig für twg-Auto-Login
   #     email: you@example.com
   #     apiToken: ATATT3xFf…

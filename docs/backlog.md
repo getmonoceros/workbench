@@ -178,7 +178,7 @@ Tool sauber installiert. Eigene Feature-Library unter
      Post-Create-Hook `atlassian-rovodev.sh` ab, der bei gesetztem
      `email`/`apiToken` non-interaktiv einloggt. Idempotent. Die
      Site fragt `acli rovodev run` beim ersten Lauf selbst ab.
-   - `twg` (boolean, Default `false`) — installiert twg + dropt
+   - `twg` (boolean, Default `true`) — installiert twg + dropt
      Post-Create-Hook `atlassian-twg.sh` ab, der bei gesetztem
      `instance`/`email`/`apiToken` via Env-Vars
      (`TWG_USER`/`TWG_SITE`/`TWG_TOKEN`) und `twg login --force`
