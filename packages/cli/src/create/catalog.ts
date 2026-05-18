@@ -30,7 +30,15 @@ export interface ServiceEntry {
   id: string;
   image: string;
   env?: Readonly<Record<string, string>>;
-  volume?: { name: string; mount: string };
+  /**
+   * Container-side mount target for the service's persistent data.
+   * Monoceros bind-mounts this onto `<container-dir>/data/<id>/` on
+   * the host so DB content is visible in the host filesystem
+   * (browsable, backupable, removable with the usual tools instead
+   * of `docker volume ...`). See ADR 0003 for the per-container
+   * state-model the data dir slots into.
+   */
+  dataMount?: string;
 }
 
 export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
@@ -42,11 +50,11 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
       POSTGRES_PASSWORD: 'monoceros',
       POSTGRES_DB: 'monoceros',
     },
-    // Postgres 18+ stores data under /var/lib/postgresql/<major>/, so the
-    // recommended volume mount is the parent directory; pre-18 used
+    // Postgres 18+ stores data under /var/lib/postgresql/<major>/, so
+    // the recommended mount is the parent directory; pre-18 used
     // /var/lib/postgresql/data directly. See
     // https://github.com/docker-library/postgres/pull/1259.
-    volume: { name: 'postgres-data', mount: '/var/lib/postgresql' },
+    dataMount: '/var/lib/postgresql',
   },
   mysql: {
     id: 'mysql',
@@ -55,12 +63,12 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
       MYSQL_ROOT_PASSWORD: 'monoceros',
       MYSQL_DATABASE: 'monoceros',
     },
-    volume: { name: 'mysql-data', mount: '/var/lib/mysql' },
+    dataMount: '/var/lib/mysql',
   },
   redis: {
     id: 'redis',
     image: 'redis:8',
-    volume: { name: 'redis-data', mount: '/data' },
+    dataMount: '/data',
   },
 };
 

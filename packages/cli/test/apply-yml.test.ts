@@ -443,6 +443,62 @@ describe('runApply', () => {
     expect(composeText).toContain('postgres:');
   });
 
+  it('binds service data to <container-dir>/data/<svc>/ instead of named volumes', async () => {
+    await writeYml(
+      'dbhost',
+      [
+        'schemaVersion: 1',
+        'name: dbhost',
+        'services:',
+        '  - postgres',
+        '  - redis',
+        '',
+      ].join('\n'),
+    );
+    await runApply({ ...baseRunOpts, name: 'dbhost', monocerosHome: home });
+
+    const composeText = await readFile(
+      path.join(home, 'container', 'dbhost', '.devcontainer', 'compose.yaml'),
+      'utf8',
+    );
+    // Bind-mount each service onto a sibling `data/<svc>` directory
+    // (paths in compose.yaml are relative to .devcontainer/).
+    expect(composeText).toContain(
+      '      - ../data/postgres:/var/lib/postgresql',
+    );
+    expect(composeText).toContain('      - ../data/redis:/data');
+    // The named-volumes top-level section must be gone — that was
+    // the old layout.
+    expect(composeText).not.toMatch(/^volumes:/m);
+
+    // Host-side dirs are pre-created so docker doesn't auto-mkdir
+    // them as root.
+    const containerRoot = path.join(home, 'container', 'dbhost');
+    const fsp = await import('node:fs/promises');
+    await expect(
+      fsp.readdir(path.join(containerRoot, 'data', 'postgres')),
+    ).resolves.toEqual([]);
+    await expect(
+      fsp.readdir(path.join(containerRoot, 'data', 'redis')),
+    ).resolves.toEqual([]);
+
+    // `.gitignore` excludes data/ so DB content doesn't sneak into
+    // a wrapping git repo.
+    const gitignore = await readFile(
+      path.join(containerRoot, '.gitignore'),
+      'utf8',
+    );
+    expect(gitignore).toContain('/data/');
+  });
+
+  it('does not create data/ when no services are configured', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runApply({ ...baseRunOpts, name: 'demo', monocerosHome: home });
+    const dataDir = path.join(home, 'container', 'demo', 'data');
+    const fsp = await import('node:fs/promises');
+    await expect(fsp.access(dataDir)).rejects.toThrow();
+  });
+
   it('records cliVersion and timestamp in state.json', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runApply({

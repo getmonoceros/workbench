@@ -565,7 +565,6 @@ export function buildComposeYaml(opts: CreateOptions): string {
     lines.push(`      GIT_SSH_COMMAND: "${GIT_SSH_COMMAND}"`);
   }
 
-  const namedVolumes: string[] = [];
   for (const svcId of opts.services) {
     const def = SERVICE_CATALOG[svcId];
     if (!def) continue;
@@ -577,17 +576,13 @@ export function buildComposeYaml(opts: CreateOptions): string {
         lines.push(`      ${k}: ${v}`);
       }
     }
-    if (def.volume) {
+    if (def.dataMount) {
+      // Per-service data dir bind-mounted from the host so DB content
+      // is visible at `<container-dir>/data/<svc>/`. See ADR 0003 for
+      // the per-container state-model this slots into. Pre-created in
+      // writeScaffold so docker doesn't auto-mkdir as root.
       lines.push('    volumes:');
-      lines.push(`      - ${def.volume.name}:${def.volume.mount}`);
-      namedVolumes.push(def.volume.name);
-    }
-  }
-
-  if (namedVolumes.length > 0) {
-    lines.push('volumes:');
-    for (const name of namedVolumes) {
-      lines.push(`  ${name}:`);
+      lines.push(`      - ../data/${def.id}:${def.dataMount}`);
     }
   }
 
@@ -754,21 +749,39 @@ export async function writeScaffold(
   const monocerosDir = path.join(targetDir, '.monoceros');
   const projectsDir = path.join(targetDir, 'projects');
   const homeDir = path.join(targetDir, 'home');
+  const dataDir = path.join(targetDir, 'data');
   await fs.mkdir(devcontainerDir, { recursive: true });
   await fs.mkdir(monocerosDir, { recursive: true });
   await fs.mkdir(projectsDir, { recursive: true });
   await fs.mkdir(homeDir, { recursive: true });
+  if (needsCompose(opts)) {
+    await fs.mkdir(dataDir, { recursive: true });
+    // Pre-create one subdir per service so docker bind-mounts onto
+    // an existing host path (and doesn't auto-mkdir as root, which
+    // breaks postgres/mysql first-run on Linux).
+    for (const svcId of opts.services) {
+      const def = SERVICE_CATALOG[svcId];
+      if (def?.dataMount) {
+        await fs.mkdir(path.join(dataDir, def.id), { recursive: true });
+      }
+    }
+  }
 
-  // Container-root `.gitignore`. Excludes the two directories that
-  // hold builder-private state: `home/` (logins, sessions, secrets
-  // baked into tool config files) and `.monoceros/` (git-credentials
-  // captured from the host helper, machine-local gitconfig include).
-  // Inside `projects/<repo>/` builders have their own `.git` and any
-  // wrapping git operation should be at that level, not at the
+  // Container-root `.gitignore`. Excludes the directories that hold
+  // builder-private or container-runtime state:
+  //   - `home/`        — logins, sessions, secrets baked into tool
+  //                      config files
+  //   - `.monoceros/`  — git-credentials captured from the host
+  //                      credential helper, machine-local gitconfig
+  //   - `data/`        — DB data the compose services write at
+  //                      runtime (postgres/mysql/redis), often big,
+  //                      always container-specific
+  // Inside `projects/<repo>/` builders have their own `.git` and
+  // any wrapping git operation should be at that level, not at the
   // container root — but a stray `git init` at the root is exactly
   // the accident this .gitignore protects against.
   const containerGitignore = path.join(targetDir, '.gitignore');
-  await fs.writeFile(containerGitignore, '/home/\n/.monoceros/\n');
+  await fs.writeFile(containerGitignore, '/home/\n/.monoceros/\n/data/\n');
 
   // `.gitkeep` so `projects/` survives a fresh git clone before any
   // sub-project has been added.
