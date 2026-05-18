@@ -119,6 +119,16 @@ export function templatePath(
   return path.join(templatesDir(root), `${template}.yml`);
 }
 
+/**
+ * `templates/components/` — the components catalog used by
+ * `monoceros init`. Each file under this directory is a small yml
+ * snippet describing one composable component (a language, a
+ * service, or a feature). See `templates/components/README.md`.
+ */
+export function componentsDir(root: string = workbenchRoot()): string {
+  return path.join(root, 'templates', 'components');
+}
+
 // ─── User-home paths (configs, containers, global config) ────────
 
 export function containerConfigsDir(home: string = monocerosHome()): string {
