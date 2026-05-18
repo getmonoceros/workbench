@@ -139,7 +139,7 @@ describe('runInit', () => {
     expect(text).toContain('# languages:');
     expect(text).toContain('# services:');
     expect(text).toContain('# features:');
-    expect(text).toContain('#   - node   # Node 22');
+    expect(text).toMatch(/#\s+- node\s+# Node 22/);
     expect(text).toContain(
       '#   - ref: ghcr.io/monoceros/features/claude-code:1',
     );

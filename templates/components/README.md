@@ -80,7 +80,11 @@ contributes:
 | Component           | Category | Contributes                                             |
 | ------------------- | -------- | ------------------------------------------------------- |
 | `node`              | language | Node runtime (declared; package already in base image)  |
-| `python`            | language | Python via devcontainer feature                         |
+| `python`            | language | Python via devcontainers/features/python                |
+| `java`              | language | JDK via devcontainers/features/java                     |
+| `go`                | language | Go toolchain via devcontainers/features/go              |
+| `rust`              | language | Rust toolchain via devcontainers/features/rust          |
+| `dotnet`            | language | .NET SDK via devcontainers/features/dotnet:2            |
 | `postgres`          | service  | Compose service: Postgres                               |
 | `mysql`             | service  | Compose service: MySQL                                  |
 | `redis`             | service  | Compose service: Redis                                  |

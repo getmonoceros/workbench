@@ -107,88 +107,88 @@ export function generateDocumentedYml(
   lines.push('');
 
   if (byCategory.language.length > 0) {
+    const items = byCategory.language.flatMap((c) =>
+      (c.file.contributes.languages ?? []).map((lang) => ({
+        value: lang,
+        label: c.file.displayName,
+      })),
+    );
+    const width = Math.max(...items.map((i) => i.value.length)) + 2;
     lines.push('# Languages — runtime toolchains.');
     lines.push('# languages:');
-    for (const c of byCategory.language) {
-      for (const lang of c.file.contributes.languages ?? []) {
-        lines.push(`#   - ${lang}   # ${c.file.displayName}`);
-      }
+    for (const item of items) {
+      const pad = ' '.repeat(width - item.value.length);
+      lines.push(`#   - ${item.value}${pad}# ${item.label}`);
     }
     lines.push('');
   }
   if (byCategory.service.length > 0) {
+    const items = byCategory.service.flatMap((c) =>
+      (c.file.contributes.services ?? []).map((svc) => ({
+        value: svc,
+        label: c.file.displayName,
+      })),
+    );
+    const width = Math.max(...items.map((i) => i.value.length)) + 2;
     lines.push('# Services — compose-mode siblings of the workspace');
     lines.push('# container (compose mode kicks in as soon as at least');
     lines.push('# one service is active).');
     lines.push('# services:');
-    for (const c of byCategory.service) {
-      for (const svc of c.file.contributes.services ?? []) {
-        lines.push(`#   - ${svc}   # ${c.file.displayName}`);
-      }
+    for (const item of items) {
+      const pad = ' '.repeat(width - item.value.length);
+      lines.push(`#   - ${item.value}${pad}# ${item.label}`);
     }
     lines.push('');
   }
   if (byCategory.feature.length > 0) {
     lines.push('# Features — devcontainer features installed inside the');
     lines.push('# container. Each entry has an OCI-style `ref` plus an');
-    lines.push('# optional `options` map; the commented-out lines below');
-    lines.push('# each feature show the credentials it understands (the');
-    lines.push('# same keys you can set globally in monoceros-config.yml');
-    lines.push('# under `defaults.features.<ref>`).');
+    lines.push('# optional `options` map. Credentials/auth keys appear');
+    lines.push('# as commented hints; set them here per container, or');
+    lines.push('# globally in monoceros-config.yml under');
+    lines.push('# `defaults.features.<ref>`.');
+    lines.push('#');
+    lines.push('# Catalog:');
+    lines.push('#');
+    const nameColumnWidth =
+      Math.max(...byCategory.feature.map((c) => c.name.length)) + 2;
+    for (const c of byCategory.feature) {
+      const pad = ' '.repeat(nameColumnWidth - c.name.length);
+      lines.push(`#   ${c.name}${pad}${c.file.displayName}`);
+    }
+    lines.push('#');
+    lines.push('# Below: one block per feature ref. Un-comment what');
+    lines.push("# you want active. Sub-components share their parent's");
+    lines.push('# block — pick the parent for the full preset, swap to');
+    lines.push('# a sub-component name for a partial install.');
+    lines.push('#');
     lines.push('# features:');
-    // Within features we group by ref. Top-level components carry
-    // the human-friendly description; sub-components (atlassian/twg)
-    // are listed in the description block of their parent ref as
-    // hints for "if you want only one of these tools, swap the parent
-    // for a sub".
+
+    // Render one feature block per unique ref. Prefer the top-level
+    // component (e.g. `atlassian` over `atlassian/twg`) as the source
+    // of the rendered options, since the top-level carries the
+    // "everything on" default users typically want first.
     const renderedRefs = new Set<string>();
     const topLevel = byCategory.feature.filter((c) => !c.name.includes('/'));
-    const subByParent = new Map<string, Component[]>();
-    for (const c of byCategory.feature) {
-      if (!c.name.includes('/')) continue;
-      const parent = c.name.split('/')[0]!;
-      const arr = subByParent.get(parent) ?? [];
-      arr.push(c);
-      subByParent.set(parent, arr);
-    }
-
-    const renderFeatureWithDescription = (
-      describe: Component,
-      f: RenderableFeature,
-      siblings: Component[],
-    ) => {
-      lines.push('#');
-      lines.push(`#   # ${describe.file.displayName}`);
-      for (const dline of describe.file.description.trim().split('\n')) {
-        lines.push(`#   # ${dline}`);
-      }
-      if (siblings.length > 0) {
-        lines.push('#   #');
-        lines.push('#   # Sub-components for partial installs:');
-        for (const s of siblings) {
-          lines.push(`#   #   ${s.name} — ${s.file.displayName}`);
-        }
-      }
-      const hints = lookupManifest(f.ref)?.optionHints ?? [];
-      renderFeatureBlock(lines, f, hints, /* commented */ true);
-    };
 
     for (const c of topLevel) {
       for (const f of c.file.contributes.features ?? []) {
         if (renderedRefs.has(f.ref)) continue;
         renderedRefs.add(f.ref);
-        renderFeatureWithDescription(c, f, subByParent.get(c.name) ?? []);
+        const hints = lookupManifest(f.ref)?.optionHints ?? [];
+        renderFeatureBlock(lines, f, hints, /* commented */ true);
       }
     }
     // Any feature ref only mentioned through a sub-component (no
     // top-level component for the same ref) — render it from the
-    // first sub.
+    // first sub-component.
     for (const c of byCategory.feature) {
       if (!c.name.includes('/')) continue;
       for (const f of c.file.contributes.features ?? []) {
         if (renderedRefs.has(f.ref)) continue;
         renderedRefs.add(f.ref);
-        renderFeatureWithDescription(c, f, []);
+        const hints = lookupManifest(f.ref)?.optionHints ?? [];
+        renderFeatureBlock(lines, f, hints, /* commented */ true);
       }
     }
     lines.push('');

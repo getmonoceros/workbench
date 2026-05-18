@@ -1,0 +1,8 @@
+displayName: Go via devcontainers/features/go
+description: |
+  Adds the upstream `ghcr.io/devcontainers/features/go` feature to
+  the container, which installs the Go toolchain plus common dev
+  utilities (gopls, dlv, …).
+category: language
+contributes:
+  languages: [go]

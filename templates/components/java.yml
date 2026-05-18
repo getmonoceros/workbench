@@ -1,0 +1,9 @@
+displayName: Java via devcontainers/features/java
+description: |
+  Adds the upstream `ghcr.io/devcontainers/features/java` feature to
+  the container, which installs a JDK plus Maven/Gradle scaffolding.
+  Pin a version through the feature's own options if you need
+  something other than the default.
+category: language
+contributes:
+  languages: [java]
