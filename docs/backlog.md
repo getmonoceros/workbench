@@ -225,21 +225,37 @@ Options:
    First-Run-Login einbringen, ohne dass der Scaffold feature-Wissen
    braucht. _(erledigt)_
 
-8. **Template-Variante `atlassian`** — `templates/yml/atlassian.yml`
-   mit aktiviertem atlassian-Feature, Default-Optionen leer, mit
-   gutem Comment-Block als Inline-Doku. _(offen)_
+8. **Init-Komponentenmodell** — Templates (`bare`, `nodejs-github`,
+   `python`, `reference`) sind komplett rausgenommen; stattdessen
+   gibt es einen Komponenten-Katalog unter
+   `templates/components/` (eine yaml pro Sprache / Service /
+   Feature mit `displayName` + `description` + `category` +
+   `contributes`). `monoceros init <name> --with=node,…` komponiert
+   die Komponenten zu einer fertigen yml; `monoceros init <name>`
+   ohne `--with` schreibt eine dokumentierte Vorlage. Boolean-
+   Options aus mehreren Komponenten mergen per OR (`true` gewinnt),
+   damit Sub-Komponenten wie `atlassian/twg` allein opt-out für
+   `rovodev` machen können, kombiniert aber beide einschalten.
+   Feature-Optionen mit Auth-Bezug werden über
+   `x-monoceros.optionHints` im Feature-Manifest deklariert und
+   tauchen kommentiert unter der `options:`-Zeile auf. Plus neuer
+   Befehl `monoceros list-components` als Discovery-Hilfe.
+   _(erledigt)_
 
-9. **Doku** — `docs/commands/`-Eintrag für die neue Mechanik (kein
-   neuer Befehl, aber das Feature-Modell + State-Modell erklärt);
-   kurzes `docs/ai-tools.md` als Übersicht über die Library + Roadmap
-   der weiteren Features. _(offen)_
+9. **Doku** — `docs/commands/init.md` neu geschrieben gegen das
+   `--with`-Modell; `docs/commands/list-components.md` ergänzt.
+   `CLAUDE.md` und `docs/konzept.md` zeigen die neuen CLI-Shapes.
+   Ein eigenes `docs/ai-tools.md` als Library-Übersicht steht noch
+   aus. _(teilweise erledigt)_
 
 10. **Tests** — Schema-Tests für die neuen Config-Felder + Apply-
     Verhalten (defaults.features-Merge, .gitignore, persistente
     Home-Pfade + -Files inkl. Seed-Content) sind in
-    `apply-yml.test.ts` / `global-config.test.ts` ergänzt
-    (137/137 grün). Stage C des Test-Plans für „Feature im
-    Container materialisiert sich"-Pfad steht noch aus.
+    `apply-yml.test.ts` / `global-config.test.ts` ergänzt. Plus
+    Tests für Komponenten-Reader/-Merge in `components.test.ts`
+    und für beide Init-Modi in `init.test.ts`. Stage C des
+    Test-Plans für den „Feature im Container materialisiert sich"-
+    Pfad steht noch aus.
     _(teilweise erledigt — Unit-Tests done, Stage-C-Update offen)_
 
 ### Bewusst nicht in M3

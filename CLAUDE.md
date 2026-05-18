@@ -63,7 +63,9 @@ monoceros-config.sample.yml    ← Marker + Vorlage (committed in dev)
 Workflow:
 
 ```sh
-monoceros init <template> <name>          # yml aus Vorlage
+monoceros init <name> [--with=node,...]   # yml aus Komponenten komponieren
+                                          # (ohne --with: dokumentierte Vorlage)
+monoceros list-components                 # Katalog der Komponenten anzeigen
 monoceros apply <name>                    # → container/<name>/
 monoceros shell <name>                    # darin arbeiten
 monoceros add-feature <name> <ref>        # yml editieren

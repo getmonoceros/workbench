@@ -212,12 +212,13 @@ Drei Familien:
 
 ```sh
 # Konfig + Lifecycle
-monoceros init <template> <name>          # yml aus Vorlage erstellen
-monoceros apply <name>                    # materialisieren + Container hochfahren
-monoceros start|stop|down|status <name>   # Compose-Lifecycle
-monoceros shell <name>                    # interaktive bash
-monoceros run <name> -- <cmd>             # one-off-Befehl
-monoceros logs <name> [<service>]         # tail
+monoceros init <name> [--with=…]           # yml komponieren (oder dokumentierte Vorlage)
+monoceros list-components                  # Komponenten-Katalog anzeigen
+monoceros apply <name>                     # materialisieren + Container hochfahren
+monoceros start|stop|down|status <name>    # Compose-Lifecycle
+monoceros shell <name>                     # interaktive bash
+monoceros run <name> -- <cmd>              # one-off-Befehl
+monoceros logs <name> [<service>]          # tail
 
 # Konfig editieren (yml-AST-Mutation, comment-preserving)
 monoceros add-language|service|apt-packages|feature|from-url|repo <name> …
@@ -238,7 +239,7 @@ monoceros-workbench/
 ├── images/
 │   └── runtime/            # Dockerfile fürs Werkbank-Image
 ├── templates/
-│   └── yml/                # init-Vorlagen (bare, nodejs-github, python, reference)
+│   └── components/         # Komponenten-Katalog für `monoceros init --with=`
 └── docs/
 ```
 

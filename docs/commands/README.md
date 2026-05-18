@@ -44,25 +44,27 @@ $MONOCEROS_HOME/
 ## Typischer Lebenszyklus
 
 ```sh
-monoceros init <template> <name>          # Konfig aus Vorlage erstellen
-vim $MONOCEROS_HOME/container-configs/<name>.yml   # anpassen (optional)
-monoceros apply <name>                    # Dev-Container materialisieren + hochfahren
-monoceros shell <name>                    # darin arbeiten
-monoceros add-feature <name> <ref>        # Konfig editieren
-monoceros apply <name>                    # neu bauen, picks up the change
+monoceros init <name> --with=node,postgres,github,claude  # Konfig komponieren
+vim $MONOCEROS_HOME/container-configs/<name>.yml          # anpassen (optional)
+monoceros apply <name>                                    # Dev-Container materialisieren + hochfahren
+monoceros shell <name>                                    # darin arbeiten
+monoceros add-feature <name> <ref>                        # Konfig editieren
+monoceros apply <name>                                    # neu bauen, picks up the change
 ```
 
 ## Solution anlegen + Lifecycle
 
-| Befehl                        | Zweck                                                  | Doku                   |
-| ----------------------------- | ------------------------------------------------------ | ---------------------- |
-| `monoceros init <tpl> <name>` | Konfig aus Vorlage erstellen                           | [init.md](./init.md)   |
-| `monoceros apply <name>`      | Konfig materialisieren + Container hochfahren          | [apply.md](./apply.md) |
-| `monoceros start <name>`      | Devcontainer hochfahren (`devcontainer up` + Services) | _TODO_                 |
-| `monoceros stop <name>`       | Compose-Services stoppen, Volumes erhalten             | _TODO_                 |
-| `monoceros down <name> [-v]`  | Container + Network entfernen, optional Volumes        | _TODO_                 |
-| `monoceros status <name>`     | Compose-Status anzeigen                                | _TODO_                 |
-| `monoceros logs <name> [...]` | Compose-Logs verfolgen                                 | _TODO_                 |
+| Befehl                            | Zweck                                                  | Doku                                       |
+| --------------------------------- | ------------------------------------------------------ | ------------------------------------------ |
+| `monoceros init <name> [--with=]` | Konfig aus Komponenten komponieren (oder dokumentierte | [init.md](./init.md)                       |
+|                                   | Vorlage erzeugen, wenn --with weggelassen)             |                                            |
+| `monoceros list-components`       | Komponenten-Katalog anzeigen                           | [list-components.md](./list-components.md) |
+| `monoceros apply <name>`          | Konfig materialisieren + Container hochfahren          | [apply.md](./apply.md)                     |
+| `monoceros start <name>`          | Devcontainer hochfahren (`devcontainer up` + Services) | _TODO_                                     |
+| `monoceros stop <name>`           | Compose-Services stoppen, Volumes erhalten             | _TODO_                                     |
+| `monoceros down <name> [-v]`      | Container + Network entfernen, optional Volumes        | _TODO_                                     |
+| `monoceros status <name>`         | Compose-Status anzeigen                                | _TODO_                                     |
+| `monoceros logs <name> [...]`     | Compose-Logs verfolgen                                 | _TODO_                                     |
 
 ## Im Container arbeiten
 

@@ -8,6 +8,7 @@ import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
 import { downCommand } from './commands/down.js';
 import { initCommand } from './commands/init.js';
+import { listComponentsCommand } from './commands/list-components.js';
 import { logsCommand } from './commands/logs.js';
 import { removeAptPackagesCommand } from './commands/remove-apt-packages.js';
 import { removeFeatureCommand } from './commands/remove-feature.js';
@@ -31,6 +32,7 @@ export const main = defineCommand({
   },
   subCommands: {
     init: initCommand,
+    'list-components': listComponentsCommand,
     shell: shellCommand,
     run: runCommand,
     logs: logsCommand,

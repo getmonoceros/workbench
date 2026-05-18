@@ -1,114 +1,154 @@
 # `monoceros init`
 
-Erstellt eine Container-Konfig unter
-`$MONOCEROS_HOME/container-configs/<name>.yml` aus einer mitgelieferten
-Vorlage.
+Erzeugt eine Container-Konfig unter
+`$MONOCEROS_HOME/container-configs/<name>.yml`. Zwei Modi:
 
 ```sh
-monoceros init <template> <name>
+monoceros init <name>                          # documented mode
+monoceros init <name> --with=<components>      # composed mode
 ```
 
 ## Zweck
 
-Eine Konfig ist die Wahrheit eines Dev-Containers. Sie liegt
-**außerhalb** des Container-Verzeichnisses und kann frei editiert
-werden, bevor `monoceros apply <name>` daraus konkret einen Container
-materialisiert.
+Eine Container-Konfig ist die Wahrheit eines Dev-Containers. Sie
+liegt **außerhalb** des Container-Verzeichnisses und kann frei
+editiert werden, bevor `monoceros apply <name>` daraus konkret einen
+Container materialisiert.
 
-`monoceros init` ist der Erst-Setup-Schritt:
+`monoceros init` ist der Erst-Setup-Schritt — er produziert die yml,
+nicht den Container.
 
-1. Kopiert eine Template-Datei aus `templates/yml/<template>.yml` nach
-   `$MONOCEROS_HOME/container-configs/<name>.yml`.
-2. Überschreibt das `name`-Feld in der Ziel-Datei mit `<name>`.
-3. Preserved jeden Kommentar im Template — Builder lesen die yml danach
-   als Inline-Doku und können sie hand-editieren.
+## Komponenten statt Templates
 
-Was es **nicht** ist:
+Die Workbench liefert keine vorgefertigten "Templates" mehr (wie
+`bare`, `nodejs-github`, `python`). Stattdessen gibt es einen
+Komponenten-Katalog unter
+[`templates/components/`](../../templates/components/). Jede
+Komponente ist ein kleines yaml-Snippet, das einen Baustein
+beschreibt:
 
-- Kein Dev-Container-Setup — das macht `monoceros apply`
-- Keine Auto-Update-Routine bei Template-Änderungen — die Kopie ist
-  ab dem Init-Aufruf eigenständig
+| Kategorie  | Beispiele                                                             |
+| ---------- | --------------------------------------------------------------------- |
+| `language` | `node`, `python`                                                      |
+| `service`  | `postgres`, `mysql`, `redis`                                          |
+| `feature`  | `claude`, `github`, `atlassian`, `atlassian/twg`, `atlassian/rovodev` |
 
-## Synopsis
+Der vollständige Katalog kann jederzeit per
+[`monoceros list-components`](./list-components.md) angezeigt
+werden.
 
-```sh
-monoceros init <template> <name>
-```
+## Documented mode — `monoceros init <name>` (ohne `--with`)
 
-## Argumente
-
-| Argument     | Bedeutung                                                                      |
-| ------------ | ------------------------------------------------------------------------------ |
-| `<template>` | Template-Name. Datei-Basename unter `templates/yml/` (z. B. `bare`, `python`). |
-| `<name>`     | Wunschname für die Konfig. Landet als `container-configs/<name>.yml`.          |
-
-## Mitgelieferte Templates
-
-| Template        | Stack                                       |
-| --------------- | ------------------------------------------- |
-| `bare`          | Node (Base-Image), sonst nichts             |
-| `nodejs-github` | Node (Base) + GitHub CLI (`gh`)             |
-| `python`        | Python (Feature) + lokaler Postgres-Service |
-| `reference`     | Nachschlagewerk mit jedem Feld dokumentiert |
-
-Weitere Templates können unter `templates/yml/` ergänzt werden — siehe
-[`templates/yml/README.md`](../../templates/yml/README.md).
-
-## Mechanik
-
-1. **Template-Lookup** in `templates/yml/<template>.yml`. Fehlt das
-   File, Error mit Liste aller verfügbaren Templates.
-2. **Schema-Validierung** des Templates (catch malformed templates).
-3. **Ziel-Existenz-Prüfung**: wenn
-   `$MONOCEROS_HOME/container-configs/<name>.yml` schon existiert,
-   Error. Das verhindert versehentliches Überschreiben einer
-   hand-editierten Konfig.
-4. **AST-Rewrite** des `name`-Felds: der Template-Default-Name
-   (z. B. `name: bare`) wird durch `<name>` ersetzt. Der Rest der yml
-   — speziell der Kommentar-Block am Anfang — bleibt 1:1 erhalten.
-5. **Write** nach `$MONOCEROS_HOME/container-configs/<name>.yml`.
-
-## Beispiel
+Schreibt eine **dokumentierte Vorlage**, in der jede Komponente aus
+dem Katalog auskommentiert mit Erklärung erscheint. Der Builder
+liest die Datei, kommentiert die gewünschten Zeilen aus, fertig.
 
 ```sh
-$ monoceros init nodejs-github sandbox
-✔ Copied template 'nodejs-github' to container-configs/sandbox.yml
-ℹ Edit the file, then run `monoceros apply sandbox` to materialize a dev-container.
+$ monoceros init sandbox
+✔ Wrote documented default to container-configs/sandbox.yml. Un-comment what you need, then `monoceros apply sandbox`.
 ```
 
-Resultat:
+Beispiel-Output (gekürzt):
 
 ```yaml
-# Monoceros solution-config — `nodejs-github` template.
-# …
 schemaVersion: 1
 name: sandbox
 
-features:
-  - ref: ghcr.io/devcontainers/features/github-cli:1
+# Languages — runtime toolchains.
+# languages:
+#   - node     # Node 22 + pnpm
+#   - python   # Python 3.x via devcontainers/features/python
 
-# repos:
-#   - url: https://github.com/your-org/your-repo.git
+# Features — devcontainer features installed inside the container.
+# features:
+#
+#   # Anthropic Claude Code CLI
+#   # Installs the Claude Code CLI via npm …
+#   - ref: ghcr.io/monoceros/features/claude-code:1
+#     # Optional — override monoceros-config.yml defaults.features:
+#     # options:
+#     #   apiKey:
 ```
 
-Danach kannst du die Konfig:
+## Composed mode — `monoceros init <name> --with=<names>`
 
-- direkt editieren (z. B. `repos:` einkommentieren),
-- via `monoceros add-* sandbox …` mutieren (Comment-preserving),
-- mit `monoceros apply sandbox` als Dev-Container materialisieren.
+Verknüpft die genannten Komponenten zu einer **sofort
+applybaren** yml. Auth/Credential-Optionen aus den Feature-
+Manifesten (z. B. `apiKey`, `apiToken`) tauchen kommentiert direkt
+unter den aktiven Options auf, damit der Builder im File sieht
+welche Schlüssel das Feature versteht.
+
+```sh
+$ monoceros init sandbox --with=node,postgres,github,claude
+✔ Composed 4 component(s) into container-configs/sandbox.yml: node, postgres, github, claude
+ℹ Edit the file if you need to tweak, then `monoceros apply sandbox`.
+```
+
+Beispiel-Output:
+
+```yaml
+schemaVersion: 1
+name: sandbox
+
+languages:
+  - node
+
+services:
+  - postgres
+
+features:
+  - ref: ghcr.io/monoceros/features/github-cli:1
+    # Optional — override monoceros-config.yml defaults.features:
+    # options:
+    #   apiToken:
+  - ref: ghcr.io/monoceros/features/claude-code:1
+    # Optional — override monoceros-config.yml defaults.features:
+    # options:
+    #   apiKey:
+```
+
+## Sub-Komponenten
+
+Manche Features haben Sub-Komponenten für partielle Installs:
+
+| Komponente          | Effekt                          |
+| ------------------- | ------------------------------- |
+| `atlassian`         | Rovo Dev + twg (beide aktiv)    |
+| `atlassian/rovodev` | nur Rovo Dev (twg explizit aus) |
+| `atlassian/twg`     | nur twg (Rovo Dev explizit aus) |
+
+Kombinieren ist additiv: `--with=atlassian/rovodev,atlassian/twg`
+liefert dasselbe wie `--with=atlassian`. Beim Mergen kollidierender
+boolescher Optionen gewinnt `true` — sodass eine Sub-Komponente
+allein die andere ausschließt, mehrere Sub-Komponenten zusammen
+aber alle aktivieren.
+
+## Argumente
+
+| Argument         | Bedeutung                                                                               |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| `<name>`         | Wunschname für die Konfig. Landet als `container-configs/<name>.yml`.                   |
+| `--with=<names>` | Komma-Liste von Komponenten aus dem Katalog (s. `monoceros list-components`). Optional. |
 
 ## Verwandte Befehle
 
-- `monoceros apply <name>` — materialisiert die Konfig ([apply.md](./apply.md))
-- `monoceros add-*` / `monoceros remove-*` — editieren die Konfig
+- [`monoceros list-components`](./list-components.md) — Katalog der
+  verfügbaren Komponenten anzeigen
+- [`monoceros apply <name>`](./apply.md) — die fertige Konfig in einen
+  Container materialisieren
+- `monoceros add-*` / `remove-*` — Konfig nachträglich mutieren
+  (comment-preserving)
 
 ## Fail-Modi
 
-- **`Unknown template: <name>`** — Tippfehler oder Template fehlt.
-  Verfügbare Templates werden in der Fehlermeldung gelistet.
+- **`Unknown component: <name>`** — Tippfehler oder Komponente
+  existiert nicht. Verfügbare Komponenten werden in der
+  Fehlermeldung gelistet.
 - **`Config already exists: <path>`** — die Ziel-Datei existiert
-  schon. Lösung: alte manuell löschen, oder anderen `<name>` wählen.
+  bereits. Lösung: vorhandene yml entweder löschen oder einen
+  anderen `<name>` wählen.
 - **`Invalid config name`** — `<name>` enthält Slash, Space oder
-  Shell-Meta. Nur `[A-Za-z0-9._-]+` erlaubt.
-- **Template-Schema-Fehler** — das ausgelieferte Template ist kaputt.
-  Bug-Report öffnen.
+  Shell-Metazeichen. Erlaubt: `[A-Za-z0-9._-]+`.
+- **`No components found`** — die Workbench-Installation hat den
+  `templates/components/`-Ordner nicht. Workbench-Checkout
+  reparieren.
