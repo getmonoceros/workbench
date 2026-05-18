@@ -195,6 +195,24 @@ Tool sauber installiert. Eigene Feature-Library unter
    - VS-Code-Extension `Atlassian.atlascode` über
      `customizations.vscode.extensions`. _(erledigt)_
 
+5b. **Feature `github-cli`** — installiert die offizielle GitHub
+CLI (`gh`) aus dem Upstream-apt-Repo und automatisiert den
+Login.
+Options:
+
+- `apiToken` (string, optional) — GitHub Personal Access Token.
+  Wenn gesetzt, schreibt das install.sh ein
+  `/etc/profile.d/github-cli.sh` mit `export GH_TOKEN=…` →
+  `gh` ist in jeder Login-Shell automatisch authentifiziert,
+  kein expliziter `gh auth login`-Schritt nötig. Name `apiToken`
+  bewusst konsistent mit dem atlassian-Feature.
+- State unter `home/.config/gh/` via
+  `x-monoceros.persistentHomePaths`, damit ein optionales
+  interaktives `gh auth login` (SSH-Key-Upload, Protocol-Switch)
+  über apply hinweg erhalten bleibt.
+- VS-Code-Extension `github.vscode-pull-request-github` über
+  `customizations.vscode.extensions`. _(erledigt)_
+
 6. **`monoceros-config.yml`-Schema erweitern** — neuer Block
    `defaults.features: Record<ref, Record<option, value>>` mit
    Zod-Validierung; Apply merged Per-Container-Optionen über die
