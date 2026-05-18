@@ -130,22 +130,17 @@ aber alle aktivieren.
 | `<name>`         | Wunschname für die Konfig. Landet als `container-configs/<name>.yml`.                   |
 | `--with=<names>` | Komma-Liste von Komponenten aus dem Katalog (s. `monoceros list-components`). Optional. |
 
-**Wichtig zur `--with`-Syntax**: keine Leerzeichen zwischen den
-Komma-getrennten Namen. Die Shell zerlegt sonst die Argumente:
+**Zur `--with`-Syntax**: alle drei Schreibweisen funktionieren:
 
 ```sh
-# richtig
 monoceros init sandbox --with=node,postgres,github,claude
-
-# falsch — nur `node` wird übernommen, der Rest fällt unter den Tisch
-monoceros init sandbox --with=node, postgres, github, claude
-
-# auch richtig — explizit gequotet, Leerzeichen sind dann ok
 monoceros init sandbox --with="node, postgres, github, claude"
+monoceros init sandbox --with=node, postgres, github, claude
 ```
 
-Wenn der Befehl die abgeschnittene Form erkennt (Komma am Ende des
-`--with`-Werts), bricht er mit einem entsprechenden Hinweis ab.
+Die unquoted Variante mit Leerzeichen wird vom Shell zwar in
+mehrere Argumente zerlegt; der Befehl liest aber `rawArgs` mit
+und sammelt die abgetrennten Token wieder ein.
 
 ## Verwandte Befehle
 
