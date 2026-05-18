@@ -1,0 +1,11 @@
+displayName: Anthropic Claude Code CLI
+description: |
+  Installs the Claude Code CLI via npm and bind-mounts a per-
+  container `.claude/` so login + skills + session history
+  survive `monoceros apply`. Without an apiKey, the CLI uses
+  Anthropic's subscription/OAuth flow on first run; with an
+  apiKey, it switches to API-key mode via ANTHROPIC_API_KEY.
+category: feature
+contributes:
+  features:
+    - ref: ghcr.io/monoceros/features/claude-code:1

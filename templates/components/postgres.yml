@@ -1,0 +1,10 @@
+displayName: PostgreSQL 16 compose service
+description: |
+  Adds a `postgres` service to compose mode. Inside the container
+  it is reachable as host `postgres`:
+    postgresql://monoceros:monoceros@postgres:5432/monoceros
+  Swap to an external Postgres by replacing this component with an
+  `externalServices.postgres: postgresql://…` block in the yml.
+category: service
+contributes:
+  services: [postgres]

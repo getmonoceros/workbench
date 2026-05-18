@@ -1,0 +1,9 @@
+displayName: Node 22 + pnpm
+description: |
+  Node 22 + pnpm + corepack are already in the base runtime image.
+  This component just declares `node` as the active language so
+  scaffold steps that key off the language list (post-create
+  package detection, default extensions, …) see it.
+category: language
+contributes:
+  languages: [node]

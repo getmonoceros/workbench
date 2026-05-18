@@ -1,0 +1,10 @@
+displayName: GitHub CLI (gh)
+description: |
+  Installs the official `gh` CLI from the upstream apt repo and
+  wires GH_TOKEN via /etc/profile.d so a Personal Access Token
+  set via this feature's `apiToken` option authenticates every
+  login shell automatically.
+category: feature
+contributes:
+  features:
+    - ref: ghcr.io/monoceros/features/github-cli:1

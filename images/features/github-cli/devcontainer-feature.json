@@ -18,6 +18,7 @@
     }
   },
   "x-monoceros": {
-    "persistentHomePaths": [".config/gh"]
+    "persistentHomePaths": [".config/gh"],
+    "optionHints": ["apiToken"]
   }
 }

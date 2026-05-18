@@ -1,0 +1,7 @@
+displayName: Redis 7 compose service
+description: |
+  Adds a `redis` service to compose mode. Inside the container it
+  is reachable as host `redis` on the default port 6379.
+category: service
+contributes:
+  services: [redis]

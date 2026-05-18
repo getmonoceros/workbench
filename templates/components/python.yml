@@ -1,0 +1,9 @@
+displayName: Python 3.x via devcontainers/features/python
+description: |
+  Adds the upstream `ghcr.io/devcontainers/features/python` feature
+  to the container, which installs a recent CPython plus pip and
+  the usual scaffolding. Pin a version through the feature's own
+  options if you need something other than the default.
+category: language
+contributes:
+  languages: [python]

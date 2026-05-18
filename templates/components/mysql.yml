@@ -1,0 +1,8 @@
+displayName: MySQL 8 compose service
+description: |
+  Adds a `mysql` service to compose mode. Inside the container it
+  is reachable as host `mysql`:
+    mysql://monoceros:monoceros@mysql:3306/monoceros
+category: service
+contributes:
+  services: [mysql]

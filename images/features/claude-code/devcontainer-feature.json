@@ -29,6 +29,7 @@
         "path": ".claude.json",
         "initialContent": "{}\n"
       }
-    ]
+    ],
+    "optionHints": ["apiKey"]
   }
 }

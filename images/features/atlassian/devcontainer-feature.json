@@ -48,6 +48,7 @@
       ".rovodev",
       ".config/twg",
       ".agents"
-    ]
+    ],
+    "optionHints": ["instance", "email", "apiToken", "bitbucketToken"]
   }
 }

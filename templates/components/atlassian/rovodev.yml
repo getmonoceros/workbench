@@ -1,0 +1,14 @@
+displayName: Atlassian Rovo Dev only (via acli rovodev)
+description: |
+  Sub-component of the atlassian feature. Activates only the
+  `acli rovodev` AI agent and explicitly opts out of `twg`.
+  Combine with `atlassian/twg` to get both tools — booleans
+  OR-merge during component composition so `--with=atlassian/rovodev,atlassian/twg`
+  yields both `true`.
+category: feature
+contributes:
+  features:
+    - ref: ghcr.io/monoceros/features/atlassian:1
+      options:
+        rovodev: true
+        twg: false
