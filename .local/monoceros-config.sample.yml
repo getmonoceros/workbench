@@ -38,5 +38,6 @@ defaults:
   #     instance: yoursite.atlassian.net  # nötig für twg-Auto-Login
   #     email: you@example.com
   #     apiToken: ATATT3xFf…
+  #     # bitbucketToken: ATBB…      # optional, nur für Bitbucket-Kommandos in twg
   #     # Bei Rovo Dev fragt `acli rovodev run` die Site beim ersten
   #     # Lauf selbst ab und merkt sie sich im persistenten home-Mount.

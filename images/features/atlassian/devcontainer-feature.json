@@ -30,6 +30,11 @@
       "type": "string",
       "default": "",
       "description": "Atlassian API token from id.atlassian.com → Security → API tokens. Used for both Rovo Dev and twg non-interactive login when set together with email."
+    },
+    "bitbucketToken": {
+      "type": "string",
+      "default": "",
+      "description": "Optional Bitbucket API token (Bitbucket Cloud → Personal settings → App passwords). Only used by twg, for Bitbucket-specific commands. When set, twg's optional Bitbucket prompt is skipped; when empty, twg's prompt is skipped via an empty Enter — Bitbucket-specific twg commands will then ask the builder to run `twg login --force` interactively."
     }
   },
   "customizations": {
@@ -38,6 +43,11 @@
     }
   },
   "x-monoceros": {
-    "persistentHomePaths": [".config/acli", ".rovodev", ".config/twg"]
+    "persistentHomePaths": [
+      ".config/acli",
+      ".rovodev",
+      ".config/twg",
+      ".agents"
+    ]
   }
 }
