@@ -29,7 +29,7 @@ beschreibt:
 
 | Kategorie  | Beispiele                                                             |
 | ---------- | --------------------------------------------------------------------- |
-| `language` | `node`, `python`                                                      |
+| `language` | `node`, `python`, `java`, `go`, `rust`, `dotnet`                      |
 | `service`  | `postgres`, `mysql`, `redis`                                          |
 | `feature`  | `claude`, `github`, `atlassian`, `atlassian/twg`, `atlassian/rovodev` |
 
@@ -129,6 +129,23 @@ aber alle aktivieren.
 | ---------------- | --------------------------------------------------------------------------------------- |
 | `<name>`         | Wunschname für die Konfig. Landet als `container-configs/<name>.yml`.                   |
 | `--with=<names>` | Komma-Liste von Komponenten aus dem Katalog (s. `monoceros list-components`). Optional. |
+
+**Wichtig zur `--with`-Syntax**: keine Leerzeichen zwischen den
+Komma-getrennten Namen. Die Shell zerlegt sonst die Argumente:
+
+```sh
+# richtig
+monoceros init sandbox --with=node,postgres,github,claude
+
+# falsch — nur `node` wird übernommen, der Rest fällt unter den Tisch
+monoceros init sandbox --with=node, postgres, github, claude
+
+# auch richtig — explizit gequotet, Leerzeichen sind dann ok
+monoceros init sandbox --with="node, postgres, github, claude"
+```
+
+Wenn der Befehl die abgeschnittene Form erkennt (Komma am Ende des
+`--with`-Werts), bricht er mit einem entsprechenden Hinweis ab.
 
 ## Verwandte Befehle
 

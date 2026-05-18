@@ -21,8 +21,12 @@ problemlos in andere Tools pipen lässt:
 
 ```
 # language
+dotnet     .NET via devcontainers/features/dotnet:2
+go         Go via devcontainers/features/go
+java       Java via devcontainers/features/java
 node       Node 22 + pnpm
 python     Python 3.x via devcontainers/features/python
+rust       Rust via devcontainers/features/rust
 
 # service
 mysql      MySQL 8 compose service

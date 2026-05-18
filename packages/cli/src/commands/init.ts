@@ -24,9 +24,27 @@ export const initCommand = defineCommand({
   },
   async run({ args }) {
     try {
+      const raw = typeof args.with === 'string' ? args.with.trim() : '';
+      // A trailing comma is a strong signal that the shell split the
+      // list on unquoted spaces (e.g. `--with=a, b, c` became three
+      // separate argv entries; only the first survived). Catch it
+      // here with a specific hint instead of silently producing a
+      // half-empty yml.
+      if (raw.endsWith(',')) {
+        consola.error(
+          [
+            'The --with list looks truncated (ended with a comma).',
+            'If you used spaces between component names, the shell split',
+            'them as separate arguments and only the first one made it',
+            'through. Either drop the spaces (--with=a,b,c) or quote',
+            'the list (--with="a, b, c").',
+          ].join('\n'),
+        );
+        process.exit(1);
+      }
       const withList =
-        typeof args.with === 'string' && args.with.trim().length > 0
-          ? args.with
+        raw.length > 0
+          ? raw
               .split(',')
               .map((s) => s.trim())
               .filter((s) => s.length > 0)
