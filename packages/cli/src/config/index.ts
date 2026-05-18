@@ -25,14 +25,13 @@ export {
 } from './io.js';
 export type { ParsedConfig } from './io.js';
 export {
+  componentsDir,
   containerConfigPath,
   containerConfigsDir,
   containerDir,
   containersDir,
   monocerosConfigPath,
   monocerosHome,
-  templatePath,
-  templatesDir,
   workbenchRoot,
 } from './paths.js';
 export {

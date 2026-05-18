@@ -31,18 +31,18 @@ import { fileURLToPath } from 'node:url';
  */
 
 const MONOCEROS_HOME_MARKER = 'monoceros-config.sample.yml';
-const WORKBENCH_MARKER = path.join('templates', 'yml', 'README.md');
+const WORKBENCH_MARKER = path.join('templates', 'components', 'README.md');
 
 let cachedWorkbenchRoot: string | null = null;
 let cachedMonocerosHome: string | null = null;
 
 /**
  * Walk upwards from this module until we find the workbench checkout's
- * marker (`templates/yml/README.md`). In dev that hits the workbench
- * root reliably; in production the file does not exist outside the
- * shipped CLI package, so callers that need a workbench root for
- * dev-only purposes (bind-mounting `/opt/monoceros-workbench`) get a
- * clear error.
+ * marker (`templates/components/README.md`). In dev that hits the
+ * workbench root reliably; in production the file does not exist
+ * outside the shipped CLI package, so callers that need a workbench
+ * root for dev-only purposes (bind-mounting `/opt/monoceros-workbench`)
+ * get a clear error.
  */
 export function workbenchRoot(): string {
   if (cachedWorkbenchRoot) return cachedWorkbenchRoot;
@@ -55,7 +55,7 @@ export function workbenchRoot(): string {
     const parent = path.dirname(dir);
     if (parent === dir) {
       throw new Error(
-        'Could not locate the monoceros workbench checkout (no templates/yml/README.md found by walking up). Run the CLI from a workbench checkout.',
+        `Could not locate the monoceros workbench checkout (no ${WORKBENCH_MARKER} found by walking up). Run the CLI from a workbench checkout.`,
       );
     }
     dir = parent;
@@ -107,17 +107,6 @@ export function _resetPathCachesForTests(): void {
 }
 
 // ─── CLI-bundle paths (templates) ─────────────────────────────────
-
-export function templatesDir(root: string = workbenchRoot()): string {
-  return path.join(root, 'templates', 'yml');
-}
-
-export function templatePath(
-  template: string,
-  root: string = workbenchRoot(),
-): string {
-  return path.join(templatesDir(root), `${template}.yml`);
-}
 
 /**
  * `templates/components/` — the components catalog used by
