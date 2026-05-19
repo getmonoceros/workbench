@@ -180,10 +180,11 @@ Tool sauber installiert. Eigene Feature-Library unter
      jedem Apply, damit Token-Rotation in der yml propagiert. Die
      Site fragt `acli rovodev run` beim ersten Lauf selbst ab.
    - `twg` (boolean, Default `true`) — installiert twg via
-     official-install-Script (`--install-dir /usr/local/bin
---skip-login --skip-skills`, Consent via Heredoc). Dropt
-     Post-Create-Hook `atlassian-twg.sh` ab, der via
-     `TWG_USER`/`TWG_SITE`/`TWG_TOKEN`/`TWG_BBC_TOKEN` und
+     official-install-Script (mit Flags
+     `--install-dir /usr/local/bin --skip-login --skip-skills`,
+     Consent via Heredoc). Dropt Post-Create-Hook
+     `atlassian-twg.sh` ab, der via
+     `TWG_USER` / `TWG_SITE` / `TWG_TOKEN` / `TWG_BBC_TOKEN` und
      `twg login --force` einloggt und danach
      `twg skills install --global --yes` ausführt.
    - `instance`, `email`, `apiToken` — geteilte Credentials für
@@ -303,9 +304,9 @@ Iterationen als notwendig auf und sind alle live:
 ### Definition of Done
 
 - ✅ `monoceros init sandbox --with=claude,github,atlassian/rovodev`
-  - `monoceros apply sandbox` installiert die genannten Tools als
-    Features (nicht aus dem Image), inkl. Auto-Login via
-    Container-yml-Optionen oder `monoceros-config.yml`-Defaults.
+  gefolgt von `monoceros apply sandbox` installiert die genannten
+  Tools als Features (nicht aus dem Image), inkl. Auto-Login via
+  Container-yml-Optionen oder `monoceros-config.yml`-Defaults.
 - ✅ Container-Login (Claude, Rovo Dev, twg, gh) überlebt
   `monoceros apply`, Token-Rotation in der yml propagiert
   automatisch.
@@ -352,7 +353,7 @@ Workbench-Repo selbst klont.
 
 6. **MONOCEROS_HOME-Default geschärft** — Wenn `npm install -g`
    greift, ist `$MONOCEROS_HOME` standardmäßig `~/.monoceros/`. Erst-
-   Run-Erlebnis: `monoceros init bare hello && monoceros apply hello`
+   Run-Erlebnis: `monoceros init hello --with=claude && monoceros apply hello`
    muss out-of-the-box laufen, inkl. automatisch erstelltem
    `~/.monoceros/`-Layout.
 
@@ -365,8 +366,8 @@ Workbench-Repo selbst klont.
 ### Definition of Done
 
 - ✅ Ein Builder ohne Workbench-Checkout kann via `npm install -g`
-  und `monoceros init bare hello && monoceros apply hello` einen
-  Container hochfahren
+  und `monoceros init hello --with=claude && monoceros apply hello`
+  einen Container hochfahren
 - ✅ Stage E-Walkthrough von Außen (Test-Plan) durchgespielt
 - ✅ README erklärt, was Monoceros ist und wie man's installiert
 
