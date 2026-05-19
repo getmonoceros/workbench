@@ -2,34 +2,42 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
+import { createSecretMaskStream } from '../util/mask-secrets.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 
 export type ComposeSpawn = (args: string[], cwd: string) => Promise<number>;
 
-// Default spawn: shells out to `docker compose` (the v2 docker subcommand).
-// Stdio is inherited so live output (logs -f, ps tables, …) flows through
-// to the host terminal.
+// Default spawn: shells out to `docker compose` (the v2 docker
+// subcommand). Stdout/stderr are streamed through a secret masker
+// (see util/mask-secrets.ts) so feature option dumps, ENV-printouts
+// and similar do not leak Atlassian/GitHub/Anthropic tokens onto
+// the host terminal.
 export const spawnDockerCompose: ComposeSpawn = (args, cwd) => {
   return new Promise((resolve, reject) => {
     const child = spawn('docker', ['compose', ...args], {
       cwd,
-      stdio: 'inherit',
+      stdio: ['inherit', 'pipe', 'pipe'],
     });
+    child.stdout?.pipe(createSecretMaskStream()).pipe(process.stdout);
+    child.stderr?.pipe(createSecretMaskStream()).pipe(process.stderr);
     child.on('error', reject);
     child.on('exit', (code) => resolve(code ?? 0));
   });
 };
 
-// Generic shell spawn used by `monoceros apply` for the label-based
-// container cleanup (a small pipeline that's awkward to express as a
-// pure argv vector). Same ComposeSpawn shape so tests can inject a
-// fake; `args[0]` is `-c`, `args[1]` is the shell command string.
+// Generic shell spawn used by `monoceros apply`/`remove` for label-
+// based docker cleanup pipelines. Same ComposeSpawn shape so tests
+// can inject a fake; `args[0]` is `-c`, `args[1]` is the shell
+// command string. Output goes through the secret masker for the
+// same reasons spawnDockerCompose does.
 export const spawnBash: ComposeSpawn = (args, cwd) => {
   return new Promise((resolve, reject) => {
     const child = spawn('bash', args, {
       cwd,
-      stdio: 'inherit',
+      stdio: ['inherit', 'pipe', 'pipe'],
     });
+    child.stdout?.pipe(createSecretMaskStream()).pipe(process.stdout);
+    child.stderr?.pipe(createSecretMaskStream()).pipe(process.stderr);
     child.on('error', reject);
     child.on('exit', (code) => resolve(code ?? 0));
   });

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { createSecretMaskStream, maskSecrets } from '../util/mask-secrets.js';
 
 const require_ = createRequire(import.meta.url);
 
@@ -43,8 +44,12 @@ export type DevcontainerSpawn = (
 ) => Promise<number>;
 
 // Default spawn implementation: runs the @devcontainers/cli binary
-// directly. Stdio is inherited by default; pass { quiet: true } to
-// suppress output on success.
+// directly. Both stdout and stderr are streamed through a secret
+// masker (see util/mask-secrets.ts) so that feature options like
+// Atlassian apiTokens or GitHub PATs do not leak verbatim to the
+// terminal when devcontainer-cli logs the build args / feature
+// option dumps. With `{ quiet: true }` output is buffered (and
+// masked) and only flushed on a non-zero exit.
 export const spawnDevcontainer: DevcontainerSpawn = (
   args,
   cwd,
@@ -52,11 +57,11 @@ export const spawnDevcontainer: DevcontainerSpawn = (
 ) => {
   const binPath = devcontainerCliPath();
   return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [binPath, ...args], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     if (options.quiet) {
-      const child = spawn(process.execPath, [binPath, ...args], {
-        cwd,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
       child.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
@@ -65,17 +70,19 @@ export const spawnDevcontainer: DevcontainerSpawn = (
       child.on('exit', (code) => {
         const exitCode = code ?? 0;
         if (exitCode !== 0) {
-          process.stderr.write(Buffer.concat(stderrChunks));
-          process.stderr.write(Buffer.concat(stdoutChunks));
+          process.stderr.write(
+            maskSecrets(Buffer.concat(stderrChunks).toString('utf8')),
+          );
+          process.stderr.write(
+            maskSecrets(Buffer.concat(stdoutChunks).toString('utf8')),
+          );
         }
         resolve(exitCode);
       });
       return;
     }
-    const child = spawn(process.execPath, [binPath, ...args], {
-      cwd,
-      stdio: 'inherit',
-    });
+    child.stdout?.pipe(createSecretMaskStream()).pipe(process.stdout);
+    child.stderr?.pipe(createSecretMaskStream()).pipe(process.stderr);
     child.on('error', reject);
     child.on('exit', (code) => resolve(code ?? 0));
   });
