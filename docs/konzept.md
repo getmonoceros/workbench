@@ -220,6 +220,7 @@ monoceros shell <name>                     # interaktive bash
 monoceros run <name> -- <cmd>              # one-off-Befehl
 monoceros logs <name> [<service>]          # tail
 monoceros remove <name>                    # Container restlos abräumen (Backup default an)
+monoceros restore <backup-path>            # Container aus Backup wiederherstellen
 
 # Konfig editieren (yml-AST-Mutation, comment-preserving)
 monoceros add-language|service|apt-packages|feature|from-url|repo <name> …

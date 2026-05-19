@@ -71,6 +71,7 @@ monoceros shell <name>                    # darin arbeiten
 monoceros add-feature <name> <ref>        # yml editieren
 monoceros apply <name>                    # neu bauen
 monoceros remove <name>                   # Container restlos abräumen (Backup default an)
+monoceros restore <backup-path>           # Container aus Backup wiederherstellen
 ```
 
 cwd ist irrelevant — alles geht über Konvention.

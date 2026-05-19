@@ -22,6 +22,7 @@ describe('monoceros main command', () => {
       'status',
       'apply',
       'remove',
+      'restore',
       'add-service',
       'add-language',
       'add-apt-packages',

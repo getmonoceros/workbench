@@ -65,6 +65,7 @@ monoceros apply <name>                                    # neu bauen, picks up 
 | `monoceros status <name>`               | Compose-Status anzeigen                                | _TODO_                                     |
 | `monoceros logs <name> [...]`           | Compose-Logs verfolgen                                 | _TODO_                                     |
 | `monoceros remove <name> [--no-backup]` | Container restlos wegräumen (Backup by default)        | [remove.md](./remove.md)                   |
+| `monoceros restore <backup-path>`       | Container aus einem remove-Backup wiederherstellen     | [restore.md](./restore.md)                 |
 
 ## Im Container arbeiten
 

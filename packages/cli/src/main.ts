@@ -12,6 +12,7 @@ import { logsCommand } from './commands/logs.js';
 import { removeAptPackagesCommand } from './commands/remove-apt-packages.js';
 import { removeFeatureCommand } from './commands/remove-feature.js';
 import { removeCommand } from './commands/remove.js';
+import { restoreCommand } from './commands/restore.js';
 import { removeFromUrlCommand } from './commands/remove-from-url.js';
 import { removeLanguageCommand } from './commands/remove-language.js';
 import { removeRepoCommand } from './commands/remove-repo.js';
@@ -41,6 +42,7 @@ export const main = defineCommand({
     status: statusCommand,
     apply: applyCommand,
     remove: removeCommand,
+    restore: restoreCommand,
     'add-service': addServiceCommand,
     'add-language': addLanguageCommand,
     'add-apt-packages': addAptPackagesCommand,
