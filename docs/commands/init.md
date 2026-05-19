@@ -107,6 +107,46 @@ features:
     #   apiKey:
 ```
 
+## Versionen für Sprachen
+
+Sprach-Komponenten akzeptieren ein optionales `:version`-Suffix.
+Der Wert wird an das upstream-Devcontainer-Feature als `version`-
+Option durchgereicht — typischerweise `latest`, ein Major-Wert
+oder ein semver-Tag.
+
+```sh
+monoceros init sandbox --with=java:17,node:20,python:3.12
+```
+
+Erzeugt eine yml mit:
+
+```yaml
+languages:
+  - java:17
+  - node:20
+  - python:3.12
+```
+
+Beim Apply landet das als Feature-Optionen:
+
+```json
+"features": {
+  "ghcr.io/devcontainers/features/java:1":   { "version": "17" },
+  "ghcr.io/devcontainers/features/node:1":   { "version": "20" },
+  "ghcr.io/devcontainers/features/python:1": { "version": "3.12" }
+}
+```
+
+Sonderfall `node`: ohne Version (`--with=node`) bleibt es ein
+Built-in der Basis-Image-Runtime (Node 22), keine Feature-
+Installation. `node:<version>` schaltet auf das upstream-Feature
+um und installiert die angegebene Version.
+
+`:version` ist nur für Sprachen erlaubt. `--with=postgres:16`
+oder `--with=claude:1.0` werden mit klarem Fehler abgelehnt —
+Services und andere Features haben heute kein Versions-Konzept
+in unserem Katalog.
+
 ## Sub-Komponenten
 
 Manche Features haben Sub-Komponenten für partielle Installs:

@@ -14,17 +14,47 @@ export interface LanguageEntry {
   feature: string;
 }
 
-// `node` is included in the base image and therefore has no separate
-// devcontainer feature. It is accepted as input but produces no output.
+// `node` is included in the base runtime image, so the bare entry
+// `languages: [node]` is accepted as input but installs nothing
+// extra. Versioned node — `node:20` — bypasses the builtin set and
+// goes through the upstream feature like the other languages,
+// because the base image's node version (22) isn't selectable
+// otherwise.
 export const BUILTIN_LANGUAGES = new Set(['node']);
 
 export const LANGUAGE_CATALOG: Readonly<Record<string, LanguageEntry>> = {
+  node: { id: 'node', feature: 'ghcr.io/devcontainers/features/node:1' },
   python: { id: 'python', feature: 'ghcr.io/devcontainers/features/python:1' },
   java: { id: 'java', feature: 'ghcr.io/devcontainers/features/java:1' },
   go: { id: 'go', feature: 'ghcr.io/devcontainers/features/go:1' },
   rust: { id: 'rust', feature: 'ghcr.io/devcontainers/features/rust:1' },
   dotnet: { id: 'dotnet', feature: 'ghcr.io/devcontainers/features/dotnet:2' },
 };
+
+/**
+ * Language entries in a container yml may carry an optional
+ * version suffix: `java:17`, `node:20`. The suffix is anything
+ * the upstream devcontainer feature accepts as its `version`
+ * option (typically `latest`, a major like `17`, or an exact
+ * semver like `3.12.1`).
+ */
+export const LANGUAGE_SPEC_RE = /^([a-z][a-z0-9-]*)(?::([A-Za-z0-9._-]+))?$/;
+
+export interface LanguageSpec {
+  name: string;
+  version?: string;
+}
+
+/**
+ * Split a yml language entry into name + optional version. Returns
+ * `null` when the input is not a valid language spec. Callers use
+ * that null to surface a schema error.
+ */
+export function parseLanguageSpec(spec: string): LanguageSpec | null {
+  const m = LANGUAGE_SPEC_RE.exec(spec);
+  if (!m) return null;
+  return { name: m[1]!, ...(m[2] !== undefined ? { version: m[2] } : {}) };
+}
 
 export interface ServiceEntry {
   id: string;

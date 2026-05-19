@@ -191,7 +191,23 @@ export interface MergedComponents {
  * `--with=atlassian/rovodev,atlassian/twg` yield both `true` even
  * though each sub-component sets the sibling flag to `false`.
  */
-export function mergeComponents(components: Component[]): MergedComponents {
+/**
+ * One entry of the resolved-components list. The optional `version`
+ * is the `<name>:<version>` suffix from the CLI flag; today it
+ * only applies to language components (we append it to each
+ * contributed language string so the scaffold passes it as the
+ * upstream feature's `version` option). For other categories,
+ * providing a version is a builder error and resolveComponents
+ * rejects it up front.
+ */
+export interface ResolvedComponent {
+  component: Component;
+  version?: string;
+}
+
+export function mergeComponents(
+  resolved: Array<Component | ResolvedComponent>,
+): MergedComponents {
   const languages: string[] = [];
   const services: string[] = [];
   const featureByRef = new Map<
@@ -199,10 +215,17 @@ export function mergeComponents(components: Component[]): MergedComponents {
     { ref: string; options: Record<string, string | number | boolean> }
   >();
 
-  for (const c of components) {
+  for (const entry of resolved) {
+    const c = isResolvedComponent(entry) ? entry.component : entry;
+    const version = isResolvedComponent(entry) ? entry.version : undefined;
     const ct = c.file.contributes;
     for (const lang of ct.languages ?? []) {
-      if (!languages.includes(lang)) languages.push(lang);
+      // Language components can carry a `:version` suffix from the
+      // CLI. We emit `<lang>:<version>` in the final yml; the
+      // scaffold parses it back to the upstream feature's
+      // `version` option at apply time.
+      const value = version !== undefined ? `${lang}:${version}` : lang;
+      if (!languages.includes(value)) languages.push(value);
     }
     for (const svc of ct.services ?? []) {
       if (!services.includes(svc)) services.push(svc);
@@ -227,6 +250,12 @@ export function mergeComponents(components: Component[]): MergedComponents {
   };
 }
 
+function isResolvedComponent(
+  x: Component | ResolvedComponent,
+): x is ResolvedComponent {
+  return 'component' in x;
+}
+
 function mergeFeatureOptions(
   a: Record<string, string | number | boolean>,
   b: Record<string, string | number | boolean>,
@@ -244,23 +273,39 @@ function mergeFeatureOptions(
 }
 
 /**
- * Resolve `--with=…` names against the catalog. Throws with the
- * full list of unknown names so the builder fixes them all at once
- * rather than running into one at a time.
+ * Resolve `--with=…` names against the catalog. Accepts plain
+ * names (`node`) and language-version pairs (`node:20`). Splits
+ * the `:version` off, looks up the bare name in the catalog, and
+ * carries the version forward only for language components — a
+ * version on any other category is rejected with a clear error.
+ *
+ * Throws with the full list of unknown names so the builder fixes
+ * them all at once rather than running into them one at a time.
  */
 export function resolveComponents(
   catalog: Map<string, Component>,
   names: string[],
-): Component[] {
+): ResolvedComponent[] {
   const unknown: string[] = [];
-  const out: Component[] = [];
-  for (const name of names) {
+  const out: ResolvedComponent[] = [];
+  for (const raw of names) {
+    const colon = raw.indexOf(':');
+    const name = colon === -1 ? raw : raw.slice(0, colon);
+    const version = colon === -1 ? undefined : raw.slice(colon + 1);
+
     const c = catalog.get(name);
     if (!c) {
-      unknown.push(name);
+      // The unknown-name message reports the form the user typed
+      // (including the :version) so it's easy to spot the typo.
+      unknown.push(raw);
       continue;
     }
-    out.push(c);
+    if (version !== undefined && c.file.category !== 'language') {
+      throw new Error(
+        `Component '${name}' is a ${c.file.category}, not a language — a ':${version}' suffix has no meaning here.`,
+      );
+    }
+    out.push({ component: c, ...(version !== undefined ? { version } : {}) });
   }
   if (unknown.length > 0) {
     const available = [...catalog.keys()].sort();

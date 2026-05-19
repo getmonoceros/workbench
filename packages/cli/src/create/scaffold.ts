@@ -8,6 +8,7 @@ import {
   SERVICE_CATALOG,
   knownLanguages,
   knownServices,
+  parseLanguageSpec,
 } from './catalog.js';
 import type { CreateOptions } from './types.js';
 
@@ -63,10 +64,16 @@ export function validateOptions(opts: CreateOptions): void {
       `Invalid solution name: ${JSON.stringify(opts.name)}. Use letters, digits, '.', '_' or '-'.`,
     );
   }
-  for (const lang of opts.languages) {
-    if (!BUILTIN_LANGUAGES.has(lang) && !LANGUAGE_CATALOG[lang]) {
+  for (const langSpec of opts.languages) {
+    const parsed = parseLanguageSpec(langSpec);
+    if (!parsed) {
       throw new Error(
-        `Unknown language: ${lang}. Known: ${knownLanguages().join(', ')}.`,
+        `Invalid language spec: ${JSON.stringify(langSpec)}. Expected '<name>' or '<name>:<version>'.`,
+      );
+    }
+    if (!BUILTIN_LANGUAGES.has(parsed.name) && !LANGUAGE_CATALOG[parsed.name]) {
+      throw new Error(
+        `Unknown language: ${parsed.name}. Known: ${knownLanguages().join(', ')}.`,
       );
     }
   }
@@ -297,16 +304,25 @@ interface PersistentHomeFile {
 export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
   const resolved: ResolvedFeature[] = [];
 
-  for (const lang of opts.languages) {
-    if (BUILTIN_LANGUAGES.has(lang)) continue;
-    const entry = LANGUAGE_CATALOG[lang];
-    if (entry)
-      resolved.push({
-        devcontainerKey: entry.feature,
-        options: {},
-        persistentHomePaths: [],
-        persistentHomeFiles: [],
-      });
+  for (const langSpec of opts.languages) {
+    const parsed = parseLanguageSpec(langSpec);
+    if (!parsed) continue;
+    // Builtin only applies to the bare `node` (no version) — the
+    // base image's node 22 isn't pinnable, so any `node:<version>`
+    // has to go through the upstream feature like everything else.
+    if (BUILTIN_LANGUAGES.has(parsed.name) && parsed.version === undefined) {
+      continue;
+    }
+    const entry = LANGUAGE_CATALOG[parsed.name];
+    if (!entry) continue;
+    const options: Record<string, string> = {};
+    if (parsed.version !== undefined) options.version = parsed.version;
+    resolved.push({
+      devcontainerKey: entry.feature,
+      options,
+      persistentHomePaths: [],
+      persistentHomeFiles: [],
+    });
   }
   if (opts.aptPackages && opts.aptPackages.length > 0) {
     resolved.push({

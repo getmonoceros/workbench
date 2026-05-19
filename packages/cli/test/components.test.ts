@@ -259,16 +259,50 @@ describe('resolveComponents', () => {
   it('returns components in the requested order', () => {
     const catalog = fakeCatalog(['node', 'postgres', 'claude']);
     const resolved = resolveComponents(catalog, ['claude', 'node']);
-    expect(resolved.map((c: { name: string }) => c.name)).toEqual([
-      'claude',
-      'node',
-    ]);
+    expect(resolved.map((r) => r.component.name)).toEqual(['claude', 'node']);
+    expect(resolved.every((r) => r.version === undefined)).toBe(true);
   });
 
   it('errors with the full list of unknown names plus what is available', () => {
     const catalog = fakeCatalog(['node', 'postgres']);
     expect(() => resolveComponents(catalog, ['node', 'rust', 'mongo'])).toThrow(
       /Unknown components?: rust, mongo[\s\S]*node, postgres/,
+    );
+  });
+
+  it('attaches the :version suffix when the component is a language', () => {
+    const catalog = new Map([
+      [
+        'node',
+        {
+          name: 'node',
+          sourcePath: '/fake/node.yml',
+          file: { category: 'language', contributes: { languages: ['node'] } },
+        } as never,
+      ],
+    ]);
+    const resolved = resolveComponents(catalog, ['node:20']);
+    expect(resolved).toEqual([
+      { component: catalog.get('node'), version: '20' },
+    ]);
+  });
+
+  it('rejects a :version suffix on a non-language component', () => {
+    const catalog = new Map([
+      [
+        'postgres',
+        {
+          name: 'postgres',
+          sourcePath: '/fake/postgres.yml',
+          file: {
+            category: 'service',
+            contributes: { services: ['postgres'] },
+          },
+        } as never,
+      ],
+    ]);
+    expect(() => resolveComponents(catalog, ['postgres:16'])).toThrow(
+      /Component 'postgres' is a service.*:16.*no meaning/,
     );
   });
 });

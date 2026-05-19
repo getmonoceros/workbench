@@ -1,4 +1,8 @@
-import type { Component, MergedComponents } from './components.js';
+import type {
+  Component,
+  MergedComponents,
+  ResolvedComponent,
+} from './components.js';
 import { mergeComponents } from './components.js';
 import type { FeatureManifestSummary } from './manifest.js';
 
@@ -49,7 +53,7 @@ const SCHEMA_HEADER = [
  */
 export function generateComposedYml(
   name: string,
-  components: Component[],
+  components: ResolvedComponent[],
   lookupManifest: ManifestLookup,
 ): string {
   const merged = mergeComponents(components);

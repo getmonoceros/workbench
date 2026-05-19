@@ -491,6 +491,70 @@ describe('runApply', () => {
     expect(gitignore).toContain('/data/');
   });
 
+  it('passes :version from a language entry through to the upstream feature option', async () => {
+    await writeYml(
+      'pin',
+      [
+        'schemaVersion: 1',
+        'name: pin',
+        'languages:',
+        '  - java:17',
+        '  - node:20',
+        '',
+      ].join('\n'),
+    );
+    await runApply({ ...baseRunOpts, name: 'pin', monocerosHome: home });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'pin',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(
+      devcontainer.features['ghcr.io/devcontainers/features/java:1'],
+    ).toEqual({ version: '17' });
+    expect(
+      devcontainer.features['ghcr.io/devcontainers/features/node:1'],
+    ).toEqual({ version: '20' });
+  });
+
+  it('bare `node` stays a builtin and does not install the upstream node feature', async () => {
+    await writeYml(
+      'bare-node',
+      [
+        'schemaVersion: 1',
+        'name: bare-node',
+        'languages:',
+        '  - node',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'bare-node',
+      monocerosHome: home,
+    });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'bare-node',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(devcontainer.features).toBeUndefined();
+  });
+
   it('does not create data/ when no services are configured', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runApply({ ...baseRunOpts, name: 'demo', monocerosHome: home });
