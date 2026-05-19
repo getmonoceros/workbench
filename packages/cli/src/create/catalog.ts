@@ -71,6 +71,24 @@ export interface ServiceEntry {
   dataMount?: string;
 }
 
+// The literal `monoceros` user/password/db on the service entries
+// below is a deliberate dev-only convention, not a secret. The
+// services are only reachable from inside the workspace container
+// (no host port mapping), and the value is hardcoded into the
+// catalog + docs so any builder running this workbench knows the
+// connection string at a glance:
+//
+//   postgresql://monoceros:monoceros@postgres:5432/monoceros
+//   mysql://monoceros:monoceros@mysql:3306/monoceros
+//
+// Because it isn't a secret, the secret-masking layer
+// (util/mask-secrets.ts) doesn't and shouldn't mask it. Builders
+// who want a real password should either:
+//   - run their own DB outside the workbench and configure it via
+//     `externalServices.postgres: postgresql://…` in the container
+//     yml, OR
+//   - swap to a per-container generated password — open issue when
+//     this becomes a real need.
 export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
   postgres: {
     id: 'postgres',

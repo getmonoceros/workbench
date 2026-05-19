@@ -6,13 +6,27 @@ import { Transform, type TransformCallback } from 'node:stream';
  * Devcontainer-cli and docker compose stream the build/up output
  * straight to stdout. They include the feature options (Atlassian
  * apiToken, GitHub PAT, Anthropic apiKey, …) verbatim, which leaks
- * secrets onto the user's terminal and into any captured CI log.
+ * real, per-builder secrets onto the user's terminal and into any
+ * captured CI log.
  *
  * The fix is a regex sweep on each output line: when a token
  * matches a known prefix shape, replace its middle with `…` and
  * keep the prefix + last 6 characters so the value is still
- * recognizable for debugging (e.g. "did the right token get
- * loaded?") without exposing the secret.
+ * recognizable for debugging ("did the right token get loaded?")
+ * without exposing the secret.
+ *
+ * What's **not** masked here, by design:
+ *
+ *   - The literal `monoceros` user/password baked into the compose
+ *     service catalog (postgres, mysql). It's a documented dev-
+ *     convention, identical on every Monoceros container, openly
+ *     listed in `create/catalog.ts` and the components README. Not
+ *     a secret. Masking it would just make the connection string
+ *     harder to spot for the builder.
+ *   - Anything that looks "password-shaped" via a key= pattern.
+ *     Risk of false positives outweighs cosmetic benefit when the
+ *     value isn't actually sensitive (see also ADR-style note in
+ *     `create/catalog.ts`).
  */
 
 interface SecretPattern {
