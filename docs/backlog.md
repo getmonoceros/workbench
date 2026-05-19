@@ -134,7 +134,7 @@ gehört M3 dort hin, nicht in die Werkbank.
 **Ziel:** AI-Tools sind erstklassige Bürger in der Container-yml.
 Builder schreibt `features: [- ref: …/claude-code:1]` und kriegt das
 Tool sauber installiert. Eigene Feature-Library unter
-`ghcr.io/<org>/monoceros-features/<tool>:1`.
+`ghcr.io/getmonoceros/monoceros-features/<tool>:1`.
 
 ### Voraussetzung
 
@@ -336,27 +336,30 @@ Workbench-Repo selbst klont.
 Entscheidungen (GitHub-Org `getmonoceros`, npm
 `@getmonoceros/workbench`, GHCR `ghcr.io/getmonoceros/…`), die
 Pre-Flight-Schritte und der Stolperstein-Katalog.
+Builder, die mit bestehenden Containern auf den neuen Namespace
+umziehen, finden in [`docs/MIGRATION-M4.md`](./MIGRATION-M4.md) das
+sed-Snippet und den Hinweis auf die Apply-Warnung.
 
 ### Tasks (Skizze)
 
-1. **Runtime-Image nach GHCR pushen** — `ghcr.io/<org>/monoceros-runtime:<tag>`,
+1. **Runtime-Image nach GHCR pushen** — `ghcr.io/getmonoceros/monoceros-runtime:<tag>`,
    Multi-Arch (amd64 + arm64). Templates und scaffold.ts referenzieren
    den GHCR-Tag statt `monoceros-runtime:dev`.
 
 2. **Feature-Library nach GHCR pushen** — die heutigen drei
    Features (`claude-code`, `atlassian`, `github-cli`) unter
-   `ghcr.io/<org>/monoceros-features/<name>:<tag>` publizieren,
+   `ghcr.io/getmonoceros/monoceros-features/<name>:<tag>` publizieren,
    manuell via `@devcontainers/cli features publish`, später per
-   CI (Task 5). Sobald die Refs in der yml unter dem realen
-   `<org>`-Namespace existieren, kann die Local-Source-Auflösung
+   CI (Task 5). Sobald die Refs in der yml unter dem
+   `getmonoceros`-Namespace existieren, kann die Local-Source-Auflösung
    im Scaffold (`resolveFeatures` in `scaffold.ts`) eigentlich
    raus — sie ist nur fürs Dev-mit-Workbench-Checkout nötig.
    Wir lassen sie aber als Fallback drin, damit Workbench-
    Contributors weiter direkt auf `images/features/<name>/`
    testen können, ohne nach jedem Edit zu publishen.
 
-3. **CLI als npm-Paket publizieren** — `@monoceros/cli` (oder direkt
-   `monoceros`) auf npm. `bin`-Eintrag funktioniert via global install.
+3. **CLI als npm-Paket publizieren** — `@getmonoceros/workbench` auf
+   npm. `bin`-Eintrag funktioniert via global install.
 
 4. **`pnpm cli`-Workaround retire** — sobald CLI npm-installable ist,
    ist das Root-Script in `package.json` nur noch Dev-Convenience.
@@ -389,7 +392,7 @@ Pre-Flight-Schritte und der Stolperstein-Katalog.
   und `monoceros init hello --with=claude && monoceros apply hello`
   einen Container hochfahren — Runtime-Image **und** Features
   werden aus GHCR gezogen, keine lokalen `images/...`-Files nötig
-- ✅ `ghcr.io/<org>/monoceros-features/{claude-code,atlassian,github-cli}`
+- ✅ `ghcr.io/getmonoceros/monoceros-features/{claude-code,atlassian,github-cli}`
   via `docker pull` / `devcontainer features info` von außen
   erreichbar
 - ✅ Stage E-Walkthrough von Außen (Test-Plan) durchgespielt

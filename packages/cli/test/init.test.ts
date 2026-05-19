@@ -55,7 +55,7 @@ async function buildFakeWorkbench(root: string): Promise<void> {
       'category: feature',
       'contributes:',
       '  features:',
-      '    - ref: ghcr.io/monoceros/features/claude-code:1',
+      '    - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
       '',
     ].join('\n'),
   );
@@ -114,7 +114,9 @@ describe('runInit', () => {
     expect(text).toContain('  - node');
     expect(text).toContain('services:');
     expect(text).toContain('  - postgres');
-    expect(text).toContain('  - ref: ghcr.io/monoceros/features/claude-code:1');
+    expect(text).toContain(
+      '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+    );
     // optionHints rendered as commented hints next to options:
     expect(text).toMatch(/#\s+apiKey:/);
     const parsed = parseConfig(text);
@@ -141,7 +143,7 @@ describe('runInit', () => {
     expect(text).toContain('# features:');
     expect(text).toMatch(/#\s+- node\s+# Node 22/);
     expect(text).toContain(
-      '#   - ref: ghcr.io/monoceros/features/claude-code:1',
+      '#   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
     );
     // Documented mode still validates as a SolutionConfig — every
     // section is commented out so only schemaVersion + name remain

@@ -53,7 +53,7 @@ describe('component catalog reader', () => {
         'category: feature',
         'contributes:',
         '  features:',
-        '    - ref: ghcr.io/monoceros/features/atlassian:1',
+        '    - ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1',
         '      options:',
         '        twg: true',
         '        rovodev: false',
@@ -64,7 +64,7 @@ describe('component catalog reader', () => {
     expect(catalog.has('atlassian/twg')).toBe(true);
     expect(catalog.get('atlassian/twg')?.file.contributes.features).toEqual([
       {
-        ref: 'ghcr.io/monoceros/features/atlassian:1',
+        ref: 'ghcr.io/getmonoceros/monoceros-features/atlassian:1',
         options: { twg: true, rovodev: false },
       },
     ]);
@@ -104,7 +104,7 @@ describe('component catalog reader', () => {
         'category: language',
         'contributes:',
         '  features:',
-        '    - ref: ghcr.io/monoceros/features/claude-code:1',
+        '    - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
         '',
       ].join('\n'),
     );
@@ -185,7 +185,7 @@ describe('mergeComponents', () => {
         contributes: {
           features: [
             {
-              ref: 'ghcr.io/monoceros/features/atlassian:1',
+              ref: 'ghcr.io/getmonoceros/monoceros-features/atlassian:1',
               options: { rovodev: true, twg: false },
             },
           ],
@@ -198,7 +198,7 @@ describe('mergeComponents', () => {
         contributes: {
           features: [
             {
-              ref: 'ghcr.io/monoceros/features/atlassian:1',
+              ref: 'ghcr.io/getmonoceros/monoceros-features/atlassian:1',
               options: { rovodev: false, twg: true },
             },
           ],
@@ -207,7 +207,7 @@ describe('mergeComponents', () => {
     ]);
     expect(merged.features).toEqual([
       {
-        ref: 'ghcr.io/monoceros/features/atlassian:1',
+        ref: 'ghcr.io/getmonoceros/monoceros-features/atlassian:1',
         options: { rovodev: true, twg: true },
       },
     ]);
@@ -220,7 +220,9 @@ describe('mergeComponents', () => {
         description: '.',
         category: 'feature',
         contributes: {
-          features: [{ ref: 'ghcr.io/monoceros/features/claude-code:1' }],
+          features: [
+            { ref: 'ghcr.io/getmonoceros/monoceros-features/claude-code:1' },
+          ],
         },
       }),
       component('claude-again', {
@@ -230,7 +232,7 @@ describe('mergeComponents', () => {
         contributes: {
           features: [
             {
-              ref: 'ghcr.io/monoceros/features/claude-code:1',
+              ref: 'ghcr.io/getmonoceros/monoceros-features/claude-code:1',
               options: { apiKey: 'sk-…' },
             },
           ],
@@ -239,7 +241,7 @@ describe('mergeComponents', () => {
     ]);
     expect(merged.features).toEqual([
       {
-        ref: 'ghcr.io/monoceros/features/claude-code:1',
+        ref: 'ghcr.io/getmonoceros/monoceros-features/claude-code:1',
         options: { apiKey: 'sk-…' },
       },
     ]);

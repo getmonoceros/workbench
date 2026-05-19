@@ -5,8 +5,8 @@
 
 // Monoceros runtime image — thin layer on top of Microsoft's
 // typescript-node base (see images/runtime/Dockerfile). Built locally
-// via `pnpm image:build`. Once GHCR-published (M4) we switch this to
-// `ghcr.io/<org>/monoceros-runtime:<tag>`.
+// via `pnpm image:build`. Once GHCR-published (M4 Task 3) we switch
+// this to `ghcr.io/getmonoceros/monoceros-runtime:<tag>`.
 export const BASE_IMAGE = 'monoceros-runtime:dev';
 
 export interface LanguageEntry {

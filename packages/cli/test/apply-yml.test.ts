@@ -69,14 +69,14 @@ describe('runApply', () => {
     expect(state?.schemaVersion).toBe(1);
   });
 
-  it('redirects ghcr.io/monoceros/features/<name>:<tag> to the local workbench copy when present', async () => {
+  it('redirects ghcr.io/getmonoceros/monoceros-features/<name>:<tag> to the local workbench copy when present', async () => {
     await writeYml(
       'with-feature',
       [
         'schemaVersion: 1',
         'name: with-feature',
         'features:',
-        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
         '',
       ].join('\n'),
     );
@@ -142,7 +142,7 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'name: with-claude',
         'features:',
-        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
         '',
       ].join('\n'),
     );
@@ -181,7 +181,7 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'name: fresh',
         'features:',
-        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
         '',
       ].join('\n'),
     );
@@ -207,7 +207,7 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'name: persists',
         'features:',
-        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
         '',
       ].join('\n'),
     );
@@ -245,7 +245,7 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'defaults:',
         '  features:',
-        '    ghcr.io/monoceros/features/claude-code:1:',
+        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
         '      apiKey: sk-ant-from-defaults',
         '',
       ].join('\n'),
@@ -256,7 +256,7 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'name: merged',
         'features:',
-        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
         '    options:',
         '      version: "0.5.1"',
         '',
@@ -289,7 +289,7 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'defaults:',
         '  features:',
-        '    ghcr.io/monoceros/features/claude-code:1:',
+        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
         '      apiKey: sk-ant-default',
         '',
       ].join('\n'),
@@ -300,7 +300,7 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'name: override',
         'features:',
-        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
         '    options:',
         '      apiKey: sk-ant-per-container',
         '',
@@ -331,7 +331,7 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'defaults:',
         '  features:',
-        '    ghcr.io/monoceros/features/claude-code:1:',
+        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
         '      apiKey: sk-ant-default',
         '',
       ].join('\n'),
@@ -364,7 +364,7 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'name: unknown-feature',
         'features:',
-        '  - ref: ghcr.io/monoceros/features/not-built-yet:1',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/not-built-yet:1',
         '',
       ].join('\n'),
     );
@@ -386,7 +386,58 @@ describe('runApply', () => {
       ),
     );
     expect(devcontainer.features).toEqual({
-      'ghcr.io/monoceros/features/not-built-yet:1': {},
+      'ghcr.io/getmonoceros/monoceros-features/not-built-yet:1': {},
+    });
+  });
+
+  it('warns when a deprecated ghcr.io/monoceros/features/<name>:<tag> ref is used', async () => {
+    const warnings: string[] = [];
+    const captureLogger = {
+      info: () => {},
+      success: () => {},
+      warn: (msg: string) => {
+        warnings.push(msg);
+      },
+    };
+    await writeYml(
+      'legacy-ref',
+      [
+        'schemaVersion: 1',
+        'name: legacy-ref',
+        'features:',
+        '  - ref: ghcr.io/monoceros/features/claude-code:1',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      logger: captureLogger,
+      name: 'legacy-ref',
+      monocerosHome: home,
+    });
+    expect(warnings.some((w) => w.includes('Deprecated feature ref'))).toBe(
+      true,
+    );
+    expect(
+      warnings.some((w) =>
+        w.includes('ghcr.io/getmonoceros/monoceros-features/claude-code:1'),
+      ),
+    ).toBe(true);
+    // The yml itself is left untouched — the warn does not rewrite.
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'legacy-ref',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(devcontainer.features).toEqual({
+      'ghcr.io/monoceros/features/claude-code:1': {},
     });
   });
 

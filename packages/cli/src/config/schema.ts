@@ -28,7 +28,7 @@ const APT_PACKAGE_NAME_RE = /^[a-z0-9][a-z0-9.+-]*$/;
 // Feature refs are OCI-style:
 //   <registry>/<namespace>/<feature>:<tag>
 // e.g. ghcr.io/devcontainers/features/python:1
-//      ghcr.io/monoceros/features/claude-code:1
+//      ghcr.io/getmonoceros/monoceros-features/claude-code:1
 const FEATURE_REF_RE = /^[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+$/;
 const INSTALL_URL_RE = /^https:\/\/[A-Za-z0-9.\-_~/:?#[\]@!&'()*+,;=%]+$/;
 const REPO_URL_RE = /^[A-Za-z0-9@:/+_~.#=&?-]+$/;

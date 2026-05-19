@@ -1,6 +1,6 @@
 import { existsSync, promises as fs } from 'node:fs';
 import { consola } from 'consola';
-import { readMonocerosConfig } from '../config/global.js';
+import { type MonocerosConfig, readMonocerosConfig } from '../config/global.js';
 import { readConfig } from '../config/io.js';
 import {
   containerConfigPath,
@@ -13,6 +13,7 @@ import {
   readStateFile,
   writeStateFile,
 } from '../config/state.js';
+import type { SolutionConfig } from '../config/schema.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
 import {
   needsCompose,
@@ -20,6 +21,7 @@ import {
   validateOptions,
   writeScaffold,
 } from '../create/scaffold.js';
+import { migrateDeprecatedFeatureRef } from '../util/ref.js';
 import {
   type ComposeSpawn,
   runContainerCycle,
@@ -114,6 +116,16 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // and the git identity logic later in this function also needs the
   // global config.
   const globalConfig = await readMonocerosConfig({ monocerosHome: home });
+
+  // Pre-M4 the canonical feature namespace was
+  // `ghcr.io/monoceros/features/…`. After the M4 cut it moved to
+  // `ghcr.io/getmonoceros/monoceros-features/…`. Old refs still
+  // structurally parse as third-party refs, so apply would silently
+  // try to pull them from GHCR and 404. Warn loudly and tell the
+  // builder what to write instead — but don't rewrite their yml or
+  // fail the apply, so they stay in control of the migration.
+  warnOnDeprecatedFeatureRefs(parsed.config.features, globalConfig, logger);
+
   // Shape validation happened in readConfig; catalog validation
   // (which language/service exists) happens here against
   // create/scaffold's known set.
@@ -213,4 +225,39 @@ async function assertSafeTargetDir(
   throw new Error(
     `Refusing to materialize into non-empty directory ${targetDir} (no Monoceros state.json found). Delete the directory before re-running.`,
   );
+}
+
+interface MigrationLogger {
+  warn?: (msg: string) => void;
+  info: (msg: string) => void;
+}
+
+function warnOnDeprecatedFeatureRefs(
+  containerFeatures: SolutionConfig['features'],
+  globalConfig: MonocerosConfig | undefined,
+  logger: MigrationLogger,
+): void {
+  const warn = logger.warn ?? logger.info;
+  const seen = new Set<string>();
+  const emit = (oldRef: string, source: string) => {
+    if (seen.has(oldRef)) return;
+    seen.add(oldRef);
+    const newRef = migrateDeprecatedFeatureRef(oldRef);
+    if (!newRef) return;
+    warn(
+      `Deprecated feature ref in ${source}: '${oldRef}'. ` +
+        `Replace with '${newRef}' — the old namespace is no longer published. ` +
+        `See docs/MIGRATION-M4.md for a sed snippet.`,
+    );
+  };
+
+  for (const entry of containerFeatures) {
+    emit(entry.ref, 'container yml');
+  }
+  const globalDefaults = globalConfig?.defaults?.features;
+  if (globalDefaults) {
+    for (const ref of Object.keys(globalDefaults)) {
+      emit(ref, 'monoceros-config.yml');
+    }
+  }
 }

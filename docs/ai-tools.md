@@ -141,7 +141,7 @@ description: |
 category: feature
 contributes:
   features:
-    - ref: ghcr.io/monoceros/features/foo:1
+    - ref: ghcr.io/getmonoceros/monoceros-features/foo:1
 ```
 
 ### 5. Docs

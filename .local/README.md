@@ -8,8 +8,8 @@ Beim Aufruf von `monoceros …` aus dem Workbench-Checkout sucht das
 CLI ein File namens `monoceros-config.sample.yml` aufwärts vom
 Binary; findet es dieses File, gilt der enthaltende Ordner als
 `MONOCEROS_HOME`. Außerhalb des Workbench-Checkouts (z. B. nach
-`pnpm install -g @monoceros/cli`) gibt es diese Marker-Datei nicht;
-dann gilt die `MONOCEROS_HOME`-Env-Var oder der Fallback
+`npm install -g @getmonoceros/workbench`) gibt es diese Marker-Datei
+nicht; dann gilt die `MONOCEROS_HOME`-Env-Var oder der Fallback
 `~/.monoceros`.
 
 ## Layout

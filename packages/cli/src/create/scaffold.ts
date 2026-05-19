@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { workbenchRoot } from '../config/paths.js';
+import { matchMonocerosFeature } from '../util/ref.js';
 import {
   BASE_IMAGE,
   BUILTIN_LANGUAGES,
@@ -21,7 +22,7 @@ const APT_PACKAGE_NAME_RE = /^[a-z0-9][a-z0-9.+-]*$/;
 // Devcontainer feature refs are OCI-style:
 //   <registry>/<namespace>/<feature>:<tag>
 // e.g. ghcr.io/devcontainers/features/python:1
-//      ghcr.io/monoceros/features/claude-code:1
+//      ghcr.io/getmonoceros/monoceros-features/claude-code:1
 const FEATURE_REF_RE = /^[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+$/;
 
 // Install URLs must be https:// (no plain http, no other schemes) and
@@ -241,13 +242,6 @@ function buildRepoAuthEnv(): Record<string, string> {
 export type DevcontainerJson = DevcontainerImageMode | DevcontainerComposeMode;
 
 /**
- * Match `ghcr.io/monoceros/features/<name>:<tag>` — the canonical
- * shape Monoceros-owned features use in yml.
- */
-const MONOCEROS_FEATURE_RE =
-  /^ghcr\.io\/monoceros\/features\/([a-z0-9._-]+):[a-z0-9._-]+$/;
-
-/**
  * Per-feature plan for the container build.
  *
  *  - `devcontainerKey` — the key used in `devcontainer.json → features`.
@@ -294,9 +288,9 @@ interface PersistentHomeFile {
 
 /**
  * Compute the feature list for `opts`. Detects Monoceros-owned refs
- * (`ghcr.io/monoceros/features/<name>:<tag>`) and, if the workbench
- * has the feature on disk, rewrites the key to `./features/<name>`
- * and records the source for the copy step.
+ * (`ghcr.io/getmonoceros/monoceros-features/<name>:<tag>`) and, if
+ * the workbench has the feature on disk, rewrites the key to
+ * `./features/<name>` and records the source for the copy step.
  *
  * Third-party refs and Monoceros refs without a local source pass
  * through verbatim — devcontainer-cli pulls them from the registry.
@@ -334,9 +328,9 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
   }
   if (opts.features) {
     for (const [rawRef, options] of Object.entries(opts.features)) {
-      const match = MONOCEROS_FEATURE_RE.exec(rawRef);
+      const match = matchMonocerosFeature(rawRef);
       if (match) {
-        const name = match[1]!;
+        const name = match.name;
         const localSourceDir = path.join(
           workbenchRoot(),
           'images',

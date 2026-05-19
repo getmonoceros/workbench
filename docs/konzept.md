@@ -118,8 +118,8 @@ languages: [python]
 services: [postgres]
 
 features:
-  - ref: ghcr.io/<org>/monoceros-features/claude-code:1
-  - ref: ghcr.io/<org>/monoceros-features/atlassian:1
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
+  - ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1
     options:
       rovodev: true
       twg: true
@@ -140,13 +140,13 @@ funktionieren von überall mit `monoceros <command> <containername>`.
 ### 3. AI-Tools als Devcontainer-Features
 
 Jedes AI-Tool ist ein Devcontainer-Feature unter
-`ghcr.io/<org>/monoceros-features/<tool>:1`. Builder wählt explizit
+`ghcr.io/getmonoceros/monoceros-features/<tool>:1`. Builder wählt explizit
 aus, was im Container liegt. Konsistenter mentaler Modell:
 
 ```yaml
 features:
-  - ref: ghcr.io/<org>/monoceros-features/claude-code:1
-  - ref: ghcr.io/<org>/monoceros-features/opencode:1
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
+  - ref: ghcr.io/getmonoceros/monoceros-features/opencode:1
 ```
 
 Geplanter Feature-Katalog (siehe `backlog.md` für Reihenfolge):
@@ -165,11 +165,11 @@ Container-yml hinterlegt — dort, wo das Tool aktiviert wird:
 
 ```yaml
 features:
-  - ref: ghcr.io/<org>/monoceros-features/atlassian:1
+  - ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1
     options:
       email: you@example.com
       apiToken: ATATT3xFf… # Site/Instance fragt `acli rovodev run` einmalig selbst ab
-  - ref: ghcr.io/<org>/monoceros-features/claude-code:1
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
     options:
       apiKey: sk-ant-… # optional → API-Modus statt OAuth/Subscription
 ```
@@ -181,7 +181,7 @@ Feature-Ref:
 ```yaml
 defaults:
   features:
-    ghcr.io/<org>/monoceros-features/atlassian:1:
+    ghcr.io/getmonoceros/monoceros-features/atlassian:1:
       email: you@example.com
       apiToken: ATATT3xFf…
 ```
@@ -276,7 +276,7 @@ beizulegen, sodass der Builder _gar nichts_ lokal mehr braucht
 außer Docker und einem Browser, ist real und nicht-trivial — aber
 **bewusst nicht jetzt**. Erst wenn die heutige Werkbank ein paar
 echte Builder findet und das Bedarf zeigt, wird das als Feature
-implementiert (`ghcr.io/<org>/monoceros-features/code-server:1`).
+implementiert (`ghcr.io/getmonoceros/monoceros-features/code-server:1`).
 Bis dahin: VS Code Desktop + Dev-Containers-Extension, oder
 Claude Code direkt im Container per `monoceros shell`.
 

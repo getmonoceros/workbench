@@ -13,7 +13,7 @@ Templates und Builder-yml-Dateien nutzen **immer** den vollen OCI-Ref:
 
 ```yaml
 features:
-  - ref: ghcr.io/monoceros/features/claude-code:1
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
 ```
 
 Derselbe Ref funktioniert in dev und in prod. Während der Entwicklung
@@ -29,13 +29,13 @@ Mit `@devcontainers/cli`:
 
 ```sh
 npx -y @devcontainers/cli features publish \
-  --namespace monoceros/features \
+  --namespace getmonoceros/monoceros-features \
   ./images/features/claude-code
 ```
 
-Der finale GitHub-Org-Name wird in M4 entschieden; im Code ist heute
-`monoceros` als Platzhalter verdrahtet. Sollte die Org beim Publish
-anders heißen, ist's ein globales sed über das Repo.
+Org-Name (`getmonoceros`) und GHCR-Namespace (`monoceros-features`)
+sind seit M4 fix; siehe [`docs/m4-brief.md`](../../docs/m4-brief.md)
+für die Hintergründe.
 
 ## Ein neues Feature dazulegen
 

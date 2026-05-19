@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { workbenchRoot as defaultWorkbenchRoot } from '../config/paths.js';
+import { matchMonocerosFeature } from '../util/ref.js';
 
 /**
  * Loader for the `x-monoceros` extension fields in a Monoceros
@@ -11,9 +12,10 @@ import { workbenchRoot as defaultWorkbenchRoot } from '../config/paths.js';
  * see at a glance which auth/credential keys exist without going to
  * the feature's docs.
  *
- * Only Monoceros-owned refs (`ghcr.io/monoceros/features/<name>:<tag>`)
- * are resolved — for third-party features we don't have the manifest
- * on disk at init time. The fallback is "no hints", which is exactly
+ * Only Monoceros-owned refs
+ * (`ghcr.io/getmonoceros/monoceros-features/<name>:<tag>`) are
+ * resolved — for third-party features we don't have the manifest on
+ * disk at init time. The fallback is "no hints", which is exactly
  * right: we don't speculate about other people's feature options.
  */
 
@@ -22,16 +24,13 @@ export interface FeatureManifestSummary {
   optionHints: string[];
 }
 
-const MONOCEROS_FEATURE_RE =
-  /^ghcr\.io\/monoceros\/features\/([a-z0-9._-]+):[a-z0-9._-]+$/;
-
 export function loadFeatureManifestSummary(
   ref: string,
   workbenchRoot: string = defaultWorkbenchRoot(),
 ): FeatureManifestSummary | undefined {
-  const match = MONOCEROS_FEATURE_RE.exec(ref);
+  const match = matchMonocerosFeature(ref);
   if (!match) return undefined;
-  const name = match[1]!;
+  const name = match.name;
   const manifestPath = path.join(
     workbenchRoot,
     'images',

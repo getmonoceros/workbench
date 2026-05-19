@@ -1,5 +1,5 @@
 {
-  "name": "@monoceros/cli",
+  "name": "@getmonoceros/workbench",
   "version": "0.1.0-dev",
   "private": true,
   "type": "module",

@@ -56,9 +56,9 @@ describe('readMonocerosConfig', () => {
         'schemaVersion: 1',
         'defaults:',
         '  features:',
-        '    ghcr.io/monoceros/features/claude-code:1:',
+        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
         '      apiKey: sk-ant-1',
-        '    ghcr.io/monoceros/features/atlassian:1:',
+        '    ghcr.io/getmonoceros/monoceros-features/atlassian:1:',
         '      instance: yoursite.atlassian.net',
         '      email: you@example.com',
         '      apiToken: ATATT3xFf-default',
@@ -67,8 +67,10 @@ describe('readMonocerosConfig', () => {
     );
     const result = await readMonocerosConfig({ monocerosHome: home });
     expect(result?.defaults?.features).toEqual({
-      'ghcr.io/monoceros/features/claude-code:1': { apiKey: 'sk-ant-1' },
-      'ghcr.io/monoceros/features/atlassian:1': {
+      'ghcr.io/getmonoceros/monoceros-features/claude-code:1': {
+        apiKey: 'sk-ant-1',
+      },
+      'ghcr.io/getmonoceros/monoceros-features/atlassian:1': {
         instance: 'yoursite.atlassian.net',
         email: 'you@example.com',
         apiToken: 'ATATT3xFf-default',

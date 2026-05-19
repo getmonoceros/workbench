@@ -43,7 +43,7 @@ export const MonocerosConfigSchema = z.object({
             .string()
             .regex(
               REGEX.featureRef,
-              "Invalid feature ref. Expected an OCI-image-style ref like 'ghcr.io/monoceros/features/<name>:<tag>'.",
+              "Invalid feature ref. Expected an OCI-image-style ref like 'ghcr.io/getmonoceros/monoceros-features/<name>:<tag>'.",
             ),
           z.record(z.string(), FeatureOptionValueSchema),
         )

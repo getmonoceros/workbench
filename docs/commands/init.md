@@ -64,7 +64,7 @@ name: sandbox
 #
 #   # Anthropic Claude Code CLI
 #   # Installs the Claude Code CLI via npm …
-#   - ref: ghcr.io/monoceros/features/claude-code:1
+#   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
 #     # Optional — override monoceros-config.yml defaults.features:
 #     # options:
 #     #   apiKey:
@@ -97,11 +97,11 @@ services:
   - postgres
 
 features:
-  - ref: ghcr.io/monoceros/features/github-cli:1
+  - ref: ghcr.io/getmonoceros/monoceros-features/github-cli:1
     # Optional — override monoceros-config.yml defaults.features:
     # options:
     #   apiToken:
-  - ref: ghcr.io/monoceros/features/claude-code:1
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
     # Optional — override monoceros-config.yml defaults.features:
     # options:
     #   apiKey:

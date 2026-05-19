@@ -27,13 +27,13 @@ defaults:
   #
   # Uncomment and fill in the parts you actually use.
   # features:
-  #   ghcr.io/monoceros/features/claude-code:1:
+  #   ghcr.io/getmonoceros/monoceros-features/claude-code:1:
   #     apiKey: sk-ant-…              # optional → API-Modus
   #                                   # weglassen für Subscription/OAuth-Login
-  #   ghcr.io/monoceros/features/github-cli:1:
+  #   ghcr.io/getmonoceros/monoceros-features/github-cli:1:
   #     apiToken: ghp_…             # PAT mit scopes: repo, read:org, gist
   #
-  #   ghcr.io/monoceros/features/atlassian:1:
+  #   ghcr.io/getmonoceros/monoceros-features/atlassian:1:
   #     # Beide Tools sind defaultmäßig aktiv — auf false setzen
   #     # wenn du nur eines davon willst.
   #     # rovodev: false             # `acli` + Rovo Dev

@@ -8,7 +8,7 @@ description: |
 category: feature
 contributes:
   features:
-    - ref: ghcr.io/monoceros/features/atlassian:1
+    - ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1
       options:
         rovodev: false
         twg: true
