@@ -60,19 +60,19 @@ monoceros apply <name>                                    # neu bauen, picks up 
 |                                         | Vorlage erzeugen, wenn --with weggelassen)             |                                            |
 | `monoceros list-components`             | Komponenten-Katalog anzeigen                           | [list-components.md](./list-components.md) |
 | `monoceros apply <name>`                | Konfig materialisieren + Container hochfahren          | [apply.md](./apply.md)                     |
-| `monoceros start <name>`                | Devcontainer hochfahren (`devcontainer up` + Services) | _TODO_                                     |
-| `monoceros stop <name>`                 | Compose-Services stoppen, Daten bleiben                | _TODO_                                     |
-| `monoceros status <name>`               | Compose-Status anzeigen                                | _TODO_                                     |
-| `monoceros logs <name> [...]`           | Compose-Logs verfolgen                                 | _TODO_                                     |
+| `monoceros start <name>`                | Devcontainer hochfahren (`devcontainer up` + Services) | [start.md](./start.md)                     |
+| `monoceros stop <name>`                 | Compose-Services stoppen, Daten bleiben                | [stop.md](./stop.md)                       |
+| `monoceros status <name>`               | Compose-Status anzeigen                                | [status.md](./status.md)                   |
+| `monoceros logs <name> [...]`           | Compose-Logs verfolgen                                 | [logs.md](./logs.md)                       |
 | `monoceros remove <name> [--no-backup]` | Container restlos wegräumen (Backup by default)        | [remove.md](./remove.md)                   |
 | `monoceros restore <backup-path>`       | Container aus einem remove-Backup wiederherstellen     | [restore.md](./restore.md)                 |
 
 ## Im Container arbeiten
 
-| Befehl                          | Zweck                                                   | Doku   |
-| ------------------------------- | ------------------------------------------------------- | ------ |
-| `monoceros shell <name>`        | Interaktive Bash-Session im Container                   | _TODO_ |
-| `monoceros run <name> -- <cmd>` | One-off-Befehl im Container (Exit-Code wird propagiert) | _TODO_ |
+| Befehl                          | Zweck                                                   | Doku                   |
+| ------------------------------- | ------------------------------------------------------- | ---------------------- |
+| `monoceros shell <name>`        | Interaktive Bash-Session im Container                   | [shell.md](./shell.md) |
+| `monoceros run <name> -- <cmd>` | One-off-Befehl im Container (Exit-Code wird propagiert) | [run.md](./run.md)     |
 
 ## Konfiguration ändern
 
@@ -80,8 +80,8 @@ monoceros apply <name>                                    # neu bauen, picks up 
 
 | Befehl                                      | Zweck                                                                 | Doku                                         |
 | ------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------- |
-| `monoceros add-language <name> <lang>`      | Sprach-Toolchain als Devcontainer-Feature ergänzen (kuratierte Liste) | _TODO_                                       |
-| `monoceros add-service <name> <svc>`        | Compose-Service ergänzen (Postgres, Redis, MySQL — kuratierte Liste)  | _TODO_                                       |
+| `monoceros add-language <name> <lang>`      | Sprach-Toolchain als Devcontainer-Feature ergänzen (kuratierte Liste) | [add-language.md](./add-language.md)         |
+| `monoceros add-service <name> <svc>`        | Compose-Service ergänzen (Postgres, Redis, MySQL — kuratierte Liste)  | [add-service.md](./add-service.md)           |
 | `monoceros add-apt-packages <name> -- …`    | Beliebige apt-Pakete ergänzen (kein Whitelist)                        | [add-apt-packages.md](./add-apt-packages.md) |
 | `monoceros add-feature <name> <ref> [-- …]` | Beliebiges Devcontainer-Feature ergänzen                              | [add-feature.md](./add-feature.md)           |
 | `monoceros add-from-url <name> <url>`       | HTTPS-Install-Script per `curl … \| sh` registrieren                  | [add-from-url.md](./add-from-url.md)         |

@@ -16,7 +16,7 @@ Konzeptioneller Überbau: [`konzept.md`](konzept.md).
 | ~~M2~~       | Iteration-Pipeline + Plugin                                    | ❌ ausgelagert 2026-05-17 |
 | M2.5         | yml-Profile-Modell (`init`/`apply <name>`, AST-Mutationen)     | ✅ 2026-05-17             |
 | ~~M3 (alt)~~ | Externe Tracking-Adapter                                       | ❌ ausgelagert 2026-05-17 |
-| **M3 (neu)** | AI-Tool-Feature-Library                                        | 🚧 in Arbeit              |
+| **M3 (neu)** | AI-Tool-Feature-Library                                        | ✅ 2026-05-19             |
 | M4           | Distribution / Go-Live                                         | 🔜                        |
 | M5           | Stabilisierung + Doku                                          | 🔜                        |
 
@@ -129,7 +129,7 @@ gehört M3 dort hin, nicht in die Werkbank.
 
 ---
 
-## 🚧 M3 (neu) — AI-Tool-Feature-Library
+## ✅ M3 (neu) — AI-Tool-Feature-Library
 
 **Ziel:** AI-Tools sind erstklassige Bürger in der Container-yml.
 Builder schreibt `features: [- ref: …/claude-code:1]` und kriegt das
@@ -243,20 +243,50 @@ Options:
    _(erledigt)_
 
 9. **Doku** — `docs/commands/init.md` neu geschrieben gegen das
-   `--with`-Modell; `docs/commands/list-components.md` ergänzt.
+   `--with`-Modell; `docs/commands/list-components.md` ergänzt;
+   `docs/ai-tools.md` als Library-Übersicht + Cookbook für neue
+   Tool-Features. Alle vorher noch mit `_TODO_` markierten
+   command-Docs (`shell`, `run`, `start`, `stop`, `status`,
+   `logs`, `add-language`, `add-service`) sind ausgefüllt.
    `CLAUDE.md` und `docs/konzept.md` zeigen die neuen CLI-Shapes.
-   Ein eigenes `docs/ai-tools.md` als Library-Übersicht steht noch
-   aus. _(teilweise erledigt)_
+   _(erledigt)_
 
 10. **Tests** — Schema-Tests für die neuen Config-Felder + Apply-
     Verhalten (defaults.features-Merge, .gitignore, persistente
     Home-Pfade + -Files inkl. Seed-Content) sind in
     `apply-yml.test.ts` / `global-config.test.ts` ergänzt. Plus
-    Tests für Komponenten-Reader/-Merge in `components.test.ts`
-    und für beide Init-Modi in `init.test.ts`. Stage C des
-    Test-Plans für den „Feature im Container materialisiert sich"-
-    Pfad steht noch aus.
-    _(teilweise erledigt — Unit-Tests done, Stage-C-Update offen)_
+    Tests für Komponenten-Reader/-Merge in `components.test.ts`,
+    für beide Init-Modi in `init.test.ts`, für `remove`/`restore`,
+    und für den Secret-Masker (`mask-secrets.test.ts`). 170/170
+    Tests grün. Stage C des Test-Plans für den „Feature im
+    Container materialisiert sich"-Pfad ist auf M5 verschoben.
+    _(erledigt, Stage-C-Update als M5-Task umgehängt)_
+
+### Zusätzliche Arbeiten die im Verlauf von M3 dazukamen
+
+Diese waren nicht im Original-M3-Plan, fielen aber während der
+Iterationen als notwendig auf und sind alle live:
+
+- **`monoceros remove <name>`** — restloses Abräumen (Docker-
+  Objekte + yml + Container-Dir), Backup default an, `--no-backup`
+  zum Skippen, `-y` für Scripts. Ersetzt den nicht mehr sinnvollen
+  `down`-Befehl, der raus ist.
+- **`monoceros restore <backup-path>`** — Inverse zu remove. Plain
+  Filesystem-Operation, kein Docker-Touch. Anschließend
+  `monoceros apply` weckt den Container.
+- **Compose-Service-Daten als Bind-Mount unter
+  `container/<name>/data/<svc>/`** — Named Volumes raus, DB-Daten
+  liegen auf der Host-Disk und sind teil eines Backups bzw.
+  Removals (siehe ADR 0003 Update).
+- **Secret-Masking auf Build-Output-Streams** — Atlassian/GitHub/
+  Anthropic-Token-Shapes werden in apply/start-Logs als
+  `ATATT…abcdef` maskiert. Dev-Konventionspasswörter
+  (postgres/mysql `monoceros`) bewusst NICHT.
+- **`--with=<lang>:<version>`-Syntax** — `java:17`, `node:20`
+  werden an die upstream-Devcontainer-Features als `version`-
+  Option durchgereicht. `node` ohne Version bleibt Built-in.
+- **Custom Help-Renderer** — `monoceros <cmd> --help` zeigt
+  `<NAME> [OPTIONS]` statt der citty-Default-Reihenfolge.
 
 ### Bewusst nicht in M3
 
@@ -272,20 +302,24 @@ Options:
 
 ### Definition of Done
 
-- ✅ `monoceros init nodejs-github sandbox && monoceros apply sandbox`
-  installiert Claude Code via Feature (nicht aus dem Image)
-- ✅ Container-Login (Claude, Rovo Dev, twg) überlebt
+- ✅ `monoceros init sandbox --with=claude,github,atlassian/rovodev`
+  - `monoceros apply sandbox` installiert die genannten Tools als
+    Features (nicht aus dem Image), inkl. Auto-Login via
+    Container-yml-Optionen oder `monoceros-config.yml`-Defaults.
+- ✅ Container-Login (Claude, Rovo Dev, twg, gh) überlebt
   `monoceros apply`, Token-Rotation in der yml propagiert
-  automatisch
-- ⏳ `monoceros init atlassian sandbox && monoceros apply sandbox`
-  — der Apply-Pfad ist verifiziert (Feature + Hooks funktionieren),
-  aber das Template `atlassian.yml` selbst gibt's noch nicht
-  (siehe Task 8)
+  automatisch.
+- ✅ Compose-Service-Daten (postgres, mysql, redis) liegen
+  bind-gemountet unter `container/<name>/data/<svc>/` auf der
+  Host-Disk und sind teil von remove-Backups.
+- ✅ `monoceros remove` + `restore` decken den Lifecycle-Endpoint
+  ab, Backup default an.
+- ✅ Secret-Masking in apply/start-Output verhindert dass echte
+  Tokens auf dem Terminal landen.
 - ⏳ Feature-Library im GHCR auffindbar unter
-  `ghcr.io/<org>/monoceros-features/{claude-code,atlassian}` —
-  GHCR-Publish ist M4-Thema; Feature läuft heute über die
-  Local-Source-Auflösung im Scaffold
-- ⏳ Stage C des Test-Plans erweitert um Feature-Pfad — offen
+  `ghcr.io/<org>/monoceros-features/{claude-code,atlassian,github-cli}`
+  — GHCR-Publish ist M4-Thema; Feature läuft heute über die
+  Local-Source-Auflösung im Scaffold.
 
 ---
 
@@ -345,14 +379,18 @@ beschrieben.
 
 ### Tasks (Skizze)
 
-1. **Test-Plan überarbeiten** — Stages A–D aktualisieren auf das neue
-   Modell (`monoceros init` + `apply <name>`, keine `create`-
-   Referenzen mehr). Stage C als End-to-End-Strecke pro Template.
+1. **Test-Plan überarbeiten** — Stages A–D aktualisieren auf das
+   neue Modell (`monoceros init --with=…` + `apply <name>`, keine
+   `create`-Referenzen mehr). Stage C als End-to-End-Strecke pro
+   Komponenten-Bündel (aus M3 herübergezogen).
 2. **AI-Tool-Library erweitern** — OpenCode, Codex, GitHub Copilot,
-   Aider als Features dazu, mit jeweils eigenen Templates.
-3. **`docs/commands/`-Lücken füllen** — die `_TODO_`-Einträge für
-   `shell` / `run` / `start` / `stop` / `status` / `logs` /
-   `add-language` / `add-service` ergänzen.
+   Aider als Features dazu, jeweils nach dem Cookbook in
+   [`docs/ai-tools.md`](./ai-tools.md).
+3. **`docs/commands/`-Lücken füllen** — alle Detail-Seiten sind
+   geschrieben (Stand 2026-05-19). Wenn neue Befehle dazukommen,
+   nicht vergessen pro neuem CLI-Command eine MD-Datei zu liefern
+   (CLAUDE.md-Konvention). _(M3-Doku-Sweep erledigt; offen
+   bleiben nur künftige neue Befehle.)_
 4. **Beispiel-Workflows** — kurze how-to-Dokumente für die häufigsten
    Stacks (Node-API, Python-Pipeline, Atlassian-Forge-Setup).
 5. **Image-Aufräumen** — entscheiden, ob die dormant Egress-iptables-
