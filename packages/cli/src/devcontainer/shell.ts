@@ -23,7 +23,9 @@ export async function runShell(opts: RunShellOptions): Promise<number> {
   );
   if (upCode !== 0) return upCode;
 
-  return spawnFn(['exec', '--workspace-folder', opts.root, 'bash'], opts.root);
+  return spawnFn(['exec', '--workspace-folder', opts.root, 'bash'], opts.root, {
+    interactive: true,
+  });
 }
 
 export function assertContainerExists(root: string): void {

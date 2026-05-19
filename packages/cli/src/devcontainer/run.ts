@@ -33,5 +33,6 @@ export async function runInContainer(
   return spawnFn(
     ['exec', '--workspace-folder', opts.root, ...opts.command],
     opts.root,
+    { interactive: true },
   );
 }

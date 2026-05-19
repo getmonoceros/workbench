@@ -35,6 +35,14 @@ export interface DevcontainerSpawnOptions {
   // (`monoceros start`) and for the final exec where the user expects to
   // see output.
   quiet?: boolean;
+  // When true, hand the child process direct stdio. Pure `inherit` —
+  // no piping, no secret masking, no buffering. Required for any
+  // interactive use case (`monoceros shell`, the `exec` step of
+  // `monoceros run`): bash detects a non-TTY stdin/stdout and exits
+  // immediately, which makes `--with` stdio pipes a non-starter.
+  // The build/log paths in apply and start still go through the
+  // masked-pipe path, where there's no TTY at stake.
+  interactive?: boolean;
 }
 
 export type DevcontainerSpawn = (
@@ -57,6 +65,19 @@ export const spawnDevcontainer: DevcontainerSpawn = (
 ) => {
   const binPath = devcontainerCliPath();
   return new Promise((resolve, reject) => {
+    if (options.interactive) {
+      // Direct inherit — required so the child binary sees a real
+      // TTY on stdin/stdout/stderr. Secret masking is irrelevant
+      // here (the builder is running an interactive command;
+      // build-time option dumps don't fire on this path).
+      const child = spawn(process.execPath, [binPath, ...args], {
+        cwd,
+        stdio: 'inherit',
+      });
+      child.on('error', reject);
+      child.on('exit', (code) => resolve(code ?? 0));
+      return;
+    }
     const child = spawn(process.execPath, [binPath, ...args], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
