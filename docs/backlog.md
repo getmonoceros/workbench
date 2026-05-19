@@ -331,73 +331,78 @@ ohne Checkout kriegen sie mit M4 Task 2 über GHCR.
 **Ziel:** Die Workbench wird benutzbar **ohne** dass der Builder das
 Workbench-Repo selbst klont.
 
-**Frische Session, die M4 anfasst:** lies zuerst
-[`docs/m4-brief.md`](./m4-brief.md). Da stehen die Namens-
-Entscheidungen (GitHub-Org `getmonoceros`, npm
-`@getmonoceros/workbench`, GHCR `ghcr.io/getmonoceros/…`), die
-Pre-Flight-Schritte und der Stolperstein-Katalog.
+Architekturentscheid für M4 steht in
+[ADR 0004 — Release-Modell: N unabhängige Deployments, Version-getriggert](./adr/0004-release-modell-m4.md).
+Kernpunkte: drei Artefakt-Typen (CLI, Runtime-Image, Feature), heute
+fünf Deployments und wachsend, version-getriggerte Pipelines (Bump
+einer Versionsnummer im jeweiligen Manifest = Release), keine
+Staging-Umgebung, Windows als gleichwertige Zielplattform.
 Builder, die mit bestehenden Containern auf den neuen Namespace
 umziehen, finden in [`docs/MIGRATION-M4.md`](./MIGRATION-M4.md) das
-sed-Snippet und den Hinweis auf die Apply-Warnung.
+sed-Snippet und den Hinweis auf die Apply-Warnung. Der frühere
+[`docs/m4-brief.md`](./m4-brief.md) ist die historische Hand-Over-
+Notiz vom Pivot-Stand 2026-05-19 und steht im Konflikt mit der ADR
+nur in Detailfragen (npm-Publish vs. GitHub-Releases); operative
+Wahrheit ist die ADR.
 
 ### Tasks
 
-Nummerierung folgt [`docs/m4-brief.md`](./m4-brief.md). Der Brief
-hat die ausführlichen Schritte; hier nur das Skelett für die
-Roadmap-Sicht.
-
 1. **Code & Docs auf `getmonoceros` umstellen** — Feature-Refs,
-   Paket-Name (`@monoceros/cli` → `@getmonoceros/workbench`),
-   Templates, Tests, Docs. Plus Migration-Hint im Apply für alte
-   Refs und [`docs/MIGRATION-M4.md`](./MIGRATION-M4.md) für
-   bestehende yml's. _(erledigt 2026-05-19, 171/171 Tests grün.)_
+   Paket-Name, Templates, Tests, Docs. Plus Migration-Hint im
+   Apply für alte Refs und
+   [`docs/MIGRATION-M4.md`](./MIGRATION-M4.md) für bestehende
+   yml's. _(erledigt 2026-05-19, 171/171 Tests grün.)_
 
-2. **Feature-Library nach GHCR publishen** — die drei Features
-   (`claude-code`, `atlassian`, `github-cli`) unter
-   `ghcr.io/getmonoceros/monoceros-features/<name>:<tag>` publizieren,
-   manuell via `@devcontainers/cli features publish`, später per
-   CI (Task 7). Local-Source-Auflösung im Scaffold (`resolveFeatures`)
-   bleibt als Fallback für Workbench-Contributors drin, GHCR-Pull
-   ist Default.
+2. **PR-CI (`ci.yml`)** — GitHub-Actions-Workflow mit
+   lint + typecheck + vitest bei jedem PR und Push auf `main`.
+   Ist Voraussetzung für alle weiteren Tasks und ersetzt
+   gleichzeitig die „Staging-Umgebung", die wir bewusst nicht
+   bauen (siehe ADR 0004).
 
-3. **Runtime-Image nach GHCR pushen** —
-   `ghcr.io/getmonoceros/monoceros-runtime:<tag>`, Multi-Arch
-   (amd64 + arm64) via Buildx. `BASE_IMAGE` in
-   `create/catalog.ts` von `monoceros-runtime:dev` auf den
-   GHCR-Tag umstellen, plus Dev-Mode-Override-Env-Var für
-   Contributors, die am Image arbeiten.
+3. **Features-Release-Workflow (`release-features.yml`)** —
+   Pfad-Trigger `images/features/**`, iteriert über alle
+   Unterordner mit `devcontainer-feature.json`, publisht jedes
+   Feature dessen Version noch nicht in GHCR liegt. Generisch über
+   N Features, neue Features brauchen keine Workflow-Änderung.
+   Auth via `GITHUB_TOKEN` mit `packages: write`.
 
-4. **`@getmonoceros/workbench` als npm-Paket publishen** — `bin`
-   prüfen, `prepublishOnly` mit Typecheck+Test, Build-Schritt via
-   tsup nach `dist/`, `npm publish --access public`. Erster
-   Publish claimt den Scope für die npm-Org `getmonoceros`.
+4. **Runtime-Image-Release-Workflow (`release-runtime.yml`)** —
+   `images/runtime/VERSION`-Datei einführen, Pfad-Trigger
+   `images/runtime/**`, multi-arch (amd64 + arm64) Buildx-Push
+   nach `ghcr.io/getmonoceros/monoceros-runtime:<version>` + `:<major>`.
+   `BASE_IMAGE` in `create/catalog.ts` von `monoceros-runtime:dev`
+   auf den GHCR-Tag umstellen, plus optionalem
+   `MONOCEROS_BASE_IMAGE_OVERRIDE` für Contributors am Image.
 
-5. **`pnpm cli`-Workaround degradieren** — sobald CLI
-   npm-installable ist, ist das Root-Script in `package.json` nur
-   noch Dev-Convenience. Kein Code-Change, nur README-Notiz.
+5. **CLI-Release-Workflow (`release-cli.yml`) inkl. Install-Skripte** —
+   Pfad-Trigger `packages/cli/**`, baut plattformspezifische
+   Artefakte (`macos-arm64`, `macos-x64`, `linux-arm64`,
+   `linux-x64`, `windows-x64`), legt sie an ein GitHub-Release der
+   passenden Version an. Plus `install.sh` (macOS/Linux) und
+   `install.ps1` (Windows) im Repo-Root für
+   `curl … | sh` und PowerShell-Pendant. Binary-Build-Werkzeug
+   (`bun --compile` vs. Node-SEA) wird im Implementierungs-PR
+   entschieden.
 
-6. **Install-Doku im Workbench-Root** — README mit drei Pfaden:
-   - „Ich nutze Monoceros" (`npm install -g @getmonoceros/workbench`)
+6. **`MONOCEROS_HOME`-Default schärfen** — sicherstellen, dass ein
+   per Install-Skript installiertes Tool out-of-the-box auf
+   `~/.monoceros/` (bzw. `%USERPROFILE%\.monoceros\` auf Windows)
+   landet und das Layout bei Bedarf beim ersten Aufruf automatisch
+   angelegt wird. Smoke-Test ohne Workbench-Checkout.
+
+7. **Install-Doku im Workbench-Root** — `README.md` mit drei Pfaden:
+   - „Ich nutze Monoceros" (`curl … | sh` bzw. `install.ps1`)
    - „Ich entwickle am Workbench" (`pnpm install` + `pnpm cli …`)
    - „Ich nutze eine bestehende Solution" (Verweis auf
      `docs/commands/`)
 
-7. **CI-Skeleton (GitHub Actions)** —
-   `.github/workflows/ci.yml` mit drei Jobs: `lint-test` (jeder
-   PR + main-Push), `publish-features` (manual + on tag), und
-   `publish-runtime + npm` (on tag `v*`). Verwendet
-   `secrets.GHCR_TOKEN` und einen npm-Publish-Token aus der
-   `getmonoceros`-Org.
-
-8. **`MONOCEROS_HOME`-Default schärfen** — sicherstellen, dass
-   ein npm-installierter Builder out-of-the-box auf
-   `~/.monoceros/` landet und das Layout (inkl. leerem
-   `monoceros-config.yml`) bei Bedarf beim ersten Aufruf
-   automatisch angelegt wird. Smoke-Test ohne Workbench-Checkout.
+8. **`pnpm cli`-Notiz** — README erwähnt, dass `pnpm cli`
+   weiterhin Dev-Convenience für Contributors ist, neben dem
+   global installierten `monoceros`-Binary. Kein Code-Change.
 
 9. **End-to-End-Walkthrough von außen** — auf einer frischen VM
-   oder zweitem Rechner:
-   `npm install -g @getmonoceros/workbench` →
+   oder zweitem Rechner: Install via `install.sh` oder
+   `install.ps1` →
    `monoceros init hello --with=node,postgres,claude` →
    `monoceros-config.yml` mit Claude-API-Key füllen →
    `monoceros apply hello` → `monoceros shell hello` und Claude
@@ -409,17 +414,24 @@ Roadmap-Sicht.
 - Eigene Web-UI / Hub
 - Multi-User-Hosting
 - Cloud-Variante
+- Staging-Umgebung (siehe ADR 0004 — wird durch PR-CI +
+  SemVer-Pre-Release-Konvention ersetzt)
+- Brew-Tap, WinGet-Manifest, Scoop-Bucket (Wrapper über die
+  GitHub-Releases — kommen später falls echte Nachfrage)
+- Auto-Update der installierten CLI
 
 ### Definition of Done
 
-- ✅ Ein Builder ohne Workbench-Checkout kann via `npm install -g`
-  und `monoceros init hello --with=claude && monoceros apply hello`
+- ✅ Ein Builder ohne Workbench-Checkout kann sich Monoceros über
+  `install.sh` (Unix) oder `install.ps1` (Windows) installieren
+  und mit `monoceros init hello --with=claude && monoceros apply hello`
   einen Container hochfahren — Runtime-Image **und** Features
   werden aus GHCR gezogen, keine lokalen `images/...`-Files nötig
 - ✅ `ghcr.io/getmonoceros/monoceros-features/{claude-code,atlassian,github-cli}`
   via `docker pull` / `devcontainer features info` von außen
   erreichbar
-- ✅ Stage E-Walkthrough von Außen (Test-Plan) durchgespielt
+- ✅ Stage-E-Walkthrough von außen (Test-Plan) auf macOS + Windows
+  durchgespielt
 - ✅ README erklärt, was Monoceros ist und wie man's installiert
 
 ---

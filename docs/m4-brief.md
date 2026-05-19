@@ -1,9 +1,30 @@
-# M4-Brief — Distribution / Go-Live
+# M4-Brief — Distribution / Go-Live (historisch)
 
-Stand: **2026-05-19**. Geschrieben als Hand-Over für eine frische
-Session, die M4 anfasst. Wenn du das liest und M4 noch nicht
-durch ist, ist das hier dein Marschbefehl. Wenn M4 durch ist,
-ersetz das hier durch einen Post-Mortem-Abschnitt oder lösch's.
+> **Status: superseded am 2026-05-19** durch
+> [ADR 0004 — Release-Modell: N unabhängige Deployments,
+> Version-getriggert](./adr/0004-release-modell-m4.md).
+>
+> Dieser Brief beschreibt den Stand am Morgen des 2026-05-19 vor
+> der Architekturdiskussion. Er nahm implizit zwei Deployments an
+> (CLI + Feature-Library) und setzte auf `npm install -g
+@getmonoceros/workbench` als Distributionspfad. Beide Annahmen
+> sind verworfen: heute sind es fünf Deployments und wachsend,
+> Distribution läuft über GitHub-Releases mit plattformspezifischen
+> Tarballs plus Install-Skripten (`install.sh` / `install.ps1`).
+> Windows ist explizit als Zielplattform mit drin.
+>
+> Inhaltlich gültig im Brief ist alles bis Task 1 (Code & Docs auf
+> `getmonoceros`) — das ist umgesetzt und Teil von M4-Task 1 im
+> Backlog. Die Pre-Flight-Schritte (Org, npm-Org, Repo-Transfer,
+> GHCR-PAT) sind ebenfalls durch. Alles ab Task 2 im Brief ist
+> durch ADR 0004 ersetzt. Operative Wahrheit für M4 ist die ADR
+> plus die nummerierten Tasks in [`backlog.md`](./backlog.md).
+>
+> Wir lassen den Brief stehen statt zu löschen, weil er den
+> Diskussionsverlauf zwischen Pivot und ADR dokumentiert.
+
+Stand des ursprünglichen Hand-Overs: **2026-05-19**. Geschrieben
+als Hand-Over für eine frische Session, die M4 anfasst.
 
 ## Was M4 erreichen muss
 

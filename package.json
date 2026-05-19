@@ -18,7 +18,6 @@
     "cli": "pnpm --filter @getmonoceros/workbench start",
     "image:build": "docker build -t monoceros-runtime:dev images/runtime",
     "image:rebuild": "docker build --no-cache -t monoceros-runtime:dev images/runtime",
-    "publish:features": "bash scripts/publish-features.sh",
     "sandbox:reset": "bash scripts/sandbox-reset.sh"
   },
   "devDependencies": {

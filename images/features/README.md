@@ -23,32 +23,15 @@ lokale Kopie umgebogen, sodass Änderungen am Feature ohne GHCR-Push
 testbar sind. In einer Installation ohne Workbench-Checkout läuft die
 Auflösung über den echten GHCR-Pull.
 
-## Publishen
+## Publishen (manuell, später per CI)
 
-Einmalig pro Shell:
-
-```sh
-docker login ghcr.io -u <dein-github-username>
-# Passwort = GHCR-PAT mit write:packages scope
-```
-
-Dann (idempotent, auch wieder ausführbar bei Versions-Bumps):
+Mit `@devcontainers/cli`:
 
 ```sh
-pnpm publish:features
+npx -y @devcontainers/cli features publish \
+  --namespace getmonoceros/monoceros-features \
+  ./images/features/claude-code
 ```
-
-Das ruft [`scripts/publish-features.sh`](../../scripts/publish-features.sh)
-auf, das alle Unterordner mit `devcontainer-feature.json` durchläuft
-und nacheinander via `@devcontainers/cli features publish` nach
-`ghcr.io/getmonoceros/monoceros-features/<name>` pusht. Dasselbe
-Skript verwendet später auch die GitHub-Action aus M4 Task 7 — dort
-über die Env-Var `GHCR_TOKEN` statt vorherigem `docker login`.
-
-Beim allerersten Push pro Paket steht das GHCR-Paket auf `private`.
-Einmalig öffentlich schalten unter
-<https://github.com/orgs/getmonoceros/packages> (Package settings →
-Change visibility → Public); spätere Pushes erben die Sichtbarkeit.
 
 Org-Name (`getmonoceros`) und GHCR-Namespace (`monoceros-features`)
 sind seit M4 fix; siehe [`docs/m4-brief.md`](../../docs/m4-brief.md)
