@@ -1,0 +1,162 @@
+import { existsSync, promises as fs } from 'node:fs';
+import path from 'node:path';
+import { consola } from 'consola';
+import {
+  containerConfigPath,
+  containerDir,
+  monocerosHome as defaultMonocerosHome,
+} from '../config/paths.js';
+import { REGEX } from '../config/schema.js';
+import {
+  composeProjectName,
+  spawnBash,
+  type ComposeSpawn,
+} from '../devcontainer/compose.js';
+
+/**
+ * `monoceros remove <name>` — wipe everything belonging to one
+ * container.
+ *
+ * What "everything" means in practice (in this order):
+ *
+ *   1. Stop and remove docker objects scoped to the container:
+ *        - compose containers (label `com.docker.compose.project=<project>`)
+ *        - any image-mode container matching `vsc-<name>-*`
+ *        - the project network `<project>_default`
+ *      Named docker volumes are no longer used as of fea2b3f (DB data
+ *      is bind-mounted onto `<container-dir>/data/<svc>/`), so they
+ *      go away with the directory delete below.
+ *
+ *   2. Optionally back up the host-side state:
+ *        - `container-configs/<name>.yml`
+ *        - `container/<name>/` (entire scaffold incl. `home/`,
+ *          `projects/`, `.monoceros/`, `data/`)
+ *      Lands at `container-backups/<name>-<timestamp>/`. Plain
+ *      directory copy — readable with normal filesystem tools.
+ *
+ *   3. Delete the host-side state.
+ *
+ * Shared docker images (`monoceros-runtime:dev`, feature build
+ * images, postgres/mysql/redis base images) are NOT removed — they
+ * are shared across containers and pruning them is a separate
+ * operation the builder can do with `docker image prune` when they
+ * actually want to free that disk.
+ */
+
+export interface RunRemoveOptions {
+  name: string;
+  /** When true, skip the backup step. */
+  noBackup?: boolean;
+  /** Override of the user-data home. Tests inject a tmpdir. */
+  monocerosHome?: string;
+  /** Override the timestamp embedded in the backup directory name. */
+  now?: Date;
+  /** Bash spawn for the docker cleanup script. Tests inject a stub. */
+  dockerSpawn?: ComposeSpawn;
+  logger?: {
+    info: (msg: string) => void;
+    success: (msg: string) => void;
+    warn?: (msg: string) => void;
+  };
+}
+
+export interface RunRemoveResult {
+  /** Path the yml was at before deletion, or `null` if it didn't exist. */
+  configPath: string | null;
+  /** Path the container scaffold was at before deletion, or `null`. */
+  containerPath: string | null;
+  /** Directory of the backup, or `null` when --no-backup was passed. */
+  backupPath: string | null;
+  /** Exit code of the docker cleanup step (0 on success). */
+  dockerExitCode: number;
+}
+
+export async function runRemove(
+  opts: RunRemoveOptions,
+): Promise<RunRemoveResult> {
+  const home = opts.monocerosHome ?? defaultMonocerosHome();
+  const logger = opts.logger ?? {
+    info: (msg) => consola.info(msg),
+    success: (msg) => consola.success(msg),
+    warn: (msg) => consola.warn(msg),
+  };
+
+  if (!REGEX.solutionName.test(opts.name)) {
+    throw new Error(
+      `Invalid config name: ${JSON.stringify(opts.name)}. Use letters, digits, '.', '_' or '-'.`,
+    );
+  }
+
+  const ymlPath = containerConfigPath(opts.name, home);
+  const containerPath = containerDir(opts.name, home);
+  const hasYml = existsSync(ymlPath);
+  const hasContainer = existsSync(containerPath);
+
+  if (!hasYml && !hasContainer) {
+    throw new Error(
+      `Nothing to remove for '${opts.name}': neither ${ymlPath} nor ${containerPath} exists.`,
+    );
+  }
+
+  // ── Step 1: stop + remove docker objects ────────────────────────
+  const projectName = composeProjectName(containerPath);
+  const dockerSpawn = opts.dockerSpawn ?? spawnBash;
+  const script = [
+    `set -u`,
+    `echo "[remove] tearing down docker project ${projectName}…"`,
+    // Compose-mode containers, identified by the project label
+    `by_label=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}" 2>/dev/null || true)`,
+    // Container-name prefix fallback (catches half-broken state)
+    `by_compose_name=$(docker ps -aq --filter "name=^${projectName}-" 2>/dev/null || true)`,
+    // Image-mode devcontainer-cli container
+    `by_image_name=$(docker ps -aq --filter "name=^vsc-${opts.name}-" 2>/dev/null || true)`,
+    `to_remove=$(printf "%s\\n%s\\n%s\\n" "$by_label" "$by_compose_name" "$by_image_name" | sort -u | grep -v "^$" || true)`,
+    `if [ -n "$to_remove" ]; then echo "[remove] removing containers: $(echo $to_remove | tr "\\n" " ")"; docker rm -f $to_remove >/dev/null || true; else echo "[remove] no containers found"; fi`,
+    `docker network rm ${projectName}_default 2>/dev/null && echo "[remove] network ${projectName}_default removed" || true`,
+    `echo "[remove] docker cleanup done"`,
+  ].join('; ');
+  const dockerExitCode = await dockerSpawn(['-c', script], home);
+
+  // ── Step 2: optional backup ────────────────────────────────────
+  let backupPath: string | null = null;
+  if (!opts.noBackup && (hasYml || hasContainer)) {
+    const ts = (opts.now ?? new Date()).toISOString().replace(/[:.]/g, '-');
+    backupPath = path.join(home, 'container-backups', `${opts.name}-${ts}`);
+    await fs.mkdir(backupPath, { recursive: true });
+    if (hasYml) {
+      await fs.copyFile(ymlPath, path.join(backupPath, `${opts.name}.yml`));
+    }
+    if (hasContainer) {
+      await fs.cp(containerPath, path.join(backupPath, 'container'), {
+        recursive: true,
+      });
+    }
+    logger.info(
+      `Backup written to ${path.relative(home, backupPath) || backupPath}.`,
+    );
+  }
+
+  // ── Step 3: delete host-side state ─────────────────────────────
+  if (hasYml) {
+    await fs.rm(ymlPath, { force: true });
+  }
+  if (hasContainer) {
+    await fs.rm(containerPath, { recursive: true, force: true });
+  }
+
+  logger.success(
+    `Removed '${opts.name}': docker objects gone, container-configs entry deleted, container directory deleted.`,
+  );
+  if (!backupPath) {
+    logger.warn?.(
+      'No backup created (--no-backup). The host-side state is gone for good.',
+    );
+  }
+
+  return {
+    configPath: hasYml ? ymlPath : null,
+    containerPath: hasContainer ? containerPath : null,
+    backupPath,
+    dockerExitCode,
+  };
+}

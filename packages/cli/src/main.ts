@@ -6,12 +6,12 @@ import { addRepoCommand } from './commands/add-repo.js';
 import { addLanguageCommand } from './commands/add-language.js';
 import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
-import { downCommand } from './commands/down.js';
 import { initCommand } from './commands/init.js';
 import { listComponentsCommand } from './commands/list-components.js';
 import { logsCommand } from './commands/logs.js';
 import { removeAptPackagesCommand } from './commands/remove-apt-packages.js';
 import { removeFeatureCommand } from './commands/remove-feature.js';
+import { removeCommand } from './commands/remove.js';
 import { removeFromUrlCommand } from './commands/remove-from-url.js';
 import { removeLanguageCommand } from './commands/remove-language.js';
 import { removeRepoCommand } from './commands/remove-repo.js';
@@ -38,9 +38,9 @@ export const main = defineCommand({
     logs: logsCommand,
     start: startCommand,
     stop: stopCommand,
-    down: downCommand,
     status: statusCommand,
     apply: applyCommand,
+    remove: removeCommand,
     'add-service': addServiceCommand,
     'add-language': addLanguageCommand,
     'add-apt-packages': addAptPackagesCommand,

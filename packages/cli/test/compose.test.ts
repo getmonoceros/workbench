@@ -5,7 +5,6 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   resolveCompose,
-  runDown,
   runLogs,
   runStart,
   runStatus,
@@ -91,33 +90,6 @@ describe('compose actions', () => {
         spawn: async () => 0,
       }),
     ).rejects.toThrow(/require services configured/);
-  });
-
-  it('runDown removes containers and network without volumes by default', async () => {
-    const calls: string[][] = [];
-    await runDown({
-      root: solution,
-      spawn: async (args) => {
-        calls.push(args);
-        return 0;
-      },
-    });
-    expect(calls).toEqual([['-f', composeFile, '-p', projectName, 'down']]);
-  });
-
-  it('runDown with volumes=true appends -v', async () => {
-    const calls: string[][] = [];
-    await runDown({
-      root: solution,
-      volumes: true,
-      spawn: async (args) => {
-        calls.push(args);
-        return 0;
-      },
-    });
-    expect(calls).toEqual([
-      ['-f', composeFile, '-p', projectName, 'down', '-v'],
-    ]);
   });
 
   it('runStop issues `stop` and preserves volumes', async () => {

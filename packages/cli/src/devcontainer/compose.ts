@@ -112,27 +112,6 @@ export async function runStart(opts: StartOptions): Promise<number> {
   return spawnFn(['up', '--workspace-folder', opts.root], opts.root);
 }
 
-export interface DownOptions {
-  root: string;
-  // When true, also drop named volumes (postgres-data etc.). Default
-  // is false — `down` removes containers and the project network so a
-  // subsequent `start` recreates the workspace from the current image,
-  // but service data survives.
-  volumes?: boolean;
-  spawn?: ComposeSpawn;
-}
-
-// `monoceros down` removes containers + network for the project so a
-// fresh `start` picks up image changes. `stop` alone leaves the
-// container in place and `devcontainer up` will reuse it.
-export async function runDown(opts: DownOptions): Promise<number> {
-  const { composeFile, projectName } = resolveCompose(opts.root);
-  const spawnFn = opts.spawn ?? spawnDockerCompose;
-  const args = ['-f', composeFile, '-p', projectName, 'down'];
-  if (opts.volumes) args.push('-v');
-  return spawnFn(args, opts.root);
-}
-
 export interface RunContainerCycleOptions {
   hasCompose: boolean;
   cleanupSpawn?: ComposeSpawn;
