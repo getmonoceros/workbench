@@ -54,17 +54,17 @@ monoceros apply <name>                                    # neu bauen, picks up 
 
 ## Solution anlegen + Lifecycle
 
-| Befehl                            | Zweck                                                  | Doku                                       |
-| --------------------------------- | ------------------------------------------------------ | ------------------------------------------ |
-| `monoceros init <name> [--with=]` | Konfig aus Komponenten komponieren (oder dokumentierte | [init.md](./init.md)                       |
-|                                   | Vorlage erzeugen, wenn --with weggelassen)             |                                            |
-| `monoceros list-components`       | Komponenten-Katalog anzeigen                           | [list-components.md](./list-components.md) |
-| `monoceros apply <name>`          | Konfig materialisieren + Container hochfahren          | [apply.md](./apply.md)                     |
-| `monoceros start <name>`          | Devcontainer hochfahren (`devcontainer up` + Services) | _TODO_                                     |
-| `monoceros stop <name>`           | Compose-Services stoppen, Volumes erhalten             | _TODO_                                     |
-| `monoceros down <name> [-v]`      | Container + Network entfernen, optional Volumes        | _TODO_                                     |
-| `monoceros status <name>`         | Compose-Status anzeigen                                | _TODO_                                     |
-| `monoceros logs <name> [...]`     | Compose-Logs verfolgen                                 | _TODO_                                     |
+| Befehl                                  | Zweck                                                  | Doku                                       |
+| --------------------------------------- | ------------------------------------------------------ | ------------------------------------------ |
+| `monoceros init <name> [--with=]`       | Konfig aus Komponenten komponieren (oder dokumentierte | [init.md](./init.md)                       |
+|                                         | Vorlage erzeugen, wenn --with weggelassen)             |                                            |
+| `monoceros list-components`             | Komponenten-Katalog anzeigen                           | [list-components.md](./list-components.md) |
+| `monoceros apply <name>`                | Konfig materialisieren + Container hochfahren          | [apply.md](./apply.md)                     |
+| `monoceros start <name>`                | Devcontainer hochfahren (`devcontainer up` + Services) | _TODO_                                     |
+| `monoceros stop <name>`                 | Compose-Services stoppen, Daten bleiben                | _TODO_                                     |
+| `monoceros status <name>`               | Compose-Status anzeigen                                | _TODO_                                     |
+| `monoceros logs <name> [...]`           | Compose-Logs verfolgen                                 | _TODO_                                     |
+| `monoceros remove <name> [--no-backup]` | Container restlos wegräumen (Backup by default)        | [remove.md](./remove.md)                   |
 
 ## Im Container arbeiten
 

@@ -215,10 +215,11 @@ Drei Familien:
 monoceros init <name> [--with=…]           # yml komponieren (oder dokumentierte Vorlage)
 monoceros list-components                  # Komponenten-Katalog anzeigen
 monoceros apply <name>                     # materialisieren + Container hochfahren
-monoceros start|stop|down|status <name>    # Compose-Lifecycle
+monoceros start|stop|status <name>         # Compose-Lifecycle
 monoceros shell <name>                     # interaktive bash
 monoceros run <name> -- <cmd>              # one-off-Befehl
 monoceros logs <name> [<service>]          # tail
+monoceros remove <name>                    # Container restlos abräumen (Backup default an)
 
 # Konfig editieren (yml-AST-Mutation, comment-preserving)
 monoceros add-language|service|apt-packages|feature|from-url|repo <name> …

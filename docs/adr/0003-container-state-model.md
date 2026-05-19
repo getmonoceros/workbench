@@ -32,9 +32,10 @@ dem Host unter `<container-dir>/home/`:
   .devcontainer/   ← Rezept (apply schreibt bei jedem Lauf neu)
   .monoceros/      ← Monoceros-Buchhaltung (apply schreibt: state.json, git-credentials, gitconfig)
   home/            ← Container-Home (Container schreibt zur Laufzeit, apply lässt es in Ruhe)
+  data/            ← Compose-Service-Daten (postgres/, mysql/, redis/ — Bind-Mounts)
   projects/        ← Workspaces (`monoceros add-repo` klont hier rein)
   <name>.code-workspace
-  .gitignore       ← schließt /home/ und /.monoceros/ aus
+  .gitignore       ← schließt /home/, /.monoceros/ und /data/ aus
 ```
 
 Jedes Monoceros-Feature deklariert in seiner `devcontainer-feature.json`
@@ -58,6 +59,37 @@ in der `devcontainer.json`:
 
 Im Compose-Modus läuft derselbe Mount als Volume auf den
 `workspace`-Service in `compose.yaml`.
+
+### Compose-Service-Daten unter `<container-dir>/data/`
+
+DB-Daten (Postgres, MySQL, Redis) sind ebenfalls Container-State
+und gehören damit unter `<container-dir>/`. Wir nutzen für sie
+**keine docker-named-Volumes** mehr, sondern Bind-Mounts:
+
+```yaml
+services:
+  postgres:
+    volumes:
+      - ../data/postgres:/var/lib/postgresql
+```
+
+Damit erscheinen `data/postgres/`, `data/mysql/` etc. direkt im
+Container-Verzeichnis auf der Host-Disk. Konsequenzen:
+
+- `ls`, `du`, `tar`, `cp -r` über `container/<name>/data/`
+  funktionieren ohne docker-Volume-Indirektion.
+- Das Backup, das `monoceros remove` schreibt, enthält die
+  DB-Daten automatisch (es ist eine plain Datei-Kopie).
+- Der Service-Eintrag im `SERVICE_CATALOG` deklariert nur den
+  Container-seitigen Mount-Pfad (`dataMount`); den Host-Pfad
+  generiert der Scaffold deterministisch aus dem Service-Namen.
+
+Linux-Caveat: Postgres läuft als uid 999 im Container. Auf
+Docker-Desktop (macOS / Windows) übernimmt das uid-Mapping die
+Filesharing-Schicht. Auf einem nackten Linux-Host kann der
+pre-created `data/postgres/`-Pfad als Host-User unbeschreibbar
+für den Container sein → wir dokumentieren das wenn ein Builder
+darüber stolpert.
 
 ## Konsequenzen
 

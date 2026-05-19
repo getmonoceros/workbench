@@ -70,6 +70,7 @@ monoceros apply <name>                    # → container/<name>/
 monoceros shell <name>                    # darin arbeiten
 monoceros add-feature <name> <ref>        # yml editieren
 monoceros apply <name>                    # neu bauen
+monoceros remove <name>                   # Container restlos abräumen (Backup default an)
 ```
 
 cwd ist irrelevant — alles geht über Konvention.

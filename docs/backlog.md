@@ -351,7 +351,7 @@ beschrieben.
 2. **AI-Tool-Library erweitern** — OpenCode, Codex, GitHub Copilot,
    Aider als Features dazu, mit jeweils eigenen Templates.
 3. **`docs/commands/`-Lücken füllen** — die `_TODO_`-Einträge für
-   `shell` / `run` / `start` / `stop` / `down` / `status` / `logs` /
+   `shell` / `run` / `start` / `stop` / `status` / `logs` /
    `add-language` / `add-service` ergänzen.
 4. **Beispiel-Workflows** — kurze how-to-Dokumente für die häufigsten
    Stacks (Node-API, Python-Pipeline, Atlassian-Forge-Setup).
