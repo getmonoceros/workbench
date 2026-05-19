@@ -32,7 +32,7 @@ Formatting, Husky, Basis-CI-Hygiene. **Abgeschlossen 2026-05-10.**
 - ✅ `.editorconfig` / `.gitignore` / `.gitattributes` aus älteren
   Archiven übernommen
 
-CI-Skeleton (GitHub-Actions) ist offen und wandert nach M4.
+CI-Skeleton (GitHub-Actions) liegt in M4 Task 2.
 
 ---
 
@@ -339,11 +339,10 @@ einer Versionsnummer im jeweiligen Manifest = Release), keine
 Staging-Umgebung, Windows als gleichwertige Zielplattform.
 Builder, die mit bestehenden Containern auf den neuen Namespace
 umziehen, finden in [`docs/MIGRATION-M4.md`](./MIGRATION-M4.md) das
-sed-Snippet und den Hinweis auf die Apply-Warnung. Der frühere
-[`docs/m4-brief.md`](./m4-brief.md) ist die historische Hand-Over-
-Notiz vom Pivot-Stand 2026-05-19 und steht im Konflikt mit der ADR
-nur in Detailfragen (npm-Publish vs. GitHub-Releases); operative
-Wahrheit ist die ADR.
+sed-Snippet und den Hinweis auf die Apply-Warnung.
+[`docs/m4-brief.md`](./m4-brief.md) ist mit ADR 0004 **superseded**
+und liegt nur noch als historische Hand-Over-Notiz vom 2026-05-19
+auf der Platte; gilt nicht mehr als operativ.
 
 ### Tasks
 
@@ -430,8 +429,8 @@ Wahrheit ist die ADR.
 - ✅ `ghcr.io/getmonoceros/monoceros-features/{claude-code,atlassian,github-cli}`
   via `docker pull` / `devcontainer features info` von außen
   erreichbar
-- ✅ Stage-E-Walkthrough von außen (Test-Plan) auf macOS + Windows
-  durchgespielt
+- ✅ Stage-E-Walkthrough von außen (Test-Plan) auf macOS, Linux und
+  Windows durchgespielt
 - ✅ README erklärt, was Monoceros ist und wie man's installiert
 
 ---
