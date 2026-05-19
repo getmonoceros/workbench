@@ -317,10 +317,12 @@ Iterationen als notwendig auf und sind alle live:
   ab, Backup default an.
 - ✅ Secret-Masking in apply/start-Output verhindert dass echte
   Tokens auf dem Terminal landen.
-- ⏳ Feature-Library im GHCR auffindbar unter
-  `ghcr.io/<org>/monoceros-features/{claude-code,atlassian,github-cli}`
-  — GHCR-Publish ist M4-Thema; Feature läuft heute über die
-  Local-Source-Auflösung im Scaffold.
+
+Der GHCR-Publish der Feature-Library war ursprünglich in der M3-DoD
+mitgeführt, gehört aber sauber in M4 (Distribution). Heute reicht
+die Local-Source-Auflösung im Scaffold — jeder Workbench-Checkout
+findet die Features unter `images/features/<name>/`. Externe Builder
+ohne Checkout kriegen sie mit M4 Task 2 über GHCR.
 
 ---
 
@@ -335,23 +337,35 @@ Workbench-Repo selbst klont.
    Multi-Arch (amd64 + arm64). Templates und scaffold.ts referenzieren
    den GHCR-Tag statt `monoceros-runtime:dev`.
 
-2. **CLI als npm-Paket publizieren** — `@monoceros/cli` (oder direkt
+2. **Feature-Library nach GHCR pushen** — die heutigen drei
+   Features (`claude-code`, `atlassian`, `github-cli`) unter
+   `ghcr.io/<org>/monoceros-features/<name>:<tag>` publizieren,
+   manuell via `@devcontainers/cli features publish`, später per
+   CI (Task 5). Sobald die Refs in der yml unter dem realen
+   `<org>`-Namespace existieren, kann die Local-Source-Auflösung
+   im Scaffold (`resolveFeatures` in `scaffold.ts`) eigentlich
+   raus — sie ist nur fürs Dev-mit-Workbench-Checkout nötig.
+   Wir lassen sie aber als Fallback drin, damit Workbench-
+   Contributors weiter direkt auf `images/features/<name>/`
+   testen können, ohne nach jedem Edit zu publishen.
+
+3. **CLI als npm-Paket publizieren** — `@monoceros/cli` (oder direkt
    `monoceros`) auf npm. `bin`-Eintrag funktioniert via global install.
 
-3. **`pnpm cli`-Workaround retire** — sobald CLI npm-installable ist,
+4. **`pnpm cli`-Workaround retire** — sobald CLI npm-installable ist,
    ist das Root-Script in `package.json` nur noch Dev-Convenience.
 
-4. **Install-Doku** — README im Workbench-Root mit drei Optionen:
+5. **Install-Doku** — README im Workbench-Root mit drei Optionen:
    - „Ich nutze die Workbench" (npm install -g + `~/.monoceros/`-Setup)
    - „Ich entwickle an der Workbench" (`pnpm install` + `pnpm cli …`)
    - „Ich nutze die Werkbank schon auf einer Solution" (welche
      Container-yml-Felder gibt's, wie editiere ich Hand)
 
-5. **CI-Skeleton** — GH-Actions für Lint + Typecheck + Test bei jedem
-   PR. Auto-Publish-Pipeline für Runtime-Image + npm-Package bei
-   Release-Tag.
+6. **CI-Skeleton** — GH-Actions für Lint + Typecheck + Test bei jedem
+   PR. Auto-Publish-Pipeline für Runtime-Image + Features +
+   npm-Package bei Release-Tag.
 
-6. **MONOCEROS_HOME-Default geschärft** — Wenn `npm install -g`
+7. **MONOCEROS_HOME-Default geschärft** — Wenn `npm install -g`
    greift, ist `$MONOCEROS_HOME` standardmäßig `~/.monoceros/`. Erst-
    Run-Erlebnis: `monoceros init hello --with=claude && monoceros apply hello`
    muss out-of-the-box laufen, inkl. automatisch erstelltem
@@ -367,7 +381,11 @@ Workbench-Repo selbst klont.
 
 - ✅ Ein Builder ohne Workbench-Checkout kann via `npm install -g`
   und `monoceros init hello --with=claude && monoceros apply hello`
-  einen Container hochfahren
+  einen Container hochfahren — Runtime-Image **und** Features
+  werden aus GHCR gezogen, keine lokalen `images/...`-Files nötig
+- ✅ `ghcr.io/<org>/monoceros-features/{claude-code,atlassian,github-cli}`
+  via `docker pull` / `devcontainer features info` von außen
+  erreichbar
 - ✅ Stage E-Walkthrough von Außen (Test-Plan) durchgespielt
 - ✅ README erklärt, was Monoceros ist und wie man's installiert
 
