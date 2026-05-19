@@ -331,6 +331,12 @@ ohne Checkout kriegen sie mit M4 Task 2 über GHCR.
 **Ziel:** Die Workbench wird benutzbar **ohne** dass der Builder das
 Workbench-Repo selbst klont.
 
+**Frische Session, die M4 anfasst:** lies zuerst
+[`docs/m4-brief.md`](./m4-brief.md). Da stehen die Namens-
+Entscheidungen (GitHub-Org `getmonoceros`, npm
+`@getmonoceros/workbench`, GHCR `ghcr.io/getmonoceros/…`), die
+Pre-Flight-Schritte und der Stolperstein-Katalog.
+
 ### Tasks (Skizze)
 
 1. **Runtime-Image nach GHCR pushen** — `ghcr.io/<org>/monoceros-runtime:<tag>`,
