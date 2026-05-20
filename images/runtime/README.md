@@ -11,7 +11,23 @@ zwei Dinge hinzu:
    Härtung; Architektur-Begründung in
    [ADR 0002](../../docs/adr/0002-egress-whitelist-runtime-image.md).
 
-## Build
+## Versionierung + Publish
+
+Die Versionsnummer des Images steht in [`VERSION`](VERSION). Bumpen,
+committen, nach `main` mergen — der
+[`release-runtime`-Workflow](../../.github/workflows/release-runtime.yml)
+baut dann multi-arch (`linux/amd64` + `linux/arm64`) und pusht nach
+`ghcr.io/getmonoceros/monoceros-runtime:<version>`,
+`:<major>` und `:latest`. Liegt die Version schon im Registry, wird
+nichts neu gebaut (idempotent). Siehe
+[ADR 0004](../../docs/adr/0004-release-modell-m4.md) für die Logik.
+
+Per Default referenzieren generierte Dev-Container den Major-Tag
+(`ghcr.io/getmonoceros/monoceros-runtime:1`), sodass kleinere
+Bumps automatisch übernommen werden ohne `monoceros apply` erneut
+laufen zu lassen.
+
+## Lokaler Build (Contributors)
 
 Vom Workspace-Root aus:
 
@@ -20,8 +36,17 @@ pnpm image:build      # erstmaliger / inkrementeller Build
 pnpm image:rebuild    # gleiches mit --no-cache (z. B. nach iptables-Updates)
 ```
 
-Beides ruft `docker build … images/runtime` auf — funktioniert von
-jeder cwd aus, weil pnpm das Skript am Workspace-Root verankert.
+Beides ruft `docker build -t monoceros-runtime:dev images/runtime`
+auf. Damit ein `monoceros apply` dann diese lokale Variante statt
+des GHCR-Tags verwendet:
+
+```sh
+export MONOCEROS_BASE_IMAGE_OVERRIDE=monoceros-runtime:dev
+monoceros apply <name>
+```
+
+Sobald die Variable wieder rausfällt (`unset` oder neue Shell), zieht
+`apply` wieder den GHCR-Tag.
 
 ## Egress-Modi
 

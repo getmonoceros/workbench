@@ -62,7 +62,7 @@ describe('runApply', () => {
       ),
     );
     expect(devcontainer.name).toBe('demo');
-    expect(devcontainer.image).toBe('monoceros-runtime:dev');
+    expect(devcontainer.image).toBe('ghcr.io/getmonoceros/monoceros-runtime:1');
 
     const state = await readStateFile(expected);
     expect(state?.origin).toBe('demo');

@@ -4,10 +4,19 @@
 // through to devcontainer / compose.
 
 // Monoceros runtime image — thin layer on top of Microsoft's
-// typescript-node base (see images/runtime/Dockerfile). Built locally
-// via `pnpm image:build`. Once GHCR-published (M4 Task 3) we switch
-// this to `ghcr.io/getmonoceros/monoceros-runtime:<tag>`.
-export const BASE_IMAGE = 'monoceros-runtime:dev';
+// typescript-node base (see images/runtime/Dockerfile). The default
+// points at the floating major tag on GHCR, so an `apply` from a
+// fresh install pulls a published image without further setup.
+//
+// Contributors who are iterating on the runtime image itself
+// (`pnpm image:build` → `monoceros-runtime:dev`) can override this
+// via the `MONOCEROS_BASE_IMAGE_OVERRIDE` env var to point at their
+// local tag without editing source. Empty or whitespace-only values
+// are ignored so an accidentally-set-blank var doesn't break apply.
+const DEFAULT_BASE_IMAGE = 'ghcr.io/getmonoceros/monoceros-runtime:1';
+const override = process.env.MONOCEROS_BASE_IMAGE_OVERRIDE?.trim();
+export const BASE_IMAGE =
+  override && override.length > 0 ? override : DEFAULT_BASE_IMAGE;
 
 export interface LanguageEntry {
   id: string;
