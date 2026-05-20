@@ -158,7 +158,6 @@ install_zsh_completion() {
     target="$dir/_monoceros"
     monoceros completion zsh > "$target"
     ok "  zsh completion → $target (Oh-My-Zsh)"
-    say "  open a new terminal (or run \`exec zsh\`) to activate."
     completion_done=1
     return
   fi
@@ -187,7 +186,6 @@ install_zsh_completion() {
     ok "  zsh completion → $target"
     say "  appended fpath + compinit lines to $rc_file."
   fi
-  say "  open a new terminal (or run \`exec zsh\`) to activate."
   completion_done=1
 }
 
@@ -214,7 +212,6 @@ install_bash_completion() {
     ok "  bash completion → $target"
     say "  appended source line to $rc_file."
   fi
-  say "  open a new terminal (or run \`source ~/.bashrc\`) to activate."
   completion_done=1
 }
 
@@ -229,6 +226,32 @@ case "$user_shell" in
 esac
 
 say ""
-say "Try:  ${BOLD}monoceros init hello --with=node,claude${RESET}"
-say "      then edit ~/.monoceros/monoceros-config.yml and:"
-say "      ${BOLD}monoceros apply hello${RESET}"
+say "${BOLD}Activate in this shell${RESET} (zsh caches PATH-binaries at startup, so a"
+say "freshly-installed \`monoceros\` is only visible after a hash rebuild):"
+case "$user_shell" in
+  zsh)
+    say ""
+    say "  ${BOLD}rehash && exec zsh${RESET}"
+    say ""
+    say "  (\`rehash\` makes \`monoceros\` visible on PATH; \`exec zsh\` reloads zsh"
+    say "  so the new completion script is picked up.)"
+    ;;
+  bash)
+    say ""
+    say "  ${BOLD}hash -r && source ~/.bashrc${RESET}"
+    say ""
+    say "  (\`hash -r\` makes \`monoceros\` visible on PATH; \`source ~/.bashrc\`"
+    say "  reloads the completion.)"
+    ;;
+  *)
+    say "  open a new terminal."
+    ;;
+esac
+
+say ""
+say "${BOLD}First steps${RESET}:"
+say ""
+say "  monoceros init hello --with=node,claude"
+say "  # edit ~/.monoceros/monoceros-config.yml (claude api key etc)"
+say "  monoceros apply hello"
+say "  monoceros shell hello"

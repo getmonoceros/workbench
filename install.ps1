@@ -169,9 +169,18 @@ if ($profileContent -and $profileContent.Contains($marker)) {
   Add-Content -Path $PROFILE -Value $sourceLine
   Ok "  appended dot-source line to `$PROFILE."
 }
-Say '  open a new PowerShell window (or run `. $PROFILE`) to activate.'
+Say ''
+Say 'Activate in this shell:'
+Say ''
+Say '  . $PROFILE'
+Say ''
+Say '  (Reloads your PowerShell profile so the new completion is registered.'
+Say '   The monoceros command itself is already on PATH from npm install.)'
 
 Say ''
-Say 'Try:  monoceros init hello --with=node,claude'
-Say '      then edit %USERPROFILE%\.monoceros\monoceros-config.yml and:'
-Say '      monoceros apply hello'
+Say 'First steps:'
+Say ''
+Say '  monoceros init hello --with=node,claude'
+Say '  # edit %USERPROFILE%\.monoceros\monoceros-config.yml (claude api key etc)'
+Say '  monoceros apply hello'
+Say '  monoceros shell hello'

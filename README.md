@@ -47,9 +47,20 @@ curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install
 iwr -useb https://raw.githubusercontent.com/getmonoceros/workbench/main/install.ps1 | iex
 ```
 
-Nach dem Skript einmal neues Terminal öffnen (oder `exec zsh` /
-`source ~/.bashrc` / neue PowerShell-Session) — danach completed
-`mono<TAB>` auf `monoceros`, `monoceros <TAB>` auf die Subcommands.
+Im selben Terminal direkt weiterarbeiten geht, sobald die Shell den
+PATH-Hash neu aufbaut — zsh cached den Startup-PATH und sieht neu
+installierte Binaries erst nach `rehash`:
+
+```sh
+rehash && exec zsh        # zsh
+hash -r && source ~/.bashrc  # bash
+. $PROFILE                # PowerShell
+```
+
+Das ist kein Monoceros-Spezifikum, sondern Shell-Standard für alles
+was via `npm install -g`, `gem install`, `cargo install` o.ä. in
+einen schon-bekannten PATH-Dir reinkommt. Das Install-Skript druckt
+die passende Zeile am Ende mit aus.
 
 Erster Container:
 
