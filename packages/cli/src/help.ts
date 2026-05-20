@@ -211,12 +211,19 @@ function renderCommandsBlock(entries: SubCommandEntry[]): string[] {
   const renderSection = (label: string, items: SubCommandEntry[]) => {
     if (items.length === 0) return;
     lines.push('');
-    lines.push(`  ${grey(label)}`);
+    // Group label is left-aligned, underlined, in grey — distinct
+    // from the section headers above (which are bold+underlined+white)
+    // through colour + weight. Blank line after gives the items room
+    // to breathe; cyan command labels do the visual separation from
+    // the heading without needing an indent, so commands go flush
+    // left and the descriptions get the full terminal width.
+    lines.push(underline(grey(label)));
+    lines.push('');
     const rows: Array<[string, string]> = items.map((e) => [
       cyan(e.name),
       e.description,
     ]);
-    lines.push(alignTable(rows, '    '));
+    lines.push(alignTable(rows, ''));
   };
 
   for (const { key, label } of GROUPS) {

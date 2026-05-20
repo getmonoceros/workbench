@@ -1,12 +1,24 @@
 # `monoceros completion <shell>`
 
 Druckt ein Shell-Completion-Skript nach stdout. Unterstützt sind
-**bash** und **zsh**.
+**bash**, **zsh** und **pwsh** (PowerShell).
+
+In aller Regel musst du diesen Befehl nicht von Hand aufrufen: das
+[`install.sh`](../../install.sh) bzw.
+[`install.ps1`](../../install.ps1) im Workbench-Root erledigt die
+Completion-Einrichtung automatisch beim Setup. Manueller Aufruf
+nur, wenn du via `npm install -g` ohne Install-Skript gearbeitet
+hast, oder die Einrichtung neu anstoßen willst.
 
 ```sh
-monoceros completion zsh > "${fpath[1]}/_monoceros"
-# oder
-monoceros completion bash > ~/.bash_completion.d/monoceros
+monoceros completion zsh  > "${fpath[1]}/_monoceros"        # zsh
+monoceros completion bash > ~/.bash_completion.d/monoceros  # bash
+```
+
+```powershell
+# PowerShell
+monoceros completion pwsh > $HOME\.config\monoceros\completion.ps1
+Add-Content $PROFILE ". $HOME\.config\monoceros\completion.ps1"
 ```
 
 ## Was completiert wird
@@ -17,7 +29,7 @@ monoceros completion bash > ~/.bash_completion.d/monoceros
   `status`, `remove`, alle `add-*`/`remove-*`-Editoren), werden die
   Container-Namen aus `$MONOCEROS_HOME/container-configs/*.yml`
   vorgeschlagen
-- **`monoceros completion <TAB>`**: schlägt `bash` und `zsh` vor
+- **`monoceros completion <TAB>`**: schlägt `bash`, `zsh` und `pwsh` vor
 
 Nicht completiert: `init <NAME>` (frischer Name), `restore <PATH>`
 (Backup-Pfad), Flags hinter dem ersten positional. Das sind

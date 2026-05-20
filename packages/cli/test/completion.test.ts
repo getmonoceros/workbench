@@ -37,6 +37,19 @@ describe('renderCompletionScript', () => {
     );
   });
 
+  it('pwsh script uses Register-ArgumentCompleter', () => {
+    expect(renderCompletionScript('pwsh')).toMatch(
+      /Register-ArgumentCompleter -Native -CommandName monoceros/,
+    );
+  });
+
+  it('lists every wired subcommand in the pwsh script', () => {
+    const pwsh = renderCompletionScript('pwsh');
+    for (const name of wiredSubcommands) {
+      expect(pwsh).toContain(name);
+    }
+  });
+
   it("emits container-name completion for every container-arg command in zsh's case branch", () => {
     const zsh = renderCompletionScript('zsh');
     for (const name of COMPLETION_CONTAINER_COMMANDS_FOR_TEST) {

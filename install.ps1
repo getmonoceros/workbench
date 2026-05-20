@@ -134,8 +134,43 @@ Once installed, verify with:  monoceros --version
   exit 1
 }
 
-Say ''
 Ok 'Monoceros installed.'
+
+# ── 4. PowerShell completion ──────────────────────────────────────
+# Write the completion script to a user-config location and append a
+# dot-source line to $PROFILE. Idempotent: the source line carries a
+# marker so a repeat install doesn't duplicate it.
+Say ''
+Say 'Installing PowerShell completion…'
+
+$completionDir  = Join-Path $env:USERPROFILE '.config\monoceros'
+$completionFile = Join-Path $completionDir 'completion.ps1'
+$marker         = '# monoceros completion (managed by install.ps1)'
+$sourceLine     = ". `"$completionFile`""
+
+if (-not (Test-Path $completionDir)) {
+  New-Item -ItemType Directory -Path $completionDir -Force | Out-Null
+}
+& monoceros completion pwsh | Out-File -Encoding UTF8 -FilePath $completionFile
+Ok "  PowerShell completion → $completionFile"
+
+# Ensure $PROFILE exists, then add the marker + source line only if
+# the marker isn't already present. $PROFILE is the per-user
+# CurrentUserCurrentHost profile.
+if (-not (Test-Path $PROFILE)) {
+  New-Item -ItemType File -Path $PROFILE -Force | Out-Null
+}
+$profileContent = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
+if ($profileContent -and $profileContent.Contains($marker)) {
+  Ok "  `$PROFILE already wired up."
+} else {
+  Add-Content -Path $PROFILE -Value ''
+  Add-Content -Path $PROFILE -Value $marker
+  Add-Content -Path $PROFILE -Value $sourceLine
+  Ok "  appended dot-source line to `$PROFILE."
+}
+Say '  open a new PowerShell window (or run `. $PROFILE`) to activate.'
+
 Say ''
 Say 'Try:  monoceros init hello --with=node,claude'
 Say '      then edit %USERPROFILE%\.monoceros\monoceros-config.yml and:'

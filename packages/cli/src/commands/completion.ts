@@ -84,7 +84,7 @@ const COMMANDS_WITH_CONTAINER_ARG = [
   'remove-repo',
 ] as const;
 
-const SHELLS = ['bash', 'zsh'] as const;
+const SHELLS = ['bash', 'zsh', 'pwsh'] as const;
 type Shell = (typeof SHELLS)[number];
 
 export function renderCompletionScript(shell: Shell): string {
@@ -125,6 +125,55 @@ export function renderCompletionScript(shell: Shell): string {
       '  fi',
       '}',
       'complete -F _monoceros monoceros',
+      '',
+    ].join('\n');
+  }
+
+  if (shell === 'pwsh') {
+    return [
+      '# PowerShell completion for monoceros',
+      '# install: dot-source this file from your $PROFILE, e.g.',
+      '#   monoceros completion pwsh > $HOME/.config/monoceros/completion.ps1',
+      "#   Add-Content $PROFILE '. $HOME/.config/monoceros/completion.ps1'",
+      '',
+      'Register-ArgumentCompleter -Native -CommandName monoceros -ScriptBlock {',
+      '    param($wordToComplete, $commandAst, $cursorPosition)',
+      '',
+      '    $commands = @(',
+      ...ALL_COMMANDS.map((c) => `        '${c}'`),
+      '    )',
+      `    $shells = @('${SHELLS.join("', '")}')`,
+      '    $containerCommands = @(',
+      ...COMMANDS_WITH_CONTAINER_ARG.map((c) => `        '${c}'`),
+      '    )',
+      '',
+      '    $tokens = $commandAst.CommandElements',
+      '    $position = $tokens.Count',
+      '    if ($wordToComplete) { $position-- }',
+      '',
+      '    if ($position -eq 1) {',
+      '        $commands | Where-Object { $_ -like "$wordToComplete*" } |',
+      '            ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", $_) }',
+      '        return',
+      '    }',
+      '',
+      '    if ($position -eq 2) {',
+      '        $cmd = $tokens[1].Value',
+      '        if ($containerCommands -contains $cmd) {',
+      '            $home = if ($env:MONOCEROS_HOME) { $env:MONOCEROS_HOME } else { Join-Path $env:USERPROFILE ".monoceros" }',
+      '            $configsDir = Join-Path $home "container-configs"',
+      '            if (Test-Path $configsDir) {',
+      '                Get-ChildItem -Path $configsDir -Filter "*.yml" |',
+      '                    ForEach-Object { $_.BaseName } |',
+      '                    Where-Object { $_ -like "$wordToComplete*" } |',
+      '                    ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", $_) }',
+      '            }',
+      '        } elseif ($cmd -eq "completion") {',
+      '            $shells | Where-Object { $_ -like "$wordToComplete*" } |',
+      '                ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", $_) }',
+      '        }',
+      '    }',
+      '}',
       '',
     ].join('\n');
   }
@@ -178,18 +227,18 @@ export const completionCommand = defineCommand({
     name: 'completion',
     group: 'tooling',
     description:
-      'Print a shell completion script for bash or zsh to stdout. Pipe the output into a file your shell loads at startup.',
+      'Print a shell completion script for bash, zsh or PowerShell to stdout. Pipe the output into a file your shell loads at startup. The install scripts (install.sh / install.ps1) call this automatically.',
   },
   args: {
     shell: {
       type: 'positional',
-      description: "Target shell. One of: 'bash', 'zsh'.",
+      description: "Target shell. One of: 'bash', 'zsh', 'pwsh'.",
       required: true,
     },
   },
   run({ args }) {
     const shell = args.shell as string;
-    if (shell !== 'bash' && shell !== 'zsh') {
+    if (shell !== 'bash' && shell !== 'zsh' && shell !== 'pwsh') {
       process.stderr.write(
         `Unknown shell: ${JSON.stringify(shell)}. Supported: ${SHELLS.join(', ')}.\n`,
       );

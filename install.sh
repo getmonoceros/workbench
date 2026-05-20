@@ -135,8 +135,99 @@ EOF
   exit 1
 fi
 
-say ""
 ok "Monoceros installed."
+
+# ── 4. Shell completion ────────────────────────────────────────────
+# Detect the user's login shell and drop the matching completion
+# script into a sensible userspace location. Idempotent: if the
+# expected line is already in the rc file, we skip it.
+say ""
+say "Installing shell completion…"
+
+user_shell="${SHELL##*/}"
+completion_done=0
+
+install_zsh_completion() {
+  local target dir rc_file fpath_line autoload_line marker
+  marker="# monoceros completion (managed by install.sh)"
+
+  # Prefer Oh-My-Zsh's completions dir if it exists — that path is
+  # already on the OMZ-managed $fpath, no rc-file change needed.
+  if [[ -d "$HOME/.oh-my-zsh/completions" ]]; then
+    dir="$HOME/.oh-my-zsh/completions"
+    target="$dir/_monoceros"
+    monoceros completion zsh > "$target"
+    ok "  zsh completion → $target (Oh-My-Zsh)"
+    say "  open a new terminal (or run \`exec zsh\`) to activate."
+    completion_done=1
+    return
+  fi
+
+  # Vanilla zsh: write to ~/.zsh/completions/ and ensure .zshrc has
+  # the fpath + compinit lines (guarded by the marker so we don't
+  # duplicate on repeat installs).
+  dir="$HOME/.zsh/completions"
+  mkdir -p "$dir"
+  target="$dir/_monoceros"
+  monoceros completion zsh > "$target"
+
+  rc_file="$HOME/.zshrc"
+  fpath_line="fpath=(~/.zsh/completions \$fpath)"
+  autoload_line="autoload -Uz compinit && compinit"
+
+  if [[ -f "$rc_file" ]] && grep -qF "$marker" "$rc_file"; then
+    ok "  zsh completion → $target (.zshrc already wired up)"
+  else
+    {
+      echo ""
+      echo "$marker"
+      echo "$fpath_line"
+      echo "$autoload_line"
+    } >> "$rc_file"
+    ok "  zsh completion → $target"
+    say "  appended fpath + compinit lines to $rc_file."
+  fi
+  say "  open a new terminal (or run \`exec zsh\`) to activate."
+  completion_done=1
+}
+
+install_bash_completion() {
+  local target dir rc_file source_line marker
+  marker="# monoceros completion (managed by install.sh)"
+
+  dir="$HOME/.bash_completion.d"
+  mkdir -p "$dir"
+  target="$dir/monoceros"
+  monoceros completion bash > "$target"
+
+  rc_file="$HOME/.bashrc"
+  source_line="source $target"
+
+  if [[ -f "$rc_file" ]] && grep -qF "$marker" "$rc_file"; then
+    ok "  bash completion → $target (.bashrc already wired up)"
+  else
+    {
+      echo ""
+      echo "$marker"
+      echo "$source_line"
+    } >> "$rc_file"
+    ok "  bash completion → $target"
+    say "  appended source line to $rc_file."
+  fi
+  say "  open a new terminal (or run \`source ~/.bashrc\`) to activate."
+  completion_done=1
+}
+
+case "$user_shell" in
+  zsh)  install_zsh_completion ;;
+  bash) install_bash_completion ;;
+  *)
+    warn "  shell '$user_shell' is not auto-supported. To install completion manually:"
+    say "    monoceros completion bash > ~/.bash_completion.d/monoceros   # bash"
+    say "    monoceros completion zsh  > ~/.zsh/completions/_monoceros    # zsh"
+    ;;
+esac
+
 say ""
 say "Try:  ${BOLD}monoceros init hello --with=node,claude${RESET}"
 say "      then edit ~/.monoceros/monoceros-config.yml and:"

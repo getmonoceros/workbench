@@ -62,7 +62,15 @@ monoceros shell hello
 
 Volle Befehlsreferenz unter [`docs/commands/`](docs/commands/).
 
-**Tab-Completion** (empfohlen, einmalig nach dem Install):
+**Tab-Completion** wird vom Install-Skript (`install.sh` /
+`install.ps1`) automatisch mit eingerichtet: erkennt deine Shell
+(bash, zsh, PowerShell), legt das Completion-Skript an passender
+Stelle ab, hängt nötigenfalls eine `source`-/`fpath`-Zeile in deine
+`.zshrc` / `.bashrc` / `$PROFILE`. Idempotent — wiederholter Lauf
+verdoppelt nichts.
+
+Falls du direkt via `npm install -g` installiert hast (ohne
+Install-Skript), oder die Einrichtung manuell wiederholen willst:
 
 ```sh
 # zsh (Oh-My-Zsh)
