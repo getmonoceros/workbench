@@ -1,4 +1,4 @@
-name: CI
+name: Precheck
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ on:
 # Cancel an in-flight run when a new commit lands on the same ref —
 # pushing a fix to a PR shouldn't keep the previous run alive.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

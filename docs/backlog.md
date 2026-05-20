@@ -352,11 +352,12 @@ auf der Platte; gilt nicht mehr als operativ.
    [`docs/MIGRATION-M4.md`](./MIGRATION-M4.md) für bestehende
    yml's. _(erledigt 2026-05-19, 171/171 Tests grün.)_
 
-2. **PR-CI (`ci.yml`)** — GitHub-Actions-Workflow mit
+2. **Precheck-Workflow (`precheck.yml`)** — GitHub-Actions mit
    lint + typecheck + vitest bei jedem PR und Push auf `main`.
-   Ist Voraussetzung für alle weiteren Tasks und ersetzt
-   gleichzeitig die „Staging-Umgebung", die wir bewusst nicht
-   bauen (siehe ADR 0004).
+   Source-Hygiene, kein Build, keine Integration. Ist
+   Voraussetzung für alle weiteren Tasks und ersetzt zusammen mit
+   der SemVer-Pre-Release-Konvention die „Staging-Umgebung", die
+   wir bewusst nicht bauen (siehe ADR 0004). _(erledigt 2026-05-20.)_
 
 3. **Features-Release-Workflow (`release-features.yml`)** —
    Pfad-Trigger `images/features/**`, iteriert über alle
@@ -413,7 +414,7 @@ auf der Platte; gilt nicht mehr als operativ.
 - Eigene Web-UI / Hub
 - Multi-User-Hosting
 - Cloud-Variante
-- Staging-Umgebung (siehe ADR 0004 — wird durch PR-CI +
+- Staging-Umgebung (siehe ADR 0004 — wird durch Precheck +
   SemVer-Pre-Release-Konvention ersetzt)
 - Brew-Tap, WinGet-Manifest, Scoop-Bucket (Wrapper über die
   GitHub-Releases — kommen später falls echte Nachfrage)

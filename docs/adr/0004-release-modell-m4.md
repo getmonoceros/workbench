@@ -78,7 +78,7 @@ Es ist race-safe.
 
 ```
 .github/workflows/
-├── ci.yml               ← lint + typecheck + test auf jedem PR
+├── precheck.yml         ← lint + typecheck + test auf jedem PR
 ├── release-cli.yml      ← CLI-Release (paths: packages/cli/**)
 ├── release-runtime.yml  ← Runtime-Image (paths: images/runtime/**)
 └── release-features.yml ← Alle Features (paths: images/features/**)
@@ -104,9 +104,9 @@ würde die Infrastruktur verdoppeln (jeder Workflow zweimal, jede
 Visibility-Einstellung zweimal, jede Doku doppelt) für einen
 Mehrwert, den drei kleinere Mechanismen sauberer abdecken:
 
-- **PR-CI** (`ci.yml`) — lint, typecheck, vitest. Code muss grün
-  sein, um auf `main` zu landen. Fängt die meisten Fehler vor dem
-  Merge.
+- **Precheck** (`precheck.yml`) — lint, typecheck, vitest auf
+  jedem PR und Push nach `main`. Source-Hygiene, kein Build oder
+  Integration. Code muss grün sein, um auf `main` zu landen.
 - **Lokale Smoke-Strecke** — `pnpm sandbox:reset` baut Runtime-Image
   lokal, scaffolded Sandbox, fährt Container hoch. Wer ein Feature
   oder das Image ändert, fährt das vor dem Merge einmal durch.
@@ -196,7 +196,7 @@ fällt im Implementierungsticket.
 - Die Backlog-M4-Task-Liste wird auf das neue Modell umgeschnitten:
   Task 2 wird „Features-Workflow", Task 3 wird „Runtime-Workflow",
   Task 4 wird „CLI-Release-Workflow inkl. Install-Skripte",
-  Task 7 (CI-Skeleton) wird zu „PR-CI" und ist eigenständig.
+  Task 7 (CI-Skeleton) wird zu „Precheck" und ist eigenständig.
 - Windows ist explizit im Scope. Konsequenzen für die CLI-
   Implementierung (Pfad-Resolution, Binary-Build, Install-Skript)
   müssen ab jetzt mitgedacht werden — kein nachträglicher
