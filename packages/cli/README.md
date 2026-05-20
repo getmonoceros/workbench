@@ -17,16 +17,18 @@ das vorab und geben plattform-spezifische Anleitung aus.
 ## Installation
 
 ```sh
-npm install -g @getmonoceros/workbench
-```
-
-Oder über das Install-Skript:
-
-```sh
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | sh
 ```
 
-Windows: das passende `install.ps1` über PowerShell.
+```powershell
+# Windows (PowerShell)
+iwr -useb https://raw.githubusercontent.com/getmonoceros/workbench/main/install.ps1 | iex
+```
+
+Das Skript prüft Docker + Node, installiert das Paket global via
+`npm install -g`, und richtet die Shell-Completion für deine Shell
+ein.
 
 ## Erste Schritte
 

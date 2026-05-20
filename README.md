@@ -33,7 +33,9 @@ Drei Pfade, je nachdem was du vorhast.
 
 ### 1 — „Ich will Monoceros nutzen"
 
-Mit Skript (prüft Docker + Node und installiert anschließend):
+Das Install-Skript prüft Docker + Node, installiert `monoceros`
+global via npm, und richtet die Shell-Completion für deine Shell
+(bash, zsh oder PowerShell) ein:
 
 ```sh
 # macOS / Linux
@@ -45,11 +47,9 @@ curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install
 iwr -useb https://raw.githubusercontent.com/getmonoceros/workbench/main/install.ps1 | iex
 ```
 
-Oder, wenn du die Voraussetzungen schon kennst, direkt via npm:
-
-```sh
-npm install -g @getmonoceros/workbench
-```
+Nach dem Skript einmal neues Terminal öffnen (oder `exec zsh` /
+`source ~/.bashrc` / neue PowerShell-Session) — danach completed
+`mono<TAB>` auf `monoceros`, `monoceros <TAB>` auf die Subcommands.
 
 Erster Container:
 
@@ -62,27 +62,15 @@ monoceros shell hello
 
 Volle Befehlsreferenz unter [`docs/commands/`](docs/commands/).
 
-**Tab-Completion** wird vom Install-Skript (`install.sh` /
-`install.ps1`) automatisch mit eingerichtet: erkennt deine Shell
-(bash, zsh, PowerShell), legt das Completion-Skript an passender
-Stelle ab, hängt nötigenfalls eine `source`-/`fpath`-Zeile in deine
-`.zshrc` / `.bashrc` / `$PROFILE`. Idempotent — wiederholter Lauf
-verdoppelt nichts.
+Die **Tab-Completion** richtet das Skript automatisch mit ein:
+erkennt deine Shell, legt das Completion-Skript an passender Stelle
+ab und hängt — falls noch nicht vorhanden — die `fpath`/`source`-
+Zeilen in `.zshrc` / `.bashrc` / `$PROFILE`. Idempotent.
 
-Falls du direkt via `npm install -g` installiert hast (ohne
-Install-Skript), oder die Einrichtung manuell wiederholen willst:
-
-```sh
-# zsh (Oh-My-Zsh)
-monoceros completion zsh > ~/.oh-my-zsh/completions/_monoceros
-
-# bash
-monoceros completion bash > ~/.bash_completion.d/monoceros
-echo 'source ~/.bash_completion.d/monoceros' >> ~/.bashrc
-```
-
-Completed werden Subcommands UND Container-Namen aus
-`~/.monoceros/container-configs/`. Details in
+Completed werden der Befehlsname (`mono<TAB>` → `monoceros`),
+Subcommands (`monoceros <TAB>`) und Container-Namen aus
+`~/.monoceros/container-configs/` (z. B. `monoceros apply <TAB>`).
+Details und manuelle Re-Installation in
 [`docs/commands/completion.md`](docs/commands/completion.md).
 
 ### 2 — „Ich entwickle am Workbench"
