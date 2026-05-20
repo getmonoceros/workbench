@@ -399,17 +399,20 @@ auf der Platte; gilt nicht mehr als operativ.
    per Install-Skript installiertes Tool out-of-the-box auf
    `~/.monoceros/` (bzw. `%USERPROFILE%\.monoceros\` auf Windows)
    landet und das Layout bei Bedarf beim ersten Aufruf automatisch
-   angelegt wird. Smoke-Test ohne Workbench-Checkout.
+   angelegt wird. _(verifiziert 2026-05-20 via Sandbox-Install des
+   gerade publishten `@getmonoceros/workbench@1.0.1` in einer
+   frischen tempdir mit `MONOCEROS_HOME` auf eine andere tempdir —
+   `init` legt das Layout selbst an, kein Workbench-Checkout im
+   Pfad nötig.)_
 
-7. **Install-Doku im Workbench-Root** — `README.md` mit drei Pfaden:
-   - „Ich nutze Monoceros" (`curl … | sh` bzw. `install.ps1`)
-   - „Ich entwickle am Workbench" (`pnpm install` + `pnpm cli …`)
-   - „Ich nutze eine bestehende Solution" (Verweis auf
-     `docs/commands/`)
+7. **Install-Doku im Workbench-Root** — `README.md` mit drei
+   Pfaden für „Ich will nutzen / Ich entwickle / Ich nutze eine
+   bestehende Solution". _(erledigt 2026-05-20.)_
 
 8. **`pnpm cli`-Notiz** — README erwähnt, dass `pnpm cli`
    weiterhin Dev-Convenience für Contributors ist, neben dem
-   global installierten `monoceros`-Binary. Kein Code-Change.
+   global installierten `monoceros`-Binary. _(erledigt 2026-05-20
+   als Teil von Task 7.)_
 
 9. **End-to-End-Walkthrough von außen** — auf einer frischen VM
    oder zweitem Rechner: Install via `install.sh` oder
