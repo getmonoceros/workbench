@@ -10,7 +10,7 @@ describe('monoceros main command', () => {
     });
   });
 
-  it('registers the M1 + M2.5 subcommand surface', async () => {
+  it('registers the M1 + M2.5 subcommand surface plus the M4 completion command', async () => {
     const expected = [
       'init',
       'list-components',
@@ -35,6 +35,7 @@ describe('monoceros main command', () => {
       'remove-feature',
       'remove-from-url',
       'remove-repo',
+      'completion',
     ];
 
     const subCommands = main.subCommands;

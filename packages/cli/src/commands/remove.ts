@@ -6,6 +6,7 @@ import { runRemove } from '../remove/index.js';
 export const removeCommand = defineCommand({
   meta: {
     name: 'remove',
+    group: 'lifecycle',
     description:
       'Wipe everything belonging to a container: stop and remove the docker objects, back up the container-configs yml + container directory (incl. home/, projects/, data/), then delete them from disk. Shared docker images stay. By default the destructive step is confirmed interactively; pass -y to skip.',
   },

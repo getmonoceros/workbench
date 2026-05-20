@@ -7,6 +7,7 @@ import { runAddFeature } from '../modify/index.js';
 export const addFeatureCommand = defineCommand({
   meta: {
     name: 'add-feature',
+    group: 'edit',
     description:
       'Add a devcontainer feature by ref to the container config. Options follow `--` as `key=value` pairs. Idempotent (same ref + same options is a no-op). Adding the same ref with different options is an error.',
   },

@@ -6,6 +6,7 @@ import { runAddAptPackages } from '../modify/index.js';
 export const addAptPackagesCommand = defineCommand({
   meta: {
     name: 'add-apt-packages',
+    group: 'edit',
     description:
       'Add Debian/Ubuntu apt packages to the container config. Pass package names after `--` (e.g. `monoceros add-apt-packages sandbox -- make openssh-client jq`). Idempotent. No curated whitelist — invalid names surface as apt errors at container build time.',
   },

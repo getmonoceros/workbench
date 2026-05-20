@@ -5,6 +5,7 @@ import { runAddService } from '../modify/index.js';
 export const addServiceCommand = defineCommand({
   meta: {
     name: 'add-service',
+    group: 'edit',
     description:
       'Add a compose service (postgres, mysql, redis, …) to the container config. Idempotent, prints a diff before writing.',
   },

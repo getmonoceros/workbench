@@ -6,6 +6,7 @@ import { addRepoCommand } from './commands/add-repo.js';
 import { addLanguageCommand } from './commands/add-language.js';
 import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
+import { completionCommand } from './commands/completion.js';
 import { initCommand } from './commands/init.js';
 import { listComponentsCommand } from './commands/list-components.js';
 import { logsCommand } from './commands/logs.js';
@@ -55,5 +56,6 @@ export const main = defineCommand({
     'remove-feature': removeFeatureCommand,
     'remove-from-url': removeFromUrlCommand,
     'remove-repo': removeRepoCommand,
+    completion: completionCommand,
   },
 });

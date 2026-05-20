@@ -5,6 +5,7 @@ import { runInit } from '../init/index.js';
 export const initCommand = defineCommand({
   meta: {
     name: 'init',
+    group: 'lifecycle',
     description:
       'Create a fresh container-config yml at .local/container-configs/<name>.yml. Without --with, the file is a documented default with every component commented out. With --with=<names>, the named components are composed into an active, immediately-applyable yml. Then run `monoceros apply <name>`.',
   },

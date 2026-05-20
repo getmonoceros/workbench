@@ -5,6 +5,7 @@ import { runRemoveLanguage } from '../modify/index.js';
 export const removeLanguageCommand = defineCommand({
   meta: {
     name: 'remove-language',
+    group: 'edit',
     description:
       'Remove a language toolchain from the container config. Idempotent, prints a diff before writing.',
   },

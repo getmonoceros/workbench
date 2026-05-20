@@ -98,6 +98,12 @@ monoceros apply <name>                                    # neu bauen, picks up 
 | `monoceros remove-from-url <name> <url>`     | Install-URL entfernen (Install-Resultat bleibt im aktuellen Container) | [remove-from-url.md](./remove-from-url.md)         |
 | `monoceros remove-repo <name> <url-or-name>` | Repo-Eintrag entfernen (lokaler `projects/<folder>/`-Folder bleibt)    | [remove-repo.md](./remove-repo.md)                 |
 
+## Tooling
+
+| Befehl                         | Zweck                                                         | Detail                           |
+| ------------------------------ | ------------------------------------------------------------- | -------------------------------- |
+| `monoceros completion <shell>` | Shell-Completion-Skript für bash oder zsh nach stdout drucken | [completion.md](./completion.md) |
+
 ## Konventionen für alle Konfig-Befehle
 
 Jeder `add-*`/`remove-*`-Befehl ist **idempotent**: gleicher Aufruf

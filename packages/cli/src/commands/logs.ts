@@ -6,6 +6,7 @@ import { dispatch } from './_dispatch.js';
 export const logsCommand = defineCommand({
   meta: {
     name: 'logs',
+    group: 'run',
     description:
       'Tail logs from the compose services of the named dev-container. Pass --no-follow for a one-shot dump.',
   },

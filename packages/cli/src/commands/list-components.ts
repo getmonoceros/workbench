@@ -5,6 +5,7 @@ import { loadComponentCatalog } from '../init/components.js';
 export const listComponentsCommand = defineCommand({
   meta: {
     name: 'list-components',
+    group: 'discovery',
     description:
       'Print the components catalog used by `monoceros init --with=…`. Each line is `name<TAB>category<TAB>displayName`, grouped by category for readability.',
   },

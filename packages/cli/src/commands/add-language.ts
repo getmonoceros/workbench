@@ -5,6 +5,7 @@ import { runAddLanguage } from '../modify/index.js';
 export const addLanguageCommand = defineCommand({
   meta: {
     name: 'add-language',
+    group: 'edit',
     description:
       'Add a language toolchain (devcontainer feature) to the container config. Idempotent, prints a diff before writing.',
   },

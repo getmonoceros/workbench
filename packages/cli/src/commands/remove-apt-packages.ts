@@ -6,6 +6,7 @@ import { runRemoveAptPackages } from '../modify/index.js';
 export const removeAptPackagesCommand = defineCommand({
   meta: {
     name: 'remove-apt-packages',
+    group: 'edit',
     description:
       'Remove apt packages from the container config. Pass package names after `--` (e.g. `monoceros remove-apt-packages sandbox -- make jq`). Idempotent, prints a diff before writing.',
   },

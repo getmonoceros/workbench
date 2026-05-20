@@ -6,6 +6,7 @@ import { dispatch } from './_dispatch.js';
 export const startCommand = defineCommand({
   meta: {
     name: 'start',
+    group: 'run',
     description:
       'Bring the named dev-container up via `devcontainer up` (workspace + runServices, postCreate, features).',
   },

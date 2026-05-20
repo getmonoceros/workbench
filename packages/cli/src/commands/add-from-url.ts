@@ -5,6 +5,7 @@ import { runAddFromUrl } from '../modify/index.js';
 export const addFromUrlCommand = defineCommand({
   meta: {
     name: 'add-from-url',
+    group: 'edit',
     description:
       'Add an https:// install URL to the container config. The URL gets piped to sh on every container rebuild. Loudly warns about remote-code execution before persisting. Idempotent.',
   },

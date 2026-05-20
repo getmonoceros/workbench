@@ -5,6 +5,7 @@ import { runRemoveFeature } from '../modify/index.js';
 export const removeFeatureCommand = defineCommand({
   meta: {
     name: 'remove-feature',
+    group: 'edit',
     description:
       'Remove a devcontainer feature from the container config (by its OCI ref). Idempotent, prints a diff before writing.',
   },

@@ -5,6 +5,7 @@ import { runRemoveFromUrl } from '../modify/index.js';
 export const removeFromUrlCommand = defineCommand({
   meta: {
     name: 'remove-from-url',
+    group: 'edit',
     description:
       'Remove a previously-added install URL from the container config. Idempotent, prints a diff before writing. The URL is dropped from post-create.sh on the next `monoceros apply`.',
   },

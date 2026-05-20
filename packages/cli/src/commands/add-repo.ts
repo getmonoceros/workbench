@@ -5,6 +5,7 @@ import { runAddRepo } from '../modify/index.js';
 export const addRepoCommand = defineCommand({
   meta: {
     name: 'add-repo',
+    group: 'edit',
     description:
       'Add a git repo to the container config. Cloned into projects/<folder>/ on container build. Idempotent — existing project subfolders are left alone. Folder name derived from URL by default; override with --as.',
   },

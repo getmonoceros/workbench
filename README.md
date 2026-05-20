@@ -62,6 +62,21 @@ monoceros shell hello
 
 Volle Befehlsreferenz unter [`docs/commands/`](docs/commands/).
 
+**Tab-Completion** (empfohlen, einmalig nach dem Install):
+
+```sh
+# zsh (Oh-My-Zsh)
+monoceros completion zsh > ~/.oh-my-zsh/completions/_monoceros
+
+# bash
+monoceros completion bash > ~/.bash_completion.d/monoceros
+echo 'source ~/.bash_completion.d/monoceros' >> ~/.bashrc
+```
+
+Completed werden Subcommands UND Container-Namen aus
+`~/.monoceros/container-configs/`. Details in
+[`docs/commands/completion.md`](docs/commands/completion.md).
+
 ### 2 — „Ich entwickle am Workbench"
 
 Klonen, installieren, lokales CLI per `pnpm` aufrufen (statt global

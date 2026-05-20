@@ -7,6 +7,7 @@ import { getInnerArgs } from '../inner-args.js';
 export const runCommand = defineCommand({
   meta: {
     name: 'run',
+    group: 'run',
     description:
       'Run a one-off command inside the named dev-container. Use `--` to separate monoceros flags from the inner command.',
   },

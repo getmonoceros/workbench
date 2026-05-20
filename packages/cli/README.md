@@ -37,6 +37,13 @@ monoceros apply hello
 monoceros shell hello
 ```
 
+Tab-Completion einmalig einrichten:
+
+```sh
+monoceros completion zsh > ~/.oh-my-zsh/completions/_monoceros   # zsh
+monoceros completion bash > ~/.bash_completion.d/monoceros       # bash
+```
+
 Volle Befehlsreferenz unter
 [docs/commands/](https://github.com/getmonoceros/workbench/tree/main/docs/commands).
 

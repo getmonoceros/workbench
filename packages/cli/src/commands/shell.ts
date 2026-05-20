@@ -6,6 +6,7 @@ import { runShell } from '../devcontainer/shell.js';
 export const shellCommand = defineCommand({
   meta: {
     name: 'shell',
+    group: 'run',
     description:
       'Open an interactive bash session inside the named dev-container.',
   },

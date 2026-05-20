@@ -15,6 +15,7 @@ import { dispatch } from './_dispatch.js';
 export const applyCommand = defineCommand({
   meta: {
     name: 'apply',
+    group: 'lifecycle',
     description:
       'Materialize a container config into $MONOCEROS_HOME/container/<name>/ and bring the dev-container up. Close any VS Code Remote Containers session for the target first — the extension auto-recreates and races with apply.',
   },

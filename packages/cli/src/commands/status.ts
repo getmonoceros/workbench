@@ -6,6 +6,7 @@ import { dispatch } from './_dispatch.js';
 export const statusCommand = defineCommand({
   meta: {
     name: 'status',
+    group: 'run',
     description:
       'Show whether the compose services for the named dev-container are running.',
   },

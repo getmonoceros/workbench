@@ -5,6 +5,7 @@ import { runRestore } from '../restore/index.js';
 export const restoreCommand = defineCommand({
   meta: {
     name: 'restore',
+    group: 'lifecycle',
     description:
       "Restore a container's host-side state from a backup written by `monoceros remove`. Copies the yml and the container directory back into $MONOCEROS_HOME. Refuses to overwrite an existing config or container — remove the in-place container first if you need to clobber. Run `monoceros apply <name>` afterwards to bring it back up.",
   },

@@ -5,6 +5,7 @@ import { runRemoveRepo } from '../modify/index.js';
 export const removeRepoCommand = defineCommand({
   meta: {
     name: 'remove-repo',
+    group: 'edit',
     description:
       'Remove a repo from the container config (matches by URL or by its projects/<folder> name). Does NOT delete the existing projects/<folder> directory — local edits are preserved; clean it up manually.',
   },

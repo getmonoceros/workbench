@@ -5,6 +5,7 @@ import { runRemoveService } from '../modify/index.js';
 export const removeServiceCommand = defineCommand({
   meta: {
     name: 'remove-service',
+    group: 'edit',
     description:
       'Remove a compose service from the container config. Idempotent, prints a diff before writing. Note: data volumes (e.g. postgres-data) are NOT cleaned up automatically.',
   },

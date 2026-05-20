@@ -6,6 +6,7 @@ import { dispatch } from './_dispatch.js';
 export const stopCommand = defineCommand({
   meta: {
     name: 'stop',
+    group: 'run',
     description:
       'Stop the compose services for the named dev-container. Volumes are preserved.',
   },
