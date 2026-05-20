@@ -384,14 +384,16 @@ auf der Platte; gilt nicht mehr als operativ.
    bei fehlender Voraussetzung plattform-spezifische
    Installations-Hinweise (System-Pakete + Per-User-Manager) +
    exit 1, sonst `npm install -g @getmonoceros/workbench`.
-   Vor-Bedingung für den ersten Publish:
-   `npm`-Automation-Token unter
-   <https://www.npmjs.com/settings/getmonoceros/tokens> erzeugen,
-   als Repository-Secret `NPM_TOKEN` hinterlegen.
-   `packages/cli/package.json` braucht außerdem Publish-Setup
-   (`private` raus, `description`, `repository`, `homepage`,
-   `license`, `files`, `bin`, `prepublishOnly`, tsup-Build auf
-   `dist/`).
+   Auth via **npm Trusted Publishing** (OIDC) — kein Secret im Repo.
+   Bootstrap-Sequenz: erst lokal `npm login` + `npm publish` für
+   den ersten Publish (claimt den Scope), dann Trusted Publisher
+   auf <https://www.npmjs.com/package/@getmonoceros/workbench/access>
+   konfigurieren (Org `getmonoceros`, Repo `workbench`, Workflow
+   `release-cli.yml`). Folge-Releases laufen vollautomatisch über
+   den Workflow.
+   `packages/cli/package.json` braucht Publish-Setup (`private`
+   raus, `description`, `repository`, `homepage`, `license`,
+   `files`, `bin`, `prepublishOnly`, tsup-Build auf `dist/`).
 
 6. **`MONOCEROS_HOME`-Default schärfen** — sicherstellen, dass ein
    per Install-Skript installiertes Tool out-of-the-box auf

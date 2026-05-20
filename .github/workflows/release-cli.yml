@@ -7,6 +7,15 @@ name: Release CLI
 # entire release signal — analog zu release-features und
 # release-runtime, siehe ADR 0004 + ADR 0005.
 #
+# Authentication is via npm Trusted Publishing (OIDC) — no
+# long-lived NPM_TOKEN, no repository secret. The matching
+# Trusted Publisher must be configured once on
+# https://www.npmjs.com/package/@getmonoceros/workbench/access
+# (org `getmonoceros`, repo `workbench`, this workflow's filename).
+# That configuration only becomes possible after the package exists,
+# so the initial `1.0.0` publish happens manually from a maintainer's
+# machine; subsequent version-bumps go through this workflow.
+#
 # Distribution: npm registry. Builders installieren entweder direkt
 # via `npm install -g @getmonoceros/workbench` oder über das
 # install.sh / install.ps1 Bouncer-Skript im Repo-Root.
@@ -19,6 +28,10 @@ on:
 
 permissions:
   contents: read
+  # Required by npm Trusted Publishing — lets the workflow ask
+  # GitHub's OIDC provider for a short-lived token that the npm
+  # registry trusts via the package's configured Trusted Publisher.
+  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}
@@ -40,13 +53,19 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          # registry-url makes setup-node configure the npm auth file
-          # to pick up NODE_AUTH_TOKEN below. Required for npm publish
-          # against the public registry from CI.
+          # Tells setup-node + npm to publish against the public
+          # registry. No auth token here — that's the whole point of
+          # OIDC trusted publishing.
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Ensure npm CLI supports trusted publishing
+        # npm Trusted Publishing needs npm CLI >= 11.5.1. The Node 22
+        # default ships an older npm, so we upgrade in-place inside
+        # this job. Cheap, no system-wide effect.
+        run: npm install -g npm@latest
 
       - name: Read version
         id: ver
@@ -74,14 +93,15 @@ jobs:
             echo "::notice title=publish::$PACKAGE@$version needs publishing"
           fi
 
-      - name: Publish to npm
+      - name: Publish to npm (OIDC)
         if: steps.check.outputs.skip == 'false'
         working-directory: packages/cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         # `prepublishOnly` in packages/cli/package.json runs typecheck
-        # + test + build before npm assembles the tarball, so this one
-        # line covers the full safety net.
+        # + test + build before npm assembles the tarball. No
+        # NODE_AUTH_TOKEN — npm exchanges the OIDC token from GitHub
+        # for a short-lived registry token at publish time. Provenance
+        # is auto-attached for trusted-publishing runs, no explicit
+        # --provenance flag needed.
         run: npm publish --access public
 
       - name: Summary
@@ -92,7 +112,7 @@ jobs:
             if [[ "${{ steps.check.outputs.skip }}" == "true" ]]; then
               echo "**Skipped:** \`$PACKAGE@${{ steps.ver.outputs.version }}\` was already on npm."
             else
-              echo "**Published:** \`$PACKAGE@${{ steps.ver.outputs.version }}\`"
+              echo "**Published:** \`$PACKAGE@${{ steps.ver.outputs.version }}\` via OIDC trusted publishing"
               echo
               echo "Install: \`npm install -g $PACKAGE\`"
             fi

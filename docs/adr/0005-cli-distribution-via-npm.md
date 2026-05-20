@@ -88,8 +88,20 @@ getriggerte Pipelines". Der CLI-Release-Workflow
 - Vergleicht gegen die npm-Registry (`npm view @getmonoceros/workbench@<version>`)
 - Bei neu: `npm publish --access public`, sonst skip
 
-Auth über `NPM_TOKEN`-Secret im Repository (Automation-Token, das die
-2FA-Pflicht auf Publish umgeht).
+Auth über **npm Trusted Publishing** (OIDC) — kein langlebiger Token
+im Repository, keine 2FA-Bypass-Sonderform. Der Workflow tauscht
+einen kurzlebigen OIDC-Token von GitHub gegen einen Publish-Token
+des npm-Registries, das die Beziehung zwischen Workflow und Paket
+in den Trusted-Publisher-Einstellungen des Pakets kennt. Provenance-
+Attestation wird automatisch mitgesigned.
+
+Caveat: npm Trusted Publishing setzt voraus, dass das Paket bereits
+existiert (siehe [npm/cli#8544](https://github.com/npm/cli/issues/8544)).
+Der allererste Publish von `@getmonoceros/workbench@1.0.0` läuft
+daher manuell von der Maintainer-Maschine (`npm login` mit 2FA →
+`npm publish --access public`). Danach wird der Trusted Publisher
+auf npmjs.com konfiguriert und alle weiteren Releases laufen
+automatisch über den Workflow.
 
 ## Konsequenzen
 
@@ -111,11 +123,16 @@ Auth über `NPM_TOKEN`-Secret im Repository (Automation-Token, das die
 - **Backlog M4 Task 5** wird kleiner und konkreter: ein npm-Publish-
   Workflow plus zwei Bouncer-Skripte, statt einer
   Plattform-Matrix-Build-Pipeline.
-- **NPM_TOKEN-Setup als zusätzliche Vorbedingung für M4-
-  Abschluss:** Automation-Token unter
-  <https://www.npmjs.com/settings/getmonoceros/tokens> erzeugen, als
-  Repository-Secret `NPM_TOKEN` in `getmonoceros/workbench`
-  hinterlegen.
+- **Bootstrap-Sequenz für den ersten Publish:**
+  1. Lokal `cd packages/cli && npm login && npm publish --access public`
+     — claimt den `@getmonoceros`-Scope und legt
+     `@getmonoceros/workbench@1.0.0` an.
+  2. Trusted Publisher auf
+     <https://www.npmjs.com/package/@getmonoceros/workbench/access>
+     konfigurieren: Org `getmonoceros`, Repo `workbench`, Workflow
+     `release-cli.yml`.
+  3. Ab dem nächsten Versions-Bump publisht der Workflow ohne
+     Token-Setup auf der Repo-Seite.
 
 ## Nicht-Ziele dieser ADR
 
