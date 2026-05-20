@@ -51,7 +51,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Node 24 ships with npm >= 11, which is the minimum for
+          # OIDC trusted publishing. Node 22 has npm 10.9.x and
+          # would need an in-place self-upgrade that hits
+          # https://github.com/nodejs/node/issues/62430. Precheck
+          # stays on Node 22 (matches local), only the release-cli
+          # workflow needs the newer npm.
+          node-version: 24
           cache: pnpm
           # Tells setup-node + npm to publish against the public
           # registry. No auth token here — that's the whole point of
@@ -60,12 +66,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Ensure npm CLI supports trusted publishing
-        # npm Trusted Publishing needs npm CLI >= 11.5.1. The Node 22
-        # default ships an older npm, so we upgrade in-place inside
-        # this job. Cheap, no system-wide effect.
-        run: npm install -g npm@latest
 
       - name: Read version
         id: ver
