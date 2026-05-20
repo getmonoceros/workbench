@@ -1,0 +1,94 @@
+name: Release Features
+
+# Triggered when something under images/features/ lands on main. The
+# workflow iterates all feature directories, reads the version from
+# each manifest, and only publishes features whose version isn't
+# already in GHCR. Version bump in `devcontainer-feature.json` is the
+# entire release signal — no tags, no manual buttons.
+#
+# Generic over N features: a new `images/features/<name>/` directory
+# is picked up by the loop automatically, no workflow change needed.
+#
+# Per ADR 0004 § "Version-getriggerte Pipelines".
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'images/features/**'
+  # Manual trigger as a safety net (re-run after fixing the workflow,
+  # bootstrapping a new feature without a code change, etc).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Required for the workflow GITHUB_TOKEN to push OCI artifacts to
+  # ghcr.io/getmonoceros/monoceros-features/*.
+  packages: write
+
+# Don't cancel an in-flight publish if another commit lands — let it
+# finish, the next run will pick up whatever's new after that.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish updated features
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish features with bumped versions
+        env:
+          NAMESPACE: getmonoceros/monoceros-features
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          published=()
+          skipped=()
+
+          for dir in images/features/*/; do
+            manifest="$dir/devcontainer-feature.json"
+            [[ -f "$manifest" ]] || continue
+
+            name=$(jq -r .id "$manifest")
+            version=$(jq -r .version "$manifest")
+            ref="ghcr.io/$NAMESPACE/$name:$version"
+
+            if docker manifest inspect "$ref" >/dev/null 2>&1; then
+              echo "::notice title=skip::$name@$version already in registry"
+              skipped+=("$name@$version")
+              continue
+            fi
+
+            echo "::notice title=publish::$name@$version → $ref"
+            npx -y @devcontainers/cli features publish \
+              --namespace "$NAMESPACE" \
+              "$dir"
+            published+=("$name@$version")
+          done
+
+          {
+            echo "## Features Release Summary"
+            echo
+            if [[ ${#published[@]} -gt 0 ]]; then
+              echo "**Published (${#published[@]}):**"
+              printf -- "- %s\n" "${published[@]}"
+            else
+              echo "**Published:** none — every feature's manifest version was already in GHCR."
+            fi
+            echo
+            if [[ ${#skipped[@]} -gt 0 ]]; then
+              echo "**Skipped (${#skipped[@]}):**"
+              printf -- "- %s\n" "${skipped[@]}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
