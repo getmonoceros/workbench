@@ -196,6 +196,3 @@ describe('runRemove', () => {
     expect(dirsLeft).toContain('sandbox');
   });
 });
-
-// Helper type for the stub above.
-type spawnStub = (args: string[]) => Promise<number>;

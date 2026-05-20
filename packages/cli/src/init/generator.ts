@@ -1,8 +1,4 @@
-import type {
-  Component,
-  MergedComponents,
-  ResolvedComponent,
-} from './components.js';
+import type { Component, ResolvedComponent } from './components.js';
 import { mergeComponents } from './components.js';
 import type { FeatureManifestSummary } from './manifest.js';
 
