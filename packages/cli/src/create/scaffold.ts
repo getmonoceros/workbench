@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import { workbenchRoot } from '../config/paths.js';
+import { workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 import {
   BASE_IMAGE,
@@ -331,13 +331,16 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
       const match = matchMonocerosFeature(rawRef);
       if (match) {
         const name = match.name;
-        const localSourceDir = path.join(
-          workbenchRoot(),
-          'images',
-          'features',
-          name,
-        );
-        if (existsSync(localSourceDir)) {
+        // Dev-only fallback: when the CLI is run from a workbench
+        // checkout, prefer the on-disk copy under `images/features/`
+        // so feature edits are testable without a publish. In prod
+        // (npm-installed), `workbenchCheckoutRoot()` returns null
+        // and we fall through to the GHCR-ref passthrough.
+        const checkout = workbenchCheckoutRoot();
+        const localSourceDir = checkout
+          ? path.join(checkout, 'images', 'features', name)
+          : null;
+        if (localSourceDir && existsSync(localSourceDir)) {
           const { paths, files } = readPersistentHomeEntries(localSourceDir);
           resolved.push({
             devcontainerKey: `./features/${name}`,

@@ -6,6 +6,7 @@ import {
   containerConfigsDir,
   monocerosHome as defaultMonocerosHome,
   workbenchRoot as defaultWorkbenchRoot,
+  workbenchCheckoutRoot,
   componentsDir as defaultComponentsDir,
 } from '../config/paths.js';
 import { REGEX } from '../config/schema.js';
@@ -93,7 +94,15 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     );
   }
 
-  const lookup = (ref: string) => loadFeatureManifestSummary(ref, workbench);
+  // Feature manifests live at the workbench-checkout root, not in
+  // the CLI bundle. In tests the fixture sets `workbenchRoot` to a
+  // dir that happens to hold both the templates *and* an
+  // `images/features/` tree; honour that override. In real use we
+  // fall back to `workbenchCheckoutRoot()` which returns null when
+  // the CLI is run from an npm install — manifest lookups then
+  // return undefined and init renders without optionHints.
+  const checkoutRoot = opts.workbenchRoot ?? workbenchCheckoutRoot();
+  const lookup = (ref: string) => loadFeatureManifestSummary(ref, checkoutRoot);
 
   let text: string;
   const requested = opts.with ?? [];

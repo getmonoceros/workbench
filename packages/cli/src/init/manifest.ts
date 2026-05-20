@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { workbenchRoot as defaultWorkbenchRoot } from '../config/paths.js';
+import { workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 
 /**
@@ -17,6 +17,11 @@ import { matchMonocerosFeature } from '../util/ref.js';
  * resolved — for third-party features we don't have the manifest on
  * disk at init time. The fallback is "no hints", which is exactly
  * right: we don't speculate about other people's feature options.
+ *
+ * Manifests live at the **workbench checkout root**, not inside the
+ * shipped CLI bundle. In production (npm-installed CLI) the checkout
+ * isn't present, so the loader returns "no hints" — `init` keeps
+ * working, just without the commented suggestion lines.
  */
 
 export interface FeatureManifestSummary {
@@ -26,13 +31,14 @@ export interface FeatureManifestSummary {
 
 export function loadFeatureManifestSummary(
   ref: string,
-  workbenchRoot: string = defaultWorkbenchRoot(),
+  checkoutRoot: string | null = workbenchCheckoutRoot(),
 ): FeatureManifestSummary | undefined {
+  if (!checkoutRoot) return undefined;
   const match = matchMonocerosFeature(ref);
   if (!match) return undefined;
   const name = match.name;
   const manifestPath = path.join(
-    workbenchRoot,
+    checkoutRoot,
     'images',
     'features',
     name,

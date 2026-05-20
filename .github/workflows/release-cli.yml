@@ -1,0 +1,99 @@
+name: Release CLI
+
+# Triggered when anything under packages/cli/ lands on main. The
+# workflow reads the version from packages/cli/package.json and only
+# publishes if that version isn't already in the npm registry under
+# `@getmonoceros/workbench`. Bumping the manifest version is the
+# entire release signal — analog zu release-features und
+# release-runtime, siehe ADR 0004 + ADR 0005.
+#
+# Distribution: npm registry. Builders installieren entweder direkt
+# via `npm install -g @getmonoceros/workbench` oder über das
+# install.sh / install.ps1 Bouncer-Skript im Repo-Root.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/cli/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish @getmonoceros/workbench
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PACKAGE: '@getmonoceros/workbench'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          # registry-url makes setup-node configure the npm auth file
+          # to pick up NODE_AUTH_TOKEN below. Required for npm publish
+          # against the public registry from CI.
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Read version
+        id: ver
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version packages/cli/package.json)
+          if [[ -z "$version" || "$version" == "null" ]]; then
+            echo "::error::packages/cli/package.json has no version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice::version=$version"
+
+      - name: Check if version is already published
+        id: check
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          existing=$(npm view "$PACKAGE@$version" version 2>/dev/null || true)
+          if [[ -n "$existing" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=skip::$PACKAGE@$version already on npm"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=publish::$PACKAGE@$version needs publishing"
+          fi
+
+      - name: Publish to npm
+        if: steps.check.outputs.skip == 'false'
+        working-directory: packages/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # `prepublishOnly` in packages/cli/package.json runs typecheck
+        # + test + build before npm assembles the tarball, so this one
+        # line covers the full safety net.
+        run: npm publish --access public
+
+      - name: Summary
+        run: |
+          {
+            echo "## CLI Release Summary"
+            echo
+            if [[ "${{ steps.check.outputs.skip }}" == "true" ]]; then
+              echo "**Skipped:** \`$PACKAGE@${{ steps.ver.outputs.version }}\` was already on npm."
+            else
+              echo "**Published:** \`$PACKAGE@${{ steps.ver.outputs.version }}\`"
+              echo
+              echo "Install: \`npm install -g $PACKAGE\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

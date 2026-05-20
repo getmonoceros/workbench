@@ -1,7 +1,5 @@
 // Single source of truth for the CLI version. Kept in sync with
-// packages/cli/package.json by hand for now.
-//
-// Versioning policy: one minor version per milestone (0.1.x = M1,
-// 0.2.x = M2, 0.3.x = M3, 1.0.0 = public). `-dev` marks an open
-// milestone; it drops when the milestone's Definition of Done is met.
-export const CLI_VERSION = '0.1.0-dev';
+// `packages/cli/package.json` by hand — the release-cli workflow
+// reads the value from `package.json` and refuses to publish if the
+// two are out of step, so a manual desync gets caught loudly.
+export const CLI_VERSION = '1.0.0';

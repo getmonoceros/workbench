@@ -1,16 +1,43 @@
 {
   "name": "@getmonoceros/workbench",
-  "version": "0.1.0-dev",
-  "private": true,
+  "version": "1.0.0",
+  "description": "Monoceros workbench CLI — local, reproducible dev containers with first-class AI coding tooling.",
+  "keywords": [
+    "devcontainer",
+    "docker",
+    "cli",
+    "ai-coding",
+    "claude-code",
+    "monoceros"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getmonoceros/workbench.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/getmonoceros/workbench#readme",
+  "bugs": {
+    "url": "https://github.com/getmonoceros/workbench/issues"
+  },
   "type": "module",
-  "description": "Monoceros workbench CLI — devcontainer lifecycle and (later) iteration pipeline.",
   "bin": {
-    "monoceros": "./src/bin.ts"
+    "monoceros": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
   },
   "scripts": {
     "start": "tsx src/bin.ts",
     "typecheck": "tsc --build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "tsup",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
     "@devcontainers/cli": "^0.86.1",
@@ -22,6 +49,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "tsup": "^8.5.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"

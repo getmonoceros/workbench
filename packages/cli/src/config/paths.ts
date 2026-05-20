@@ -32,9 +32,11 @@ import { fileURLToPath } from 'node:url';
 
 const MONOCEROS_HOME_MARKER = 'monoceros-config.sample.yml';
 const WORKBENCH_MARKER = path.join('templates', 'components', 'README.md');
+const CHECKOUT_MARKER = 'pnpm-workspace.yaml';
 
 let cachedWorkbenchRoot: string | null = null;
 let cachedMonocerosHome: string | null = null;
+let cachedCheckoutRoot: string | null | undefined = undefined;
 
 /**
  * Walk upwards from this module until we find the workbench checkout's
@@ -100,10 +102,43 @@ export function monocerosHome(opts: { force?: boolean } = {}): string {
   return cachedMonocerosHome;
 }
 
+/**
+ * Walk upwards from this module to find the workbench checkout root,
+ * marked by `pnpm-workspace.yaml`. Distinct from `workbenchRoot()`:
+ *
+ *   - `workbenchRoot()` returns where the **CLI bundle** lives —
+ *     `packages/cli/` in dev, the installed package directory in prod.
+ *   - `workbenchCheckoutRoot()` returns where the **full workbench
+ *     checkout** lives. Only meaningful in dev; returns `null` in
+ *     prod (the marker doesn't ship with the npm package).
+ *
+ * Used by features like the dev-only local-source-fallback in
+ * `resolveFeatures`, where we want to look at `images/features/<name>/`
+ * at the checkout root — not inside the CLI package, where that
+ * directory deliberately doesn't exist.
+ */
+export function workbenchCheckoutRoot(): string | null {
+  if (cachedCheckoutRoot !== undefined) return cachedCheckoutRoot;
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  while (true) {
+    if (existsSync(path.join(dir, CHECKOUT_MARKER))) {
+      cachedCheckoutRoot = dir;
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      cachedCheckoutRoot = null;
+      return null;
+    }
+    dir = parent;
+  }
+}
+
 /** Reset cached lookups. Test-only. */
 export function _resetPathCachesForTests(): void {
   cachedWorkbenchRoot = null;
   cachedMonocerosHome = null;
+  cachedCheckoutRoot = undefined;
 }
 
 // ─── CLI-bundle paths (templates) ─────────────────────────────────
