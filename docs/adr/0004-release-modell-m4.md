@@ -128,15 +128,15 @@ statt der Stable. Das ist Folge-Arbeit, nicht M4-Scope.
 ### Was beim Builder lokal landet — und was nicht
 
 Beim Install kommt **nur die CLI selbst** auf den Rechner: das
-Binary, das Templates-Verzeichnis (`templates/components/`, das
-`monoceros init --with=…` komponiert) und die User-Doku
-(`docs/commands/`, auf die generierte Solution-READMEs verlinken).
-Plattformspezifischer Pfad (XDG bzw. Windows-Local-App-Data):
-
-| Plattform    | Tool-Install-Pfad                              | Binary-Eintragspunkt                                     |
-| ------------ | ---------------------------------------------- | -------------------------------------------------------- |
-| macOS, Linux | `~/.local/share/monoceros/<version>/`          | Symlink `~/.local/bin/monoceros` (User-PATH)             |
-| Windows      | `%LOCALAPPDATA%\Programs\monoceros\<version>\` | PATH-Eintrag oder `monoceros.exe` direkt in WinGet-Links |
+Paket mit unserem `dist/`, dem Templates-Verzeichnis
+(`templates/components/`, das `monoceros init --with=…` komponiert)
+und der User-Doku (`docs/commands/`, auf die generierte
+Solution-READMEs verlinken). Wohin npm das schreibt, hängt von der
+npm-Konfiguration des Users ab (`/usr/local/lib/node_modules/`,
+`%APPDATA%\npm\node_modules\`, Homebrew-Cellar, etc.); der
+`bin`-Eintrag aus `package.json` legt den `monoceros`-Shim auf den
+PATH. Monoceros selbst kennt diesen Pfad nicht und braucht ihn
+nicht zu kennen. Siehe ADR 0005 für die Distribution-Entscheidung.
 
 Das Runtime-Image und die Features sind **keine Dateien auf der
 Builder-Disk**. Docker zieht das Runtime-Image beim ersten
@@ -159,6 +159,15 @@ Node's `os.homedir()` löst beide Plattformen out-of-the-box korrekt
 auf.
 
 ### Plattform-Matrix für die CLI
+
+> **Abgelöst am 2026-05-20** durch
+> [ADR 0005 — CLI-Distribution via npm](./0005-cli-distribution-via-npm.md).
+> Beim Detaillieren stellte sich heraus, dass Monoceros intern
+> `@devcontainers/cli` als Node-Subprozess spawnt und daher ohne
+> erheblichen Architekturumbau ohnehin Node auf dem Host braucht.
+> Damit verliert die Plattform-Matrix mit fünf vorgebauten Binaries
+> ihren Zweck — die CLI wird stattdessen als npm-Paket verteilt.
+> Der untenstehende Abschnitt ist nur als historische Notiz erhalten.
 
 GitHub-Release pro CLI-Version enthält fünf Artefakte:
 

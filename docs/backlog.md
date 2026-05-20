@@ -374,15 +374,24 @@ auf der Platte; gilt nicht mehr als operativ.
    auf den GHCR-Tag umstellen, plus optionalem
    `MONOCEROS_BASE_IMAGE_OVERRIDE` für Contributors am Image.
 
-5. **CLI-Release-Workflow (`release-cli.yml`) inkl. Install-Skripte** —
-   Pfad-Trigger `packages/cli/**`, baut plattformspezifische
-   Artefakte (`macos-arm64`, `macos-x64`, `linux-arm64`,
-   `linux-x64`, `windows-x64`), legt sie an ein GitHub-Release der
-   passenden Version an. Plus `install.sh` (macOS/Linux) und
-   `install.ps1` (Windows) im Repo-Root für
-   `curl … | sh` und PowerShell-Pendant. Binary-Build-Werkzeug
-   (`bun --compile` vs. Node-SEA) wird im Implementierungs-PR
-   entschieden.
+5. **CLI-Release-Workflow (`release-cli.yml`) + Install-Skripte** —
+   nach [ADR 0005](./adr/0005-cli-distribution-via-npm.md):
+   Pfad-Trigger `packages/cli/**`, liest Version aus
+   `packages/cli/package.json`, vergleicht gegen die npm-Registry,
+   bei neu `npm publish --access public`. Plus `install.sh`
+   (macOS/Linux) und `install.ps1` (Windows) im Repo-Root als
+   Bouncer: prüft `docker info` + `node --version` (≥ 20), gibt
+   bei fehlender Voraussetzung plattform-spezifische
+   Installations-Hinweise (System-Pakete + Per-User-Manager) +
+   exit 1, sonst `npm install -g @getmonoceros/workbench`.
+   Vor-Bedingung für den ersten Publish:
+   `npm`-Automation-Token unter
+   <https://www.npmjs.com/settings/getmonoceros/tokens> erzeugen,
+   als Repository-Secret `NPM_TOKEN` hinterlegen.
+   `packages/cli/package.json` braucht außerdem Publish-Setup
+   (`private` raus, `description`, `repository`, `homepage`,
+   `license`, `files`, `bin`, `prepublishOnly`, tsup-Build auf
+   `dist/`).
 
 6. **`MONOCEROS_HOME`-Default schärfen** — sicherstellen, dass ein
    per Install-Skript installiertes Tool out-of-the-box auf
