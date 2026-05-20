@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainerFeature.schema.json",
   "id": "atlassian",
   "name": "Atlassian CLIs (Rovo Dev + Teamwork Graph)",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Bundles two Atlassian CLIs that share a single account: Rovo Dev (the `acli rovodev` AI agent) and Teamwork Graph (`twg`). Each tool can be toggled independently via the `rovodev` and `twg` options; both share `instance` / `email` / `apiToken` so credentials only live once in the yml. Auth state for both persists under /home/node/.{config/acli,rovodev,config/twg}, which Monoceros bind-mounts so logins survive `monoceros apply` rebuilds.",
   "documentationURL": "https://developer.atlassian.com/cloud/",
   "options": {

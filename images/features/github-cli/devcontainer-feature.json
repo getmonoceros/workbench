@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainerFeature.schema.json",
   "id": "github-cli",
   "name": "GitHub CLI (gh)",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Installs the official GitHub CLI (`gh`) from the upstream apt repository. When an `apiToken` option is provided, its value is exported as GH_TOKEN via /etc/profile.d/ so `gh` works non-interactively in any login shell. Without a token, `gh` is installed but unauthenticated and the builder runs `gh auth login` once interactively; the resulting credentials persist under /home/node/.config/gh via Monoceros' bind-mount.",
   "documentationURL": "https://cli.github.com/",
   "options": {
