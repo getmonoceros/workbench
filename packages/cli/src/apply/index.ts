@@ -22,6 +22,7 @@ import {
   validateOptions,
   writeScaffold,
 } from '../create/scaffold.js';
+import { cyan, dim, sectionLine } from '../util/format.js';
 import { migrateDeprecatedFeatureRef } from '../util/ref.js';
 import {
   type ComposeSpawn,
@@ -70,6 +71,12 @@ export interface RunApplyOptions {
     info: (msg: string) => void;
     success: (msg: string) => void;
     warn?: (msg: string) => void;
+    /**
+     * Print a structural section marker (`▸ Configuration` etc).
+     * Optional — tests typically pass a silent logger without one,
+     * in which case section markers are no-ops.
+     */
+    section?: (label: string) => void;
   };
   cleanupSpawn?: ComposeSpawn;
   devcontainerSpawn?: DevcontainerSpawn;
@@ -93,7 +100,11 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     info: (msg) => consola.info(msg),
     success: (msg) => consola.success(msg),
     warn: (msg) => consola.warn(msg),
+    // Default section renderer: empty line, bold-underlined "▸ Label",
+    // empty line. Mirrors install.sh's section visuals.
+    section: (label) => process.stderr.write(`\n${sectionLine(label)}\n\n`),
   };
+  const section = (label: string) => logger.section?.(label);
 
   if (!REGEX.solutionName.test(opts.name)) {
     throw new Error(
@@ -110,6 +121,9 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
   const targetDir = containerDir(opts.name, home);
   await assertSafeTargetDir(targetDir, opts.name);
+
+  // ── Configuration ────────────────────────────────────────────
+  section('Configuration');
 
   const parsed = await readConfig(ymlPath);
   // Read global defaults early — feature option defaults from
@@ -137,17 +151,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     ),
   );
   validateOptions(createOpts);
-
-  await fs.mkdir(targetDir, { recursive: true });
-  await writeScaffold(createOpts, targetDir);
-  await writeStateFile(
-    targetDir,
-    buildStateFile({
-      origin: opts.name,
-      cliVersion: opts.cliVersion,
-      ...(opts.now ? { now: opts.now } : {}),
-    }),
-  );
+  logger.success(`yml validated ${dim(`(${prettyPath(ymlPath)})`)}`);
 
   // Refresh host git identity and HTTPS credentials before the
   // container teardown so they're in place when post-create.sh runs.
@@ -178,19 +182,38 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     });
   }
 
-  logger.success(
-    `Materialized config '${opts.name}' into ${prettyPath(targetDir)}. Starting container…`,
+  // ── Scaffold ─────────────────────────────────────────────────
+  section('Scaffold');
+
+  await fs.mkdir(targetDir, { recursive: true });
+  await writeScaffold(createOpts, targetDir);
+  await writeStateFile(
+    targetDir,
+    buildStateFile({
+      origin: opts.name,
+      cliVersion: opts.cliVersion,
+      ...(opts.now ? { now: opts.now } : {}),
+    }),
   );
+  logger.success(`materialized into ${prettyPath(targetDir)}`);
+
+  // ── Container ────────────────────────────────────────────────
+  section('Container');
+
+  // Pre-announce the feature list so the builder knows what's about
+  // to be installed before devcontainer-cli's stream takes over.
+  // Empty list = base-image-only container, no features section needed.
+  const featureRefs = parsed.config.features.map((f) => f.ref);
+  if (featureRefs.length > 0) {
+    logger.info(`Features: ${featureRefs.map((r) => cyan(r)).join(', ')}`);
+  }
 
   // First-apply UX: devcontainer-cli's upstream output prints
   // `Error fetching image details: No manifest found for …` for
   // multi-arch GHCR images, then sits silent for ~1 min while
   // Docker actually pulls the runtime image. Both are non-fatal —
   // the docker buildx step right after consumes the image just
-  // fine. Flag this up front in dim grey so the builder reads it
-  // as ambient context rather than a "critical" info line and
-  // doesn't read the upstream noise as a real failure.
-  const dim = (s: string) => (process.stdout.isTTY ? `\x1b[90m${s}\x1b[0m` : s);
+  // fine. Flag in dim grey so it reads as ambient context.
   logger.info(
     dim(
       'Pulling runtime image and building feature layers. First apply takes ~1–2 min (Docker downloads the multi-arch base); subsequent applies are cached and fast. devcontainer-cli may log a "No manifest found" line — harmless, the pull continues.',
@@ -207,6 +230,15 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       : {}),
     logger,
   });
+
+  // ── Next steps ───────────────────────────────────────────────
+  // Only print the wrap-up on a successful container start;
+  // otherwise the failing devcontainer-cli output is the relevant
+  // signal and a cheery "shell into it!" line would be misleading.
+  if (exitCode === 0) {
+    section('Next steps');
+    logger.info(`  ${cyan(`monoceros shell ${opts.name}`)}`);
+  }
 
   return { targetDir, configPath: ymlPath, containerExitCode: exitCode };
 }
