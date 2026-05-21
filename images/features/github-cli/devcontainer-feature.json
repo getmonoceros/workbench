@@ -19,6 +19,9 @@
   },
   "x-monoceros": {
     "persistentHomePaths": [".config/gh"],
-    "optionHints": ["apiToken"]
+    "optionHints": ["apiToken"],
+    "usageNotes": [
+      "Two auth modes: (1) set apiToken below for non-interactive auth via GH_TOKEN (PAT scopes: repo, read:org, gist), or (2) leave apiToken empty and run `gh auth login` once inside the container for the browser-based OAuth flow with optional SSH-key upload. State persists under home/.config/gh so the login survives `monoceros apply` rebuilds."
+    ]
   }
 }

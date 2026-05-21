@@ -30,6 +30,9 @@
         "initialContent": "{}\n"
       }
     ],
-    "optionHints": ["apiKey"]
+    "optionHints": ["apiKey"],
+    "usageNotes": [
+      "Two auth modes: (1) set apiKey below for non-interactive API auth via ANTHROPIC_API_KEY, or (2) leave apiKey empty and run `claude login` once inside the container for the subscription/OAuth flow. Either way the resulting login state lives under home/.claude on the host and survives `monoceros apply` rebuilds."
+    ]
   }
 }

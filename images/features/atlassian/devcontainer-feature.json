@@ -49,6 +49,10 @@
       ".config/twg",
       ".agents"
     ],
-    "optionHints": ["instance", "email", "apiToken", "bitbucketToken"]
+    "optionHints": ["instance", "email", "apiToken", "bitbucketToken"],
+    "usageNotes": [
+      "Bundles two CLIs that share one Atlassian account: `acli rovodev` (Rovo Dev agent) and `twg` (Teamwork Graph). Both default to on — set `rovodev: false` or `twg: false` to skip either install.",
+      "Auth: email + apiToken below cover both tools. `instance` is required upfront for twg's auto-login; acli rovodev prompts for the site at first `acli rovodev run`. `bitbucketToken` is only needed if you use twg's Bitbucket commands. Skip the credentials entirely to log in interactively inside the container — state persists under home/.config/{acli,twg} and home/.rovodev."
+    ]
   }
 }
