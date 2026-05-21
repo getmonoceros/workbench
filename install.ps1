@@ -53,10 +53,16 @@ function Invoke-MonocerosInstaller {
   $UNDERLINE = "$ESC[4m"
   $RESET = "$ESC[0m"
 
+  # Glyphs are deliberately ASCII (+, X, >, --, ->). PS 5.1's default
+  # conhost.exe codepage is OEM/ANSI, not UTF-8 — multi-byte glyphs
+  # (✓ ✗ ▸ — →) render as `?` there. ANSI color and bold escapes
+  # *do* work in modern conhost, so semantics carry via colour; the
+  # glyph is only a visual marker. install.sh keeps Unicode glyphs
+  # because macOS/Linux terminals render them reliably.
   function Say     ($msg) { Write-Host $msg }
   function Ok      ($msg) {
     Write-Host '  ' -NoNewline
-    Write-Host '✓' -ForegroundColor Green -NoNewline
+    Write-Host '+' -ForegroundColor Green -NoNewline
     Write-Host " $msg"
   }
   function Warn    ($msg) {
@@ -65,12 +71,12 @@ function Invoke-MonocerosInstaller {
     Write-Host " $msg"
   }
   function Fail    ($msg) {
-    Write-Host '✗' -ForegroundColor Red -NoNewline
+    Write-Host 'X' -ForegroundColor Red -NoNewline
     Write-Host " $msg"
   }
   function Section ($msg) {
     Write-Host ''
-    Write-Host "$BOLD$UNDERLINE▸ $msg$RESET"
+    Write-Host "$BOLD$UNDERLINE> $msg$RESET"
   }
   # Wrap text for inline coloured spans inside larger lines built up
   # with Write-Host -NoNewline. Returned strings include ANSI codes.
@@ -95,7 +101,7 @@ Monoceros needs Docker. Install it before continuing:
   (or via WinGet:  winget install Docker.DockerDesktop)
 
 Docker Desktop requires admin rights to install. If you're on a
-managed corporate machine without admin, talk to your IT — there's
+managed corporate machine without admin, talk to your IT -- there's
 no userspace Docker on Windows.
 
 Then re-run this installer.
@@ -122,7 +128,7 @@ then re-run this installer.
     @"
 
 Monoceros needs Node $NodeMinMajor or newer. Pick whichever install
-style fits your setup — Monoceros doesn't care, we just need ``node``
+style fits your setup -- Monoceros doesn't care, we just need ``node``
 on PATH:
 
   System-wide (admin):
@@ -154,7 +160,7 @@ above for the common upgrade paths.
   }
 
   if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-    Fail 'npm is not on PATH (unusual — npm normally ships with Node).'
+    Fail 'npm is not on PATH (unusual -- npm normally ships with Node).'
     @'
 
 Reinstall Node from one of the sources above; npm should come along
@@ -192,7 +198,7 @@ Once installed, verify with:  monoceros --version
     try { $cliVersion = (& monoceros --version 2>$null | Select-Object -First 1).Trim() } catch {}
   }
   if ($cliPath -and $cliVersion) {
-    Ok "monoceros $(Dim $cliVersion) $(Dim '→') $(Dim $cliPath)"
+    Ok "monoceros $(Dim $cliVersion) $(Dim '->') $(Dim $cliPath)"
   } else {
     Ok 'Monoceros installed'
   }
@@ -215,12 +221,12 @@ Once installed, verify with:  monoceros --version
   }
   $profileContent = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
   if ($profileContent -and $profileContent.Contains($marker)) {
-    Ok "pwsh $(Dim '→') $(Dim $completionFile) $(Dim '($PROFILE already wired)')"
+    Ok "pwsh $(Dim '->') $(Dim $completionFile) $(Dim '($PROFILE already wired)')"
   } else {
     Add-Content -Path $PROFILE -Value ''
     Add-Content -Path $PROFILE -Value $marker
     Add-Content -Path $PROFILE -Value $sourceLine
-    Ok "pwsh $(Dim '→') $(Dim $completionFile)"
+    Ok "pwsh $(Dim '->') $(Dim $completionFile)"
     Ok "$(Dim 'appended dot-source line to $PROFILE')"
   }
 
@@ -241,15 +247,15 @@ Once installed, verify with:  monoceros --version
 
   if (Test-Path $sampleSrc) {
     if (Test-Path $sampleDst) {
-      Ok "config sample $(Dim '→') $(Dim $sampleDst) $(Dim '(already present)')"
+      Ok "config sample $(Dim '->') $(Dim $sampleDst) $(Dim '(already present)')"
     } else {
       Copy-Item -Path $sampleSrc -Destination $sampleDst
-      Ok "config sample $(Dim '→') $(Dim $sampleDst)"
+      Ok "config sample $(Dim '->') $(Dim $sampleDst)"
       Say "  $(Dim 'Copy to monoceros-config.yml and edit when you want global defaults')"
       Say "  $(Dim '(git identity, feature API keys, etc).')"
     }
   } else {
-    Warn "config sample not found at $sampleSrc — skipping"
+    Warn "config sample not found at $sampleSrc -- skipping"
   }
 
   # ── 5. Next steps ─────────────────────────────────────────────────
