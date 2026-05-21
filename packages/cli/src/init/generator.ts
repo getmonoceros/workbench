@@ -73,8 +73,12 @@ export function generateComposedYml(
   if (merged.features.length > 0) {
     lines.push('features:');
     for (const f of merged.features) {
-      const hints = lookupManifest(f.ref)?.optionHints ?? [];
-      renderFeatureBlock(lines, f, hints, /* commented */ false);
+      renderFeatureBlock(
+        lines,
+        f,
+        lookupManifest(f.ref),
+        /* commented */ false,
+      );
     }
     lines.push('');
   }
@@ -175,8 +179,12 @@ export function generateDocumentedYml(
       for (const f of c.file.contributes.features ?? []) {
         if (renderedRefs.has(f.ref)) continue;
         renderedRefs.add(f.ref);
-        const hints = lookupManifest(f.ref)?.optionHints ?? [];
-        renderFeatureBlock(lines, f, hints, /* commented */ true);
+        renderFeatureBlock(
+          lines,
+          f,
+          lookupManifest(f.ref),
+          /* commented */ true,
+        );
       }
     }
     // Any feature ref only mentioned through a sub-component (no
@@ -187,8 +195,12 @@ export function generateDocumentedYml(
       for (const f of c.file.contributes.features ?? []) {
         if (renderedRefs.has(f.ref)) continue;
         renderedRefs.add(f.ref);
-        const hints = lookupManifest(f.ref)?.optionHints ?? [];
-        renderFeatureBlock(lines, f, hints, /* commented */ true);
+        renderFeatureBlock(
+          lines,
+          f,
+          lookupManifest(f.ref),
+          /* commented */ true,
+        );
       }
     }
     lines.push('');
@@ -202,13 +214,35 @@ interface RenderableFeature {
   options?: Record<string, string | number | boolean>;
 }
 
+// Target column width for rendered comment lines. Description text
+// and usage notes get word-wrapped against this width so the output
+// stays readable in a standard editor without horizontal scrolling.
+const COMMENT_WIDTH = 72;
+
 function renderFeatureBlock(
   out: string[],
   feature: RenderableFeature,
-  optionHints: string[],
+  summary: FeatureManifestSummary | undefined,
   commented: boolean,
 ): void {
   const c = commented ? '#   ' : '  ';
+  const optionHints = summary?.optionHints ?? [];
+  const optionDescriptions = summary?.optionDescriptions ?? {};
+  const usageNotes = summary?.usageNotes ?? [];
+
+  // Per-feature usage notes — rendered as a wrapped comment block
+  // right before the `- ref:` line. Multiple notes are separated
+  // by an empty comment line so they read as distinct paragraphs.
+  for (let i = 0; i < usageNotes.length; i++) {
+    if (i > 0) out.push(`${c}#`);
+    for (const line of wrapToComment(
+      usageNotes[i]!,
+      COMMENT_WIDTH - c.length,
+    )) {
+      out.push(`${c}# ${line}`);
+    }
+  }
+
   out.push(`${c}- ref: ${feature.ref}`);
   const options = feature.options ?? {};
   const activeOptions = Object.entries(options);
@@ -229,7 +263,7 @@ function renderFeatureBlock(
         `${c}    # Optional — override monoceros-config.yml defaults.features:`,
       );
       for (const hint of remainingHints) {
-        out.push(`${c}    # ${hint}:`);
+        emitHint(out, hint, optionDescriptions[hint], `${c}    `);
       }
     }
   } else if (remainingHints.length > 0) {
@@ -238,9 +272,62 @@ function renderFeatureBlock(
     );
     out.push(`${c}  # options:`);
     for (const hint of remainingHints) {
-      out.push(`${c}  #   ${hint}:`);
+      emitHint(out, hint, optionDescriptions[hint], `${c}  #   `);
     }
   }
+}
+
+/**
+ * Emit a single option-hint line, optionally preceded by its
+ * description as wrapped comment lines. `linePrefix` is the full
+ * prefix (indent + any commented-out `#   ` chars) that every
+ * emitted line should start with; the hint itself is suffixed
+ * with `: ` so the user can fill in a value.
+ */
+function emitHint(
+  out: string[],
+  hint: string,
+  description: string | undefined,
+  linePrefix: string,
+): void {
+  if (description) {
+    for (const line of wrapToComment(
+      description,
+      COMMENT_WIDTH - linePrefix.length,
+    )) {
+      out.push(`${linePrefix}# ${line}`);
+    }
+  }
+  out.push(`${linePrefix}${hint}:`);
+}
+
+/**
+ * Word-wrap a single paragraph of plain text to `width` columns.
+ * The returned strings do NOT include any prefix — the caller is
+ * expected to prepend a comment marker (`# `) and any indent.
+ * Long words that exceed `width` are emitted on their own line
+ * rather than split mid-word.
+ */
+function wrapToComment(text: string, width: number): string[] {
+  const words = text.split(/\s+/).filter((w) => w.length > 0);
+  if (words.length === 0) return [''];
+  const usable = Math.max(width, 20);
+  const lines: string[] = [];
+  let current = '';
+  for (const w of words) {
+    if (current.length === 0) {
+      current = w;
+      continue;
+    }
+    if (current.length + 1 + w.length <= usable) {
+      current += ' ' + w;
+    } else {
+      lines.push(current);
+      current = w;
+    }
+  }
+  if (current.length > 0) lines.push(current);
+  return lines;
 }
 
 function renderScalarValue(value: string | number | boolean): string {

@@ -60,7 +60,9 @@ async function buildFakeWorkbench(root: string): Promise<void> {
     ].join('\n'),
   );
 
-  // Matching feature manifest with optionHints.
+  // Matching feature manifest with optionHints + a description on
+  // the hinted option + a per-feature usageNote — exercises the
+  // full hint-rendering surface that the init generator consumes.
   const featureDir = path.join(root, 'images', 'features', 'claude-code');
   await mkdir(featureDir, { recursive: true });
   await writeFile(
@@ -70,10 +72,18 @@ async function buildFakeWorkbench(root: string): Promise<void> {
         id: 'claude-code',
         version: '1.0.0',
         options: {
-          apiKey: { type: 'string', default: '' },
+          apiKey: {
+            type: 'string',
+            default: '',
+            description:
+              'Optional Anthropic API key. When set, exported as ANTHROPIC_API_KEY for all shells in the container.',
+          },
         },
         'x-monoceros': {
           optionHints: ['apiKey'],
+          usageNotes: [
+            'Persistent OAuth login lives at home/.claude in the container, so first-run `claude login` survives apply rebuilds.',
+          ],
         },
       },
       null,
@@ -119,6 +129,13 @@ describe('runInit', () => {
     );
     // optionHints rendered as commented hints next to options:
     expect(text).toMatch(/#\s+apiKey:/);
+    // x-monoceros.usageNotes is rendered as a comment block right
+    // above the matching `- ref:` line.
+    expect(text).toMatch(
+      /#\s+Persistent OAuth login[\s\S]*\n\s+- ref: ghcr\.io\/getmonoceros\/monoceros-features\/claude-code:1/,
+    );
+    // The option's description shows up just above the hint line.
+    expect(text).toMatch(/#\s+Optional Anthropic API key[\s\S]*#\s+apiKey:/);
     const parsed = parseConfig(text);
     expect(parsed.config.name).toBe('sandbox');
     expect(parsed.config.languages).toEqual(['node']);
