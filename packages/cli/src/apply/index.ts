@@ -187,10 +187,14 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // multi-arch GHCR images, then sits silent for ~1 min while
   // Docker actually pulls the runtime image. Both are non-fatal —
   // the docker buildx step right after consumes the image just
-  // fine. Flag this up front so the builder doesn't read the
-  // upstream noise as a real failure.
+  // fine. Flag this up front in dim grey so the builder reads it
+  // as ambient context rather than a "critical" info line and
+  // doesn't read the upstream noise as a real failure.
+  const dim = (s: string) => (process.stdout.isTTY ? `\x1b[90m${s}\x1b[0m` : s);
   logger.info(
-    'Pulling runtime image and building feature layers. First apply takes ~1–2 min (Docker downloads the multi-arch base); subsequent applies are cached and fast. devcontainer-cli may log a "No manifest found" line — harmless, the pull continues.',
+    dim(
+      'Pulling runtime image and building feature layers. First apply takes ~1–2 min (Docker downloads the multi-arch base); subsequent applies are cached and fast. devcontainer-cli may log a "No manifest found" line — harmless, the pull continues.',
+    ),
   );
 
   const exitCode = await runContainerCycle(targetDir, {
