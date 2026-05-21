@@ -52,9 +52,9 @@ PATH-Hash neu aufbaut — zsh cached den Startup-PATH und sieht neu
 installierte Binaries erst nach `rehash`:
 
 ```sh
-rehash && exec zsh        # zsh
+rehash && compinit           # zsh
 hash -r && source ~/.bashrc  # bash
-. $PROFILE                # PowerShell
+. $PROFILE                   # PowerShell
 ```
 
 Das ist kein Monoceros-Spezifikum, sondern Shell-Standard für alles

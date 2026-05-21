@@ -267,7 +267,7 @@ say "  $(dim "a freshly-installed monoceros is only visible after a hash rebuild
 case "$user_shell" in
   zsh)
     say ""
-    say "    $(cmd 'rehash && exec zsh')"
+    say "    $(cmd 'rehash && compinit')"
     ;;
   bash)
     say ""
