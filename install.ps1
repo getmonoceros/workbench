@@ -215,7 +215,35 @@ if ($profileContent -and $profileContent.Contains($marker)) {
   Ok "$(Dim 'appended dot-source line to $PROFILE')"
 }
 
-# ── 4. Next steps ─────────────────────────────────────────────────
+# ── 4. User home ──────────────────────────────────────────────────
+# Ensure %USERPROFILE%\.monoceros\ exists with a config-sample copy.
+# Same logic as install.sh — without this the first `monoceros apply`
+# leaves the builder without a reference for monoceros-config.yml.
+Section 'User home'
+
+$monocerosHome = Join-Path $env:USERPROFILE '.monoceros'
+$npmRoot       = (& npm root -g).Trim()
+$sampleSrc     = Join-Path $npmRoot '@getmonoceros\workbench\templates\monoceros-config.sample.yml'
+$sampleDst     = Join-Path $monocerosHome 'monoceros-config.sample.yml'
+
+if (-not (Test-Path $monocerosHome)) {
+  New-Item -ItemType Directory -Path $monocerosHome -Force | Out-Null
+}
+
+if (Test-Path $sampleSrc) {
+  if (Test-Path $sampleDst) {
+    Ok "config sample $(Dim '→') $(Dim $sampleDst) $(Dim '(already present)')"
+  } else {
+    Copy-Item -Path $sampleSrc -Destination $sampleDst
+    Ok "config sample $(Dim '→') $(Dim $sampleDst)"
+    Say "  $(Dim 'Copy to monoceros-config.yml and edit when you want global defaults')"
+    Say "  $(Dim '(git identity, feature API keys, etc).')"
+  }
+} else {
+  Warn "config sample not found at $sampleSrc — skipping"
+}
+
+# ── 5. Next steps ─────────────────────────────────────────────────
 Section 'Next steps'
 
 Say ''
@@ -226,7 +254,8 @@ Say ''
 Say '  Try it out:'
 Say ''
 Say "    $(Cmd 'monoceros init hello --with=node,claude')"
-Say "    $(Dim '# edit %USERPROFILE%\.monoceros\monoceros-config.yml (api keys etc)')"
+Say "    $(Dim '# optional: copy monoceros-config.sample.yml to monoceros-config.yml')"
+Say "    $(Dim '#           in %USERPROFILE%\.monoceros\ and edit defaults')"
 Say "    $(Cmd 'monoceros apply hello')"
 Say "    $(Cmd 'monoceros shell hello')"
 Say ''

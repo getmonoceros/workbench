@@ -258,7 +258,35 @@ case "$user_shell" in
     ;;
 esac
 
-# ── 4. Next steps ──────────────────────────────────────────────────
+# ── 4. User home ───────────────────────────────────────────────────
+# Ensure ~/.monoceros/ exists with a config-sample copy. Without
+# this, a fresh-installed builder lands in apply prompts with no
+# reference for what monoceros-config.yml accepts. The sample lives
+# inside the npm package; we copy it (no-clobber) into the user's
+# home so they can rename to monoceros-config.yml when they want to
+# set global defaults.
+section "User home"
+
+monoceros_home="$HOME/.monoceros"
+sample_src="$(npm root -g)/@getmonoceros/workbench/templates/monoceros-config.sample.yml"
+sample_dst="$monoceros_home/monoceros-config.sample.yml"
+
+mkdir -p "$monoceros_home"
+
+if [[ -f "$sample_src" ]]; then
+  if [[ -f "$sample_dst" ]]; then
+    ok "config sample $(dim '→') $(dim "$sample_dst") $(dim '(already present)')"
+  else
+    cp "$sample_src" "$sample_dst"
+    ok "config sample $(dim '→') $(dim "$sample_dst")"
+    say "  $(dim "Copy to monoceros-config.yml and edit when you want global defaults")"
+    say "  $(dim "(git identity, feature API keys, etc).")"
+  fi
+else
+  warn "config sample not found at $sample_src — skipping"
+fi
+
+# ── 5. Next steps ──────────────────────────────────────────────────
 section "Next steps"
 
 say ""
@@ -283,7 +311,8 @@ say ""
 say "  Try it out:"
 say ""
 say "    $(cmd 'monoceros init hello --with=node,claude')"
-say "    $(dim "# edit ~/.monoceros/monoceros-config.yml (api keys etc)")"
+say "    $(dim "# optional: cp ~/.monoceros/monoceros-config.sample.yml \\")"
+say "    $(dim "#              ~/.monoceros/monoceros-config.yml  → edit defaults")"
 say "    $(cmd 'monoceros apply hello')"
 say "    $(cmd 'monoceros shell hello')"
 say ""
