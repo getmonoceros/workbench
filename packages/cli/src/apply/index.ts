@@ -182,6 +182,17 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     `Materialized config '${opts.name}' into ${prettyPath(targetDir)}. Starting container…`,
   );
 
+  // First-apply UX: devcontainer-cli's upstream output prints
+  // `Error fetching image details: No manifest found for …` for
+  // multi-arch GHCR images, then sits silent for ~1 min while
+  // Docker actually pulls the runtime image. Both are non-fatal —
+  // the docker buildx step right after consumes the image just
+  // fine. Flag this up front so the builder doesn't read the
+  // upstream noise as a real failure.
+  logger.info(
+    'Pulling runtime image and building feature layers. First apply takes ~1–2 min (Docker downloads the multi-arch base); subsequent applies are cached and fast. devcontainer-cli may log a "No manifest found" line — harmless, the pull continues.',
+  );
+
   const exitCode = await runContainerCycle(targetDir, {
     hasCompose: needsCompose(createOpts),
     ...(opts.cleanupSpawn !== undefined
