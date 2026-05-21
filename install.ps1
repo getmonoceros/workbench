@@ -4,11 +4,14 @@
 #   1. Verifies Docker is reachable (`docker info`).
 #   2. Verifies Node >= 20 is on PATH (with npm).
 #   3. Runs `npm install -g @getmonoceros/workbench`.
+#   4. Drops a PowerShell completion script and wires it into $PROFILE.
 #
 # What this does NOT do:
 #   - Install Docker.
 #   - Install Node.
-#   - Touch any system-wide configuration beyond the npm install.
+#   - Touch your system beyond an `npm install -g` and one $PROFILE
+#     append for completion bootstrap (guarded; repeat runs don't
+#     duplicate).
 #
 # If either prerequisite is missing the script prints an explanation
 # and exits non-zero. Install the missing piece yourself, then
@@ -28,12 +31,51 @@ $ErrorActionPreference = 'Stop'
 $Package = '@getmonoceros/workbench'
 $NodeMinMajor = 20
 
-function Say  ($msg) { Write-Host $msg }
-function Ok   ($msg) { Write-Host "✓ $msg" -ForegroundColor Green }
-function Warn ($msg) { Write-Host "! $msg" -ForegroundColor Yellow }
-function Fail ($msg) { Write-Host "✗ $msg" -ForegroundColor Red }
+# ── Pretty printing ───────────────────────────────────────────────
+# Palette matches install.sh and the CLI's help renderer:
+#   cyan      = identifiers you type
+#   darkgray  = supplementary metadata
+#   green/red/yellow = success/error/warn
+# Section markers use ANSI bold+underline directly — Write-Host
+# colours don't compose with bold/underline, but Windows Terminal
+# and PowerShell 7's host both handle ANSI escapes natively.
+$ESC = [char]27
+$BOLD = "$ESC[1m"
+$UNDERLINE = "$ESC[4m"
+$RESET = "$ESC[0m"
 
-# ── 1. Docker ─────────────────────────────────────────────────────
+function Say     ($msg) { Write-Host $msg }
+function Ok      ($msg) {
+  Write-Host '  ' -NoNewline
+  Write-Host '✓' -ForegroundColor Green -NoNewline
+  Write-Host " $msg"
+}
+function Warn    ($msg) {
+  Write-Host '  ' -NoNewline
+  Write-Host '!' -ForegroundColor Yellow -NoNewline
+  Write-Host " $msg"
+}
+function Fail    ($msg) {
+  Write-Host '✗' -ForegroundColor Red -NoNewline
+  Write-Host " $msg"
+}
+function Section ($msg) {
+  Write-Host ''
+  Write-Host "$BOLD$UNDERLINE▸ $msg$RESET"
+}
+# Wrap text for inline coloured spans inside larger lines built up
+# with Write-Host -NoNewline. Returned strings include ANSI codes.
+function Cmd ($txt) { return "$ESC[36m$txt$RESET" }
+function Dim ($txt) { return "$ESC[90m$txt$RESET" }
+
+# ── Header ────────────────────────────────────────────────────────
+Say ''
+Write-Host "${BOLD}Monoceros installer${RESET}"
+Write-Host "  $(Dim 'local, reproducible dev containers with AI coding tooling')"
+
+# ── 1. Prerequisites ──────────────────────────────────────────────
+Section 'Prerequisites'
+
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   Fail 'Docker is not installed.'
   @'
@@ -64,9 +106,8 @@ then re-run this installer.
 '@ | Write-Host
   exit 1
 }
-Ok 'Docker daemon reachable.'
+Ok 'Docker daemon reachable'
 
-# ── 2. Node + npm ─────────────────────────────────────────────────
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   Fail 'Node is not installed.'
   @"
@@ -112,12 +153,14 @@ automatically.
 '@ | Write-Host
   exit 1
 }
-Ok "Node $nodeVersionRaw with npm."
+Ok "Node $(Dim $nodeVersionRaw) with npm"
 
-# ── 3. Install ────────────────────────────────────────────────────
-Say ''
-Say "Installing $Package globally…"
-& npm install -g $Package
+# ── 2. CLI install ────────────────────────────────────────────────
+Section 'Installing CLI'
+
+# --silent suppresses npm's "changed N packages" / "looking for funding"
+# narration. Errors still surface on stderr.
+& npm install -g --silent $Package
 if ($LASTEXITCODE -ne 0) {
   Fail 'npm install failed.'
   @"
@@ -134,14 +177,19 @@ Once installed, verify with:  monoceros --version
   exit 1
 }
 
-Ok 'Monoceros installed.'
+$cliPath = (Get-Command monoceros -ErrorAction SilentlyContinue).Source
+$cliVersion = $null
+if ($cliPath) {
+  try { $cliVersion = (& monoceros --version 2>$null | Select-Object -First 1).Trim() } catch {}
+}
+if ($cliPath -and $cliVersion) {
+  Ok "monoceros $(Dim $cliVersion) $(Dim '→') $(Dim $cliPath)"
+} else {
+  Ok 'Monoceros installed'
+}
 
-# ── 4. PowerShell completion ──────────────────────────────────────
-# Write the completion script to a user-config location and append a
-# dot-source line to $PROFILE. Idempotent: the source line carries a
-# marker so a repeat install doesn't duplicate it.
-Say ''
-Say 'Installing PowerShell completion…'
+# ── 3. PowerShell completion ──────────────────────────────────────
+Section 'Shell completion'
 
 $completionDir  = Join-Path $env:USERPROFILE '.config\monoceros'
 $completionFile = Join-Path $completionDir 'completion.ps1'
@@ -152,35 +200,33 @@ if (-not (Test-Path $completionDir)) {
   New-Item -ItemType Directory -Path $completionDir -Force | Out-Null
 }
 & monoceros completion pwsh | Out-File -Encoding UTF8 -FilePath $completionFile
-Ok "  PowerShell completion → $completionFile"
 
-# Ensure $PROFILE exists, then add the marker + source line only if
-# the marker isn't already present. $PROFILE is the per-user
-# CurrentUserCurrentHost profile.
 if (-not (Test-Path $PROFILE)) {
   New-Item -ItemType File -Path $PROFILE -Force | Out-Null
 }
 $profileContent = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
 if ($profileContent -and $profileContent.Contains($marker)) {
-  Ok "  `$PROFILE already wired up."
+  Ok "pwsh $(Dim '→') $(Dim $completionFile) $(Dim '($PROFILE already wired)')"
 } else {
   Add-Content -Path $PROFILE -Value ''
   Add-Content -Path $PROFILE -Value $marker
   Add-Content -Path $PROFILE -Value $sourceLine
-  Ok "  appended dot-source line to `$PROFILE."
+  Ok "pwsh $(Dim '→') $(Dim $completionFile)"
+  Ok "$(Dim 'appended dot-source line to $PROFILE')"
 }
-Say ''
-Say 'Activate in this shell:'
-Say ''
-Say '  . $PROFILE'
-Say ''
-Say '  (Reloads your PowerShell profile so the new completion is registered.'
-Say '   The monoceros command itself is already on PATH from npm install.)'
+
+# ── 4. Next steps ─────────────────────────────────────────────────
+Section 'Next steps'
 
 Say ''
-Say 'First steps:'
+Say "  Activate in this shell $(Dim '(reload your profile so the completion is registered):')"
 Say ''
-Say '  monoceros init hello --with=node,claude'
-Say '  # edit %USERPROFILE%\.monoceros\monoceros-config.yml (claude api key etc)'
-Say '  monoceros apply hello'
-Say '  monoceros shell hello'
+Say "    $(Cmd '. $PROFILE')"
+Say ''
+Say '  Try it out:'
+Say ''
+Say "    $(Cmd 'monoceros init hello --with=node,claude')"
+Say "    $(Dim '# edit %USERPROFILE%\.monoceros\monoceros-config.yml (api keys etc)')"
+Say "    $(Cmd 'monoceros apply hello')"
+Say "    $(Cmd 'monoceros shell hello')"
+Say ''

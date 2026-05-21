@@ -6,15 +6,17 @@
 #   1. Verifies Docker is reachable (`docker info`).
 #   2. Verifies Node >= 20 is on PATH (with npm).
 #   3. Runs `npm install -g @getmonoceros/workbench`.
+#   4. Drops a shell-completion file in the right place for your shell.
 #
 # What this does NOT do:
 #   - Install Docker.
 #   - Install Node.
-#   - Touch any of your shells, package managers or version managers.
+#   - Touch your system beyond an `npm install -g` and one rc-file
+#     append for shell-completion bootstrap (guarded; repeat runs
+#     don't duplicate).
 #
 # If either prerequisite is missing the script prints an explanation
-# and exits non-zero. Install the missing piece yourself (the script
-# tells you which install paths are common), then re-run.
+# and exits non-zero. Install the missing piece yourself, then re-run.
 #
 # Pinning to a version: this script always installs the latest npm
 # release. To pin, skip the script and run
@@ -25,17 +27,43 @@ PACKAGE="@getmonoceros/workbench"
 NODE_MIN_MAJOR=20
 
 # ── Pretty printing ────────────────────────────────────────────────
+# Colors are gated on stderr being a TTY (the script prints to
+# stderr so `curl … | sh` still shows the output). Palette matches
+# the help renderer in packages/cli/src/help.ts:
+#   - cyan      = identifiers you type (commands, args)
+#   - grey      = supplementary metadata (paths, version notes)
+#   - bold+und. = structural section markers
+#   - green/red/yellow = success/error/warn status semantics
 if [[ -t 2 ]]; then
-  RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; BOLD=$'\033[1m'; RESET=$'\033[0m'
+  RED=$'\033[31m'
+  GREEN=$'\033[32m'
+  YELLOW=$'\033[33m'
+  CYAN=$'\033[36m'
+  GREY=$'\033[90m'
+  BOLD=$'\033[1m'
+  UNDERLINE=$'\033[4m'
+  RESET=$'\033[0m'
 else
-  RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
+  RED=""; GREEN=""; YELLOW=""; CYAN=""; GREY=""
+  BOLD=""; UNDERLINE=""; RESET=""
 fi
-say()  { printf '%s\n' "$*" >&2; }
-ok()   { printf '%s✓%s %s\n' "$GREEN" "$RESET" "$*" >&2; }
-warn() { printf '%s!%s %s\n' "$YELLOW" "$RESET" "$*" >&2; }
-fail() { printf '%s✗%s %s\n' "$RED" "$RESET" "$*" >&2; }
 
-# ── 1. Docker ──────────────────────────────────────────────────────
+say()     { printf '%s\n' "$*" >&2; }
+ok()      { printf '  %s✓%s %s\n' "$GREEN" "$RESET" "$*" >&2; }
+warn()    { printf '  %s!%s %s\n' "$YELLOW" "$RESET" "$*" >&2; }
+fail()    { printf '%s✗%s %s\n' "$RED" "$RESET" "$*" >&2; }
+section() { printf '\n%s▸ %s%s\n' "$BOLD$UNDERLINE" "$*" "$RESET" >&2; }
+cmd()     { printf '%s%s%s' "$CYAN" "$*" "$RESET"; }
+dim()     { printf '%s%s%s' "$GREY" "$*" "$RESET"; }
+
+# ── Header ─────────────────────────────────────────────────────────
+say ""
+say "${BOLD}Monoceros installer${RESET}"
+say "$(dim "  local, reproducible dev containers with AI coding tooling")"
+
+# ── 1. Prerequisites ───────────────────────────────────────────────
+section "Prerequisites"
+
 if ! command -v docker >/dev/null 2>&1; then
   fail "Docker is not installed."
   cat >&2 <<EOF
@@ -67,9 +95,8 @@ Then re-run this installer.
 EOF
   exit 1
 fi
-ok "Docker daemon reachable."
+ok "Docker daemon reachable"
 
-# ── 2. Node + npm ──────────────────────────────────────────────────
 if ! command -v node >/dev/null 2>&1; then
   fail "Node is not installed."
   cat >&2 <<EOF
@@ -114,13 +141,18 @@ automatically.
 EOF
   exit 1
 fi
-ok "Node $node_version with npm."
+ok "Node $(dim "$node_version") with npm"
 
-# ── 3. Install ─────────────────────────────────────────────────────
-say ""
-say "Installing $PACKAGE globally…"
-if ! npm install -g "$PACKAGE"; then
+# ── 2. CLI install ─────────────────────────────────────────────────
+section "Installing CLI"
+
+# --silent suppresses npm's "changed N packages" / "looking for funding"
+# narration. Errors still surface on stderr. We print our own confirmation
+# line below with the installed version, sourced from the binary itself.
+if ! npm install -g --silent "$PACKAGE" 2>/tmp/monoceros-install-err.$$; then
   fail "npm install failed."
+  cat /tmp/monoceros-install-err.$$ >&2 || true
+  rm -f /tmp/monoceros-install-err.$$
   cat >&2 <<EOF
 
 If this is a permissions issue, npm is configured to write to a
@@ -134,18 +166,22 @@ Once installed, verify with:  monoceros --version
 EOF
   exit 1
 fi
+rm -f /tmp/monoceros-install-err.$$
 
-ok "Monoceros installed."
+# Resolve the just-installed binary path + version. Both are nice to
+# show: builder sees what landed where and which version they're on.
+cli_path=$(command -v monoceros 2>/dev/null || true)
+cli_version=$("$cli_path" --version 2>/dev/null | head -1 || true)
+if [[ -n "$cli_version" && -n "$cli_path" ]]; then
+  ok "monoceros $(dim "$cli_version") $(dim "→") $(dim "$cli_path")"
+else
+  ok "Monoceros installed"
+fi
 
-# ── 4. Shell completion ────────────────────────────────────────────
-# Detect the user's login shell and drop the matching completion
-# script into a sensible userspace location. Idempotent: if the
-# expected line is already in the rc file, we skip it.
-say ""
-say "Installing shell completion…"
+# ── 3. Shell completion ────────────────────────────────────────────
+section "Shell completion"
 
 user_shell="${SHELL##*/}"
-completion_done=0
 
 install_zsh_completion() {
   local target dir rc_file fpath_line autoload_line marker
@@ -157,8 +193,7 @@ install_zsh_completion() {
     dir="$HOME/.oh-my-zsh/completions"
     target="$dir/_monoceros"
     monoceros completion zsh > "$target"
-    ok "  zsh completion → $target (Oh-My-Zsh)"
-    completion_done=1
+    ok "zsh $(dim "→") $(dim "$target") $(dim "(Oh-My-Zsh)")"
     return
   fi
 
@@ -175,7 +210,7 @@ install_zsh_completion() {
   autoload_line="autoload -Uz compinit && compinit"
 
   if [[ -f "$rc_file" ]] && grep -qF "$marker" "$rc_file"; then
-    ok "  zsh completion → $target (.zshrc already wired up)"
+    ok "zsh $(dim "→") $(dim "$target") $(dim "(.zshrc already wired)")"
   else
     {
       echo ""
@@ -183,10 +218,9 @@ install_zsh_completion() {
       echo "$fpath_line"
       echo "$autoload_line"
     } >> "$rc_file"
-    ok "  zsh completion → $target"
-    say "  appended fpath + compinit lines to $rc_file."
+    ok "zsh $(dim "→") $(dim "$target")"
+    ok "$(dim "appended fpath + compinit lines to $rc_file")"
   fi
-  completion_done=1
 }
 
 install_bash_completion() {
@@ -202,56 +236,54 @@ install_bash_completion() {
   source_line="source $target"
 
   if [[ -f "$rc_file" ]] && grep -qF "$marker" "$rc_file"; then
-    ok "  bash completion → $target (.bashrc already wired up)"
+    ok "bash $(dim "→") $(dim "$target") $(dim "(.bashrc already wired)")"
   else
     {
       echo ""
       echo "$marker"
       echo "$source_line"
     } >> "$rc_file"
-    ok "  bash completion → $target"
-    say "  appended source line to $rc_file."
+    ok "bash $(dim "→") $(dim "$target")"
+    ok "$(dim "appended source line to $rc_file")"
   fi
-  completion_done=1
 }
 
 case "$user_shell" in
   zsh)  install_zsh_completion ;;
   bash) install_bash_completion ;;
   *)
-    warn "  shell '$user_shell' is not auto-supported. To install completion manually:"
-    say "    monoceros completion bash > ~/.bash_completion.d/monoceros   # bash"
-    say "    monoceros completion zsh  > ~/.zsh/completions/_monoceros    # zsh"
+    warn "shell '$user_shell' not auto-supported — install completion manually:"
+    say "    $(cmd 'monoceros completion bash') > ~/.bash_completion.d/monoceros"
+    say "    $(cmd 'monoceros completion zsh')  > ~/.zsh/completions/_monoceros"
     ;;
 esac
 
+# ── 4. Next steps ──────────────────────────────────────────────────
+section "Next steps"
+
 say ""
-say "${BOLD}Activate in this shell${RESET} (zsh caches PATH-binaries at startup, so a"
-say "freshly-installed \`monoceros\` is only visible after a hash rebuild):"
+say "  Activate in this shell $(dim "(zsh/bash cache PATH-binaries at startup;")"
+say "  $(dim "a freshly-installed monoceros is only visible after a hash rebuild)"):"
 case "$user_shell" in
   zsh)
     say ""
-    say "  ${BOLD}rehash && exec zsh${RESET}"
-    say ""
-    say "  (\`rehash\` makes \`monoceros\` visible on PATH; \`exec zsh\` reloads zsh"
-    say "  so the new completion script is picked up.)"
+    say "    $(cmd 'rehash && exec zsh')"
     ;;
   bash)
     say ""
-    say "  ${BOLD}hash -r && source ~/.bashrc${RESET}"
-    say ""
-    say "  (\`hash -r\` makes \`monoceros\` visible on PATH; \`source ~/.bashrc\`"
-    say "  reloads the completion.)"
+    say "    $(cmd 'hash -r && source ~/.bashrc')"
     ;;
   *)
-    say "  open a new terminal."
+    say ""
+    say "    $(dim '(open a new terminal)')"
     ;;
 esac
 
 say ""
-say "${BOLD}First steps${RESET}:"
+say "  Try it out:"
 say ""
-say "  monoceros init hello --with=node,claude"
-say "  # edit ~/.monoceros/monoceros-config.yml (claude api key etc)"
-say "  monoceros apply hello"
-say "  monoceros shell hello"
+say "    $(cmd 'monoceros init hello --with=node,claude')"
+say "    $(dim "# edit ~/.monoceros/monoceros-config.yml (api keys etc)")"
+say "    $(cmd 'monoceros apply hello')"
+say "    $(cmd 'monoceros shell hello')"
+say ""
