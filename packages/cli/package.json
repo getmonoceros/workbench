@@ -27,6 +27,7 @@
   "files": [
     "dist",
     "templates",
+    "features",
     "README.md"
   ],
   "engines": {
@@ -36,6 +37,8 @@
     "start": "tsx src/bin.ts",
     "typecheck": "tsc --build",
     "test": "vitest run",
+    "manifests:sync": "node scripts/sync-feature-manifests.mjs",
+    "prebuild": "pnpm manifests:sync",
     "build": "tsup",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },

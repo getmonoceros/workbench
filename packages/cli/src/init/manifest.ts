@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { workbenchCheckoutRoot } from '../config/paths.js';
+import { bundledFeaturesDir, workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 
 /**
@@ -15,13 +15,20 @@ import { matchMonocerosFeature } from '../util/ref.js';
  * Only Monoceros-owned refs
  * (`ghcr.io/getmonoceros/monoceros-features/<name>:<tag>`) are
  * resolved — for third-party features we don't have the manifest on
- * disk at init time. The fallback is "no hints", which is exactly
- * right: we don't speculate about other people's feature options.
+ * disk at init time. The fallback is "no hints", which is right:
+ * we don't speculate about other people's feature options.
  *
- * Manifests live at the **workbench checkout root**, not inside the
- * shipped CLI bundle. In production (npm-installed CLI) the checkout
- * isn't present, so the loader returns "no hints" — `init` keeps
- * working, just without the commented suggestion lines.
+ * Manifest lookup order:
+ *   1. Workbench checkout — `<checkoutRoot>/images/features/<name>/`.
+ *      Dev edits to the source-of-truth manifest are visible
+ *      immediately, no rebuild step required.
+ *   2. CLI bundle — `<workbenchRoot>/features/<name>/`. Populated
+ *      by `pnpm manifests:sync` (runs as `prebuild`), shipped in
+ *      the npm tarball. Production fallback for builders without a
+ *      workbench checkout.
+ *
+ * Both paths missing → `undefined` and init renders without hints.
+ * Never throws.
  */
 
 export interface FeatureManifestSummary {
@@ -29,22 +36,37 @@ export interface FeatureManifestSummary {
   optionHints: string[];
 }
 
+function resolveManifestPath(
+  name: string,
+  checkoutRoot: string | null,
+): string | null {
+  if (checkoutRoot) {
+    const checkoutPath = path.join(
+      checkoutRoot,
+      'images',
+      'features',
+      name,
+      'devcontainer-feature.json',
+    );
+    if (existsSync(checkoutPath)) return checkoutPath;
+  }
+  const bundlePath = path.join(
+    bundledFeaturesDir(),
+    name,
+    'devcontainer-feature.json',
+  );
+  if (existsSync(bundlePath)) return bundlePath;
+  return null;
+}
+
 export function loadFeatureManifestSummary(
   ref: string,
   checkoutRoot: string | null = workbenchCheckoutRoot(),
 ): FeatureManifestSummary | undefined {
-  if (!checkoutRoot) return undefined;
   const match = matchMonocerosFeature(ref);
   if (!match) return undefined;
-  const name = match.name;
-  const manifestPath = path.join(
-    checkoutRoot,
-    'images',
-    'features',
-    name,
-    'devcontainer-feature.json',
-  );
-  if (!existsSync(manifestPath)) return undefined;
+  const manifestPath = resolveManifestPath(match.name, checkoutRoot);
+  if (!manifestPath) return undefined;
   try {
     const text = readFileSync(manifestPath, 'utf8');
     const parsed = JSON.parse(text) as {

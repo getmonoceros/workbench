@@ -153,6 +153,18 @@ export function componentsDir(root: string = workbenchRoot()): string {
   return path.join(root, 'templates', 'components');
 }
 
+/**
+ * `features/` (inside the CLI bundle) — npm-shipped copies of the
+ * Monoceros feature manifests (`devcontainer-feature.json`). Built
+ * by `pnpm manifests:sync` from `images/features/<name>/` and
+ * included in the published tarball via the `files` field. The
+ * init generator's hint loader looks here as the production
+ * fallback when the workbench checkout isn't available.
+ */
+export function bundledFeaturesDir(root: string = workbenchRoot()): string {
+  return path.join(root, 'features');
+}
+
 // ─── User-home paths (configs, containers, global config) ────────
 
 export function containerConfigsDir(home: string = monocerosHome()): string {
