@@ -1,5 +1,4 @@
 import { existsSync, promises as fs } from 'node:fs';
-import path from 'node:path';
 import { consola } from 'consola';
 import {
   containerConfigPath,
@@ -8,6 +7,7 @@ import {
   workbenchRoot as defaultWorkbenchRoot,
   workbenchCheckoutRoot,
   componentsDir as defaultComponentsDir,
+  prettyPath,
 } from '../config/paths.js';
 import { REGEX } from '../config/schema.js';
 import { loadComponentCatalog, resolveComponents } from './components.js';
@@ -117,14 +117,14 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   await fs.writeFile(dest, text, 'utf8');
 
   const documented = requested.length === 0;
-  const rel = path.relative(home, dest) || dest;
+  const displayPath = prettyPath(dest);
   if (documented) {
     logger.success(
-      `Wrote documented default to ${rel}. Un-comment what you need, then \`monoceros apply ${opts.name}\`.`,
+      `Wrote documented default to ${displayPath}. Un-comment what you need, then \`monoceros apply ${opts.name}\`.`,
     );
   } else {
     logger.success(
-      `Composed ${requested.length} component(s) into ${rel}: ${requested.join(', ')}`,
+      `Composed ${requested.length} component(s) into ${displayPath}: ${requested.join(', ')}`,
     );
     logger.info(
       `Edit the file if you need to tweak, then \`monoceros apply ${opts.name}\`.`,

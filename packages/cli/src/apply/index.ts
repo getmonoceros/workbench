@@ -6,6 +6,7 @@ import {
   containerConfigPath,
   containerDir,
   monocerosHome as defaultMonocerosHome,
+  prettyPath,
 } from '../config/paths.js';
 import { REGEX } from '../config/schema.js';
 import {
@@ -178,7 +179,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   }
 
   logger.success(
-    `Materialized config '${opts.name}' into ${targetDir}. Starting container…`,
+    `Materialized config '${opts.name}' into ${prettyPath(targetDir)}. Starting container…`,
   );
 
   const exitCode = await runContainerCycle(targetDir, {

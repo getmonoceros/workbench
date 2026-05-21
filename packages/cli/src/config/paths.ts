@@ -180,3 +180,28 @@ export function containerDir(
 export function monocerosConfigPath(home: string = monocerosHome()): string {
   return path.join(home, 'monoceros-config.yml');
 }
+
+// ─── User-facing path formatting ─────────────────────────────────
+
+/**
+ * Format an absolute path for printing in CLI output: collapses a
+ * `$HOME` prefix to `~` so messages stay short without losing
+ * information. Non-home paths pass through verbatim.
+ *
+ *   prettyPath('/Users/x/.monoceros/container-configs/hello.yml')
+ *     → '~/.monoceros/container-configs/hello.yml'
+ *
+ * Use this whenever a log line tells the user where something
+ * landed on disk — `monoceros init`, `apply`, `remove`, `restore`
+ * all rely on it so users see one consistent format.
+ */
+export function prettyPath(p: string): string {
+  const home = os.homedir();
+  if (!home) return p;
+  if (p === home) return '~';
+  const prefix = home.endsWith(path.sep) ? home : home + path.sep;
+  if (p.startsWith(prefix)) {
+    return '~' + path.sep + p.slice(prefix.length);
+  }
+  return p;
+}

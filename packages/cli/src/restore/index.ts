@@ -6,6 +6,7 @@ import {
   containerConfigsDir,
   containerDir,
   monocerosHome as defaultMonocerosHome,
+  prettyPath,
 } from '../config/paths.js';
 
 /**
@@ -117,9 +118,7 @@ export async function runRestore(
     await fs.cp(containerInBackup, destContainer, { recursive: true });
   }
 
-  logger.success(
-    `Restored '${name}' from ${path.relative(home, backup) || backup}.`,
-  );
+  logger.success(`Restored '${name}' from ${prettyPath(backup)}.`);
   logger.info(
     `Run \`monoceros apply ${name}\` to bring the container back up.`,
   );

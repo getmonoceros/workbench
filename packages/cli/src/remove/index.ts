@@ -5,6 +5,7 @@ import {
   containerConfigPath,
   containerDir,
   monocerosHome as defaultMonocerosHome,
+  prettyPath,
 } from '../config/paths.js';
 import { REGEX } from '../config/schema.js';
 import {
@@ -131,9 +132,7 @@ export async function runRemove(
         recursive: true,
       });
     }
-    logger.info(
-      `Backup written to ${path.relative(home, backupPath) || backupPath}.`,
-    );
+    logger.info(`Backup written to ${prettyPath(backupPath)}.`);
   }
 
   // ── Step 3: delete host-side state ─────────────────────────────
