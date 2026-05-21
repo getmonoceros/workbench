@@ -17,7 +17,7 @@ Konzeptioneller Überbau: [`konzept.md`](konzept.md).
 | M2.5         | yml-Profile-Modell (`init`/`apply <name>`, AST-Mutationen)     | ✅ 2026-05-17             |
 | ~~M3 (alt)~~ | Externe Tracking-Adapter                                       | ❌ ausgelagert 2026-05-17 |
 | **M3 (neu)** | AI-Tool-Feature-Library                                        | ✅ 2026-05-19             |
-| M4           | Distribution / Go-Live                                         | 🔜                        |
+| M4           | Distribution / Go-Live                                         | 🚧 ab 2026-05-19          |
 | M5           | Stabilisierung + Doku                                          | 🔜                        |
 
 ---
@@ -32,7 +32,9 @@ Formatting, Husky, Basis-CI-Hygiene. **Abgeschlossen 2026-05-10.**
 - ✅ `.editorconfig` / `.gitignore` / `.gitattributes` aus älteren
   Archiven übernommen
 
-CI-Skeleton (GitHub-Actions) liegt in M4 Task 2.
+CI-Skeleton (GitHub-Actions) ist live als `precheck.yml` (siehe
+M4 Task 2). Zusätzlich drei Release-Workflows für Features,
+Runtime-Image und CLI.
 
 ---
 
@@ -365,6 +367,9 @@ auf der Platte; gilt nicht mehr als operativ.
    Feature dessen Version noch nicht in GHCR liegt. Generisch über
    N Features, neue Features brauchen keine Workflow-Änderung.
    Auth via `GITHUB_TOKEN` mit `packages: write`.
+   _(erledigt 2026-05-20; alle drei Features (`claude-code:1.1.0`,
+   `atlassian:1.0.0`, `github-cli:1.0.0`) liegen auf GHCR und sind
+   public.)_
 
 4. **Runtime-Image-Release-Workflow (`release-runtime.yml`)** —
    `images/runtime/VERSION`-Datei einführen, Pfad-Trigger
@@ -373,6 +378,8 @@ auf der Platte; gilt nicht mehr als operativ.
    `BASE_IMAGE` in `create/catalog.ts` von `monoceros-runtime:dev`
    auf den GHCR-Tag umstellen, plus optionalem
    `MONOCEROS_BASE_IMAGE_OVERRIDE` für Contributors am Image.
+   _(erledigt 2026-05-20; `monoceros-runtime:1.0.0` multi-arch
+   live, BASE_IMAGE zeigt auf den floating major tag `:1`.)_
 
 5. **CLI-Release-Workflow (`release-cli.yml`) + Install-Skripte** —
    nach [ADR 0005](./adr/0005-cli-distribution-via-npm.md):
@@ -394,6 +401,9 @@ auf der Platte; gilt nicht mehr als operativ.
    `packages/cli/package.json` braucht Publish-Setup (`private`
    raus, `description`, `repository`, `homepage`, `license`,
    `files`, `bin`, `prepublishOnly`, tsup-Build auf `dist/`).
+   _(erledigt 2026-05-20; `@getmonoceros/workbench@1.0.0` Bootstrap
+   lokal, ab `1.0.1` via OIDC-Workflow. Aktueller Stand npm:
+   `1.4.1` mit allen UX-Iterationen aus 2026-05-20/21.)_
 
 6. **`MONOCEROS_HOME`-Default schärfen** — sicherstellen, dass ein
    per Install-Skript installiertes Tool out-of-the-box auf
@@ -422,6 +432,49 @@ auf der Platte; gilt nicht mehr als operativ.
    `monoceros apply hello` → `monoceros shell hello` und Claude
    tippen lassen. Wenn das ohne Checkout durchläuft, ist M4
    durch.
+   _(macOS-Pfad live durchgespielt vom Maintainer-Mac aus, mehrere
+   Iterationen über 1.0.0 → 1.4.1; Linux + Windows stehen aus.)_
+
+### Zusätzliche Arbeiten die während M4 dazukamen
+
+Nicht im Original-Plan, fielen während Stage E auf und sind alle
+live in den 1.x-Releases:
+
+- **Custom Help-Renderer mit Gruppen** — die 23 Subcommands sind nach
+  Kategorie gruppiert (Container lifecycle / Run + inspect / Edit
+  container yml / Tooling), Beschreibungen wrappen auf Terminal-
+  Breite, USAGE-Zeile zeigt `<command>`-Platzhalter statt
+  Pipe-Liste. ANSI-Palette via neuer `util/format.ts`.
+- **Shell-Completion** für bash, zsh, PowerShell. `monoceros
+completion <shell>` druckt das Skript; Completion versteht
+  Subcommand-Namen + Container-Namen aus
+  `$MONOCEROS_HOME/container-configs/`. Install-Skripte richten
+  die Completion automatisch ein (OMZ/vanilla zsh, bash, pwsh).
+- **Strukturierte Installer-Ausgabe** — `install.sh` und
+  `install.ps1` rendern vier Sektionen (Prerequisites / Installing
+  CLI / Shell completion / User home / Next steps) mit konsistenter
+  Cyan/Grey/Bold-Palette. `npm install -g --silent` ausgeblendet,
+  eigene `monoceros <version> → <path>` Bestätigungszeile.
+- **Strukturierte Apply-Ausgabe** — vier Sektionen (Configuration
+  / Scaffold / Container / Next steps) mit denselben visuellen
+  Markern wie Installer. Pre-Announce der Features vor dem
+  devcontainer-cli-Stream, dim-grauer Hinweis auf den ~1–2-min
+  First-Apply-Pull, finaler `monoceros shell <name>`-Hinweis.
+- **`prettyPath`-Helper** — alle Lifecycle-Ausgaben (init / apply
+  / remove / restore) zeigen `~/.monoceros/...` statt
+  Relativ- oder Voll-Pfaden.
+- **Manifest-Hints im Init-Output** — beim `init --with=…` werden
+  Option-Beschreibungen und `x-monoceros.usageNotes` aus den
+  Feature-Manifesten als Kommentar-Blöcke in die generierte yml
+  eingesetzt. Manifeste werden via `pnpm manifests:sync` als
+  prebuild-Step mit dem npm-Tarball ausgeliefert; in Prod liegen
+  sie unter `<workbenchRoot>/features/<name>/`.
+- **User-Home-Setup im Installer** — install.sh / install.ps1
+  legen `~/.monoceros/` an und kopieren
+  `monoceros-config.sample.yml` aus dem npm-Paket dorthin
+  (no-clobber). Sample erklärt das Schema für Git-Identität +
+  Feature-Defaults; reale `monoceros-config.yml` bleibt
+  User-Verantwortung.
 
 ### Bewusst nicht in M4
 
