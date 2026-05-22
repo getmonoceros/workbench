@@ -175,16 +175,14 @@ if ! command -v node >/dev/null 2>&1; then
     macos)
       cat >&2 <<EOF
 
-Monoceros needs Node ${NODE_MIN_MAJOR} or newer. Pick whichever
-install style fits — we just need 'node' on PATH:
+Monoceros needs Node ${NODE_MIN_MAJOR} or newer (npm is included).
+The standard path on macOS is Homebrew:
 
-  ${BOLD}System-wide${RESET} (Homebrew):
-    brew install node
+  brew install node
 
-  ${BOLD}Per-user${RESET} (no admin required):
-    nvm:    https://github.com/nvm-sh/nvm
-    fnm:    https://github.com/Schniz/fnm
-    volta:  https://volta.sh
+Other paths (fnm, nvm, volta, manual download):
+
+  https://nodejs.org/en/download
 
 Then re-run this installer.
 EOF
