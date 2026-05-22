@@ -84,9 +84,17 @@ if ! command -v docker >/dev/null 2>&1; then
 Monoceros needs Docker. Install it before continuing:
 
   ${BOLD}macOS:${RESET}  Docker Desktop  →  https://docs.docker.com/desktop/install/mac-install/
-          (or:  brew install --cask docker)
+          or:  brew install --cask docker
+
   ${BOLD}Linux:${RESET}  Docker Engine   →  https://docs.docker.com/engine/install/
-          (or your distro's package: apt/dnf/pacman install docker.io / docker-ce)
+          one-liner across distros (Docker's official convenience script):
+            curl -fsSL https://get.docker.com | sudo sh
+          or per distro:
+            Debian / Ubuntu:  sudo apt install docker.io
+            Fedora / RHEL:    sudo dnf install docker
+            Arch:             sudo pacman -S docker
+          afterwards:  sudo systemctl enable --now docker
+                       sudo usermod -aG docker \$USER   (then log out + in)
 
 Then re-run this installer.
 EOF
