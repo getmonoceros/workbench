@@ -108,14 +108,9 @@ EOF
 Monoceros needs Docker. Install it before continuing:
 
   curl -fsSL https://get.docker.com | sudo sh
-  sudo systemctl enable --now docker
-  sudo usermod -aG docker \$USER     # then log out and back in
-
-The convenience script sets up Docker's official apt/dnf repo and
-installs docker-ce — integrates with your package manager so future
-'apt upgrade' / 'dnf update' keep it current.
 
 Other paths (distro packages, rootless mode, etc.):
+
   https://docs.docker.com/engine/install/
 
 Then re-run this installer.
