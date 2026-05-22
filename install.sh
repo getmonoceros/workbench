@@ -50,6 +50,11 @@ case "$(uname -s)" in
   *)      PLATFORM="other" ;;
 esac
 
+# User's interactive shell — needed both for the completion install
+# below and for the PATH-rc-append we do when falling back to a
+# per-user npm prefix.
+user_shell="${SHELL##*/}"
+
 # ── Pretty printing ────────────────────────────────────────────────
 # Colors are gated on stderr being a TTY (the script prints to
 # stderr so `curl … | sh` still shows the output). Palette matches
@@ -242,23 +247,74 @@ ok "Node $(dim "$node_version") with npm"
 # ── 2. CLI install ─────────────────────────────────────────────────
 section "Installing CLI"
 
+# Where will 'npm install -g' land? If npm's global prefix isn't
+# writable by the current user (typical when Node was installed
+# system-wide — apt, dnf, NodeSource convenience script), npm would
+# need sudo. Sudo-installing means the CLI ends up owned by root,
+# future updates also need sudo, and the install.sh path stops
+# being self-contained.
+#
+# Instead, when the prefix isn't writable, override to a per-user
+# prefix at ~/.local FOR THIS INSTALL ONLY (via --prefix flag, NOT
+# via 'npm config set prefix' which would persist in ~/.npmrc and
+# silently redirect every future 'npm install -g' for this user).
+# Per-user Node managers (fnm, nvm, volta, Homebrew) already give
+# a writable prefix and don't go through this branch — no-op for
+# them.
+npm_prefix=$(npm config get prefix 2>/dev/null || echo "")
+npm_install_args=()
+
+if [ -n "$npm_prefix" ] && [ ! -w "$npm_prefix" ]; then
+  user_prefix="$HOME/.local"
+  ok "npm prefix $(dim "$npm_prefix") not writable — installing to $(dim "$user_prefix") (no sudo)"
+  mkdir -p "$user_prefix/bin"
+  npm_install_args+=( "--prefix" "$user_prefix" )
+
+  # Ensure ~/.local/bin is on PATH for the current shell, so the
+  # 'monoceros --version' verification below resolves the binary.
+  case ":$PATH:" in
+    *":$user_prefix/bin:"*) ;;
+    *) export PATH="$user_prefix/bin:$PATH" ;;
+  esac
+
+  # Persist for future shells. ~/.local/bin is in PATH for login
+  # shells via /etc/profile.d on modern Ubuntu, but interactive
+  # non-login shells (typical terminal sessions) need the rc-file
+  # append. Guarded by a marker so repeat installs don't duplicate.
+  rc_file=""
+  case "$user_shell" in
+    bash) rc_file="$HOME/.bashrc" ;;
+    zsh)  rc_file="$HOME/.zshrc" ;;
+  esac
+  path_marker="# monoceros: per-user npm prefix on PATH"
+  if [ -n "$rc_file" ] && [ -f "$rc_file" ] && ! grep -qF "$path_marker" "$rc_file"; then
+    {
+      echo ""
+      echo "$path_marker"
+      echo 'export PATH="$HOME/.local/bin:$PATH"'
+    } >> "$rc_file"
+    ok "appended PATH line to $(dim "$rc_file")"
+  fi
+fi
+
 # --silent suppresses npm's "changed N packages" / "looking for funding"
 # narration. Errors still surface on stderr. We print our own confirmation
 # line below with the installed version, sourced from the binary itself.
-if ! npm install -g --silent "$PACKAGE" 2>/tmp/monoceros-install-err.$$; then
+if ! npm install -g --silent "${npm_install_args[@]}" "$PACKAGE" 2>/tmp/monoceros-install-err.$$; then
   fail "npm install failed."
   cat /tmp/monoceros-install-err.$$ >&2 || true
   rm -f /tmp/monoceros-install-err.$$
   cat >&2 <<EOF
 
-If this is a permissions issue, npm is configured to write to a
-location requiring elevated privileges. Two ways out:
+The npm output above is the most useful clue. Common causes:
+  - Network: couldn't reach the registry
+  - Disk:    out of space, or read-only filesystem
+  - Cache:   corrupted npm cache (try: npm cache verify)
 
-  - re-run with sudo (system install):  sudo npm install -g $PACKAGE
-  - reconfigure npm's prefix to a user-owned directory and add it
-    to PATH (search "npm config set prefix" for guidance).
+If you see 'EACCES' / 'permission denied' and no "npm prefix ... not
+writable" line appeared above this, please open an issue — the
+installer should have routed around it.
 
-Once installed, verify with:  monoceros --version
 EOF
   exit 1
 fi
@@ -277,7 +333,8 @@ fi
 # ── 3. Shell completion ────────────────────────────────────────────
 section "Shell completion"
 
-user_shell="${SHELL##*/}"
+# user_shell was detected once at the top of the script (it's also
+# used by the per-user-prefix branch above).
 
 install_zsh_completion() {
   local target dir rc_file fpath_line autoload_line marker
