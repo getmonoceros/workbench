@@ -192,26 +192,15 @@ EOF
     linux)
       cat >&2 <<EOF
 
-Monoceros needs Node ${NODE_MIN_MAJOR} or newer. Pick whichever
-install style fits — we just need 'node' on PATH:
+Monoceros needs Node ${NODE_MIN_MAJOR} or newer (npm is included).
+NodeSource adds an apt repo with current Node — run both commands:
 
-  ${BOLD}System-wide${RESET} via NodeSource (distro packages often ship Node 18
-  or older — NodeSource gives you a current ${NODE_MIN_MAJOR}.x):
+  curl -fsSL https://deb.nodesource.com/setup_${NODE_MIN_MAJOR}.x | sudo bash -
+  sudo apt install -y nodejs
 
-    Debian / Ubuntu:
-      curl -fsSL https://deb.nodesource.com/setup_${NODE_MIN_MAJOR}.x | sudo bash -
-      sudo apt install -y nodejs
+Other paths (Fedora/RHEL, fnm, nvm, volta, manual download):
 
-    Fedora / RHEL:
-      curl -fsSL https://rpm.nodesource.com/setup_${NODE_MIN_MAJOR}.x | sudo bash -
-      sudo dnf install -y nodejs
-
-    Other:  https://nodejs.org/en/download
-
-  ${BOLD}Per-user${RESET} (no admin required):
-    nvm:    https://github.com/nvm-sh/nvm
-    fnm:    https://github.com/Schniz/fnm
-    volta:  https://volta.sh
+  https://nodejs.org/en/download
 
 Then re-run this installer.
 EOF
