@@ -432,8 +432,56 @@ auf der Platte; gilt nicht mehr als operativ.
    `monoceros apply hello` → `monoceros shell hello` und Claude
    tippen lassen. Wenn das ohne Checkout durchläuft, ist M4
    durch.
-   _(macOS-Pfad live durchgespielt vom Maintainer-Mac aus, mehrere
-   Iterationen über 1.0.0 → 1.4.1; Linux + Windows stehen aus.)_
+   - **macOS** ✅ — Maintainer-Mac, mehrere Iterationen über
+     1.0.0 → 1.4.1.
+   - **Linux** ✅ — Ubuntu 24.04 LTS Desktop ARM in Parallels auf
+     M4 Max, 2026-05-22. Walkthrough komplett durch
+     (install.sh → init → apply → shell → Claude im Container).
+     Sieben signifikante Funde unterwegs entdeckt + gefixt, alle
+     in 1.5.x ausgeliefert:
+     1. `install.sh` shebang wird bei `| sh` ignoriert →
+        `set -o pipefail` crasht auf dash. Bash-Check + README-
+        Korrektur auf `| bash`. ([2b3cf0e](https://github.com/getmonoceros/workbench/commit/2b3cf0e))
+     2. `curl` ist auf Ubuntu Desktop nicht vorinstalliert →
+        Prereq-Hinweis ergänzt. ([2b3cf0e](https://github.com/getmonoceros/workbench/commit/2b3cf0e))
+     3. Docker-Hint enthielt `apt/dnf/pacman install …` als
+        unausführbare Sketch-Zeile → in copy-paste-fähige
+        Per-Distro-Zeilen aufgeteilt, später auf den Convenience-
+        Script-Oneliner getrimmt. ([45fbb2f](https://github.com/getmonoceros/workbench/commit/45fbb2f), [575293e](https://github.com/getmonoceros/workbench/commit/575293e), [733011e](https://github.com/getmonoceros/workbench/commit/733011e))
+     4. Prereq-Hints zeigten macOS + Linux gemischt → OS-Detection
+        via `uname -s`, getrennte Blöcke. Auch der versteckte
+        Node-Hint-Bug („`apt install nodejs npm`" gibt auf
+        Ubuntu 24.04 nur Node 18) auf NodeSource umgestellt. ([de046e0](https://github.com/getmonoceros/workbench/commit/de046e0), [c440cf7](https://github.com/getmonoceros/workbench/commit/c440cf7), [0982964](https://github.com/getmonoceros/workbench/commit/0982964))
+     5. `npm install -g` brauchte sudo, weil NodeSource Node als
+        root installiert → install.sh routet jetzt automatisch
+        auf einen per-User-Prefix unter `~/.local` (mit `--prefix`,
+        nicht `npm config set prefix` — andere Tools bleiben
+        unbeeinflusst). ([81c34ac](https://github.com/getmonoceros/workbench/commit/81c34ac))
+     6. `monoceros-config.yml` wurde auf Linux gar nicht ausgeliefert
+        (`npm root -g` zeigt System-Prefix, wir installierten zu
+        `~/.local`) + die alte Sample-File hatte aktive
+        Placeholder-Werte mit Footgun-Potential. Ship direkt als
+        `monoceros-config.yml`, alles auskommentiert, `defaults`
+        akzeptiert `null` damit das Template eine zusammenhängende
+        Bearbeitung erlaubt. ([8ae2d7a](https://github.com/getmonoceros/workbench/commit/8ae2d7a), [fb5e5da](https://github.com/getmonoceros/workbench/commit/fb5e5da))
+     7. `monoceros remove` ließ Image-Mode-Container als Zombies
+        zurück — `@devcontainers/cli` lässt Docker zufällige Namen
+        vergeben (`kind_cerf`, `thirsty_bartik`), unser Name-Filter
+        ging ins Leere. Vierter Filter über
+        `label=devcontainer.local_folder=<containerPath>` ergänzt. ([f409d9d](https://github.com/getmonoceros/workbench/commit/f409d9d))
+   - **Windows** ⏸ — aktuell **nicht testbar**. Apple-Silicon-
+     Parallels supportet nested virtualization für Windows-ARM-
+     Gäste nicht (offiziell von Parallels bestätigt: [KB 129234](https://kb.parallels.com/129234),
+     [KB 129497](https://kb.parallels.com/129497)). Docker Desktop in der
+     Windows-VM kann darum WSL2 nicht hochfahren, der eigentliche
+     `apply`-Pfad ist von dort aus unerreichbar. Cloud-Windows-VMs
+     (Azure Dsv5, AWS m6i) wären ein Ausweg, sind aber an Lizenz-/
+     Kosten-Fragen geknüpft, die noch offen sind. Bis eine Lösung
+     gefunden ist, bleibt der Windows-Walkthrough ungetestet — das
+     `install.ps1`-Rendering wurde immerhin verifiziert (zwei
+     Render-Bugs gefunden + gefixt: exit-in-iex killt Host, UTF-8-
+     Glyphen kaputt unter PowerShell 5.1 / conhost — [c88e95d](https://github.com/getmonoceros/workbench/commit/c88e95d),
+     [994ad34](https://github.com/getmonoceros/workbench/commit/994ad34)), aber der echte `apply hello`-Lauf steht aus.
 
 ### Zusätzliche Arbeiten die während M4 dazukamen
 
