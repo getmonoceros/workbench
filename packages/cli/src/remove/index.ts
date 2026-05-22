@@ -105,13 +105,21 @@ export async function runRemove(
   const script = [
     `set -u`,
     `echo "[remove] tearing down docker project ${projectName}…"`,
-    // Compose-mode containers, identified by the project label
+    // Compose-mode containers, identified by the compose project label.
     `by_label=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}" 2>/dev/null || true)`,
-    // Container-name prefix fallback (catches half-broken state)
+    // Devcontainer-cli containers (image-mode workspace + feature-
+    // build intermediates) all carry this label, value = the absolute
+    // container-dir path. Most reliable anchor we have, because
+    // @devcontainers/cli lets Docker assign random names like
+    // 'kind_cerf' — neither the project-name nor the vsc-<name>-
+    // prefix filters below catch those.
+    `by_dc_label=$(docker ps -aq --filter "label=devcontainer.local_folder=${containerPath}" 2>/dev/null || true)`,
+    // Container-name prefix fallback (catches half-broken state).
     `by_compose_name=$(docker ps -aq --filter "name=^${projectName}-" 2>/dev/null || true)`,
-    // Image-mode devcontainer-cli container
+    // Image-mode devcontainer-cli name fallback (only kicks in when
+    // the cli used a deterministic name — modern versions don't).
     `by_image_name=$(docker ps -aq --filter "name=^vsc-${opts.name}-" 2>/dev/null || true)`,
-    `to_remove=$(printf "%s\\n%s\\n%s\\n" "$by_label" "$by_compose_name" "$by_image_name" | sort -u | grep -v "^$" || true)`,
+    `to_remove=$(printf "%s\\n%s\\n%s\\n%s\\n" "$by_label" "$by_dc_label" "$by_compose_name" "$by_image_name" | sort -u | grep -v "^$" || true)`,
     `if [ -n "$to_remove" ]; then echo "[remove] removing containers: $(echo $to_remove | tr "\\n" " ")"; docker rm -f $to_remove >/dev/null || true; else echo "[remove] no containers found"; fi`,
     `docker network rm ${projectName}_default 2>/dev/null && echo "[remove] network ${projectName}_default removed" || true`,
     `echo "[remove] docker cleanup done"`,

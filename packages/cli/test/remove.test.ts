@@ -84,6 +84,12 @@ describe('runRemove', () => {
     expect(dockerCalls[0]).toContain(
       'label=com.docker.compose.project=sandbox_devcontainer',
     );
+    // Devcontainer-cli label filter — anchors on the container-dir
+    // path because @devcontainers/cli lets Docker assign random
+    // container names that name-prefix filters can't match.
+    expect(dockerCalls[0]).toContain(
+      `label=devcontainer.local_folder=${path.join(home, 'container', 'sandbox')}`,
+    );
     expect(dockerCalls[0]).toContain('name=^sandbox_devcontainer-');
     expect(dockerCalls[0]).toContain('name=^vsc-sandbox-');
 
