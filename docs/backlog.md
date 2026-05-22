@@ -510,10 +510,35 @@ beschrieben.
 
 ### Tasks (Skizze)
 
-1. **Test-Plan überarbeiten** — Stages A–D aktualisieren auf das
-   neue Modell (`monoceros init --with=…` + `apply <name>`, keine
-   `create`-Referenzen mehr). Stage C als End-to-End-Strecke pro
-   Komponenten-Bündel (aus M3 herübergezogen).
+1. **Test-Plan neu schreiben** — der heutige `docs/test-plan.md` ist
+   noch komplett auf das Pre-M4-Modell verdrahtet (`monoceros create`,
+   keine yml-Profile, keine Init-Komponenten) und ist damit so weit
+   weg vom aktuellen Stand, dass eine Aktualisierung Zeile-für-Zeile
+   sich nicht lohnt — kompletter Rewrite ist sinnvoller. Mindest-
+   Anforderungen an die Neufassung:
+   - **CLI-Surface (Stage A)** auf das aktuelle Subcommand-Set
+     ausrichten (`init`, `apply`, `add-feature`, `remove`, `restore`,
+     `list-components`, `completion`, …); 23 Subcommands sind nach
+     Kategorien zu strukturieren wie im Help-Renderer.
+   - **Scaffolding (Stage B)** auf `monoceros init <name> --with=…`
+     plus `monoceros list-components` umstellen. Idempotenz +
+     `add-*`-Mutator-Tests bleiben relevant, aber gegen das neue
+     yml-Modell formuliert.
+   - **End-to-End-Strecke pro Komponenten-Bündel** als neue Stage C —
+     ein realistischer Bündel-Mix (z. B. `node,postgres,claude`,
+     `python,redis`, `node,github,atlassian/twg`) jeweils komplett
+     durch `init → apply → run → remove`.
+   - **Image-Mode-Pfad explizit testen** — bei M4 Task 9 ist ein
+     Image-Mode-Container nach `remove` als Zombie übrig geblieben,
+     weil die Test-Coverage bis dahin fast immer Compose-Mode war.
+     Mindestens ein dezidierter Fall „`--with=node,claude` (ohne
+     Services) → apply → remove → `docker ps -a` muss leer sein".
+   - **Cross-OS-Sweep (Stage E)** als systematischer Pfad: install.sh
+     auf macOS + Linux, install.ps1 auf Windows, jeweils mit dem
+     M4-DoD-Walkthrough (init/apply/shell/Claude). Findet die
+     plattform-spezifischen Bugs die heute durchschlüpfen (UTF-8
+     in PowerShell, exit-in-iex, dash-vs-bash, npm-prefix-EACCES,
+     curl-fehlt-auf-Ubuntu, …).
 2. **AI-Tool-Library erweitern** — OpenCode, Codex, GitHub Copilot,
    Aider als Features dazu, jeweils nach dem Cookbook in
    [`docs/ai-tools.md`](./ai-tools.md).
