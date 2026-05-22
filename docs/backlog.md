@@ -634,12 +634,82 @@ beschrieben.
      - (C) Idempotenz wenn identisch, Error wie A wenn divergent
        Aktueller Lean: C. Entscheidung steht aus.
 
-7. **`add-port` / Port-Management** — noch im Design (siehe Diskussion
-   im Anschluss an M4 Task 9). Anforderung: on-the-fly auf dem
-   laufenden Container greifen, ohne vollen `apply`-Rebuild, plus
-   Persistenz in der Container-yml für den nächsten `apply`. Drei
-   Umsetzungswege auf dem Tisch (Container-Recreate, host-side
-   socat-Proxy, Pre-publish-Range) — Entscheidung steht aus.
+7. **`add-port` / Port-Management via Reverse-Proxy mit
+   Hostname-Routing** — der heutige `forwardPorts`-Eintrag in der
+   generierten devcontainer.json wird vom `@devcontainers/cli`
+   außerhalb von VS Code ignoriert (siehe Recherche bei M4 Task 9).
+   Apps in Image-Mode-Containern sind darum vom Host-Browser nicht
+   ohne Weiteres erreichbar.
+
+   **Anforderung**: `monoceros add-port <name> <port>...` muss
+   _on-the-fly_ wirken (kein Container-Restart, kein voller `apply`-
+   Rebuild) und gleichzeitig in der Container-yml persistieren, damit
+   spätere `apply`-Läufe die Ports wieder herstellen.
+
+   **Lean-Architektur — gemeinsamer Traefik-Container mit
+   Hostname-Routing**:
+   - **Traefik als Singleton** im Hintergrund, eigenes Docker-Network
+     `monoceros-proxy`, dem alle Dev-Container beitreten. Image-pull
+     einmal, ~50 MB. Container wird beim ersten Port-Bedarf gestartet
+     und bleibt mit `--restart unless-stopped` am Leben.
+   - **Hostname-Routing über `*.localhost`** — `*.localhost` löst per
+     RFC 6761 auf jedem modernen OS automatisch zu 127.0.0.1 auf,
+     kein `hosts`-File-Eingriff. Pattern:
+     - `<container>.localhost` → Default-Port des Containers
+     - `<container>-<port>.localhost` → expliziter interner Port
+     - Mehrere Container parallel funktionieren ohne Port-Kollision
+       weil Traefik via HTTP-Host-Header routet, nicht via
+       Port-Mapping. Einziger belegter Host-Port: 80 (Traefik-
+       Entrypoint).
+   - **Hot-Reload via Traefik File-Provider** — `add-port` schreibt
+     eine YAML-Datei nach `~/.monoceros/traefik/dynamic/<name>.yml`,
+     Traefik picks die innerhalb ~100ms auf, **kein** Traefik-
+     Restart, **kein** Container-Restart. Builder kann eine laufende
+     App weiterbenutzen während der neue Port live geht.
+   - **Persistenz** — `add-port` trägt parallel den Port in die
+     Container-yml ein. Spätere `apply`-Läufe stellen die Traefik-
+     Configs aus der yml wieder her und sorgen für Network-
+     Membership im `monoceros-proxy`-Network.
+   - **Discovery** — `monoceros port <name>` listet die aktuellen
+     URLs des Containers, damit der Builder nicht selber das
+     Subdomain-Pattern konstruieren muss.
+
+   **Drei Builder-Szenarien die das abdeckt**:
+   - **Web-Remote-Session**: Dev-Container läuft headless, Builder
+     öffnet `<container>.localhost` im Browser — funktioniert ohne
+     dass irgendein lokales Tool offen ist.
+   - **VS Code wird geschlossen**: VS Code's eigenes Auto-Forward
+     stirbt, Traefik forwarded weiter. App bleibt erreichbar.
+   - **`monoceros shell` + Claude Code**: Builder hat nur Terminal,
+     Browser-Test geht über die stabile Traefik-URL.
+
+   **Offene Detail-Fragen**:
+   - **VS-Code-Auto-Forward koexistieren oder unterdrücken?**
+     Beide aktiv gibt dem Builder zwei URLs (VS Code's
+     `localhost:NNNNN` + Traefik's `<name>.localhost`) — funktional
+     OK, UX-mäßig verwirrend. Default-Option in Templates:
+     `"remote.autoForwardPorts": false`, dann ist Traefik die einzige
+     Quelle der Wahrheit. Reversibel pro Container.
+   - **Traefik-Lifecycle**: Always-on (Docker `--restart
+unless-stopped`, ab erstem Bedarf permanent) vs. bedarfsbasiert
+     (Start beim ersten Port-Container, Stop wenn keiner mehr).
+     Always-on ist UX-glatter und kostet ~30 MB RAM idle.
+   - **TLS / HTTPS**: manche Frameworks (PWA, Service Worker) wollen
+     HTTPS-Origin. `*.localhost` ist im Browser allerdings als
+     "potentially trustworthy" whitelisted, also Service Worker
+     gehen auch ohne TLS. Falls echtes HTTPS gebraucht wird:
+     Traefik + mkcert-Integration als M6+-Erweiterung.
+   - **Non-HTTP-Protokolle (TCP)**: Hostname-Routing geht nur über
+     HTTP. TCP-Services (z. B. Postgres-Zugriff vom Host) hätten
+     keinen Host-Header. Vorschlag: bewusst _aus_ dem Scope —
+     Datenbanken sind containerintern, Builder nutzt `monoceros
+run --psql ...` oder ähnliches. Wer wirklich Host-Postgres-
+     Zugriff braucht, edit die yml direkt mit klassischem
+     `-p 5432:5432`.
+   - **Bestehende Container ohne Network-Membership**: müssen beim
+     nächsten apply ins `monoceros-proxy`-Network gejoint werden.
+     Migration-Hint nötig oder automatischer Re-Apply-Trigger nach
+     erstem `add-port`.
 
 ---
 
