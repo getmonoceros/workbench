@@ -558,50 +558,13 @@ beschrieben.
 
 ### Tasks (Skizze)
 
-1. **Test-Plan neu schreiben** — der heutige `docs/test-plan.md` ist
-   noch komplett auf das Pre-M4-Modell verdrahtet (`monoceros create`,
-   keine yml-Profile, keine Init-Komponenten) und ist damit so weit
-   weg vom aktuellen Stand, dass eine Aktualisierung Zeile-für-Zeile
-   sich nicht lohnt — kompletter Rewrite ist sinnvoller. Mindest-
-   Anforderungen an die Neufassung:
-   - **CLI-Surface (Stage A)** auf das aktuelle Subcommand-Set
-     ausrichten (`init`, `apply`, `add-feature`, `remove`, `restore`,
-     `list-components`, `completion`, …); 23 Subcommands sind nach
-     Kategorien zu strukturieren wie im Help-Renderer.
-   - **Scaffolding (Stage B)** auf `monoceros init <name> --with=…`
-     plus `monoceros list-components` umstellen. Idempotenz +
-     `add-*`-Mutator-Tests bleiben relevant, aber gegen das neue
-     yml-Modell formuliert.
-   - **End-to-End-Strecke pro Komponenten-Bündel** als neue Stage C —
-     ein realistischer Bündel-Mix (z. B. `node,postgres,claude`,
-     `python,redis`, `node,github,atlassian/twg`) jeweils komplett
-     durch `init → apply → run → remove`.
-   - **Image-Mode-Pfad explizit testen** — bei M4 Task 9 ist ein
-     Image-Mode-Container nach `remove` als Zombie übrig geblieben,
-     weil die Test-Coverage bis dahin fast immer Compose-Mode war.
-     Mindestens ein dezidierter Fall „`--with=node,claude` (ohne
-     Services) → apply → remove → `docker ps -a` muss leer sein".
-   - **Cross-OS-Sweep (Stage E)** als systematischer Pfad: install.sh
-     auf macOS + Linux, install.ps1 auf Windows, jeweils mit dem
-     M4-DoD-Walkthrough (init/apply/shell/Claude). Findet die
-     plattform-spezifischen Bugs die heute durchschlüpfen (UTF-8
-     in PowerShell, exit-in-iex, dash-vs-bash, npm-prefix-EACCES,
-     curl-fehlt-auf-Ubuntu, …).
-2. **AI-Tool-Library erweitern** — OpenCode, Codex, GitHub Copilot,
-   Aider als Features dazu, jeweils nach dem Cookbook in
-   [`docs/ai-tools.md`](./ai-tools.md).
-3. **`docs/commands/`-Lücken füllen** — alle Detail-Seiten sind
-   geschrieben (Stand 2026-05-19). Wenn neue Befehle dazukommen,
-   nicht vergessen pro neuem CLI-Command eine MD-Datei zu liefern
-   (CLAUDE.md-Konvention). _(M3-Doku-Sweep erledigt; offen
-   bleiben nur künftige neue Befehle.)_
-4. **Beispiel-Workflows** — kurze how-to-Dokumente für die häufigsten
-   Stacks (Node-API, Python-Pipeline, Atlassian-Forge-Setup).
-5. **Image-Aufräumen** — entscheiden, ob die dormant Egress-iptables-
-   Mechanik im Image bleibt (opt-in für CI/headless) oder ganz raus
-   kann. Heute beides möglich, kein akuter Druck.
+Reihenfolge ist absichtlich Features-zuerst-Doku-danach: Test-Plan,
+AI-Library und Command-Doku kommen NACH den drei neuen CLI-
+Oberflächen (init --with-repo, add-port, tunnel), damit Doku und
+Tests die finale Surface abdecken und nicht zwischenzeitliche
+Zustände dokumentieren.
 
-6. **`init --with-repo` — Repo direkt in init reinziehen** — heute
+1. **`init --with-repo` — Repo direkt in init reinziehen** — heute
    muss der Builder erst `init`, dann separat `add-repo`. Lück
    schließen mit einem neuen wiederholbaren Flag:
 
@@ -634,7 +597,7 @@ beschrieben.
      - (C) Idempotenz wenn identisch, Error wie A wenn divergent
        Aktueller Lean: C. Entscheidung steht aus.
 
-7. **`add-port` / Port-Management via Reverse-Proxy mit
+2. **`add-port` / Port-Management via Reverse-Proxy mit
    Hostname-Routing** — der heutige `forwardPorts`-Eintrag in der
    generierten devcontainer.json wird vom `@devcontainers/cli`
    außerhalb von VS Code ignoriert (siehe Recherche bei M4 Task 9).
@@ -702,14 +665,14 @@ unless-stopped`, ab erstem Bedarf permanent) vs. bedarfsbasiert
    - **Non-HTTP-Protokolle (TCP)**: Hostname-Routing geht nur über
      HTTP. TCP-Services (Postgres-Zugriff vom Host etc.) hätten
      keinen Host-Header und brauchen ein anderes Werkzeug. Siehe
-     Task 8 (`monoceros tunnel`) für die Geschwister-Lösung.
+     Task 3 (`monoceros tunnel`) für die Geschwister-Lösung.
    - **Bestehende Container ohne Network-Membership**: müssen beim
      nächsten apply ins `monoceros-proxy`-Network gejoint werden.
      Migration-Hint nötig oder automatischer Re-Apply-Trigger nach
      erstem `add-port`.
 
-8. **`monoceros tunnel <name>` — TCP-Tunnel zu Container-Services** —
-   Geschwister-Lösung zu Task 7 (HTTP via Traefik). Für TCP-Services
+3. **`monoceros tunnel <name>` — TCP-Tunnel zu Container-Services** —
+   Geschwister-Lösung zu Task 2 (HTTP via Traefik). Für TCP-Services
    (PostgreSQL, MySQL, Redis, …), die der Builder vom Host aus
    erreichen will, ohne `-p`-Mappings in die yml zu schreiben oder
    einen `apply`-Rebuild auszulösen.
@@ -727,7 +690,7 @@ unless-stopped`, ab erstem Bedarf permanent) vs. bedarfsbasiert
      forwarden, nicht nur deklarierte Services. Das ist gleichzeitig
      der **Escape-Hatch für HTTP-Tunneling**: wenn der Builder einen
      spezifischen Host-Port für eine HTTP-App braucht (statt der
-     Traefik-Subdomain aus Task 7), funktioniert das auch hierüber.
+     Traefik-Subdomain aus Task 2), funktioniert das auch hierüber.
    - Beide Flags kombinierbar.
 
    **Implementierung — α (socat-Sidecar-Container)**: pro Tunnel ein
@@ -751,7 +714,7 @@ unless-stopped`, ab erstem Bedarf permanent) vs. bedarfsbasiert
      zeigen sonst ins Leere)
    - `monoceros start hello` startet sie **nicht** automatisch —
      Tunnels sind explizit ad-hoc, nicht persistent. HTTP via
-     Traefik aus Task 7 ist die persistente Lösung, Tunnels sind
+     Traefik aus Task 2 ist die persistente Lösung, Tunnels sind
      situative TCP-Bridges.
    - `monoceros remove hello` räumt sie mit weg.
 
@@ -772,6 +735,63 @@ unless-stopped`, ab erstem Bedarf permanent) vs. bedarfsbasiert
      wäre Ephemeral-Default ("Docker, such einen freien"), Builder
      hätte dann nie Kollisionen aber müsste den Port immer
      nachschlagen. Lean: 1:1 mit expliziter Override.
+
+4. **Test-Plan neu schreiben** — der heutige `docs/test-plan.md` ist
+   noch komplett auf das Pre-M4-Modell verdrahtet (`monoceros create`,
+   keine yml-Profile, keine Init-Komponenten) und ist damit so weit
+   weg vom aktuellen Stand, dass eine Aktualisierung Zeile-für-Zeile
+   sich nicht lohnt — kompletter Rewrite ist sinnvoller. Setzt
+   Tasks 1–3 voraus, damit die Neufassung die finale Surface testet.
+   Mindest-Anforderungen an die Neufassung:
+   - **CLI-Surface (Stage A)** auf das aktuelle Subcommand-Set
+     ausrichten (`init`, `apply`, `add-feature`, `remove`, `restore`,
+     `list-components`, `completion`, neu: `add-port`, `port`,
+     `tunnel`, …); Subcommands nach Kategorien strukturieren wie im
+     Help-Renderer.
+   - **Scaffolding (Stage B)** auf `monoceros init <name> --with=…
+--with-repo=…` plus `monoceros list-components` umstellen.
+     Idempotenz + `add-*`-Mutator-Tests bleiben relevant, aber gegen
+     das neue yml-Modell formuliert. Duplikat-Behandlung bei
+     `--with-repo` + späterem `add-repo` (Lean C aus Task 1)
+     explizit als Test-Fall mit drin.
+   - **End-to-End-Strecke pro Komponenten-Bündel** als neue Stage C —
+     ein realistischer Bündel-Mix (z. B. `node,postgres,claude`,
+     `python,redis`, `node,github,atlassian/twg`) jeweils komplett
+     durch `init → apply → run → remove`. Plus Port-Strecke:
+     `add-port` + Browser-Test via `<container>.localhost`,
+     `tunnel` + DB-Connection vom Host.
+   - **Image-Mode-Pfad explizit testen** — bei M4 Task 9 ist ein
+     Image-Mode-Container nach `remove` als Zombie übrig geblieben,
+     weil die Test-Coverage bis dahin fast immer Compose-Mode war.
+     Mindestens ein dezidierter Fall „`--with=node,claude` (ohne
+     Services) → apply → remove → `docker ps -a` muss leer sein".
+   - **Cross-OS-Sweep (Stage E)** als systematischer Pfad: install.sh
+     auf macOS + Linux, install.ps1 auf Windows, jeweils mit dem
+     M4-DoD-Walkthrough (init/apply/shell/Claude). Findet die
+     plattform-spezifischen Bugs die heute durchschlüpfen (UTF-8
+     in PowerShell, exit-in-iex, dash-vs-bash, npm-prefix-EACCES,
+     curl-fehlt-auf-Ubuntu, …).
+
+5. **AI-Tool-Library erweitern** — OpenCode, Codex, GitHub Copilot,
+   Aider als Features dazu, jeweils nach dem Cookbook in
+   [`docs/ai-tools.md`](./ai-tools.md). Unabhängig von Tasks 1–3,
+   kann auch parallel laufen.
+
+6. **`docs/commands/`-Lücken füllen** — neue Detail-Seiten für die
+   Befehle aus Tasks 1–3 (`add-port`, `port`, `tunnel`, ggf.
+   `tunnel-stop`). Plus den `--with-repo`-Flag in der `init.md`
+   ergänzen. CLAUDE.md-Konvention: pro neuem CLI-Befehl eine
+   MD-Datei im selben Commit wie der Code.
+
+7. **Beispiel-Workflows** — kurze how-to-Dokumente für die häufigsten
+   Stacks (Node-API mit DB-Tunnel, Python-Pipeline, Atlassian-Forge-
+   Setup). Setzt Tasks 1–3 voraus, damit die Workflows die finalen
+   Befehle nutzen können.
+
+8. **Image-Aufräumen** — entscheiden, ob die dormant Egress-iptables-
+   Mechanik im Image bleibt (opt-in für CI/headless) oder ganz raus
+   kann. Heute beides möglich, kein akuter Druck. Unabhängig von
+   Tasks 1–3.
 
 ---
 
