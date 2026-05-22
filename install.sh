@@ -412,31 +412,40 @@ case "$user_shell" in
 esac
 
 # ── 4. User home ───────────────────────────────────────────────────
-# Ensure ~/.monoceros/ exists with a config-sample copy. Without
-# this, a fresh-installed builder lands in apply prompts with no
-# reference for what monoceros-config.yml accepts. The sample lives
-# inside the npm package; we copy it (no-clobber) into the user's
-# home so they can rename to monoceros-config.yml when they want to
-# set global defaults.
+# Ensure ~/.monoceros/ exists with an all-commented monoceros-config.yml
+# template. The template ships as-is (no placeholder values active);
+# the user uncomments the sections they need. No "copy the sample and
+# rename it" ritual — the file is already in the right place under the
+# right name, and being all-commented means it's a no-op until edited.
 section "User home"
 
 monoceros_home="$HOME/.monoceros"
-sample_src="$(npm root -g)/@getmonoceros/workbench/templates/monoceros-config.sample.yml"
-sample_dst="$monoceros_home/monoceros-config.sample.yml"
+
+# Where did our package land? If the CLI install routed to a per-user
+# prefix above (the npm_install_args branch), npm root -g would point
+# at the SYSTEM prefix where we did NOT install. Use the actual install
+# location in that case.
+if [ ${#npm_install_args[@]} -gt 0 ]; then
+  npm_global_root="$user_prefix/lib/node_modules"
+else
+  npm_global_root=$(npm root -g 2>/dev/null || echo "")
+fi
+config_src="$npm_global_root/@getmonoceros/workbench/templates/monoceros-config.sample.yml"
+config_dst="$monoceros_home/monoceros-config.yml"
 
 mkdir -p "$monoceros_home"
 
-if [[ -f "$sample_src" ]]; then
-  if [[ -f "$sample_dst" ]]; then
-    ok "config sample $(dim '→') $(dim "$sample_dst") $(dim '(already present)')"
+if [[ -f "$config_src" ]]; then
+  if [[ -f "$config_dst" ]]; then
+    ok "config $(dim '→') $(dim "$config_dst") $(dim '(already present, left alone)')"
   else
-    cp "$sample_src" "$sample_dst"
-    ok "config sample $(dim '→') $(dim "$sample_dst")"
-    say "  $(dim "Copy to monoceros-config.yml and edit when you want global defaults")"
+    cp "$config_src" "$config_dst"
+    ok "config $(dim '→') $(dim "$config_dst")"
+    say "  $(dim "All entries are commented out — uncomment what you need")"
     say "  $(dim "(git identity, feature API keys, etc).")"
   fi
 else
-  warn "config sample not found at $sample_src — skipping"
+  warn "config template not found at $config_src — skipping"
 fi
 
 # ── 5. Next steps ──────────────────────────────────────────────────
@@ -464,8 +473,7 @@ say ""
 say "  Try it out:"
 say ""
 say "    $(cmd 'monoceros init hello --with=node,claude')"
-say "    $(dim "# optional: cp ~/.monoceros/monoceros-config.sample.yml \\")"
-say "    $(dim "#              ~/.monoceros/monoceros-config.yml  → edit defaults")"
+say "    $(dim "# optional: edit ~/.monoceros/monoceros-config.yml for global defaults")"
 say "    $(cmd 'monoceros apply hello')"
 say "    $(cmd 'monoceros shell hello')"
 say ""

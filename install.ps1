@@ -231,31 +231,32 @@ Once installed, verify with:  monoceros --version
   }
 
   # ── 4. User home ──────────────────────────────────────────────────
-  # Ensure %USERPROFILE%\.monoceros\ exists with a config-sample copy.
-  # Same logic as install.sh — without this the first `monoceros apply`
-  # leaves the builder without a reference for monoceros-config.yml.
+  # Ensure %USERPROFILE%\.monoceros\ exists with an all-commented
+  # monoceros-config.yml template. Same logic as install.sh — the
+  # template ships as-is, user uncomments what they need. No "copy
+  # the sample and rename" ritual.
   Section 'User home'
 
   $monocerosHome = Join-Path $env:USERPROFILE '.monoceros'
   $npmRoot       = (& npm root -g).Trim()
-  $sampleSrc     = Join-Path $npmRoot '@getmonoceros\workbench\templates\monoceros-config.sample.yml'
-  $sampleDst     = Join-Path $monocerosHome 'monoceros-config.sample.yml'
+  $configSrc     = Join-Path $npmRoot '@getmonoceros\workbench\templates\monoceros-config.sample.yml'
+  $configDst     = Join-Path $monocerosHome 'monoceros-config.yml'
 
   if (-not (Test-Path $monocerosHome)) {
     New-Item -ItemType Directory -Path $monocerosHome -Force | Out-Null
   }
 
-  if (Test-Path $sampleSrc) {
-    if (Test-Path $sampleDst) {
-      Ok "config sample $(Dim '->') $(Dim $sampleDst) $(Dim '(already present)')"
+  if (Test-Path $configSrc) {
+    if (Test-Path $configDst) {
+      Ok "config $(Dim '->') $(Dim $configDst) $(Dim '(already present, left alone)')"
     } else {
-      Copy-Item -Path $sampleSrc -Destination $sampleDst
-      Ok "config sample $(Dim '->') $(Dim $sampleDst)"
-      Say "  $(Dim 'Copy to monoceros-config.yml and edit when you want global defaults')"
+      Copy-Item -Path $configSrc -Destination $configDst
+      Ok "config $(Dim '->') $(Dim $configDst)"
+      Say "  $(Dim 'All entries are commented out -- uncomment what you need')"
       Say "  $(Dim '(git identity, feature API keys, etc).')"
     }
   } else {
-    Warn "config sample not found at $sampleSrc -- skipping"
+    Warn "config template not found at $configSrc -- skipping"
   }
 
   # ── 5. Next steps ─────────────────────────────────────────────────
@@ -269,8 +270,7 @@ Once installed, verify with:  monoceros --version
   Say '  Try it out:'
   Say ''
   Say "    $(Cmd 'monoceros init hello --with=node,claude')"
-  Say "    $(Dim '# optional: copy monoceros-config.sample.yml to monoceros-config.yml')"
-  Say "    $(Dim '#           in %USERPROFILE%\.monoceros\ and edit defaults')"
+  Say "    $(Dim '# optional: edit %USERPROFILE%\.monoceros\monoceros-config.yml for global defaults')"
   Say "    $(Cmd 'monoceros apply hello')"
   Say "    $(Cmd 'monoceros shell hello')"
   Say ''
