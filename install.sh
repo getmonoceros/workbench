@@ -39,6 +39,17 @@ set -euo pipefail
 PACKAGE="@getmonoceros/workbench"
 NODE_MIN_MAJOR=20
 
+# Detect host OS once so prereq hints can show only the relevant
+# commands. uname -s is POSIX-standard:
+#   Darwin → macOS
+#   Linux  → Linux (also WSL, which is fine — it IS a Linux env)
+#   *      → unknown; fall back to generic doc links
+case "$(uname -s)" in
+  Darwin) PLATFORM="macos" ;;
+  Linux)  PLATFORM="linux" ;;
+  *)      PLATFORM="other" ;;
+esac
+
 # ── Pretty printing ────────────────────────────────────────────────
 # Colors are gated on stderr being a TTY (the script prints to
 # stderr so `curl … | sh` still shows the output). Palette matches
@@ -79,65 +90,155 @@ section "Prerequisites"
 
 if ! command -v docker >/dev/null 2>&1; then
   fail "Docker is not installed."
-  cat >&2 <<EOF
+  case "$PLATFORM" in
+    macos)
+      cat >&2 <<EOF
 
 Monoceros needs Docker. Install it before continuing:
 
-  ${BOLD}macOS:${RESET}  Docker Desktop  →  https://docs.docker.com/desktop/install/mac-install/
-          or:  brew install --cask docker
-
-  ${BOLD}Linux:${RESET}  Docker Engine   →  https://docs.docker.com/engine/install/
-          one-liner across distros (Docker's official convenience script):
-            curl -fsSL https://get.docker.com | sudo sh
-          or per distro:
-            Debian / Ubuntu:  sudo apt install docker.io
-            Fedora / RHEL:    sudo dnf install docker
-            Arch:             sudo pacman -S docker
-          afterwards:  sudo systemctl enable --now docker
-                       sudo usermod -aG docker \$USER   (then log out + in)
+  Docker Desktop  →  https://docs.docker.com/desktop/install/mac-install/
+  or via Homebrew:   brew install --cask docker
 
 Then re-run this installer.
 EOF
+      ;;
+    linux)
+      cat >&2 <<EOF
+
+Monoceros needs Docker. Install it before continuing:
+
+  Reference: https://docs.docker.com/engine/install/
+
+  ${BOLD}Quick install${RESET} — Docker's official convenience script
+  (sets up the apt/dnf repo, installs docker-ce, integrates with
+  your package manager so apt upgrade / dnf update keeps it current):
+
+    curl -fsSL https://get.docker.com | sudo sh
+
+  ${BOLD}Or via your distro's package manager:${RESET}
+
+    Debian / Ubuntu:  sudo apt install docker.io
+    Fedora / RHEL:    sudo dnf install docker
+    Arch:             sudo pacman -S docker
+
+  ${BOLD}Either path, finish with:${RESET}
+
+    sudo systemctl enable --now docker
+    sudo usermod -aG docker \$USER     # then log out and back in
+
+Then re-run this installer.
+EOF
+      ;;
+    *)
+      cat >&2 <<EOF
+
+Monoceros needs Docker. See https://docs.docker.com/engine/install/
+for instructions for your platform.
+
+Then re-run this installer.
+EOF
+      ;;
+  esac
   exit 1
 fi
 
 if ! docker info >/dev/null 2>&1; then
   fail "Docker is installed but the daemon isn't reachable."
-  cat >&2 <<EOF
+  case "$PLATFORM" in
+    macos)
+      cat >&2 <<EOF
 
-Start Docker Desktop (macOS) or the Docker service (Linux):
+Start Docker Desktop:
 
-  ${BOLD}macOS:${RESET}  open -a Docker
-  ${BOLD}Linux:${RESET}  sudo systemctl start docker
-          (you may need to add your user to the 'docker' group:
-           sudo usermod -aG docker \$USER ; log out and back in)
+  open -a Docker
+
+Wait until the whale icon stops animating, then re-run this installer.
+EOF
+      ;;
+    linux)
+      cat >&2 <<EOF
+
+Start the Docker service:
+
+  sudo systemctl start docker
+
+If 'docker info' still fails after that, your user may not be in the
+'docker' group:
+
+  sudo usermod -aG docker \$USER     # then log out and back in
 
 Then re-run this installer.
 EOF
+      ;;
+    *)
+      cat >&2 <<EOF
+
+Start the Docker daemon for your platform, then re-run this
+installer.
+EOF
+      ;;
+  esac
   exit 1
 fi
 ok "Docker daemon reachable"
 
 if ! command -v node >/dev/null 2>&1; then
   fail "Node is not installed."
-  cat >&2 <<EOF
+  case "$PLATFORM" in
+    macos)
+      cat >&2 <<EOF
 
-Monoceros needs Node ${NODE_MIN_MAJOR} or newer. Pick whichever install style fits
-your setup — Monoceros doesn't care, we just need \`node\` on PATH:
+Monoceros needs Node ${NODE_MIN_MAJOR} or newer. Pick whichever
+install style fits — we just need 'node' on PATH:
 
-  ${BOLD}System-wide (admin / sudo):${RESET}
-    macOS:   brew install node
-    Linux:   sudo apt install nodejs npm     (Debian / Ubuntu)
-             sudo dnf install nodejs npm     (Fedora)
-             https://nodejs.org/en/download   (other distros)
+  ${BOLD}System-wide${RESET} (Homebrew):
+    brew install node
 
-  ${BOLD}Per-user (no admin required):${RESET}
-    nvm:     https://github.com/nvm-sh/nvm
-    fnm:     https://github.com/Schniz/fnm
-    volta:   https://volta.sh
+  ${BOLD}Per-user${RESET} (no admin required):
+    nvm:    https://github.com/nvm-sh/nvm
+    fnm:    https://github.com/Schniz/fnm
+    volta:  https://volta.sh
 
 Then re-run this installer.
 EOF
+      ;;
+    linux)
+      cat >&2 <<EOF
+
+Monoceros needs Node ${NODE_MIN_MAJOR} or newer. Pick whichever
+install style fits — we just need 'node' on PATH:
+
+  ${BOLD}System-wide${RESET} via NodeSource (distro packages often ship Node 18
+  or older — NodeSource gives you a current ${NODE_MIN_MAJOR}.x):
+
+    Debian / Ubuntu:
+      curl -fsSL https://deb.nodesource.com/setup_${NODE_MIN_MAJOR}.x | sudo bash -
+      sudo apt install -y nodejs
+
+    Fedora / RHEL:
+      curl -fsSL https://rpm.nodesource.com/setup_${NODE_MIN_MAJOR}.x | sudo bash -
+      sudo dnf install -y nodejs
+
+    Other:  https://nodejs.org/en/download
+
+  ${BOLD}Per-user${RESET} (no admin required):
+    nvm:    https://github.com/nvm-sh/nvm
+    fnm:    https://github.com/Schniz/fnm
+    volta:  https://volta.sh
+
+Then re-run this installer.
+EOF
+      ;;
+    *)
+      cat >&2 <<EOF
+
+Monoceros needs Node ${NODE_MIN_MAJOR} or newer. See
+https://nodejs.org/en/download for install options.
+
+Then re-run this installer.
+EOF
+      ;;
+  esac
   exit 1
 fi
 
