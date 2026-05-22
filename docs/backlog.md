@@ -601,6 +601,37 @@ beschrieben.
    Mechanik im Image bleibt (opt-in für CI/headless) oder ganz raus
    kann. Heute beides möglich, kein akuter Druck.
 
+6. **`init --with-repo` — Repo direkt in init reinziehen** — heute
+   muss der Builder erst `init`, dann separat `add-repo`. Lück
+   schließen mit einem neuen wiederholbaren Flag:
+
+   ```sh
+   monoceros init hello --with=node,claude \
+     --with-repo=https://github.com/foo/api \
+     --with-repo=https://github.com/foo/ui:develop
+   ```
+
+   - **Syntax**: `URL[:branch]`. Branch wird via "letzter `:` nach
+     letztem `/`"-Regel abgespalten. Robust gegen SSH-URLs
+     (`git@github.com:foo/bar.git` hat das `:` _vor_ dem letzten
+     `/`, also kein Branch-Match) und URLs mit Port-Angabe.
+   - **`--as` (Folder-Override)** bleibt explizit raus aus init —
+     wird nur über `monoceros add-repo --as=<name>` post-init
+     gesetzt. Hält die init-Flag-Syntax knackig; der seltene
+     Folder-Rename-Fall braucht keine Inline-Lösung.
+   - **Mehrfach-Repo**: `--with-repo` wiederholbar wie `--with`.
+   - **Integration**: nutzt intern dieselbe Logik wie `add-repo`
+     (yml-Eintrag in `repos:`, post-create.sh-Clone-Block,
+     `<solution>.code-workspace`-Folder-Root) — also kein neuer
+     Code-Pfad, nur ein neuer Entry-Point.
+
+7. **`add-port` / Port-Management** — noch im Design (siehe Diskussion
+   im Anschluss an M4 Task 9). Anforderung: on-the-fly auf dem
+   laufenden Container greifen, ohne vollen `apply`-Rebuild, plus
+   Persistenz in der Container-yml für den nächsten `apply`. Drei
+   Umsetzungswege auf dem Tisch (Container-Recreate, host-side
+   socat-Proxy, Pre-publish-Range) — Entscheidung steht aus.
+
 ---
 
 ## Vorgemerkt für später (jenseits M5)
