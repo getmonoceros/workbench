@@ -700,16 +700,78 @@ unless-stopped`, ab erstem Bedarf permanent) vs. bedarfsbasiert
      gehen auch ohne TLS. Falls echtes HTTPS gebraucht wird:
      Traefik + mkcert-Integration als M6+-Erweiterung.
    - **Non-HTTP-Protokolle (TCP)**: Hostname-Routing geht nur über
-     HTTP. TCP-Services (z. B. Postgres-Zugriff vom Host) hätten
-     keinen Host-Header. Vorschlag: bewusst _aus_ dem Scope —
-     Datenbanken sind containerintern, Builder nutzt `monoceros
-run --psql ...` oder ähnliches. Wer wirklich Host-Postgres-
-     Zugriff braucht, edit die yml direkt mit klassischem
-     `-p 5432:5432`.
+     HTTP. TCP-Services (Postgres-Zugriff vom Host etc.) hätten
+     keinen Host-Header und brauchen ein anderes Werkzeug. Siehe
+     Task 8 (`monoceros tunnel`) für die Geschwister-Lösung.
    - **Bestehende Container ohne Network-Membership**: müssen beim
      nächsten apply ins `monoceros-proxy`-Network gejoint werden.
      Migration-Hint nötig oder automatischer Re-Apply-Trigger nach
      erstem `add-port`.
+
+8. **`monoceros tunnel <name>` — TCP-Tunnel zu Container-Services** —
+   Geschwister-Lösung zu Task 7 (HTTP via Traefik). Für TCP-Services
+   (PostgreSQL, MySQL, Redis, …), die der Builder vom Host aus
+   erreichen will, ohne `-p`-Mappings in die yml zu schreiben oder
+   einen `apply`-Rebuild auszulösen.
+
+   **Default-Verhalten**: `monoceros tunnel hello` ohne weitere Args
+   öffnet Tunnel für **alle** Services, die in der Container-yml
+   deklariert sind, auf deren jeweils default-Host-Port (postgres →
+   5432, mysql → 3306, redis → 6379, …). Eine Zeile, und alles was
+   compose-seitig konfiguriert ist, ist vom Host aus reachable.
+
+   **Refinements**:
+   - `--for-services=postgres,mysql` — nur die genannten Services
+     aus der yml-Service-Liste tunneln
+   - `--for-ports=8080,3000` — beliebige _interne_ Container-Ports
+     forwarden, nicht nur deklarierte Services. Das ist gleichzeitig
+     der **Escape-Hatch für HTTP-Tunneling**: wenn der Builder einen
+     spezifischen Host-Port für eine HTTP-App braucht (statt der
+     Traefik-Subdomain aus Task 7), funktioniert das auch hierüber.
+   - Beide Flags kombinierbar.
+
+   **Implementierung — α (socat-Sidecar-Container)**: pro Tunnel ein
+   winziger `alpine/socat`-Container im Docker-Network des Ziel-
+   Containers, mit `-p`-Mapping vom Host-Port auf den internen
+   Service-Port. SSH-Variante (sshd im Dev-Container, key-basierte
+   Auth, ein Tunnel mit `-L` für alles) ist verworfen für lokales
+   Dev-Setup — Over-Engineering für den Use-Case. Re-aufrufbar wenn
+   Remote-Dev-Container später Thema werden sollten.
+
+   **Kollisions-Behandlung**: zwei Container wollen beide Host-Port
+   5432 für ihre postgres-Tunnel. Default: klarer Fehler ("port 5432
+   already in use by tunnel `<other>`"), Builder löst explizit via
+   `--host-port=5433`. Vorhersagbar, keine implizite Port-Schiebung.
+
+   **Lifecycle**:
+   - `monoceros tunnel hello` startet die Sidecars
+   - `monoceros tunnel hello --stop` (oder `monoceros tunnel-stop`)
+     räumt sie weg
+   - `monoceros stop hello` räumt sie implizit mit weg (Sidecars
+     zeigen sonst ins Leere)
+   - `monoceros start hello` startet sie **nicht** automatisch —
+     Tunnels sind explizit ad-hoc, nicht persistent. HTTP via
+     Traefik aus Task 7 ist die persistente Lösung, Tunnels sind
+     situative TCP-Bridges.
+   - `monoceros remove hello` räumt sie mit weg.
+
+   **Scope**: primär Compose-Mode-Container mit deklarierten
+   Services (für `--for-services`). `--for-ports` greift auch auf
+   Image-Mode-Container — alles was im Container lauscht.
+
+   **Offene Detail-Fragen**:
+   - **Tunnel-Persistenz**: doch in der Container-yml mitschreiben,
+     damit `monoceros start hello` automatisch re-establishes?
+     Lean: nein, ad-hoc bleibt die ehrlichere Semantik. Builder ruft
+     `monoceros tunnel hello` bewusst auf wenn er das braucht.
+   - **Tunnel-Listing**: separates `monoceros tunnel hello --list`
+     oder in `monoceros status hello` integrieren? Lean: Letzteres,
+     dann sieht der Builder Tunnels neben Container-State.
+   - **Host-Port-Default**: 1:1 (5432 für postgres). Bei Kollision
+     forderbar via `--host-port=<other>`. Akzeptabel? Alternative
+     wäre Ephemeral-Default ("Docker, such einen freien"), Builder
+     hätte dann nie Kollisionen aber müsste den Port immer
+     nachschlagen. Lean: 1:1 mit expliziter Override.
 
 ---
 
