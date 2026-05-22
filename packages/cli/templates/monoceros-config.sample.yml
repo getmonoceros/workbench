@@ -1,46 +1,46 @@
 # Monoceros — global defaults for `monoceros apply`.
 #
-# This file is optional. Without it, every container yml stands on
-# its own and `monoceros apply` falls back to prompts (for git
-# identity) or omits the option (for feature credentials). With it,
-# the values below act as defaults that container ymls can still
-# override per-container.
+# This file is optional. The top two keys (schemaVersion, defaults)
+# are uncommented so the file parses as valid YAML out of the box;
+# every actual setting under `defaults` is commented out, so a
+# fresh-installed Monoceros behaves like there's no file at all.
 #
-# Everything below is commented out so a freshly-installed Monoceros
-# behaves like there's no file. Uncomment the sections you actually
-# want — partial use is fine, you don't need every block.
+# To set a value: uncomment one block (git, features, ...) — remove
+# the leading "# " from each line of that block. The keys above
+# (schemaVersion + defaults) stay as-is.
 #
 # To verify what the resolved config looks like after edits:
 #   monoceros init --dry-run <name>
 
-# schemaVersion: 1
-#
-# defaults:
-#   # Git identity for any container the host hasn't already
-#   # configured. Container yml's `git.user` overrides this;
-#   # `git config --global` on the host overrides both. Removed →
-#   # `monoceros apply` prompts at first run and persists per container.
-#   git:
-#     user:
-#       name: Your Name
-#       email: you@example.com
-#
-#   # Default options for Monoceros-curated devcontainer features,
-#   # keyed by OCI ref. Per-container yml options override these.
-#   # The feature itself decides what to do with the values (typically
-#   # a post-create hook does a non-interactive login).
-#   features:
-#     ghcr.io/getmonoceros/monoceros-features/claude-code:1:
-#       apiKey: sk-ant-…              # set → API auth; omit → OAuth/subscription login inside the container
-#
-#     ghcr.io/getmonoceros/monoceros-features/github-cli:1:
-#       apiToken: ghp_…               # PAT with scopes: repo, read:org, gist
-#
-#     ghcr.io/getmonoceros/monoceros-features/atlassian:1:
-#       # Both CLIs are on by default — toggle individually:
-#       # rovodev: false              # `acli rovodev` (Rovo Dev agent)
-#       # twg: false                  # `twg` (Teamwork Graph)
-#       instance: yoursite.atlassian.net   # required for twg auto-login
-#       email: you@example.com
-#       apiToken: ATATT3xFf…
-#       # bitbucketToken: ATBB…       # optional, only for twg's Bitbucket commands
+schemaVersion: 1
+
+defaults:
+  # Git identity for any container the host hasn't already
+  # configured. Container yml's `git.user` overrides this;
+  # `git config --global` on the host overrides both. Removed →
+  # `monoceros apply` prompts at first run and persists per
+  # container.
+  # git:
+  #   user:
+  #     name: Your Name
+  #     email: you@example.com
+
+  # Default options for Monoceros-curated devcontainer features,
+  # keyed by OCI ref. Per-container yml options override these.
+  # The feature itself decides what to do with the values (typically
+  # a post-create hook does a non-interactive login).
+  # features:
+  #   ghcr.io/getmonoceros/monoceros-features/claude-code:1:
+  #     apiKey: sk-ant-…              # set → API auth; omit → OAuth/subscription login inside the container
+  #
+  #   ghcr.io/getmonoceros/monoceros-features/github-cli:1:
+  #     apiToken: ghp_…               # PAT with scopes: repo, read:org, gist
+  #
+  #   ghcr.io/getmonoceros/monoceros-features/atlassian:1:
+  #     # Both CLIs are on by default — toggle individually:
+  #     # rovodev: false              # `acli rovodev` (Rovo Dev agent)
+  #     # twg: false                  # `twg` (Teamwork Graph)
+  #     instance: yoursite.atlassian.net   # required for twg auto-login
+  #     email: you@example.com
+  #     apiToken: ATATT3xFf…
+  #     # bitbucketToken: ATBB…       # optional, only for twg's Bitbucket commands

@@ -30,6 +30,11 @@ const SCHEMA_VERSION = 1 as const;
  */
 export const MonocerosConfigSchema = z.object({
   schemaVersion: z.literal(SCHEMA_VERSION),
+  // .nullish() (= .optional().nullable()) on defaults so the shipped
+  // sample yml — where `defaults:` is uncommented but every sub-block
+  // is commented out — parses cleanly. YAML produces `defaults: null`
+  // in that case; without .nullish() the schema would reject it and
+  // we'd be back to forcing builders to comment-juggle three lines.
   defaults: z
     .object({
       git: z
@@ -49,7 +54,7 @@ export const MonocerosConfigSchema = z.object({
         )
         .optional(),
     })
-    .optional(),
+    .nullish(),
 });
 
 export type MonocerosConfig = z.infer<typeof MonocerosConfigSchema>;

@@ -29,6 +29,23 @@ describe('readMonocerosConfig', () => {
     expect(result).toEqual({ schemaVersion: 1 });
   });
 
+  it('parses defaults as null (shipped template with everything commented)', async () => {
+    // The shipped monoceros-config.yml has `defaults:` uncommented as
+    // a structural anchor, with every sub-block commented out. YAML
+    // parses that as { schemaVersion: 1, defaults: null }. The schema
+    // accepts null via .nullish() so users don't have to uncomment
+    // three spatially-separated lines to get a working config.
+    await writeFile(
+      path.join(home, 'monoceros-config.yml'),
+      ['schemaVersion: 1', 'defaults:', '  # only comments below', ''].join(
+        '\n',
+      ),
+    );
+    const result = await readMonocerosConfig({ monocerosHome: home });
+    expect(result?.schemaVersion).toBe(1);
+    expect(result?.defaults).toBeNull();
+  });
+
   it('parses defaults.git.user', async () => {
     await writeFile(
       path.join(home, 'monoceros-config.yml'),
