@@ -57,7 +57,7 @@ Anleitung mit Links + exit 1 aus, und führt sonst
 `npm install -g @getmonoceros/workbench` aus. Aus User-Sicht:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
 ```
 
 (oder das PowerShell-Pendant). Bei fehlender Voraussetzung

@@ -18,7 +18,7 @@ das vorab und geben plattform-spezifische Anleitung aus.
 
 ```sh
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
 ```
 
 ```powershell

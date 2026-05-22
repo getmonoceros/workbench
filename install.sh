@@ -21,6 +21,19 @@
 # Pinning to a version: this script always installs the latest npm
 # release. To pin, skip the script and run
 # `npm install -g @getmonoceros/workbench@<version>` directly.
+
+# Require bash. When piped through `| sh` on Linux, /bin/sh is dash —
+# the shebang above is ignored and `set -o pipefail` below would error
+# out with "Illegal option -o pipefail". macOS's /bin/sh happens to be
+# bash-in-POSIX-mode so `| sh` works there by accident, but we
+# normalise on `| bash` for both. The check below surfaces a clear
+# message before hitting the pipefail line.
+if [ -z "${BASH_VERSION:-}" ]; then
+  echo "✗ This installer requires bash. Re-run with:" >&2
+  echo "    curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash" >&2
+  exit 1
+fi
+
 set -euo pipefail
 
 PACKAGE="@getmonoceros/workbench"

@@ -23,9 +23,12 @@ Der Unterschied zu Cloud-Codespaces oder Cursor-Cloud:
 - **Docker** — erreichbar als Daemon (Docker Desktop auf macOS und
   Windows, Docker Engine auf Linux)
 - **Node ≥ 20** mit `npm`
+- **`curl`** — auf macOS vorinstalliert; auf Ubuntu Desktop/Server
+  nachinstallieren via `sudo apt install curl`. Wird nur für den
+  Aufruf des Install-Skripts selbst gebraucht.
 
-Beide werden vom Install-Skript geprüft; fehlt eines, sagt's dir
-mit plattform-spezifischer Anleitung wo du's holst.
+Docker + Node werden vom Install-Skript geprüft; fehlt eines, sagt's
+dir mit plattform-spezifischer Anleitung wo du's holst.
 
 ## Installation
 
@@ -39,7 +42,7 @@ global via npm, und richtet die Shell-Completion für deine Shell
 
 ```sh
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
 ```
 
 ```powershell
