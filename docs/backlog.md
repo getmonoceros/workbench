@@ -624,6 +624,15 @@ beschrieben.
      (yml-Eintrag in `repos:`, post-create.sh-Clone-Block,
      `<solution>.code-workspace`-Folder-Root) — also kein neuer
      Code-Pfad, nur ein neuer Entry-Point.
+   - **Offene Frage — Duplikat-Behandlung**: Was passiert wenn nach
+     `init --with-repo=URL` ein nachträgliches `add-repo URL`
+     (oder `add-repo --branch=X URL`) auf dieselbe URL trifft? Drei
+     diskutierte Verhaltensweisen:
+     - (A) Hard-Error mit klarer Remediation ("schon drin, remove-
+       repo + neu, oder --as=<other> für zweiten Klon")
+     - (B) Upgrade-in-place — gleiche URL überschreibt Branch/Settings
+     - (C) Idempotenz wenn identisch, Error wie A wenn divergent
+       Aktueller Lean: C. Entscheidung steht aus.
 
 7. **`add-port` / Port-Management** — noch im Design (siehe Diskussion
    im Anschluss an M4 Task 9). Anforderung: on-the-fly auf dem
