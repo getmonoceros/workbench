@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'tsup';
 
 // Build configuration for the published `@getmonoceros/workbench`
@@ -10,6 +13,16 @@ import { defineConfig } from 'tsup';
 // ESM only — we already use `import.meta.url`, `createRequire` and
 // other ESM-native APIs throughout the source. There's no caller
 // requiring CJS, and dual-format would only inflate the package.
+
+// CLI version is sourced from package.json at build time and replaces
+// the `__CLI_VERSION__` placeholder in `src/version.ts`. Single
+// source of truth: bump `packages/cli/package.json`, rebuild, done —
+// no second file to keep in sync.
+const here = path.dirname(fileURLToPath(import.meta.url));
+const pkgVersion = JSON.parse(
+  readFileSync(path.join(here, 'package.json'), 'utf8'),
+).version as string;
+
 export default defineConfig({
   entry: ['src/bin.ts'],
   format: ['esm'],
@@ -26,4 +39,12 @@ export default defineConfig({
   // externalises declared deps; the explicit `noExternal: []` makes
   // that contract visible in the config.
   noExternal: [],
+  // esbuild's `define` does compile-time string replacement on the
+  // identifier — every `__CLI_VERSION__` in our sources gets
+  // substituted with the JSON-encoded package version. The
+  // JSON.stringify wrap is required (esbuild treats `define` values
+  // as raw JS expressions, not strings).
+  define: {
+    __CLI_VERSION__: JSON.stringify(pkgVersion),
+  },
 });
