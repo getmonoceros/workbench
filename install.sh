@@ -300,7 +300,15 @@ fi
 # --silent suppresses npm's "changed N packages" / "looking for funding"
 # narration. Errors still surface on stderr. We print our own confirmation
 # line below with the installed version, sourced from the binary itself.
-if ! npm install -g --silent "${npm_install_args[@]}" "$PACKAGE" 2>/tmp/monoceros-install-err.$$; then
+#
+# The `${arr[@]+"${arr[@]}"}` form is the portable bash 3.2-safe way
+# to expand a possibly-empty array under `set -u`. macOS ships bash
+# 3.2 by default (Apple stopped tracking bash at the GPLv3 switch),
+# and bash 3.2 treats `"${empty_arr[@]}"` as an unbound-variable
+# error even when the array was declared (`arr=()`). Bash 4.4+ fixed
+# that; this fallback keeps the installer working on macOS without
+# requiring users to upgrade their /bin/bash.
+if ! npm install -g --silent ${npm_install_args[@]+"${npm_install_args[@]}"} "$PACKAGE" 2>/tmp/monoceros-install-err.$$; then
   fail "npm install failed."
   cat /tmp/monoceros-install-err.$$ >&2 || true
   rm -f /tmp/monoceros-install-err.$$
