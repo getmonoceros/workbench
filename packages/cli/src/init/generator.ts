@@ -51,6 +51,7 @@ export function generateComposedYml(
   name: string,
   components: ResolvedComponent[],
   lookupManifest: ManifestLookup,
+  repoUrls: readonly string[] = [],
 ): string {
   const merged = mergeComponents(components);
   const lines: string[] = [];
@@ -82,6 +83,14 @@ export function generateComposedYml(
     }
     lines.push('');
   }
+  // Composed mode only emits a repos block when --with-repo provided
+  // URLs. The "show all available options" requirement applies on a
+  // per-entry basis there: each active repo entry carries commented
+  // hints for its optional fields. With no URLs, composed mode stays
+  // schlank — repos are surfaced via `monoceros add-repo` post-init.
+  if (repoUrls.length > 0) {
+    renderReposBlock(lines, repoUrls, /* commented */ false);
+  }
 
   return ensureTrailingNewline(lines.join('\n'));
 }
@@ -95,6 +104,7 @@ export function generateDocumentedYml(
   name: string,
   catalog: Map<string, Component>,
   lookupManifest: ManifestLookup,
+  repoUrls: readonly string[] = [],
 ): string {
   const byCategory = groupByCategory(catalog);
   const lines: string[] = [];
@@ -205,6 +215,13 @@ export function generateDocumentedYml(
     }
     lines.push('');
   }
+  // Repos section — always rendered in documented mode (commented out
+  // when no --with-repo URLs were provided, active when they were).
+  // The block shows the full set of per-entry options so a builder
+  // reading the yml sees what's possible without leaving the file —
+  // same "all available options are visible" rule that drives the
+  // features block above.
+  renderReposBlock(lines, repoUrls, /* commented */ repoUrls.length === 0);
 
   return ensureTrailingNewline(lines.join('\n'));
 }
@@ -299,6 +316,89 @@ function emitHint(
     }
   }
   out.push(`${linePrefix}${hint}:`);
+}
+
+/**
+ * Render the `repos:` section. When `commented` is true the entire
+ * block is prefixed with `# ` (documented mode, no --with-repo).
+ * When false the `url:` lines are active but the optional fields
+ * (path, provider, git.user) stay commented per entry so the
+ * builder sees what else can go there.
+ *
+ * The "all available options visible" rule: every per-entry field
+ * the schema accepts appears on every rendered entry, either active
+ * (rare — only `url` is required) or as a commented hint.
+ */
+function renderReposBlock(
+  out: string[],
+  urls: readonly string[],
+  commented: boolean,
+): void {
+  // Prose intro — always a comment block, regardless of whether the
+  // section below is active or fully commented.
+  out.push('# Repos — git repositories cloned into projects/ during');
+  out.push('# post-create. HTTPS-only (ADR 0006). Provider auto-detected');
+  out.push('# for github.com, gitlab.com, bitbucket.org; for any other host');
+  out.push('# (self-hosted GitLab, Bitbucket Data Center, Gitea/Forgejo,');
+  out.push('# GitHub Enterprise, …) declare provider explicitly.');
+  out.push('#');
+
+  if (commented) {
+    // Pure documented mode (no --with-repo): a single example entry,
+    // everything commented. Shows the full per-entry surface.
+    out.push('# repos:');
+    out.push('#   - url: https://github.com/<org>/<repo>.git');
+    out.push(
+      '#     # path: <folder>           # subfolder under projects/; default: URL-derived',
+    );
+    out.push(
+      '#     # provider: github         # github | gitlab | bitbucket | gitea',
+    );
+    out.push(
+      '#     # git:                     # per-repo committer identity override',
+    );
+    out.push('#     #   user:');
+    out.push('#     #     name: Your Name');
+    out.push('#     #     email: you@example.com');
+    out.push('');
+    return;
+  }
+
+  // Active entries from --with-repo. Each entry repeats the
+  // commented hints for the optional fields so they're discoverable
+  // without docs.
+  out.push('repos:');
+  for (const url of urls) {
+    const derivedPath = deriveDefaultPath(url);
+    out.push(`  - url: ${url}`);
+    out.push(
+      `    # path: ${derivedPath}            # subfolder under projects/; default: URL-derived (${derivedPath})`,
+    );
+    out.push(
+      '    # provider: github         # github | gitlab | bitbucket | gitea',
+    );
+    out.push(
+      '    # git:                     # per-repo committer identity override',
+    );
+    out.push('    #   user:');
+    out.push('    #     name: Your Name');
+    out.push('    #     email: you@example.com');
+  }
+  out.push('');
+}
+
+/**
+ * URL-derived default for the `path:` hint. Mirrors what
+ * `deriveRepoName` in scaffold.ts does at apply time — inlined
+ * here to keep the generator self-contained (no cross-module
+ * dependency from init/ → create/).
+ */
+function deriveDefaultPath(url: string): string {
+  let last = url;
+  const slash = url.lastIndexOf('/');
+  if (slash >= 0) last = url.slice(slash + 1);
+  if (last.endsWith('.git')) last = last.slice(0, -4);
+  return last || 'repo';
 }
 
 /**

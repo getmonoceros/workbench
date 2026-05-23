@@ -158,6 +158,13 @@ describe('runInit', () => {
     expect(text).toContain('# languages:');
     expect(text).toContain('# services:');
     expect(text).toContain('# features:');
+    // Repos section appears as a documented hint block too — same
+    // "all available options visible" rule that drives the features
+    // block above.
+    expect(text).toContain('# repos:');
+    expect(text).toContain('#     # path:');
+    expect(text).toContain('#     # provider: github');
+    expect(text).toContain('#     # git:');
     expect(text).toMatch(/#\s+- node\s+# Node 22/);
     expect(text).toContain(
       '#   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
@@ -181,11 +188,41 @@ describe('runInit', () => {
     const text = await readFile(result.configPath, 'utf8');
     expect(text).toContain('repos:');
     expect(text).toContain('- url: https://github.com/foo/bar.git');
-    // path matches URL-derived "bar" → omitted from yml
-    expect(text).not.toMatch(/path:/);
+    // The per-entry hint block surfaces the optional fields as
+    // commented lines so the builder sees what's available without
+    // leaving the file. `path:` MUST appear as a commented hint
+    // (with the URL-derived default echoed in the trailing comment)
+    // and MUST NOT appear as an active key.
+    expect(text).toMatch(/# path: bar/);
+    expect(text).not.toMatch(/^ {4}path:/m);
     const parsed = parseConfig(text);
     expect(parsed.config.repos).toHaveLength(1);
     expect(parsed.config.repos[0]!.url).toBe('https://github.com/foo/bar.git');
+    // The commented hints must not leak into the parsed model.
+    expect(parsed.config.repos[0]!.path).toBeUndefined();
+    expect(parsed.config.repos[0]!.provider).toBeUndefined();
+    expect(parsed.config.repos[0]!.git).toBeUndefined();
+  });
+
+  it('--with-repo: renders commented hint lines for the optional fields on each entry', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      with: ['node'],
+      withRepo: ['https://github.com/foo/bar.git'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    // The per-entry block must surface all optional fields the
+    // schema accepts (path, provider, git.user) as commented hints
+    // so the builder discovers them without leaving the file.
+    expect(text).toMatch(/^ {4}# path: bar\b/m);
+    expect(text).toMatch(/^ {4}# provider: github\b/m);
+    expect(text).toMatch(/^ {4}# git:\s*#/m);
+    expect(text).toMatch(/^ {4}#\s+user:/m);
+    expect(text).toMatch(/^ {4}#\s+name: Your Name/m);
+    expect(text).toMatch(/^ {4}#\s+email: you@example\.com/m);
   });
 
   it('--with-repo: multiple URLs all land in repos, in order', async () => {

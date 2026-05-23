@@ -1,6 +1,5 @@
 import { existsSync, promises as fs } from 'node:fs';
 import { consola } from 'consola';
-import { parseDocument } from 'yaml';
 import {
   containerConfigPath,
   containerConfigsDir,
@@ -11,8 +10,6 @@ import {
   prettyPath,
 } from '../config/paths.js';
 import { KNOWN_PROVIDER_HOSTS, REGEX } from '../config/schema.js';
-import { deriveRepoName } from '../create/scaffold.js';
-import { addRepoToDoc } from '../modify/yml.js';
 import { loadComponentCatalog, resolveComponents } from './components.js';
 import { generateComposedYml, generateDocumentedYml } from './generator.js';
 import { loadFeatureManifestSummary } from './manifest.js';
@@ -115,29 +112,24 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   const checkoutRoot = opts.workbenchRoot ?? workbenchCheckoutRoot();
   const lookup = (ref: string) => loadFeatureManifestSummary(ref, checkoutRoot);
 
-  let text: string;
-  const requested = opts.with ?? [];
-  if (requested.length === 0) {
-    text = generateDocumentedYml(opts.name, catalog, lookup);
-  } else {
-    const components = resolveComponents(catalog, requested);
-    text = generateComposedYml(opts.name, components, lookup);
-  }
-
-  // Merge --with-repo URLs into the freshly composed yml. We parse the
-  // text into a Document, run the same addRepoToDoc mutator that
-  // `monoceros add-repo` uses (idempotent on duplicates), and re-
-  // serialise. Comments from the composed/documented yml survive the
-  // round-trip because we use the yaml AST API, not a string rewrite.
-  //
-  // `--with-repo` only accepts canonical-host URLs — passing
-  // `provider:` through the CLI would clutter init's syntax with a
-  // rarely-used field. Builders with self-hosted GitLab / Gitea
-  // first run `init` to set up the container, then
-  // `add-repo … --provider=…` for those custom repos.
-  const repos = (opts.withRepo ?? [])
+  // --with-repo URL validation: only canonical hosts. Non-canonical
+  // hosts (self-hosted GitLab, Gitea, …) need `provider:` in the yml,
+  // and init has no --provider flag, so the builder takes the
+  // `monoceros init` + `monoceros add-repo … --provider=…` path
+  // instead.
+  // Dedupe input URLs (preserve insertion order) — same URL passed
+  // twice from the CLI is a no-op, matching how `monoceros add-repo`
+  // treats the second-add case.
+  const reposRaw = (opts.withRepo ?? [])
     .map((u) => u.trim())
     .filter((u) => u.length > 0);
+  const repos: string[] = [];
+  const seenRepoUrls = new Set<string>();
+  for (const url of reposRaw) {
+    if (seenRepoUrls.has(url)) continue;
+    seenRepoUrls.add(url);
+    repos.push(url);
+  }
   if (repos.length > 0) {
     const offending: string[] = [];
     for (const url of repos) {
@@ -161,12 +153,21 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
         ].join('\n'),
       );
     }
-    const doc = parseDocument(text);
-    for (const url of repos) {
-      const path = deriveRepoName(url);
-      addRepoToDoc(doc, { url, path });
-    }
-    text = String(doc);
+  }
+
+  // Both generators take the URL list directly — no AST round-trip
+  // after the fact. That lets each generator decide how to render the
+  // repos block (commented hints in documented mode, active entries
+  // with commented per-entry hint lines in composed mode), keeping
+  // the "all available options visible" rule consistent across
+  // sections.
+  let text: string;
+  const requested = opts.with ?? [];
+  if (requested.length === 0) {
+    text = generateDocumentedYml(opts.name, catalog, lookup, repos);
+  } else {
+    const components = resolveComponents(catalog, requested);
+    text = generateComposedYml(opts.name, components, lookup, repos);
   }
 
   await fs.mkdir(containerConfigsDir(home), { recursive: true });
