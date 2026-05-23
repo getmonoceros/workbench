@@ -40,6 +40,10 @@ import {
   checkRepoReachability,
   formatUnreachableReposError,
 } from '../devcontainer/repo-reachability.js';
+import {
+  type DockerInfoSpawn,
+  detectDockerMode,
+} from '../devcontainer/docker-mode.js';
 import { type DevcontainerSpawn } from '../devcontainer/cli.js';
 import {
   collectGitIdentity,
@@ -90,6 +94,7 @@ export interface RunApplyOptions {
   devcontainerSpawn?: DevcontainerSpawn;
   credentialsSpawn?: CredentialsSpawn;
   reachabilitySpawn?: ReachabilitySpawn;
+  dockerInfoSpawn?: DockerInfoSpawn;
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
 }
@@ -231,8 +236,18 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // ── Scaffold ─────────────────────────────────────────────────
   section('Scaffold');
 
+  // Probe the host docker daemon for its mode (rootful vs rootless).
+  // The result drives whether the generated devcontainer.json /
+  // compose.yaml include `idmap` on their bind mounts — required for
+  // rootless Docker on Linux where bind mounts otherwise apply a
+  // user-namespace shift that breaks file ownership across the
+  // host/container boundary. See docker-mode.ts for the rationale.
+  const dockerMode = await detectDockerMode({
+    ...(opts.dockerInfoSpawn ? { spawn: opts.dockerInfoSpawn } : {}),
+  });
+
   await fs.mkdir(targetDir, { recursive: true });
-  await writeScaffold(createOpts, targetDir);
+  await writeScaffold(createOpts, targetDir, { dockerMode });
   await writeStateFile(
     targetDir,
     buildStateFile({

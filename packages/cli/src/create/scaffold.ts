@@ -184,6 +184,13 @@ interface DevcontainerImageMode {
   // claude-code feature) come from the feature's own manifest, not from
   // here.
   mounts?: string[];
+  // Override of the workspace bind-mount. Set only when the host
+  // runs rootless Docker — we append `idmap` so the kernel applies
+  // the user-namespace mapping to the mount, which makes files
+  // written by either side appear with sane UIDs on the other.
+  // Without this, host-pre-created `projects/` appears as root in
+  // the container and the non-root `node` user can't write into it.
+  workspaceMount?: string;
   // Required so the runtime image's entrypoint can install iptables
   // rules if MONOCEROS_EGRESS=enforce is set. Default mode is `off`
   // (see ADR 0002) so the cap is harmless when unused.
@@ -211,6 +218,13 @@ interface DevcontainerComposeMode {
   postCreateCommand: string;
   features?: Record<string, Record<string, unknown>>;
 }
+
+/**
+ * The host docker daemon's mode — passed in by `apply` after a
+ * `docker info` probe. Drives whether we emit `idmap` on bind
+ * mounts. See `devcontainer/docker-mode.ts` for the rationale.
+ */
+export type DockerMode = 'rootful' | 'rootless';
 
 // Repo auth note: Monoceros supports HTTPS-only repo URLs (see ADR
 // 0006). The host's git credential helper provides the username/token
@@ -438,7 +452,10 @@ function isValidHomeSubpath(p: string): boolean {
 // no whitespace, no shell metacharacters.
 const HOME_SUBPATH_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 
-export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
+export function buildDevcontainerJson(
+  opts: CreateOptions,
+  dockerMode: DockerMode = 'rootful',
+): DevcontainerJson {
   const resolvedFeatures = resolveFeatures(opts);
   const features: Record<string, Record<string, unknown>> = {};
   for (const f of resolvedFeatures) {
@@ -447,6 +464,17 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
 
   const featuresField =
     Object.keys(features).length > 0 ? { features } : undefined;
+
+  // `idmap` is the bind-mount option that asks the Linux kernel to
+  // apply the user-namespace mapping to the mount. Required on
+  // rootless Docker so that host-pre-created files (`projects/`,
+  // `home/`, `.monoceros/`) are writable by the container's `node`
+  // user and container-written files land on the host with the
+  // host user's UID instead of a shifted /etc/subuid id. On rootful
+  // Docker and on Mac/Windows Docker Desktop, idmap is either a
+  // no-op (extra round-trip) or an outright mount error — so we
+  // ONLY emit it when the host probe confirmed rootless.
+  const idmapSuffix = dockerMode === 'rootless' ? ',idmap' : '';
 
   // Bind-mounts for per-feature persistent home entries. Source on
   // the host is `<container-dir>/home/<subpath>` (under the
@@ -465,7 +493,7 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     ];
     for (const sub of allSubs) {
       homeMounts.push(
-        `source=\${localWorkspaceFolder}/home/${sub},target=/home/node/${sub},type=bind`,
+        `source=\${localWorkspaceFolder}/home/${sub},target=/home/node/${sub},type=bind${idmapSuffix}`,
       );
     }
   }
@@ -495,10 +523,23 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
   const mounts: string[] = [...homeMounts];
   const mountsField = mounts.length > 0 ? { mounts } : {};
 
+  // On rootless we also override the workspace bind-mount so the
+  // main /workspaces/<name> mount gets idmap. Without this override,
+  // devcontainer-cli generates the workspace mount itself without
+  // idmap, and the post-create.sh that runs inside hits permission-
+  // denied on host-pre-created `projects/`.
+  const workspaceMountField =
+    dockerMode === 'rootless'
+      ? {
+          workspaceMount: `source=\${localWorkspaceFolder},target=/workspaces/${opts.name},type=bind${idmapSuffix}`,
+        }
+      : {};
+
   return {
     name: opts.name,
     image: BASE_IMAGE,
     remoteUser: 'node',
+    ...workspaceMountField,
     ...mountsField,
     runArgs: ['--cap-add=NET_ADMIN'],
     forwardPorts: [3000, 4000],
@@ -509,8 +550,20 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
 
 // Hand-rolled YAML for compose.yaml. The shape is narrow enough that
 // avoiding a YAML dependency outweighs the cost of careful indentation.
-export function buildComposeYaml(opts: CreateOptions): string {
+//
+// `dockerMode === 'rootless'` switches every workspace-side bind to
+// the long-syntax with `bind: { create_host_path: true }` plus the
+// `idmap` flag — same fix as in image mode (see buildDevcontainerJson),
+// just expressed in compose's volume long-form. Compose spec exposes
+// idmap as of compose-spec 1.16 (docker compose v2.30+, Ubuntu 24.04
+// has compatible versions). On rootful we keep the short syntax — it
+// stays readable and avoids any compose-version friction.
+export function buildComposeYaml(
+  opts: CreateOptions,
+  dockerMode: DockerMode = 'rootful',
+): string {
   const lines: string[] = ['services:'];
+  const isRootless = dockerMode === 'rootless';
 
   lines.push('  workspace:');
   lines.push(`    image: ${BASE_IMAGE}`);
@@ -522,7 +575,19 @@ export function buildComposeYaml(opts: CreateOptions): string {
   lines.push('    cap_add:');
   lines.push('      - NET_ADMIN');
   lines.push('    volumes:');
-  lines.push(`      - ..:/workspaces/${opts.name}:cached`);
+  if (isRootless) {
+    // Long syntax + idmap so the kernel applies the user-ns mapping
+    // to the workspace bind. Without it, the container's `node` can't
+    // write into host-pre-created `projects/`.
+    lines.push('      - type: bind');
+    lines.push('        source: ..');
+    lines.push(`        target: /workspaces/${opts.name}`);
+    lines.push('        bind:');
+    lines.push('          create_host_path: true');
+    lines.push('          idmap: true');
+  } else {
+    lines.push(`      - ..:/workspaces/${opts.name}:cached`);
+  }
   // Per-feature persistent home subpaths (dirs and files alike).
   // Paths inside compose.yaml are relative to the .devcontainer/
   // directory; `..` walks up to the container root, where `home/`
@@ -535,7 +600,16 @@ export function buildComposeYaml(opts: CreateOptions): string {
       ...f.persistentHomeFiles.map((entry) => entry.path),
     ];
     for (const sub of allSubs) {
-      lines.push(`      - ../home/${sub}:/home/node/${sub}`);
+      if (isRootless) {
+        lines.push('      - type: bind');
+        lines.push(`        source: ../home/${sub}`);
+        lines.push(`        target: /home/node/${sub}`);
+        lines.push('        bind:');
+        lines.push('          create_host_path: true');
+        lines.push('          idmap: true');
+      } else {
+        lines.push(`      - ../home/${sub}:/home/node/${sub}`);
+      }
     }
   }
   for (const svcId of opts.services) {
@@ -746,7 +820,9 @@ export async function writePostCreateScript(
 export async function writeScaffold(
   opts: CreateOptions,
   targetDir: string,
+  scaffoldOpts: { dockerMode?: DockerMode } = {},
 ): Promise<void> {
+  const dockerMode: DockerMode = scaffoldOpts.dockerMode ?? 'rootful';
   const devcontainerDir = path.join(targetDir, '.devcontainer');
   const monocerosDir = path.join(targetDir, '.monoceros');
   const projectsDir = path.join(targetDir, 'projects');
@@ -799,7 +875,7 @@ export async function writeScaffold(
     'git-credentials*\ngitconfig\n',
   );
 
-  const devcontainerJson = buildDevcontainerJson(opts);
+  const devcontainerJson = buildDevcontainerJson(opts, dockerMode);
   await fs.writeFile(
     path.join(devcontainerDir, 'devcontainer.json'),
     JSON.stringify(devcontainerJson, null, 2) + '\n',
@@ -854,7 +930,7 @@ export async function writeScaffold(
 
   const composePath = path.join(devcontainerDir, 'compose.yaml');
   if (needsCompose(opts)) {
-    await fs.writeFile(composePath, buildComposeYaml(opts));
+    await fs.writeFile(composePath, buildComposeYaml(opts, dockerMode));
   } else if (existsSync(composePath)) {
     // Services dropped from the yml — clean up the now-stale file so a
     // later `monoceros start` doesn't pick it up.
