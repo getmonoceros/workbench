@@ -465,8 +465,8 @@ export function buildDevcontainerJson(
   const featuresField =
     Object.keys(features).length > 0 ? { features } : undefined;
 
-  // `idmap` is the bind-mount option that asks the Linux kernel to
-  // apply the user-namespace mapping to the mount. Required on
+  // `idmap=true` is the bind-mount option that asks the Linux kernel
+  // to apply the user-namespace mapping to the mount. Required on
   // rootless Docker so that host-pre-created files (`projects/`,
   // `home/`, `.monoceros/`) are writable by the container's `node`
   // user and container-written files land on the host with the
@@ -474,7 +474,13 @@ export function buildDevcontainerJson(
   // Docker and on Mac/Windows Docker Desktop, idmap is either a
   // no-op (extra round-trip) or an outright mount error — so we
   // ONLY emit it when the host probe confirmed rootless.
-  const idmapSuffix = dockerMode === 'rootless' ? ',idmap' : '';
+  //
+  // Docker 25+ accepts the option in `key=value` form
+  // (`idmap=true`). Older docker versions that briefly accepted the
+  // bare `idmap` flag are out of scope — Ubuntu 24.04 ships docker
+  // 27.x via get.docker.com, which strictly requires the key=value
+  // syntax (we hit this in M5 testing 2026-05-23).
+  const idmapSuffix = dockerMode === 'rootless' ? ',idmap=true' : '';
 
   // Bind-mounts for per-feature persistent home entries. Source on
   // the host is `<container-dir>/home/<subpath>` (under the

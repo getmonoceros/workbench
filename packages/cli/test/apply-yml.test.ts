@@ -956,14 +956,14 @@ describe('runApply', () => {
       ),
     );
     expect(devcontainer.workspaceMount).toMatch(
-      /^source=\$\{localWorkspaceFolder\},target=\/workspaces\/rootless,type=bind,idmap$/,
+      /^source=\$\{localWorkspaceFolder\},target=\/workspaces\/rootless,type=bind,idmap=true$/,
     );
     // The claude-code feature contributes a persistent /home/node/.claude
     // mount — that one also needs idmap.
     expect(devcontainer.mounts).toBeDefined();
     expect(
       (devcontainer.mounts as string[]).every((m: string) =>
-        m.endsWith(',idmap'),
+        m.endsWith(',idmap=true'),
       ),
     ).toBe(true);
   });
