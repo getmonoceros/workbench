@@ -114,41 +114,95 @@ export function addFeatureToDoc(
 }
 
 /**
- * Add (or no-op) a repo entry. Idempotency rules match the legacy
- * `add-repo`:
- *   - same url + (effective) name + branch → no-op
- *   - same url, different (effective) name → add a second entry
- *     (validation will catch a name collision later)
+ * Add (or no-op) a repo entry to the `repos:` sequence.
+ *
+ * Idempotency: if an existing entry has the same URL AND the same
+ * effective path AND the same gitUser, this is a no-op (returns
+ * false). "Effective path" means the explicit `path:` value if set,
+ * or the URL-derived single-segment default otherwise. Same URL
+ * with a different path is intentionally allowed — that's the "I
+ * want two clones of the same repo into different folders" case.
+ *
+ * `gitUser` is an optional per-repo override of the container-level
+ * git.user. When set, persisted as a `git.user` nested map; falls
+ * back to the container default at apply time when omitted.
+ *
+ * Branches are not part of this model. Switching branches is a
+ * `git checkout` inside the container, not a yml-level concern.
  */
 export function addRepoToDoc(doc: Document, repo: RepoEntry): boolean {
   const seq = ensureSeq(doc, 'repos');
-  const repoName = repo.name ?? deriveRepoName(repo.url);
   for (const item of seq.items) {
     if (!isMap(item)) continue;
     const url = item.get('url');
     if (url !== repo.url) continue;
-    const existingName = item.get('name');
-    const effectiveName =
-      typeof existingName === 'string'
-        ? existingName
+    const existingPath = item.get('path');
+    const effectivePath =
+      typeof existingPath === 'string'
+        ? existingPath
         : deriveRepoName(url as string);
-    const existingBranch = item.get('branch');
-    if (
-      effectiveName === repoName &&
-      (existingBranch ?? undefined) === (repo.branch ?? undefined)
-    ) {
+    if (effectivePath !== repo.path) continue;
+    // Same url + same path. Check gitUser + provider equivalence too
+    // so an entry that adds/changes either field is treated as an
+    // update, not silently ignored.
+    const existingGit = item.get('git', true);
+    const existingUser =
+      existingGit && isMap(existingGit) ? existingGit.get('user', true) : null;
+    const existingName =
+      existingUser && isMap(existingUser) ? existingUser.get('name') : null;
+    const existingEmail =
+      existingUser && isMap(existingUser) ? existingUser.get('email') : null;
+    const existingGitUser =
+      typeof existingName === 'string' && typeof existingEmail === 'string'
+        ? { name: existingName, email: existingEmail }
+        : undefined;
+    const sameGitUser =
+      (existingGitUser?.name ?? null) === (repo.gitUser?.name ?? null) &&
+      (existingGitUser?.email ?? null) === (repo.gitUser?.email ?? null);
+    const existingProvider = item.get('provider');
+    const sameProvider =
+      (typeof existingProvider === 'string' ? existingProvider : null) ===
+      (repo.provider ?? null);
+    if (sameGitUser && sameProvider) {
       return false;
     }
+    // Different gitUser or provider → update in place instead of
+    // appending a duplicate. Re-running add-repo with new values is
+    // the natural way to change either field.
+    if (repo.gitUser) {
+      const gitMap = new YAMLMap();
+      const userMap = new YAMLMap();
+      userMap.set('name', repo.gitUser.name);
+      userMap.set('email', repo.gitUser.email);
+      gitMap.set('user', userMap);
+      item.set('git', gitMap);
+    } else {
+      item.delete('git');
+    }
+    if (repo.provider) {
+      item.set('provider', repo.provider);
+    } else {
+      item.delete('provider');
+    }
+    return true;
   }
   const entry = new YAMLMap();
   entry.set('url', repo.url);
-  // Only persist `name` when it differs from the URL-derived default.
+  // Only persist `path` when it differs from the URL-derived default.
   // Keeps the yml minimal — the apply pipeline re-derives at runtime.
-  if (repo.name !== undefined && repo.name !== deriveRepoName(repo.url)) {
-    entry.set('name', repo.name);
+  if (repo.path !== deriveRepoName(repo.url)) {
+    entry.set('path', repo.path);
   }
-  if (repo.branch !== undefined) {
-    entry.set('branch', repo.branch);
+  if (repo.gitUser) {
+    const gitMap = new YAMLMap();
+    const userMap = new YAMLMap();
+    userMap.set('name', repo.gitUser.name);
+    userMap.set('email', repo.gitUser.email);
+    gitMap.set('user', userMap);
+    entry.set('git', gitMap);
+  }
+  if (repo.provider) {
+    entry.set('provider', repo.provider);
   }
   seq.add(entry);
   return true;
@@ -198,25 +252,26 @@ export function removeFeatureFromDoc(doc: Document, ref: string): boolean {
 }
 
 /**
- * Remove a repo by either its url or its (effective) name. The legacy
- * add-repo lets builders disambiguate via `--name`, so symmetry here:
- * `monoceros remove-repo <url-or-name>` matches either field.
+ * Remove a repo by either its url or its (effective) path. Symmetry
+ * to add-repo: `monoceros remove-repo <url-or-path>` matches either
+ * field. For nested paths the full path is the match key
+ * (`remove-repo apps/web`), not the leaf segment.
  */
-export function removeRepoFromDoc(doc: Document, urlOrName: string): boolean {
+export function removeRepoFromDoc(doc: Document, urlOrPath: string): boolean {
   const seq = doc.get('repos', true);
   if (!seq || !isSeq(seq)) return false;
   const idx = seq.items.findIndex((item) => {
     if (!isMap(item)) return false;
     const url = item.get('url');
-    if (url === urlOrName) return true;
-    const name = item.get('name');
-    const effectiveName =
-      typeof name === 'string'
-        ? name
+    if (url === urlOrPath) return true;
+    const path = item.get('path');
+    const effectivePath =
+      typeof path === 'string'
+        ? path
         : typeof url === 'string'
           ? deriveRepoName(url)
           : undefined;
-    return effectiveName === urlOrName;
+    return effectivePath === urlOrPath;
   });
   if (idx < 0) return false;
   seq.items.splice(idx, 1);

@@ -3,7 +3,8 @@
     "allow": [
       "mcp__context7__resolve-library-id",
       "Bash(pnpm typecheck *)",
-      "Bash(pnpm lint *)"
+      "Bash(pnpm lint *)",
+      "WebFetch(domain:docs.parallels.com)"
     ]
   }
 }

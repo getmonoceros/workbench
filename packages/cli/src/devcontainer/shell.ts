@@ -17,15 +17,23 @@ export async function runShell(opts: RunShellOptions): Promise<number> {
   const spawnFn = opts.spawn ?? spawnDevcontainer;
 
   const upCode = await spawnFn(
-    ['up', '--workspace-folder', opts.root],
+    ['up', '--workspace-folder', opts.root, '--mount-workspace-git-root=false'],
     opts.root,
     { quiet: true },
   );
   if (upCode !== 0) return upCode;
 
-  return spawnFn(['exec', '--workspace-folder', opts.root, 'bash'], opts.root, {
-    interactive: true,
-  });
+  return spawnFn(
+    [
+      'exec',
+      '--workspace-folder',
+      opts.root,
+      '--mount-workspace-git-root=false',
+      'bash',
+    ],
+    opts.root,
+    { interactive: true },
+  );
 }
 
 export function assertContainerExists(root: string): void {

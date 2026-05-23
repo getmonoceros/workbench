@@ -15,7 +15,27 @@ const stubDevcontainerSpawn = async () => 0;
 const stubCleanupSpawn = async () => 0;
 const stubIdentitySpawn = async () => ({ value: '', exitCode: 1 });
 const stubIdentityPrompt = async () => undefined;
-const stubCredentialsSpawn = async () => ({ stdout: '', exitCode: 1 });
+// Default stub: every host has credentials. Apply's pre-flight check
+// (added with M5-Task-11) fails fast if a host returns no creds, so
+// tests that don't specifically exercise the missing-credentials path
+// inherit "always-ok" credentials. Tests that want to verify the
+// pre-flight error supply their own credentialsSpawn that returns
+// an empty stdout / non-zero exit.
+const stubCredentialsSpawn = async (input: string) => {
+  const host = /host=([^\n]+)/.exec(input)?.[1] ?? 'unknown';
+  return {
+    stdout: `protocol=https\nhost=${host}\nusername=ci\npassword=tok-${host}\n`,
+    exitCode: 0,
+  };
+};
+// Default stub for the repo-reachability pre-flight (stage 2):
+// every declared repo URL is reachable. Tests that exercise the
+// "repo not found" path supply their own reachabilitySpawn.
+const stubReachabilitySpawn = async () => ({
+  stdout: '',
+  stderr: '',
+  exitCode: 0,
+});
 
 const baseRunOpts = {
   cliVersion: '0.0.0',
@@ -25,6 +45,7 @@ const baseRunOpts = {
   identitySpawn: stubIdentitySpawn,
   identityPrompt: stubIdentityPrompt,
   credentialsSpawn: stubCredentialsSpawn,
+  reachabilitySpawn: stubReachabilitySpawn,
 };
 
 describe('runApply', () => {
@@ -707,5 +728,258 @@ describe('runApply', () => {
     await expect(
       runApply({ ...baseRunOpts, name: 'has space', monocerosHome: home }),
     ).rejects.toThrow(/Invalid config name/);
+  });
+
+  // ─── SSH-Agent forwarding: only when actually needed ──────────────
+  //
+  // The SSH-agent mount is added to devcontainer.json `mounts` only
+  // when at least one repo URL is SSH-style (git@, ssh://, git://).
+  // HTTPS repos use the host-side credential fetch path and don't need
+  // a live agent socket. This narrowing avoids the macOS Docker
+  // Desktop launchd-socket sandboxing failure for the common case
+  // (HTTPS-only repos).
+
+  it('post-create.sh sets per-repo git.user when repo has gitUser override', async () => {
+    await writeYml(
+      'with-identity',
+      [
+        'schemaVersion: 1',
+        'name: with-identity',
+        'repos:',
+        '  - url: https://github.com/work/api.git',
+        '    git:',
+        '      user:',
+        '        name: Thorsten (work)',
+        '        email: tk@conciso.de',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'with-identity',
+      monocerosHome: home,
+    });
+    const postCreate = await readFile(
+      path.join(
+        home,
+        'container',
+        'with-identity',
+        '.devcontainer',
+        'post-create.sh',
+      ),
+      'utf8',
+    );
+    expect(postCreate).toContain(
+      'git -C "projects/api" config user.name "Thorsten (work)"',
+    );
+    expect(postCreate).toContain(
+      'git -C "projects/api" config user.email "tk@conciso.de"',
+    );
+  });
+
+  it('post-create.sh does not set per-repo git.user when repo has no override', async () => {
+    await writeYml(
+      'no-identity',
+      [
+        'schemaVersion: 1',
+        'name: no-identity',
+        'repos:',
+        '  - url: https://github.com/foo/bar.git',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'no-identity',
+      monocerosHome: home,
+    });
+    const postCreate = await readFile(
+      path.join(
+        home,
+        'container',
+        'no-identity',
+        '.devcontainer',
+        'post-create.sh',
+      ),
+      'utf8',
+    );
+    // The clone block is present, but no `git -C ... config user.*`.
+    expect(postCreate).toContain('git clone "https://github.com/foo/bar.git"');
+    expect(postCreate).not.toMatch(/git -C ".*" config user\./);
+  });
+
+  it('pre-flight fails apply with provider-specific hints when host has no credentials', async () => {
+    await writeYml(
+      'no-creds',
+      [
+        'schemaVersion: 1',
+        'name: no-creds',
+        'repos:',
+        '  - url: https://github.com/foo/bar.git',
+        '',
+      ].join('\n'),
+    );
+    await expect(
+      runApply({
+        ...baseRunOpts,
+        // Override the always-ok stub: return empty stdout, exit 0
+        // (mirrors how `git credential fill` on a host without a
+        // configured helper actually behaves — no error code, just
+        // missing username/password fields in the output).
+        credentialsSpawn: async () => ({ stdout: '', exitCode: 0 }),
+        name: 'no-creds',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Missing Git credentials:.*github\.com/s);
+  });
+
+  it('pre-flight fails with "set provider:" error for non-canonical hosts without explicit provider', async () => {
+    // Self-hosted GitLab / Gitea / corporate domains can be smuggled
+    // in via a hand-edited yml (init/add-repo would reject this).
+    // Pre-flight should still catch it and point at the fix.
+    await writeYml(
+      'unknown-provider',
+      [
+        'schemaVersion: 1',
+        'name: unknown-provider',
+        'repos:',
+        '  - url: https://git.firma.de/team/app.git',
+        '',
+      ].join('\n'),
+    );
+    await expect(
+      runApply({
+        ...baseRunOpts,
+        name: 'unknown-provider',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(
+      /Unknown Git provider[\s\S]*git\.firma\.de[\s\S]*provider:/,
+    );
+  });
+
+  it('pre-flight stage 2 (reachability) catches a missing repo before docker build', async () => {
+    // Credentials are present (default stub) but the repo URL is
+    // unreachable. Stage 2 short-circuits — we never reach
+    // runContainerCycle.
+    await writeYml(
+      'missing-repo',
+      [
+        'schemaVersion: 1',
+        'name: missing-repo',
+        'repos:',
+        '  - url: https://bitbucket.org/conciso/monoceros-app.git',
+        '',
+      ].join('\n'),
+    );
+    let devcontainerCalled = false;
+    await expect(
+      runApply({
+        ...baseRunOpts,
+        devcontainerSpawn: async () => {
+          devcontainerCalled = true;
+          return 0;
+        },
+        reachabilitySpawn: async () => ({
+          stdout: '',
+          stderr:
+            'remote: You may not have access to this repository or it no longer exists in this workspace.\nfatal: Authentication failed',
+          exitCode: 128,
+        }),
+        name: 'missing-repo',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Cannot reach.*monoceros-app[\s\S]*Repository not found/);
+    // Confirms we short-circuit before docker spend.
+    expect(devcontainerCalled).toBe(false);
+  });
+
+  it('pre-flight stage 2 runs AFTER credential pre-flight (credentials error wins)', async () => {
+    // If credentials are missing, reachability never runs — we
+    // never want to probe a URL with no creds in place because the
+    // resulting failure-mode classification ("auth-failed") would
+    // be a worse diagnostic than the existing provider-specific
+    // setup hint.
+    await writeYml(
+      'no-creds',
+      [
+        'schemaVersion: 1',
+        'name: no-creds',
+        'repos:',
+        '  - url: https://github.com/foo/bar.git',
+        '',
+      ].join('\n'),
+    );
+    let reachabilityCalled = false;
+    await expect(
+      runApply({
+        ...baseRunOpts,
+        credentialsSpawn: async () => ({ stdout: '', exitCode: 0 }),
+        reachabilitySpawn: async () => {
+          reachabilityCalled = true;
+          return { stdout: '', stderr: '', exitCode: 0 };
+        },
+        name: 'no-creds',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Missing Git credentials/);
+    expect(reachabilityCalled).toBe(false);
+  });
+
+  it('pre-flight accepts non-canonical host when provider: is set explicitly', async () => {
+    // Same yml, but with `provider: gitlab` — apply should proceed
+    // past the unknown-provider check and reach the credential fill.
+    // We let the default stub provide credentials, so the apply
+    // completes successfully.
+    await writeYml(
+      'self-hosted-gitlab',
+      [
+        'schemaVersion: 1',
+        'name: self-hosted-gitlab',
+        'repos:',
+        '  - url: https://git.firma.de/team/app.git',
+        '    provider: gitlab',
+        '',
+      ].join('\n'),
+    );
+    const result = await runApply({
+      ...baseRunOpts,
+      name: 'self-hosted-gitlab',
+      monocerosHome: home,
+    });
+    expect(result.containerExitCode).toBe(0);
+  });
+
+  it('never emits an SSH-agent mount or SSH_AUTH_SOCK env (HTTPS-only by design, ADR 0006)', async () => {
+    await writeYml(
+      'with-https-repo',
+      [
+        'schemaVersion: 1',
+        'name: with-https-repo',
+        'repos:',
+        '  - url: https://github.com/foo/bar.git',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'with-https-repo',
+      monocerosHome: home,
+    });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'with-https-repo',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    const mounts: string[] = devcontainer.mounts ?? [];
+    expect(mounts.some((m) => m.includes('/ssh-agent'))).toBe(false);
+    expect(devcontainer.containerEnv?.SSH_AUTH_SOCK).toBeUndefined();
   });
 });

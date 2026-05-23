@@ -1,5 +1,6 @@
 import { existsSync, promises as fs } from 'node:fs';
 import { consola } from 'consola';
+import { parseDocument } from 'yaml';
 import {
   containerConfigPath,
   containerConfigsDir,
@@ -9,7 +10,9 @@ import {
   componentsDir as defaultComponentsDir,
   prettyPath,
 } from '../config/paths.js';
-import { REGEX } from '../config/schema.js';
+import { KNOWN_PROVIDER_HOSTS, REGEX } from '../config/schema.js';
+import { deriveRepoName } from '../create/scaffold.js';
+import { addRepoToDoc } from '../modify/yml.js';
 import { loadComponentCatalog, resolveComponents } from './components.js';
 import { generateComposedYml, generateDocumentedYml } from './generator.js';
 import { loadFeatureManifestSummary } from './manifest.js';
@@ -50,6 +53,14 @@ export interface RunInitOptions {
    * with exactly these components active.
    */
   with?: string[];
+  /**
+   * Git URLs to clone into `projects/` on the first apply. Each URL
+   * lands at `projects/<URL-derived-leaf>/` (e.g.
+   * `https://.../foo.git` → `projects/foo/`). For nested destination
+   * paths (`projects/apps/web/`) use `monoceros add-repo --path=...`
+   * post-init — the init flag intentionally keeps the syntax minimal.
+   */
+  withRepo?: string[];
   /** Override of the CLI-bundle root that holds `templates/components/`. */
   workbenchRoot?: string;
   /** Override of the user-data home that owns `container-configs/`. */
@@ -111,6 +122,51 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   } else {
     const components = resolveComponents(catalog, requested);
     text = generateComposedYml(opts.name, components, lookup);
+  }
+
+  // Merge --with-repo URLs into the freshly composed yml. We parse the
+  // text into a Document, run the same addRepoToDoc mutator that
+  // `monoceros add-repo` uses (idempotent on duplicates), and re-
+  // serialise. Comments from the composed/documented yml survive the
+  // round-trip because we use the yaml AST API, not a string rewrite.
+  //
+  // `--with-repo` only accepts canonical-host URLs — passing
+  // `provider:` through the CLI would clutter init's syntax with a
+  // rarely-used field. Builders with self-hosted GitLab / Gitea
+  // first run `init` to set up the container, then
+  // `add-repo … --provider=…` for those custom repos.
+  const repos = (opts.withRepo ?? [])
+    .map((u) => u.trim())
+    .filter((u) => u.length > 0);
+  if (repos.length > 0) {
+    const offending: string[] = [];
+    for (const url of repos) {
+      let host: string | undefined;
+      try {
+        host = url.startsWith('https://') ? new URL(url).hostname : undefined;
+      } catch {
+        host = undefined;
+      }
+      if (!host || !KNOWN_PROVIDER_HOSTS[host.toLowerCase()]) {
+        offending.push(url);
+      }
+    }
+    if (offending.length > 0) {
+      throw new Error(
+        [
+          `--with-repo only supports github.com / gitlab.com / bitbucket.org URLs.`,
+          `These are not canonical: ${offending.join(', ')}`,
+          `For other hosts, run \`monoceros init <name>\` first, then`,
+          `\`monoceros add-repo <name> <url> --provider=github|gitlab|bitbucket\`.`,
+        ].join('\n'),
+      );
+    }
+    const doc = parseDocument(text);
+    for (const url of repos) {
+      const path = deriveRepoName(url);
+      addRepoToDoc(doc, { url, path });
+    }
+    text = String(doc);
   }
 
   await fs.mkdir(containerConfigsDir(home), { recursive: true });

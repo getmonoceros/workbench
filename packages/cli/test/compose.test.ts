@@ -76,7 +76,15 @@ describe('compose actions', () => {
     });
     expect(exitCode).toBe(0);
     expect(calls).toEqual([
-      { args: ['up', '--workspace-folder', solution], cwd: solution },
+      {
+        args: [
+          'up',
+          '--workspace-folder',
+          solution,
+          '--mount-workspace-git-root=false',
+        ],
+        cwd: solution,
+      },
     ]);
   });
 

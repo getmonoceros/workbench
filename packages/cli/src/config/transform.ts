@@ -56,11 +56,15 @@ export function solutionConfigToCreateOptions(
   if (config.repos.length > 0) {
     result.repos = config.repos.map((r) => ({
       url: r.url,
-      // `name` is optional in the yml (derived from URL on apply),
-      // required in CreateOptions; the caller derives it via
-      // `deriveRepoName` when undefined.
-      name: r.name ?? deriveRepoName(r.url),
-      ...(r.branch !== undefined ? { branch: r.branch } : {}),
+      // `path` is optional in the yml; CreateOptions requires it.
+      // When the yml omits `path`, fall back to the URL-derived
+      // single-segment default (`https://.../foo.git` → `foo`),
+      // which lands the clone at `projects/foo/`.
+      path: r.path ?? deriveRepoName(r.url),
+      ...(r.git?.user
+        ? { gitUser: { name: r.git.user.name, email: r.git.user.email } }
+        : {}),
+      ...(r.provider ? { provider: r.provider } : {}),
     }));
   }
   return result;

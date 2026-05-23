@@ -46,3 +46,8 @@ packages/cli/features/
 .local/*
 !.local/README.md
 !.local/monoceros-config.sample.yml
+
+# Private notes — strategic / monetization ideas, competitor research,
+# pre-1.0 thinking that doesn't belong in the public docs/ tree.
+# Anything under here is owner-only and stays out of the OSS repo.
+docs/private/

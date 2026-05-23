@@ -34,10 +34,9 @@ installUrls:
 services:
   - postgres
 repos:
-  - url: git@github.com:foo/bar.git
+  - url: https://github.com/foo/bar.git
   - url: https://github.com/baz/qux.git
-    name: ui
-    branch: develop
+    path: apps/ui
 git:
   user:
     name: Your Name
@@ -82,6 +81,101 @@ describe('validateConfig', () => {
         repos: [{ url: 'https://evil.com/foo;rm -rf /' }],
       }),
     ).toThrowError(/repos\.0\.url/);
+  });
+
+  it.each([
+    ['ui'],
+    ['_hidden'],
+    ['.dotfiles'],
+    ['app-1'],
+    ['app.2'],
+    ['apps/web'],
+    ['bla/blubb/lorem/ipsum'],
+  ])('accepts repo path %j', (path) => {
+    const cfg = validateConfig({
+      schemaVersion: 1,
+      name: 'demo',
+      repos: [{ url: 'https://github.com/foo/bar.git', path }],
+    });
+    expect(cfg.repos[0]!.path).toBe(path);
+  });
+
+  it('accepts a per-repo git.user override', () => {
+    const cfg = validateConfig({
+      schemaVersion: 1,
+      name: 'demo',
+      repos: [
+        {
+          url: 'https://github.com/work/api.git',
+          git: {
+            user: { name: 'Thorsten (work)', email: 'tk@conciso.de' },
+          },
+        },
+      ],
+    });
+    expect(cfg.repos[0]!.git?.user?.email).toBe('tk@conciso.de');
+  });
+
+  it.each(['github', 'gitlab', 'bitbucket', 'gitea'])(
+    'accepts provider=%s on a repo entry',
+    (provider) => {
+      const cfg = validateConfig({
+        schemaVersion: 1,
+        name: 'demo',
+        repos: [{ url: 'https://git.firma.de/team/app.git', provider }],
+      });
+      expect(cfg.repos[0]!.provider).toBe(provider);
+    },
+  );
+
+  it('rejects an invalid provider value', () => {
+    expect(() =>
+      validateConfig({
+        schemaVersion: 1,
+        name: 'demo',
+        repos: [
+          { url: 'https://git.firma.de/team/app.git', provider: 'sourcehut' },
+        ],
+      }),
+    ).toThrowError(/repos\.0\.provider/);
+  });
+
+  it('rejects a per-repo git.user with malformed email', () => {
+    expect(() =>
+      validateConfig({
+        schemaVersion: 1,
+        name: 'demo',
+        repos: [
+          {
+            url: 'https://github.com/foo/bar.git',
+            git: { user: { name: 'me', email: 'not-an-email' } },
+          },
+        ],
+      }),
+    ).toThrowError(/repos\.0\.git\.user\.email/);
+  });
+
+  it.each([
+    ['/foo'], // leading slash
+    ['foo/'], // trailing slash
+    ['foo//bar'], // double slash
+    ['..'], // parent dir
+    ['../foo'], // parent dir prefix
+    ['foo/..'], // parent dir suffix
+    ['foo/../bar'], // parent dir middle
+    ['.'], // current dir
+    ['./foo'], // current dir prefix
+    ['foo|bar'], // shell metachar
+    ['foo bar'], // whitespace
+    [''], // empty
+  ])('rejects invalid repo path %j', (path) => {
+    expect(() =>
+      validateConfig({
+        schemaVersion: 1,
+        name: 'demo',
+        repos: [{ url: 'https://github.com/foo/bar.git', path }],
+      }),
+    ).toThrowError(/repos\.0\.path/);
   });
 
   it('rejects non-https install URLs', () => {
@@ -156,11 +250,10 @@ describe('validateConfig', () => {
       installUrls: ['https://teamwork-graph.atlassian.com/cli/install'],
       services: ['postgres'],
       repos: [
-        { url: 'git@github.com:foo/bar.git' },
+        { url: 'https://github.com/foo/bar.git' },
         {
           url: 'https://github.com/baz/qux.git',
-          name: 'ui',
-          branch: 'develop',
+          path: 'apps/ui',
         },
       ],
       git: {
@@ -173,7 +266,7 @@ describe('validateConfig', () => {
     expect(cfg.features).toHaveLength(1);
     expect(cfg.features[0]!.options).toEqual({ version: 'latest' });
     expect(cfg.repos).toHaveLength(2);
-    expect(cfg.repos[1]!.branch).toBe('develop');
+    expect(cfg.repos[1]!.path).toBe('apps/ui');
     expect(cfg.git?.user?.email).toBe('you@example.com');
   });
 });

@@ -24,14 +24,20 @@ export async function runInContainer(
   const spawnFn = opts.spawn ?? spawnDevcontainer;
 
   const upCode = await spawnFn(
-    ['up', '--workspace-folder', opts.root],
+    ['up', '--workspace-folder', opts.root, '--mount-workspace-git-root=false'],
     opts.root,
     { quiet: true },
   );
   if (upCode !== 0) return upCode;
 
   return spawnFn(
-    ['exec', '--workspace-folder', opts.root, ...opts.command],
+    [
+      'exec',
+      '--workspace-folder',
+      opts.root,
+      '--mount-workspace-git-root=false',
+      ...opts.command,
+    ],
     opts.root,
     { interactive: true },
   );

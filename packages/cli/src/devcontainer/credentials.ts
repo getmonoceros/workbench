@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { RepoEntry } from '../create/types.js';
+import { KNOWN_PROVIDER_HOSTS, type RepoProvider } from '../config/schema.js';
+import { cyan } from '../util/format.js';
 
 /**
  * Spawn signature for `git credential fill`: takes the credential-
@@ -14,8 +16,26 @@ export type CredentialsSpawn = (
 
 const realGitCredentialFill: CredentialsSpawn = (input) => {
   return new Promise((resolve, reject) => {
+    // GIT_TERMINAL_PROMPT=0 disables git's interactive
+    // username/password fallback. Without this, when no credential
+    // helper has an entry for the host, `git credential fill` would
+    // open /dev/tty and prompt the user — which hangs apply
+    // indefinitely because the parent process is running non-
+    // interactively. With the env var set, git returns whatever
+    // the helpers produced (possibly empty) and exits cleanly,
+    // letting our pre-flight detect "no credentials" reliably.
+    //
+    // GIT_ASKPASS='' / SSH_ASKPASS='' are belt-and-suspenders for
+    // setups where a GUI askpass helper is configured globally —
+    // emptying them prevents a popup that would also block apply.
     const child = spawn('git', ['credential', 'fill'], {
       stdio: ['pipe', 'pipe', 'inherit'],
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_ASKPASS: '',
+        SSH_ASKPASS: '',
+      },
     });
     let stdout = '';
     child.stdout.on('data', (chunk: Buffer) => {
@@ -28,19 +48,240 @@ const realGitCredentialFill: CredentialsSpawn = (input) => {
   });
 };
 
-function uniqueHttpsHosts(repos: readonly RepoEntry[]): string[] {
-  const hosts = new Set<string>();
+/**
+ * Resolve a host's provider:
+ *   - canonical hosts (github.com / gitlab.com / bitbucket.org) →
+ *     their fixed provider, ignoring any explicit hint (the canonical
+ *     mapping is the source of truth)
+ *   - any other host → the explicit hint if given, else 'unknown'
+ *
+ * Returning 'unknown' triggers the apply pre-flight error that asks
+ * the builder to set `provider:` in the yml. We deliberately never
+ * guess from hostname patterns ("starts with `gitlab.`" etc.) —
+ * those produced wrong results for corporate domains like
+ * `git.firma.de` and silently fell through to the generic hint.
+ */
+export type ResolvedProvider = RepoProvider | 'unknown';
+
+export function resolveProvider(
+  host: string,
+  explicit?: RepoProvider,
+): ResolvedProvider {
+  const canonical = KNOWN_PROVIDER_HOSTS[host.toLowerCase()];
+  if (canonical) return canonical;
+  return explicit ?? 'unknown';
+}
+
+export interface HostWithProvider {
+  host: string;
+  provider: ResolvedProvider;
+}
+
+/**
+ * Reduce a repo list to one entry per host, carrying along the
+ * resolved provider so the pre-flight check can render the right
+ * setup hint (or error out with "set provider:" for unknowns).
+ *
+ * If the same host appears with conflicting provider declarations
+ * across multiple repo entries, the first one wins — the apply
+ * pre-flight surfaces the conflict as a separate diagnostic before
+ * we get here in normal flow. (Schema-level dedup would lock us in
+ * before the builder ever sees the warning.)
+ */
+function uniqueHttpsHosts(repos: readonly RepoEntry[]): HostWithProvider[] {
+  const byHost = new Map<string, HostWithProvider>();
   for (const repo of repos) {
     if (!repo.url.startsWith('https://')) continue;
+    let host: string;
     try {
-      hosts.add(new URL(repo.url).hostname);
+      host = new URL(repo.url).hostname;
     } catch {
       // Skip malformed URLs — validateOptions catches them at the
       // add-repo step, so reaching this in production means a stack
       // file was hand-edited. Don't fail the whole apply for it.
+      continue;
     }
+    if (byHost.has(host)) continue;
+    byHost.set(host, { host, provider: resolveProvider(host, repo.provider) });
   }
-  return [...hosts];
+  return [...byHost.values()];
+}
+
+/**
+ * Render a provider-specific install command, filtered to the host
+ * OS. Returns the relevant line for the current platform — macOS gets
+ * the brew command, Windows gets the winget command, Linux falls back
+ * to a docs link unless the provider officially recommends a uniform
+ * Linux command (then `linuxBrew` is set and used). Callers embed the
+ * resulting single line into a setup-instructions block.
+ */
+function installCommandForOS(opts: {
+  brew: string;
+  winget: string;
+  /**
+   * Linux install command when the provider's docs officially
+   * recommend a single uniform path (e.g. GitLab's glab CLI ships
+   * Homebrew as the supported Linux install method). When omitted,
+   * Linux gets a docs link instead because distro packaging is too
+   * heterogeneous to pick a winner.
+   */
+  linuxBrew?: string;
+  linuxDocsUrl: string;
+}): string {
+  switch (process.platform) {
+    case 'darwin':
+      return cyan(opts.brew);
+    case 'win32':
+      return cyan(opts.winget);
+    default:
+      if (opts.linuxBrew) return cyan(opts.linuxBrew);
+      return `See ${opts.linuxDocsUrl} for package instructions.`;
+  }
+}
+
+/**
+ * Provider-specific setup hint per host. Used in the pre-flight
+ * error message when `git credential fill` returns nothing for a
+ * host. Shows only the install command for the current host OS —
+ * less visual noise, no "is this me?" guesswork for the builder.
+ *
+ * Provider is resolved upstream (canonical-host lookup or explicit
+ * yml field). This function NEVER guesses from hostname patterns;
+ * see `resolveProvider` for the rationale.
+ */
+export function providerSetupHint(
+  host: string,
+  provider: RepoProvider,
+): {
+  /** Short title for the host, formatted as "host — Provider". */
+  title: string;
+  /** Multiline body, left-aligned, no leading indentation. */
+  body: string;
+} {
+  if (provider === 'github') {
+    // `--hostname` is only needed for self-hosted GitHub Enterprise
+    // Server. For github.com (SaaS) gh defaults to that host, so we
+    // omit the flag. Both `gh auth login` and `gh auth setup-git`
+    // accept --hostname with identical semantics — verified against
+    // https://cli.github.com/manual/gh_auth_login and
+    // https://cli.github.com/manual/gh_auth_setup-git .
+    const isSaas = host.toLowerCase() === 'github.com';
+    const hostArg = isSaas ? '' : ` --hostname ${host}`;
+    const install = installCommandForOS({
+      brew: 'brew install gh',
+      winget: 'winget install --id GitHub.cli',
+      linuxDocsUrl: 'https://github.com/cli/cli#installation',
+    });
+    return {
+      title: `${host} — GitHub`,
+      body: [
+        'Install the GitHub CLI:',
+        install,
+        '',
+        'Then run once:',
+        cyan(`gh auth login${hostArg}`),
+        cyan(`gh auth setup-git${hostArg}`),
+        '',
+        '`gh auth login` walks through OAuth in your browser.',
+        '`gh auth setup-git` wires gh into git as a credential helper.',
+      ].join('\n'),
+    };
+  }
+  if (provider === 'gitlab') {
+    // `--hostname` is only needed for self-hosted GitLab. For
+    // gitlab.com glab defaults to the SaaS host, so we omit the flag.
+    const isSaas = host.toLowerCase() === 'gitlab.com';
+    const hostArg = isSaas ? '' : ` --hostname ${host}`;
+    // GitLab's official install docs (https://gitlab.com/gitlab-org/
+    // cli/-/blob/main/docs/installation_options.md) state that
+    // Homebrew is "the officially supported installation method for
+    // Linux" — so we use the same brew command on macOS AND Linux,
+    // with winget on Windows and a docs link as the absolute last
+    // resort.
+    const install = installCommandForOS({
+      brew: 'brew install glab',
+      winget: 'winget install --id GLab.GLab',
+      linuxBrew: 'brew install glab',
+      linuxDocsUrl: 'https://gitlab.com/gitlab-org/cli#installation',
+    });
+    return {
+      title: `${host} — GitLab`,
+      body: [
+        'Install the GitLab CLI (glab):',
+        install,
+        '',
+        'Then run once:',
+        cyan(`glab auth login${hostArg}`),
+        '',
+        'Choose `HTTPS` when asked for git-protocol, then accept',
+        '"Authenticate Git with your GitLab credentials" — glab',
+        'configures itself as the git credential helper.',
+      ].join('\n'),
+    };
+  }
+  if (provider === 'bitbucket') {
+    // Bitbucket has no first-party CLI for git-credentials (no
+    // `bb auth login` equivalent to gh/glab), so this is a manual
+    // one-time setup either way. The Cloud and Data-Center variants
+    // differ in where you get the token and what the username field
+    // expects — same pattern as the github / gitlab branches above
+    // (canonical SaaS host vs. self-hosted).
+    const isCloud = host.toLowerCase() === 'bitbucket.org';
+    if (isCloud) {
+      return {
+        title: `${host} — Bitbucket Cloud`,
+        body: [
+          'Bitbucket has no first-party CLI for git-credentials, so this',
+          'is a manual one-time setup. Generate an Atlassian API token at',
+          'https://id.atlassian.com/manage-profile/security/api-tokens',
+          '',
+          'Then store it via your OS credential helper:',
+          cyan(
+            `git credential approve <<< $'protocol=https\\nhost=${host}\\nusername=<your-atlassian-email>\\npassword=<token>\\n'`,
+          ),
+        ].join('\n'),
+      };
+    }
+    return {
+      title: `${host} — Bitbucket Data Center`,
+      body: [
+        'Bitbucket has no first-party CLI for git-credentials, so this',
+        'is a manual one-time setup. Generate a personal HTTP access',
+        `token in your Bitbucket UI: profile picture (top right on ${host})`,
+        '→ Manage account → HTTP access tokens → Create token. Give it',
+        'at least repo-read + repo-write scopes for the repos you need.',
+        '',
+        'Then store it via your OS credential helper:',
+        cyan(
+          `git credential approve <<< $'protocol=https\\nhost=${host}\\nusername=<your-bitbucket-username>\\npassword=<token>\\n'`,
+        ),
+      ].join('\n'),
+    };
+  }
+  // provider === 'gitea' — Gitea is always self-hosted (gitea.com is
+  // a demo / sandbox, not a SaaS), so there's no canonical-host
+  // branch. The `tea` CLI exists but logs into its own config and
+  // doesn't register as a git credential helper (verified against
+  // https://gitea.com/gitea/tea), so we point at the UI flow + a
+  // direct `git credential approve` — same pattern as Bitbucket
+  // Data Center. Forgejo (the Gitea fork) shares this flow exactly.
+  return {
+    title: `${host} — Gitea`,
+    body: [
+      'Gitea has no first-party CLI helper for git-credentials (the',
+      '`tea` CLI logs into its own config, not into your git credential',
+      'helper), so this is a manual one-time setup. Generate an access',
+      `token in your Gitea UI: profile picture (top right on ${host}) →`,
+      'Settings → Applications → "Generate New Token". Give it at',
+      'least the `read:repository` scope (add `write:repository` if you',
+      'need push from the container).',
+      '',
+      'Then store it via your OS credential helper:',
+      cyan(
+        `git credential approve <<< $'protocol=https\\nhost=${host}\\nusername=<your-gitea-username>\\npassword=<token>\\n'`,
+      ),
+    ].join('\n'),
+  };
 }
 
 interface ParsedCreds {
@@ -78,11 +319,28 @@ export interface CollectCredentialsOptions {
   logger?: { info: (msg: string) => void; warn: (msg: string) => void };
 }
 
+export interface HostCredentialStatus {
+  host: string;
+  /**
+   * Resolved provider for this host — canonical lookup for the three
+   * known hosts, explicit yml hint for anything else. Carried into
+   * the failure message so `formatMissingCredentialsError` can render
+   * the right setup block without re-resolving.
+   */
+  provider: RepoProvider;
+  /** 'ok' when username+password came back from `git credential fill`. */
+  status: 'ok' | 'no-credentials' | 'spawn-error' | 'non-zero-exit';
+  /** Diagnostic text — empty when status is 'ok'. */
+  detail: string;
+}
+
 export interface CollectCredentialsResult {
-  /** Number of hosts for which credentials were successfully written. */
+  /** Hosts for which credentials were successfully written. */
   hostsWritten: number;
-  /** Number of hosts for which `git credential fill` failed or returned no creds. */
+  /** Hosts for which `git credential fill` failed or returned no creds. */
   hostsSkipped: number;
+  /** Per-host status (in input order). */
+  perHost: HostCredentialStatus[];
   /** Absolute path to the written credentials file (always written, possibly empty). */
   credentialsPath: string;
 }
@@ -110,47 +368,69 @@ export interface CollectCredentialsResult {
  */
 export async function collectGitCredentials(
   devContainerRoot: string,
-  repos: readonly RepoEntry[],
+  hosts: readonly HostWithProvider[],
   options: CollectCredentialsOptions = {},
 ): Promise<CollectCredentialsResult> {
   const credsDir = path.join(devContainerRoot, '.monoceros');
   const credentialsPath = path.join(credsDir, 'git-credentials');
 
-  const hosts = uniqueHttpsHosts(repos);
   const spawnFn = options.spawn ?? realGitCredentialFill;
   const logger = options.logger ?? { info: () => {}, warn: () => {} };
 
+  // Callers must filter out 'unknown' providers before invoking this
+  // function — those should fail the apply pre-flight earlier with a
+  // "set provider:" error, never reach the credential helper. We
+  // narrow the type here for the renderer's sake.
   const lines: string[] = [];
-  let hostsSkipped = 0;
-  for (const host of hosts) {
+  const perHost: HostCredentialStatus[] = [];
+  for (const { host, provider } of hosts) {
+    if (provider === 'unknown') {
+      // Defensive: should not happen — pre-flight is supposed to
+      // bail before this. Record it anyway with no-credentials so
+      // the caller doesn't see a partial success.
+      perHost.push({
+        host,
+        provider: 'github', // placeholder — never rendered because pre-flight already bailed
+        status: 'no-credentials',
+        detail: 'provider not declared (internal: should not reach here)',
+      });
+      continue;
+    }
     logger.info(`Fetching credentials for ${host} from host git…`);
     const input = `protocol=https\nhost=${host}\n\n`;
     let result;
     try {
       result = await spawnFn(input);
     } catch (err) {
-      logger.warn(
-        `git credential fill not runnable for ${host} (${err instanceof Error ? err.message : String(err)}); skipping.`,
-      );
-      hostsSkipped += 1;
+      // No logger.warn here — the caller (apply pre-flight) renders
+      // a consolidated, provider-specific error message per failing
+      // host. A separate WARN line per host would just add visual
+      // noise above the actionable error.
+      const detail = err instanceof Error ? err.message : String(err);
+      perHost.push({ host, provider, status: 'spawn-error', detail });
       continue;
     }
     if (result.exitCode !== 0) {
-      logger.warn(
-        `git credential fill exited ${result.exitCode} for ${host}; container clone will prompt.`,
-      );
-      hostsSkipped += 1;
+      perHost.push({
+        host,
+        provider,
+        status: 'non-zero-exit',
+        detail: `exit code ${result.exitCode}`,
+      });
       continue;
     }
     const { username, password } = parseCredentialFillOutput(result.stdout);
     if (!username || !password) {
-      logger.warn(
-        `git credential fill returned no username/password for ${host}; container clone will prompt.`,
-      );
-      hostsSkipped += 1;
+      perHost.push({
+        host,
+        provider,
+        status: 'no-credentials',
+        detail: 'host credential helper returned no username/password',
+      });
       continue;
     }
     lines.push(formatCredentialLine(host, username, password));
+    perHost.push({ host, provider, status: 'ok', detail: '' });
   }
 
   await fs.mkdir(credsDir, { recursive: true });
@@ -164,9 +444,87 @@ export async function collectGitCredentials(
 
   return {
     hostsWritten: lines.length,
-    hostsSkipped,
+    hostsSkipped: perHost.filter((p) => p.status !== 'ok').length,
+    perHost,
     credentialsPath,
   };
+}
+
+/**
+ * Expose `uniqueHttpsHosts` for callers that need the host list
+ * directly (apply uses it to build the pre-flight check input).
+ */
+export { uniqueHttpsHosts };
+
+/**
+ * Build the multi-host pre-flight error message that gets thrown when
+ * apply discovers missing credentials. Header inlines the provider
+ * for single-host cases; body is left-aligned setup instructions.
+ *
+ * Format:
+ *
+ *   Missing Git credentials: <host> — <Provider>
+ *
+ *   <setup instructions, left-aligned, multi-line>
+ *
+ *   Then re-run `monoceros apply`.
+ *
+ * For multi-host failures, each block is separated by a blank line
+ * and gets its own provider title.
+ */
+export function formatMissingCredentialsError(
+  missing: readonly HostCredentialStatus[],
+): string {
+  if (missing.length === 1) {
+    const m = missing[0]!;
+    const hint = providerSetupHint(m.host, m.provider);
+    return [
+      `Missing Git credentials: ${hint.title}`,
+      '',
+      hint.body,
+      '',
+      `Then re-run ${cyan('monoceros apply')}.`,
+    ].join('\n');
+  }
+  const lines: string[] = [
+    `Missing Git credentials for ${missing.length} hosts:`,
+    '',
+  ];
+  for (const m of missing) {
+    const hint = providerSetupHint(m.host, m.provider);
+    lines.push(hint.title);
+    lines.push('');
+    lines.push(hint.body);
+    lines.push('');
+  }
+  lines.push(`Then re-run ${cyan('monoceros apply')}.`);
+  return lines.join('\n');
+}
+
+/**
+ * Build the pre-flight error for repos whose host has no provider
+ * declared and isn't one of the canonical ones (github.com /
+ * gitlab.com / bitbucket.org). The builder needs to add a
+ * `provider:` field to the yml before apply can continue.
+ */
+export function formatUnknownProviderError(hosts: readonly string[]): string {
+  const sorted = [...new Set(hosts)].sort();
+  const lines: string[] = [
+    sorted.length === 1
+      ? `Unknown Git provider for host ${sorted[0]!}.`
+      : `Unknown Git provider for ${sorted.length} hosts: ${sorted.join(', ')}.`,
+    '',
+    'Monoceros auto-detects only github.com / gitlab.com / bitbucket.org.',
+    'For any other host (self-hosted GitLab, Gitea, Bitbucket Server, …)',
+    'declare the provider explicitly in the yml. Edit the repo entry:',
+    '',
+    cyan('  repos:'),
+    cyan(`    - url: https://${sorted[0]!}/…`),
+    cyan('      provider: gitlab   # or: github, bitbucket, gitea'),
+    '',
+    `Or re-add with ${cyan('monoceros add-repo <name> <url> --provider=<github|gitlab|bitbucket|gitea>')}.`,
+  ];
+  return lines.join('\n');
 }
 
 // Exported for tests.

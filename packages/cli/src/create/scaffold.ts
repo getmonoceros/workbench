@@ -36,14 +36,11 @@ const INSTALL_URL_RE = /^https:\/\/[A-Za-z0-9.\-_~/:?#[\]@!&'()*+,;=%]+$/;
 // `ssh://`/`git://` schemes. Permissive but no shell metacharacters.
 const REPO_URL_RE = /^[A-Za-z0-9@:/+_~.#=&?-]+$/;
 
-// Repo name = folder name under `projects/`. Must be a safe folder
-// name (same shape as solution names — no slashes, no spaces, no
-// shell metacharacters).
-const REPO_NAME_RE = /^[A-Za-z0-9._-]+$/;
-
-// Git branch names: allow common characters including `/`
-// (e.g. `feature/foo`). Reject anything that could be a shell escape.
-const REPO_BRANCH_RE = /^[A-Za-z0-9._/-]+$/;
+// Repo destination = path under `projects/`. Allows nested subfolders
+// (`apps/web`) via `/`; segments use `[A-Za-z0-9._-]` (same charset as
+// a leaf folder name). `.` / `..` segments are rejected separately
+// because the regex alone allows pure-dot segments.
+const REPO_PATH_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 
 /**
  * Derive a repo name from its URL.
@@ -106,29 +103,29 @@ export function validateOptions(opts: CreateOptions): void {
       );
     }
   }
-  const seenRepoNames = new Set<string>();
+  const seenRepoPaths = new Set<string>();
   for (const repo of opts.repos ?? []) {
     if (!REPO_URL_RE.test(repo.url)) {
       throw new Error(
         `Invalid repo URL: ${JSON.stringify(repo.url)}. Use HTTPS or SSH/git@ form; no shell metacharacters.`,
       );
     }
-    if (!REPO_NAME_RE.test(repo.name)) {
+    if (!REPO_PATH_RE.test(repo.path)) {
       throw new Error(
-        `Invalid repo name: ${JSON.stringify(repo.name)}. Folder name must match ${REPO_NAME_RE}.`,
+        `Invalid repo path: ${JSON.stringify(repo.path)}. Use letters/digits/'._-', forward slashes for nested folders, no leading or trailing slash.`,
       );
     }
-    if (repo.branch !== undefined && !REPO_BRANCH_RE.test(repo.branch)) {
+    if (repo.path.split('/').some((seg) => seg === '..' || seg === '.')) {
       throw new Error(
-        `Invalid branch name: ${JSON.stringify(repo.branch)}. Must match ${REPO_BRANCH_RE}.`,
+        `Invalid repo path: ${JSON.stringify(repo.path)}. Path segments cannot be "." or "..".`,
       );
     }
-    if (seenRepoNames.has(repo.name)) {
+    if (seenRepoPaths.has(repo.path)) {
       throw new Error(
-        `Duplicate repo name: ${JSON.stringify(repo.name)}. Each projects/<name> folder must be unique — pass --name to disambiguate.`,
+        `Duplicate repo path: ${JSON.stringify(repo.path)}. Each projects/<path> folder must be unique — pass --path to disambiguate.`,
       );
     }
-    seenRepoNames.add(repo.name);
+    seenRepoPaths.add(repo.path);
   }
 }
 
@@ -159,9 +156,7 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
   // in validateOptions, not silently merged here.)
   const repos = opts.repos
     ? Array.from(
-        new Map(
-          opts.repos.map((r) => [`${r.url}${r.name}${r.branch ?? ''}`, r]),
-        ).values(),
+        new Map(opts.repos.map((r) => [`${r.url}${r.path}`, r])).values(),
       )
     : undefined;
   return {
@@ -217,27 +212,15 @@ interface DevcontainerComposeMode {
   features?: Record<string, Record<string, unknown>>;
 }
 
-// Repos-related Git-auth wiring: forward the host SSH-agent socket into
-// the container and tell git to auto-accept new host keys (avoids the
-// interactive "Are you sure?" prompt that would hang post-create.sh on
-// first connect). Builder is expected to have a running ssh-agent
-// host-side with the right key loaded — that's the only host-OS-
-// specific bit; the mount itself is the same on macOS, Linux, WSL.
-const SSH_AGENT_TARGET = '/ssh-agent';
-const GIT_SSH_COMMAND = 'ssh -o StrictHostKeyChecking=accept-new';
-
-function buildRepoAuthMounts(): string[] {
-  return [
-    `source=\${localEnv:SSH_AUTH_SOCK},target=${SSH_AGENT_TARGET},type=bind`,
-  ];
-}
-
-function buildRepoAuthEnv(): Record<string, string> {
-  return {
-    SSH_AUTH_SOCK: SSH_AGENT_TARGET,
-    GIT_SSH_COMMAND,
-  };
-}
+// Repo auth note: Monoceros supports HTTPS-only repo URLs (see ADR
+// 0006). The host's git credential helper provides the username/token
+// per host (osxkeychain on macOS, libsecret on Linux, wincred on
+// Windows, plus `gh auth setup-git` for GitHub specifically), the
+// apply pipeline writes them to <container-dir>/.monoceros/git-
+// credentials, and post-create.sh wires `git config --global
+// credential.helper "store --file=…"` so the container reads from
+// the same file. SSH-agent forwarding, multi-key wiring, host-OS
+// platform-specific socket paths — all that complexity stays out.
 
 export type DevcontainerJson = DevcontainerImageMode | DevcontainerComposeMode;
 
@@ -491,15 +474,10 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
   // belong with the feature that needs them (e.g. the claude-code
   // feature itself recommends `anthropic.claude-code`).
 
-  const wantsRepoAuth = (opts.repos?.length ?? 0) > 0;
-  const repoAuthEnv = wantsRepoAuth ? { containerEnv: buildRepoAuthEnv() } : {};
-
   if (needsCompose(opts)) {
     // Compose-mode: per-feature persistent home mounts go onto the
-    // workspace service in compose.yaml (see buildComposeYaml).
-    // SSH-agent mount and repo-auth env vars also live on the compose
-    // service. The devcontainer.json just references compose and
-    // forwards env vars.
+    // workspace service in compose.yaml (see buildComposeYaml). The
+    // devcontainer.json just references compose.
     return {
       name: opts.name,
       dockerComposeFile: 'compose.yaml',
@@ -510,16 +488,11 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
       forwardPorts: [3000, 4000],
       postCreateCommand: '.devcontainer/post-create.sh',
       ...(featuresField ?? {}),
-      ...repoAuthEnv,
     };
   }
 
-  // Image-mode mounts: SSH-agent forward (only when repos are
-  // configured) plus per-feature persistent-home binds.
-  const mounts: string[] = [
-    ...(wantsRepoAuth ? buildRepoAuthMounts() : []),
-    ...homeMounts,
-  ];
+  // Image-mode mounts: per-feature persistent-home binds.
+  const mounts: string[] = [...homeMounts];
   const mountsField = mounts.length > 0 ? { mounts } : {};
 
   return {
@@ -531,7 +504,6 @@ export function buildDevcontainerJson(opts: CreateOptions): DevcontainerJson {
     forwardPorts: [3000, 4000],
     postCreateCommand: '.devcontainer/post-create.sh',
     ...(featuresField ?? {}),
-    ...repoAuthEnv,
   };
 }
 
@@ -566,18 +538,6 @@ export function buildComposeYaml(opts: CreateOptions): string {
       lines.push(`      - ../home/${sub}:/home/node/${sub}`);
     }
   }
-  const wantsRepoAuth = (opts.repos?.length ?? 0) > 0;
-  if (wantsRepoAuth) {
-    // `:-/dev/null` fallback so the compose-up doesn't error when the
-    // builder has no SSH agent running host-side — the container starts
-    // (with a useless dummy socket), and the git clone fails clearly
-    // instead of crashing the whole devcontainer.
-    lines.push(`      - \${SSH_AUTH_SOCK:-/dev/null}:${SSH_AGENT_TARGET}`);
-    lines.push('    environment:');
-    lines.push(`      SSH_AUTH_SOCK: ${SSH_AGENT_TARGET}`);
-    lines.push(`      GIT_SSH_COMMAND: "${GIT_SSH_COMMAND}"`);
-  }
-
   for (const svcId of opts.services) {
     const def = SERVICE_CATALOG[svcId];
     if (!def) continue;
@@ -620,14 +580,19 @@ interface CodeWorkspaceFile {
  */
 export function buildCodeWorkspaceJson(opts: CreateOptions): CodeWorkspaceFile {
   const folders: CodeWorkspaceFolder[] = [{ path: '.' }];
-  // Sort repos by name so the Explorer order is deterministic and
+  // Sort repos by path so the Explorer order is deterministic and
   // doesn't depend on insertion order. (Clone order in post-create
   // stays as-added so deps still work.)
   const sortedRepos = [...(opts.repos ?? [])].sort((a, b) =>
-    a.name.localeCompare(b.name),
+    a.path.localeCompare(b.path),
   );
   for (const repo of sortedRepos) {
-    folders.push({ path: `projects/${repo.name}`, name: repo.name });
+    // The folder's display label is the leaf segment of the path
+    // (the deepest folder name). VS Code shows it in the Explorer
+    // tree; for nested clones (`apps/web`) we want `web`, not the
+    // whole path.
+    const label = repo.path.split('/').pop() ?? repo.path;
+    folders.push({ path: `projects/${repo.path}`, name: label });
   }
   return { folders };
 }
@@ -703,22 +668,46 @@ export function buildPostCreateScript(opts: CreateOptions): string {
     lines.push(
       '',
       '# Repos managed by `monoceros add-repo`. Each entry is cloned',
-      '# into `projects/<name>/` if (and only if) the directory does',
+      '# into `projects/<path>/` if (and only if) the directory does',
       '# not exist yet. Existing project subfolders are left alone so',
-      '# local changes survive `monoceros apply` rebuilds.',
+      '# local changes survive `monoceros apply` rebuilds. Nested',
+      '# `<path>` (e.g. apps/web) is created via `mkdir -p` before the',
+      '# clone so the parent directories exist.',
       'mkdir -p projects',
     );
     for (const repo of opts.repos) {
-      const branchFlag = repo.branch ? ` --branch ${repo.branch}` : '';
-      const branchLabel = repo.branch ? ` (branch: ${repo.branch})` : '';
+      // For nested paths (`apps/web`), make sure the parent dir
+      // exists before git clone — otherwise git fails with "could
+      // not create work tree dir".
+      const parent = repo.path.includes('/')
+        ? repo.path.slice(0, repo.path.lastIndexOf('/'))
+        : null;
+      if (parent) {
+        lines.push(`mkdir -p "projects/${parent}"`);
+      }
       lines.push(
-        `if [ ! -d "projects/${repo.name}" ]; then`,
-        `  echo "→ Cloning ${repo.name} from ${repo.url}${branchLabel}…"`,
-        `  git clone${branchFlag} "${repo.url}" "projects/${repo.name}"`,
+        `if [ ! -d "projects/${repo.path}" ]; then`,
+        `  echo "→ Cloning ${repo.path} from ${repo.url}…"`,
+        `  git clone "${repo.url}" "projects/${repo.path}"`,
         `else`,
-        `  echo "→ projects/${repo.name} already exists, skipping clone"`,
+        `  echo "→ projects/${repo.path} already exists, skipping clone"`,
         `fi`,
       );
+      // Per-repo git identity override: set user.name/email inside
+      // the cloned repo, so commits from THIS repo go out under the
+      // override identity. Idempotent — git config overwrites the
+      // value each run, no duplicate accumulation. Falls outside the
+      // `if [ ! -d ... ]` clone-guard so an explicit yml update of
+      // gitUser also takes effect on re-apply against an existing
+      // clone.
+      if (repo.gitUser) {
+        const safeName = repo.gitUser.name.replace(/"/g, '\\"');
+        const safeEmail = repo.gitUser.email.replace(/"/g, '\\"');
+        lines.push(
+          `git -C "projects/${repo.path}" config user.name "${safeName}"`,
+          `git -C "projects/${repo.path}" config user.email "${safeEmail}"`,
+        );
+      }
     }
   }
 

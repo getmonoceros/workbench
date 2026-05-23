@@ -165,10 +165,11 @@ aber alle aktivieren.
 
 ## Argumente
 
-| Argument         | Bedeutung                                                                               |
-| ---------------- | --------------------------------------------------------------------------------------- |
-| `<name>`         | Wunschname für die Konfig. Landet als `container-configs/<name>.yml`.                   |
-| `--with=<names>` | Komma-Liste von Komponenten aus dem Katalog (s. `monoceros list-components`). Optional. |
+| Argument            | Bedeutung                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<name>`            | Wunschname für die Konfig. Landet als `container-configs/<name>.yml`.                                                                                                                                                                                                                                                                                                              |
+| `--with=<names>`    | Komma-Liste von Komponenten aus dem Katalog (s. `monoceros list-components`). Optional.                                                                                                                                                                                                                                                                                            |
+| `--with-repo=<url>` | Git-URL, die direkt in `repos:` der erzeugten yml landet. Mehrfach erlaubt. **Akzeptiert nur kanonische Hosts** (`github.com`, `gitlab.com`, `bitbucket.org`) — bei selbst gehosteten GitLab-/Gitea-/anderen Instanzen erst `monoceros init <name>` und dann `monoceros add-repo … --provider=…` (init hat kein `--provider`-Flag, weil das Feld dort sehr selten gebraucht wird). |
 
 **Zur `--with`-Syntax**: alle drei Schreibweisen funktionieren:
 
@@ -204,3 +205,7 @@ und sammelt die abgetrennten Token wieder ein.
 - **`No components found`** — die Workbench-Installation hat den
   `templates/components/`-Ordner nicht. Workbench-Checkout
   reparieren.
+- **`--with-repo only supports github.com / gitlab.com / bitbucket.org`** —
+  du hast eine URL mit einem nicht-kanonischen Host übergeben. Erst
+  `monoceros init <name>` (ohne den problematischen Repo) ausführen,
+  dann `monoceros add-repo <name> <url> --provider=…` nachschieben.

@@ -7,7 +7,12 @@ import {
   containerConfigPath,
   monocerosHome as defaultMonocerosHome,
 } from '../config/paths.js';
-import { REGEX } from '../config/schema.js';
+import {
+  KNOWN_PROVIDER_HOSTS,
+  PROVIDER_VALUES,
+  REGEX,
+  type RepoProvider,
+} from '../config/schema.js';
 import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
@@ -79,8 +84,27 @@ export interface AddFromUrlInput extends ModifyOptions {
 }
 export interface AddRepoInput extends ModifyOptions {
   url: string;
-  repoName?: string;
-  branch?: string;
+  /**
+   * Explicit destination path under `projects/`. Subfolders allowed
+   * via `/` (e.g. `apps/web`). When omitted, the URL-derived single-
+   * segment default is used (`https://.../foo.git` → `foo` →
+   * `projects/foo/`).
+   */
+  path?: string;
+  /**
+   * Optional per-repo git committer identity override. Both name and
+   * email must be set together; one alone is a usage error. Falls
+   * back to the container-level `git.user` (which itself falls back
+   * to the host's `git config --global`) when omitted.
+   */
+  gitName?: string;
+  gitEmail?: string;
+  /**
+   * Git provider hint. Required when the URL host is not one of the
+   * three canonical ones (github.com / gitlab.com / bitbucket.org);
+   * optional otherwise. Validated against `PROVIDER_VALUES`.
+   */
+  provider?: string;
 }
 
 export interface RemoveLanguageInput extends ModifyOptions {
@@ -144,20 +168,87 @@ export function runAddAptPackages(
   return mutate(input, (doc) => addAptPackagesToDoc(doc, input.packages));
 }
 
-export function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
+export async function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
   const url = input.url.trim();
   if (url.length === 0) {
     throw new Error(
       'Missing repo URL. Usage: monoceros add-repo <containername> <url>.',
     );
   }
-  const name = (input.repoName ?? deriveRepoName(url)).trim();
+  const path = (input.path ?? deriveRepoName(url)).trim();
+  // --git-name and --git-email come as a pair. Reject half-set input
+  // loudly instead of silently dropping it.
+  const hasName =
+    typeof input.gitName === 'string' && input.gitName.trim().length > 0;
+  const hasEmail =
+    typeof input.gitEmail === 'string' && input.gitEmail.trim().length > 0;
+  if (hasName !== hasEmail) {
+    throw new Error(
+      '--git-name and --git-email must be set together. Pass both, or neither.',
+    );
+  }
+  // --provider validation:
+  //   - host is canonical (github.com / gitlab.com / bitbucket.org):
+  //       * no --provider → fine, auto-detected at apply time
+  //       * --provider matches canonical → accepted, written to yml
+  //         (harmless; round-trip stays clean)
+  //       * --provider contradicts canonical → reject loudly
+  //   - host is non-canonical:
+  //       * --provider given (valid enum) → write it
+  //       * --provider missing → reject; the apply pre-flight would
+  //         fail anyway, fail at add-repo time for a better signal
+  //       * --provider invalid value → reject with allowed list
+  const explicitProvider = normalizeProvider(input.provider);
+  let host: string | undefined;
+  try {
+    host = url.startsWith('https://') ? new URL(url).hostname : undefined;
+  } catch {
+    host = undefined;
+  }
+  const canonical = host ? KNOWN_PROVIDER_HOSTS[host.toLowerCase()] : undefined;
+  if (host && !canonical && !explicitProvider) {
+    throw new Error(
+      `Host '${host}' is not a canonical Git provider Monoceros can auto-detect (github.com / gitlab.com / bitbucket.org). Pass --provider=github|gitlab|bitbucket so the credential-helper hints know which CLI to suggest.`,
+    );
+  }
+  if (canonical && explicitProvider && explicitProvider !== canonical) {
+    throw new Error(
+      `--provider=${explicitProvider} contradicts host '${host}' (auto-detected as ${canonical}). Drop --provider for canonical hosts, or fix the value.`,
+    );
+  }
+  // For canonical hosts we don't persist `provider:` in the yml even
+  // when the flag was passed (matches what auto-detection would do
+  // and keeps the yml minimal). Non-canonical hosts: write the
+  // explicit value as-is.
+  const providerToWrite =
+    !canonical && explicitProvider ? explicitProvider : undefined;
   const entry: RepoEntry = {
     url,
-    name,
-    ...(input.branch !== undefined ? { branch: input.branch } : {}),
+    path,
+    ...(hasName && hasEmail
+      ? {
+          gitUser: {
+            name: input.gitName!.trim(),
+            email: input.gitEmail!.trim(),
+          },
+        }
+      : {}),
+    ...(providerToWrite ? { provider: providerToWrite } : {}),
   };
   return mutate(input, (doc) => addRepoToDoc(doc, entry));
+}
+
+function normalizeProvider(raw: string | undefined): RepoProvider | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const lowered = trimmed.toLowerCase() as RepoProvider;
+  if (!(PROVIDER_VALUES as readonly string[]).includes(lowered)) {
+    throw new Error(
+      `Invalid --provider value: ${JSON.stringify(raw)}. Allowed: ${PROVIDER_VALUES.join(', ')}.`,
+    );
+  }
+  return lowered;
 }
 
 export function runAddFromUrl(input: AddFromUrlInput): Promise<ModifyResult> {

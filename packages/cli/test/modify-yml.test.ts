@@ -162,31 +162,236 @@ describe('add-*/remove-* against the yml', () => {
     ).rejects.toThrow(/different options/);
   });
 
-  it('runAddRepo appends a repo entry, omitting redundant name', async () => {
-    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
-    await runAddRepo({
-      ...baseOpts,
-      name: 'demo',
-      url: 'git@github.com:foo/bar.git',
-      monocerosHome: home,
-    });
-    const yml = await ymlOf('demo');
-    expect(yml).toContain('repos:');
-    expect(yml).toContain('- url: git@github.com:foo/bar.git');
-    expect(yml).not.toMatch(/name: bar\b/);
-  });
-
-  it('runAddRepo persists a non-default name via repoName', async () => {
+  it('runAddRepo appends a repo entry, omitting redundant path', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddRepo({
       ...baseOpts,
       name: 'demo',
       url: 'https://github.com/foo/bar.git',
-      repoName: 'ui',
       monocerosHome: home,
     });
     const yml = await ymlOf('demo');
-    expect(yml).toContain('name: ui');
+    expect(yml).toContain('repos:');
+    expect(yml).toContain('- url: https://github.com/foo/bar.git');
+    // path matches the URL-derived default ("bar") so it's omitted
+    expect(yml).not.toMatch(/path:/);
+  });
+
+  it('runAddRepo persists a non-default path via path option', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      path: 'apps/ui',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('path: apps/ui');
+  });
+
+  it('runAddRepo is idempotent on same url + same effective path', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      monocerosHome: home,
+    });
+    const result = await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('no-change');
+  });
+
+  it('runAddRepo persists per-repo gitUser when both name + email given', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/work/api.git',
+      gitName: 'Thorsten (work)',
+      gitEmail: 'tk@conciso.de',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('git:');
+    expect(yml).toContain('user:');
+    expect(yml).toContain('name: Thorsten (work)');
+    expect(yml).toContain('email: tk@conciso.de');
+  });
+
+  it('runAddRepo errors when only one of --git-name / --git-email is given', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      runAddRepo({
+        ...baseOpts,
+        name: 'demo',
+        url: 'https://github.com/work/api.git',
+        gitName: 'me',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/git-name and --git-email must be set together/);
+  });
+
+  it('runAddRepo updates per-repo gitUser in-place when called again with different values', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/work/api.git',
+      gitName: 'old',
+      gitEmail: 'old@example.com',
+      monocerosHome: home,
+    });
+    const result = await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/work/api.git',
+      gitName: 'new',
+      gitEmail: 'new@example.com',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('name: new');
+    expect(yml).toContain('email: new@example.com');
+    expect(yml).not.toContain('old@example.com');
+    // Still just one repo entry — no duplicate appended.
+    expect(
+      yml.match(/- url: https:\/\/github\.com\/work\/api\.git/g),
+    ).toHaveLength(1);
+  });
+
+  it('runAddRepo adds a second entry when same url has different path', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      monocerosHome: home,
+    });
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      path: 'apps/bar-feature',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    // Two entries: the first omits path (URL-derived), the second
+    // sets the explicit subfolder path.
+    expect(
+      yml.match(/- url: https:\/\/github\.com\/foo\/bar\.git/g),
+    ).toHaveLength(2);
+    expect(yml).toContain('path: apps/bar-feature');
+  });
+
+  it('runAddRepo persists provider=gitea for a Gitea host', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://gitea.deine-firma.de/team/app.git',
+      provider: 'gitea',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('- url: https://gitea.deine-firma.de/team/app.git');
+    expect(yml).toContain('provider: gitea');
+  });
+
+  it('runAddRepo persists provider field for self-hosted GitLab', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://git.firma.de/team/app.git',
+      provider: 'gitlab',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('- url: https://git.firma.de/team/app.git');
+    expect(yml).toContain('provider: gitlab');
+  });
+
+  it('runAddRepo errors when non-canonical host has no --provider', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      runAddRepo({
+        ...baseOpts,
+        name: 'demo',
+        url: 'https://git.firma.de/team/app.git',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/--provider=github\|gitlab\|bitbucket/);
+  });
+
+  it('runAddRepo accepts --provider matching the canonical host (no-op write)', async () => {
+    // Passing --provider=github for github.com is harmless — we just
+    // don't persist the field (auto-detection would do the same).
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      provider: 'github',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('- url: https://github.com/foo/bar.git');
+    expect(yml).not.toContain('provider:');
+  });
+
+  it('runAddRepo rejects --provider that contradicts the canonical host', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      runAddRepo({
+        ...baseOpts,
+        name: 'demo',
+        url: 'https://github.com/foo/bar.git',
+        provider: 'gitlab',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/contradicts host/);
+  });
+
+  it('runAddRepo rejects an invalid --provider value', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      runAddRepo({
+        ...baseOpts,
+        name: 'demo',
+        url: 'https://git.firma.de/team/app.git',
+        provider: 'sourcehut',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Invalid --provider/);
+  });
+
+  it('runAddRepo updates provider in-place when called again with different value', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://git.firma.de/team/app.git',
+      provider: 'gitlab',
+      monocerosHome: home,
+    });
+    const result = await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://git.firma.de/team/app.git',
+      provider: 'bitbucket',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('provider: bitbucket');
+    expect(yml).not.toContain('provider: gitlab');
   });
 
   it('aborts cleanly when the user declines the prompt', async () => {
@@ -366,15 +571,15 @@ describe('add-*/remove-* against the yml', () => {
         'schemaVersion: 1',
         'name: demo',
         'repos:',
-        '  - url: git@github.com:foo/bar.git',
-        '  - url: git@github.com:foo/baz.git',
+        '  - url: https://github.com/foo/bar.git',
+        '  - url: https://github.com/foo/baz.git',
         '',
       ].join('\n'),
     );
     await runRemoveRepo({
       ...baseOpts,
       name: 'demo',
-      target: 'git@github.com:foo/bar.git',
+      target: 'https://github.com/foo/bar.git',
       monocerosHome: home,
     });
     const yml = await ymlOf('demo');
@@ -389,7 +594,7 @@ describe('add-*/remove-* against the yml', () => {
         'schemaVersion: 1',
         'name: demo',
         'repos:',
-        '  - url: git@github.com:foo/bar.git',
+        '  - url: https://github.com/foo/bar.git',
         '',
       ].join('\n'),
     );
@@ -411,7 +616,7 @@ describe('add-*/remove-* against the yml', () => {
         'name: demo',
         'repos:',
         '  - url: https://github.com/foo/bar.git',
-        '    name: ui',
+        '    path: ui',
         '',
       ].join('\n'),
     );

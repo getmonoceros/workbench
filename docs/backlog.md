@@ -765,6 +765,16 @@ unless-stopped`, ab erstem Bedarf permanent) vs. bedarfsbasiert
      weil die Test-Coverage bis dahin fast immer Compose-Mode war.
      Mindestens ein dezidierter Fall „`--with=node,claude` (ohne
      Services) → apply → remove → `docker ps -a` muss leer sein".
+   - **SSH-Repo-Strecke explizit testen** — `init --with-repo` plus
+     ein nachträgliches `add-repo git@github.com:<user>/<repo>.git`
+     auf einen Repo bei dem der Builder Push-Rechte hat. Im
+     Container: `git clone` (durch post-create.sh), Änderung machen,
+     `git commit`, `git push`. Beweist dass das SSH-Agent-Forwarding
+     funktioniert (Docker-Desktop-Proxy auf macOS, direkter
+     Socket-Mount auf Linux). HTTPS-Repos via M3-Auth-Pfad sind
+     separat abgedeckt — der SSH-Pfad braucht eine eigene
+     Test-Strecke weil er andere Failure-Modes hat (siehe M4-Task-9-
+     Fund: macOS Docker Desktop launchd-Socket-Sandboxing).
    - **Cross-OS-Sweep (Stage E)** als systematischer Pfad: install.sh
      auf macOS + Linux, install.ps1 auf Windows, jeweils mit dem
      M4-DoD-Walkthrough (init/apply/shell/Claude). Findet die

@@ -117,7 +117,10 @@ export async function runStart(opts: StartOptions): Promise<number> {
   const logger = opts.logger ?? { info: (msg) => consola.info(msg) };
   const spawnFn = opts.spawn ?? spawnDevcontainer;
   logger.info(`Bringing devcontainer up at ${opts.root}…`);
-  return spawnFn(['up', '--workspace-folder', opts.root], opts.root);
+  return spawnFn(
+    ['up', '--workspace-folder', opts.root, '--mount-workspace-git-root=false'],
+    opts.root,
+  );
 }
 
 export interface RunContainerCycleOptions {
@@ -180,7 +183,13 @@ export async function runContainerCycle(
   logger.info(`Recreating image-mode devcontainer at ${root}…`);
   const spawnFn = opts.devcontainerSpawn ?? spawnDevcontainer;
   return spawnFn(
-    ['up', '--workspace-folder', root, '--remove-existing-container'],
+    [
+      'up',
+      '--workspace-folder',
+      root,
+      '--mount-workspace-git-root=false',
+      '--remove-existing-container',
+    ],
     root,
   );
 }

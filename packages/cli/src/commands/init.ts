@@ -22,13 +22,21 @@ export const initCommand = defineCommand({
         "Comma-separated list of component names to compose, e.g. 'node,postgres,github,claude'. Sub-components use a slash, e.g. 'atlassian/twg'. When omitted, init writes a documented default with every catalog component commented out.",
       required: false,
     },
+    'with-repo': {
+      type: 'string',
+      description:
+        'Git URL of a repo to clone into projects/ on first apply. Repeatable: pass --with-repo=URL1 --with-repo=URL2 for multiple repos. Folder name derived from URL (foo.git → projects/foo/); use `monoceros add-repo --path=...` post-init for subfolder paths.',
+      required: false,
+    },
   },
   async run({ args, rawArgs }) {
     try {
       const withList = collectWithList(args.with, rawArgs);
+      const withRepoList = collectWithRepoList(rawArgs);
       await runInit({
         name: args.name,
         ...(withList ? { with: withList } : {}),
+        ...(withRepoList.length > 0 ? { withRepo: withRepoList } : {}),
       });
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
@@ -36,6 +44,29 @@ export const initCommand = defineCommand({
     }
   },
 });
+
+/**
+ * Collect all `--with-repo=<url>` and `--with-repo <url>` tokens from
+ * rawArgs. citty doesn't natively give us repeatable strings (the
+ * single `args['with-repo']` only carries the last value), so we
+ * scan the original argv. Returns URLs in order of appearance.
+ */
+function collectWithRepoList(rawArgs: string[]): string[] {
+  const urls: string[] = [];
+  for (let i = 0; i < rawArgs.length; i += 1) {
+    const t = rawArgs[i]!;
+    if (t === '--with-repo') {
+      const next = rawArgs[i + 1];
+      if (typeof next === 'string' && !next.startsWith('-')) {
+        urls.push(next);
+        i += 1;
+      }
+    } else if (t.startsWith('--with-repo=')) {
+      urls.push(t.slice('--with-repo='.length));
+    }
+  }
+  return urls;
+}
 
 /**
  * Reconstruct the --with list from `args.with` plus any rawArgs

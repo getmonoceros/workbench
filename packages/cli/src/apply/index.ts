@@ -31,7 +31,15 @@ import {
 import {
   type CredentialsSpawn,
   collectGitCredentials,
+  uniqueHttpsHosts,
+  formatMissingCredentialsError,
+  formatUnknownProviderError,
 } from '../devcontainer/credentials.js';
+import {
+  type ReachabilitySpawn,
+  checkRepoReachability,
+  formatUnreachableReposError,
+} from '../devcontainer/repo-reachability.js';
 import { type DevcontainerSpawn } from '../devcontainer/cli.js';
 import {
   collectGitIdentity,
@@ -81,6 +89,7 @@ export interface RunApplyOptions {
   cleanupSpawn?: ComposeSpawn;
   devcontainerSpawn?: DevcontainerSpawn;
   credentialsSpawn?: CredentialsSpawn;
+  reachabilitySpawn?: ReachabilitySpawn;
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
 }
@@ -172,14 +181,51 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       : {}),
     logger: idLogger,
   });
-  if (
-    createOpts.repos &&
-    createOpts.repos.some((r) => r.url.startsWith('https://'))
-  ) {
-    await collectGitCredentials(targetDir, createOpts.repos, {
+  // Pre-fetch HTTPS credentials for every unique host derived from
+  // the declared repos. Pre-flight: if any host returns no credentials,
+  // fail fast with provider-specific setup hints — much more
+  // actionable than letting the in-container `git clone` later die
+  // with "could not read Username".
+  //
+  // First pass: reject hosts whose provider couldn't be resolved
+  // (non-canonical host without an explicit `provider:` in the yml).
+  // Those produce a separate "set provider:" error message — much
+  // more useful than a generic "no credentials" hint because the
+  // builder might actually have credentials in their helper, but we
+  // wouldn't know which CLI to suggest.
+  const hostsToFetch = uniqueHttpsHosts(createOpts.repos ?? []);
+  const unknownProviderHosts = hostsToFetch
+    .filter((h) => h.provider === 'unknown')
+    .map((h) => h.host);
+  if (unknownProviderHosts.length > 0) {
+    throw new Error(formatUnknownProviderError(unknownProviderHosts));
+  }
+  if (hostsToFetch.length > 0) {
+    const credResult = await collectGitCredentials(targetDir, hostsToFetch, {
       ...(opts.credentialsSpawn ? { spawn: opts.credentialsSpawn } : {}),
       logger: idLogger,
     });
+    const missing = credResult.perHost.filter((p) => p.status !== 'ok');
+    if (missing.length > 0) {
+      throw new Error(formatMissingCredentialsError(missing));
+    }
+  }
+
+  // Pre-flight stage 2: now that credentials are in place, probe each
+  // declared repo URL via host-side `git ls-remote`. Catches the
+  // "repo doesn't exist / token can't see it / DNS broken" failure
+  // modes before the docker build runs — saving ~1–2 min on first
+  // apply and replacing the noisy devcontainer-cli stack trace with
+  // a focused per-repo error.
+  const declaredRepos = createOpts.repos ?? [];
+  if (declaredRepos.length > 0) {
+    const reachability = await checkRepoReachability(declaredRepos, {
+      ...(opts.reachabilitySpawn ? { spawn: opts.reachabilitySpawn } : {}),
+    });
+    const unreachable = reachability.filter((r) => !r.ok);
+    if (unreachable.length > 0) {
+      throw new Error(formatUnreachableReposError(unreachable));
+    }
   }
 
   // ── Scaffold ─────────────────────────────────────────────────

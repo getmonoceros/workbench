@@ -68,9 +68,23 @@ describe('runShell', () => {
     });
     expect(exitCode).toBe(0);
     expect(calls).toEqual([
-      { args: ['up', '--workspace-folder', solution], cwd: solution },
       {
-        args: ['exec', '--workspace-folder', solution, 'bash'],
+        args: [
+          'up',
+          '--workspace-folder',
+          solution,
+          '--mount-workspace-git-root=false',
+        ],
+        cwd: solution,
+      },
+      {
+        args: [
+          'exec',
+          '--workspace-folder',
+          solution,
+          '--mount-workspace-git-root=false',
+          'bash',
+        ],
         cwd: solution,
       },
     ]);

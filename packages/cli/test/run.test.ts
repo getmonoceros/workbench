@@ -50,12 +50,21 @@ describe('runInContainer', () => {
     });
     expect(exitCode).toBe(0);
     expect(calls).toEqual([
-      { args: ['up', '--workspace-folder', solution], quiet: true },
+      {
+        args: [
+          'up',
+          '--workspace-folder',
+          solution,
+          '--mount-workspace-git-root=false',
+        ],
+        quiet: true,
+      },
       {
         args: [
           'exec',
           '--workspace-folder',
           solution,
+          '--mount-workspace-git-root=false',
           'pnpm',
           'test',
           '--filter',

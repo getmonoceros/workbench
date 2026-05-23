@@ -31,9 +31,21 @@ const APT_PACKAGE_NAME_RE = /^[a-z0-9][a-z0-9.+-]*$/;
 //      ghcr.io/getmonoceros/monoceros-features/claude-code:1
 const FEATURE_REF_RE = /^[a-z0-9.-]+(\/[a-z0-9._-]+)+:[a-z0-9._-]+$/;
 const INSTALL_URL_RE = /^https:\/\/[A-Za-z0-9.\-_~/:?#[\]@!&'()*+,;=%]+$/;
-const REPO_URL_RE = /^[A-Za-z0-9@:/+_~.#=&?-]+$/;
-const REPO_NAME_RE = /^[A-Za-z0-9._-]+$/;
-const REPO_BRANCH_RE = /^[A-Za-z0-9._/-]+$/;
+// Repo URLs are HTTPS-only by design. SSH-style URLs (git@host:...,
+// ssh://...) are explicitly out of scope — see ADR 0006 for the
+// reasoning. The schema rejects them at parse time with a clear
+// message rather than letting them through and failing opaquely
+// during the clone in post-create.sh.
+const REPO_URL_RE = /^https:\/\/[A-Za-z0-9@:/+_~.#=&?-]+$/;
+// Path under `projects/`. Allows nested subfolders via `/` (e.g.
+// `apps/web`, `monorepo/libs/shared`). The regex enforces:
+//   - non-empty
+//   - segments use [A-Za-z0-9._-] (same charset as a leaf folder name)
+//   - no leading `/`, no trailing `/`, no consecutive `//`
+// A separate refine rejects `.` / `..` segments — those would either
+// be no-ops or escape `projects/`, neither belongs in a checked-in
+// container yml.
+const REPO_PATH_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 const POSTGRES_URL_RE = /^postgres(ql)?:\/\//;
 
 export const REGEX = {
@@ -42,9 +54,42 @@ export const REGEX = {
   featureRef: FEATURE_REF_RE,
   installUrl: INSTALL_URL_RE,
   repoUrl: REPO_URL_RE,
-  repoName: REPO_NAME_RE,
-  repoBranch: REPO_BRANCH_RE,
+  repoPath: REPO_PATH_RE,
   postgresUrl: POSTGRES_URL_RE,
+};
+
+/**
+ * The providers Monoceros knows how to render setup hints for.
+ *
+ * Canonical SaaS hostnames (`github.com` / `gitlab.com` /
+ * `bitbucket.org`) auto-detect to their provider. Everything else
+ * — self-hosted GitLab, GitHub Enterprise, Bitbucket Data Center,
+ * Gitea / Forgejo — must declare `provider:` explicitly. Gitea has
+ * no canonical SaaS host (gitea.com is a demo, not a SaaS), so any
+ * `provider: gitea` entry is by definition self-hosted.
+ *
+ * Forgejo (the community fork of Gitea) shares Gitea's API, UI, and
+ * auth flow — we bundle it under `provider: gitea` rather than
+ * carrying a separate enum value.
+ */
+export const PROVIDER_VALUES = [
+  'github',
+  'gitlab',
+  'bitbucket',
+  'gitea',
+] as const;
+export type RepoProvider = (typeof PROVIDER_VALUES)[number];
+
+/**
+ * Hostnames whose provider is implicit — no `provider:` field needed
+ * in the yml. Everything else (self-hosted GitLab on `git.firma.de`,
+ * Gitea instances, …) requires an explicit declaration; the apply
+ * pre-flight enforces that.
+ */
+export const KNOWN_PROVIDER_HOSTS: Readonly<Record<string, RepoProvider>> = {
+  'github.com': 'github',
+  'gitlab.com': 'gitlab',
+  'bitbucket.org': 'bitbucket',
 };
 
 /** Current schema version. Bumped only on breaking yml changes. */
@@ -66,35 +111,51 @@ export const FeatureEntrySchema = z.object({
   options: z.record(z.string(), FeatureOptionValueSchema).optional(),
 });
 
-export const RepoEntrySchema = z.object({
-  url: z
-    .string()
-    .regex(
-      REPO_URL_RE,
-      'Invalid repo URL. Use HTTPS or SSH/git@ form; no shell metacharacters.',
-    ),
-  name: z
-    .string()
-    .regex(
-      REPO_NAME_RE,
-      'Invalid repo name. Folder name must match /^[A-Za-z0-9._-]+$/.',
-    )
-    .optional(),
-  branch: z
-    .string()
-    .regex(
-      REPO_BRANCH_RE,
-      'Invalid branch name. Must match /^[A-Za-z0-9._/-]+$/.',
-    )
-    .optional(),
-});
-
 export const GitUserSchema = z.object({
   name: z.string().min(1),
   email: z
     .string()
     .min(3)
     .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Invalid email'),
+});
+
+export const RepoEntrySchema = z.object({
+  url: z
+    .string()
+    .regex(
+      REPO_URL_RE,
+      'Invalid repo URL. Only HTTPS URLs are supported (https://...). SSH-style URLs (git@host:..., ssh://...) are not in scope — see ADR 0006.',
+    ),
+  path: z
+    .string()
+    .regex(
+      REPO_PATH_RE,
+      "Invalid repo path. Use letters/digits/'._-', forward slashes for nested folders, no leading or trailing slash.",
+    )
+    .refine(
+      (p) => !p.split('/').some((seg) => seg === '..' || seg === '.'),
+      'Repo path segments cannot be "." or "..".',
+    )
+    .optional(),
+  // Per-repo git identity override. Falls back to the container-level
+  // `git.user` (which itself falls back to the host's
+  // `git config --global` at apply time). Useful when a single
+  // container clones multiple repos that need different committer
+  // identities — e.g. work GitHub org vs personal projects.
+  git: z
+    .object({
+      user: GitUserSchema.optional(),
+    })
+    .optional(),
+  // Provider hint for the pre-flight credential check. For the three
+  // canonical hosts (github.com / gitlab.com / bitbucket.org) the
+  // provider is auto-detected and this field is unnecessary. For any
+  // other host (self-hosted GitLab on a custom domain, Gitea, …) the
+  // builder MUST declare the provider so apply can suggest the right
+  // CLI setup (`glab auth login --hostname <host>` etc.) when
+  // credentials are missing. Enforced at apply pre-flight, not at
+  // parse time — see ADR 0006.
+  provider: z.enum(PROVIDER_VALUES).optional(),
 });
 
 export const ExternalServicesSchema = z.object({

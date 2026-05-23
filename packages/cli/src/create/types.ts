@@ -7,14 +7,43 @@
 export type FeatureOptions = Record<string, string | number | boolean>;
 
 /**
- * A repo to clone into `projects/<name>/` during post-create.
- * `name` is derived from the URL on add but can be overridden;
- * `branch` is optional (defaults to the repo's default branch).
+ * A repo to clone into `projects/<path>/` during post-create.
+ *
+ * `path` is required at this layer (the runtime / scaffold layer):
+ * if the yml omits it, the loader fills in the URL-derived default
+ * (`https://.../foo.git` → `foo`). The yml schema treats path as
+ * optional so the field can be omitted when the URL-derived default
+ * is what you want.
+ *
+ * Subfolders are allowed: `path: "apps/web"` clones into
+ * `projects/apps/web/`. Branch selection is intentionally NOT part
+ * of this model — `git checkout` inside the running container is
+ * the right tool for branch / PR workflows.
+ *
+ * `gitUser` is an optional per-repo override of the container-level
+ * `git.user`. When set, post-create.sh runs
+ * `git -C projects/<path> config user.name/email` right after the
+ * clone, so this repo's commits go out under the override identity
+ * regardless of what's globally configured.
  */
 export interface RepoEntry {
   url: string;
+  path: string;
+  gitUser?: GitUser;
+  /**
+   * Optional provider hint for the apply-time pre-flight credential
+   * check. Required in the yml when the host is not one of the three
+   * canonical ones (github.com / gitlab.com / bitbucket.org); the
+   * pre-flight rejects the apply with a clear error otherwise. For
+   * canonical hosts this is auto-resolved and the field stays empty.
+   */
+  provider?: 'github' | 'gitlab' | 'bitbucket' | 'gitea';
+}
+
+/** Git committer identity used at the container or per-repo level. */
+export interface GitUser {
   name: string;
-  branch?: string;
+  email: string;
 }
 
 export interface CreateOptions {

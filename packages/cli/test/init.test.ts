@@ -169,6 +169,94 @@ describe('runInit', () => {
     expect(parsed.config.name).toBe('sandbox');
   });
 
+  it('--with-repo: clones into composed yml with URL-derived path', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      with: ['node'],
+      withRepo: ['https://github.com/foo/bar.git'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    expect(text).toContain('repos:');
+    expect(text).toContain('- url: https://github.com/foo/bar.git');
+    // path matches URL-derived "bar" → omitted from yml
+    expect(text).not.toMatch(/path:/);
+    const parsed = parseConfig(text);
+    expect(parsed.config.repos).toHaveLength(1);
+    expect(parsed.config.repos[0]!.url).toBe('https://github.com/foo/bar.git');
+  });
+
+  it('--with-repo: multiple URLs all land in repos, in order', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      with: ['node'],
+      withRepo: [
+        'https://github.com/foo/api.git',
+        'https://github.com/foo/ui.git',
+      ],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    const parsed = parseConfig(text);
+    expect(parsed.config.repos.map((r) => r.url)).toEqual([
+      'https://github.com/foo/api.git',
+      'https://github.com/foo/ui.git',
+    ]);
+  });
+
+  it('--with-repo: same URL passed twice → single entry (idempotent)', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      with: ['node'],
+      withRepo: [
+        'https://github.com/foo/bar.git',
+        'https://github.com/foo/bar.git',
+      ],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    const parsed = parseConfig(text);
+    expect(parsed.config.repos).toHaveLength(1);
+  });
+
+  it('--with-repo: works in documented mode (no --with) too', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      withRepo: ['https://github.com/foo/bar.git'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    // Documented mode is reported by the documented flag.
+    expect(result.documented).toBe(true);
+    const text = await readFile(result.configPath, 'utf8');
+    // The repos block is active even though the rest is commented.
+    expect(text).toMatch(/^repos:/m);
+    expect(text).toContain('- url: https://github.com/foo/bar.git');
+  });
+
+  it('--with-repo: rejects non-canonical hosts pointing to add-repo --provider', async () => {
+    // Self-hosted GitLab / Gitea / corporate domains: we can't tell
+    // the provider from the URL, and init has no --provider flag.
+    // Fail loudly so the builder doesn't end up with an unappliable
+    // yml that fails at pre-flight.
+    await expect(
+      runInit({
+        name: 'sandbox',
+        withRepo: ['https://git.firma.de/team/app.git'],
+        workbenchRoot: root,
+        monocerosHome,
+        logger: silentLogger,
+      }),
+    ).rejects.toThrow(/git\.firma\.de[\s\S]*add-repo[\s\S]*--provider/);
+  });
+
   it("errors when --with names a component that's not in the catalog, listing alternatives", async () => {
     await expect(
       runInit({
