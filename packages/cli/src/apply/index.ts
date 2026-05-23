@@ -293,10 +293,17 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
  * `<MONOCEROS_HOME>/container/<name>/` is safe to (re-)materialize iff:
  *   - it doesn't exist or is empty (fresh apply), OR
  *   - it already carries `.monoceros/state.json` with the same origin
- *     (re-apply against the same yml).
+ *     (re-apply against the same yml), OR
+ *   - the only top-level entry is `.monoceros/` and there's no
+ *     state.json — that's a partial-apply remnant: pre-flight wrote
+ *     `gitconfig` / `git-credentials` into `.monoceros/` before
+ *     something (reachability failure, Ctrl-C, expired token, …)
+ *     aborted the apply ahead of `writeStateFile`. We own
+ *     `.monoceros/`, so re-running is safe.
  *
- * Anything else — unrelated files, or a state.json with a different
- * origin — is an error.
+ * Anything else — state.json with a different origin, or files
+ * outside `.monoceros/` that aren't ours — stays an error so we
+ * don't clobber unrelated work.
  */
 async function assertSafeTargetDir(
   targetDir: string,
@@ -316,8 +323,17 @@ async function assertSafeTargetDir(
     return; // safe: re-apply same origin
   }
 
+  // No state.json. If the only top-level entry is `.monoceros/`, this
+  // is a partial-apply remnant from a failed earlier run — pre-flight
+  // writes `.monoceros/gitconfig` and `.monoceros/git-credentials`
+  // BEFORE the scaffold + state.json sequence, so a mid-apply abort
+  // leaves exactly this shape behind. Treat it as recoverable.
+  if (entries.length === 1 && entries[0] === '.monoceros') {
+    return;
+  }
+
   throw new Error(
-    `Refusing to materialize into non-empty directory ${targetDir} (no Monoceros state.json found). Delete the directory before re-running.`,
+    `Refusing to materialize into non-empty directory ${targetDir} (no Monoceros state.json found, and the directory has files we don't recognise). Delete the directory before re-running.`,
   );
 }
 

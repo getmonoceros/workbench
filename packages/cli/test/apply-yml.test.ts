@@ -724,6 +724,52 @@ describe('runApply', () => {
     ).rejects.toThrow(/Refusing to materialize/);
   });
 
+  it('recovers from a partial-apply remnant (only .monoceros/ present, no state.json)', async () => {
+    // Reproduces the failure mode the user hit on Ubuntu: a previous
+    // apply got past the credential/identity pre-flight (which wrote
+    // .monoceros/gitconfig + .monoceros/git-credentials) but
+    // aborted before writeStateFile. The next apply should NOT see
+    // a leftover .monoceros/ directory as "someone else's stuff" —
+    // we own that subdirectory entirely.
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const targetDir = path.join(home, 'container', 'demo');
+    const monocerosDir = path.join(targetDir, '.monoceros');
+    await mkdir(monocerosDir, { recursive: true });
+    await writeFile(
+      path.join(monocerosDir, 'git-credentials'),
+      'https://ci:tok@github.com\n',
+    );
+    await writeFile(
+      path.join(monocerosDir, 'gitconfig'),
+      '[user]\n  name = Test\n  email = test@example.com\n',
+    );
+    // No state.json on purpose.
+    const result = await runApply({
+      ...baseRunOpts,
+      name: 'demo',
+      monocerosHome: home,
+    });
+    expect(result.containerExitCode).toBe(0);
+    // After a successful re-apply, state.json IS there.
+    const state = await readStateFile(targetDir);
+    expect(state?.origin).toBe('demo');
+  });
+
+  it('still refuses when .monoceros/ AND unrelated files coexist without state.json', async () => {
+    // .monoceros/ alone is recoverable (above test). .monoceros/ plus
+    // other top-level files is suspicious — could be someone else's
+    // work that happens to share the dir. Stay strict.
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const targetDir = path.join(home, 'container', 'demo');
+    const monocerosDir = path.join(targetDir, '.monoceros');
+    await mkdir(monocerosDir, { recursive: true });
+    await writeFile(path.join(monocerosDir, 'gitconfig'), '[user]\n');
+    await writeFile(path.join(targetDir, 'random.txt'), 'hi');
+    await expect(
+      runApply({ ...baseRunOpts, name: 'demo', monocerosHome: home }),
+    ).rejects.toThrow(/Refusing to materialize/);
+  });
+
   it('rejects an invalid config name without touching disk', async () => {
     await expect(
       runApply({ ...baseRunOpts, name: 'has space', monocerosHome: home }),
