@@ -167,9 +167,17 @@ export function providerSetupHint(
     // https://cli.github.com/manual/gh_auth_setup-git .
     const isSaas = host.toLowerCase() === 'github.com';
     const hostArg = isSaas ? '' : ` --hostname ${host}`;
+    // GitHub CLI publishes a Linuxbrew formula alongside the macOS
+    // one (https://github.com/cli/cli/blob/trunk/docs/install_linux.md
+    // lists Homebrew under "Linux & WSL"). Use the same brew command
+    // on macOS AND Linux for symmetry with the GitLab hint — keeps
+    // the "all OSes look the same" promise we made when designing
+    // the provider hints. Winget on Windows for users who don't go
+    // through WSL; docs URL only as the absolute last resort.
     const install = installCommandForOS({
       brew: 'brew install gh',
       winget: 'winget install --id GitHub.cli',
+      linuxBrew: 'brew install gh',
       linuxDocsUrl: 'https://github.com/cli/cli#installation',
     });
     return {
