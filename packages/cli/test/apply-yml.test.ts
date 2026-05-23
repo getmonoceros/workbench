@@ -914,19 +914,21 @@ describe('runApply', () => {
     );
   });
 
-  it('rootless docker → workspaceMount + per-feature mounts carry the idmap option', async () => {
-    // The user-namespace UID shift in rootless Docker turns
-    // host-pre-created `projects/` into a root-owned dir from the
-    // container's view, blocking writes. `idmap` on the bind-mount
-    // applies the userns mapping so file ownership matches across
-    // the boundary. Without these, the post-create.sh `git clone`
-    // hits permission-denied on Ubuntu + rootless Docker (M5 user
-    // report 2026-05-23).
+  it('does NOT emit idmap on bind mounts (docker --mount does not accept it)', async () => {
+    // Earlier attempts (1.6.3 / 1.6.5) tried `,idmap` and `,idmap=true`
+    // as bind-mount options, on the (wrong) assumption that Docker
+    // exposes the kernel's idmapped-mount feature on the --mount
+    // flag. The official Docker docs list no such option; both
+    // versions failed at `docker run` with "invalid argument" /
+    // "unknown option". Guard against regression: regardless of the
+    // detected dockerMode, no `idmap` substring should ever appear
+    // in the generated devcontainer.json. A future rootless fix
+    // needs a different mechanism (see scaffold.ts TODO).
     await writeYml(
-      'rootless',
+      'no-idmap',
       [
         'schemaVersion: 1',
-        'name: rootless',
+        'name: no-idmap',
         'features:',
         '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
         '',
@@ -934,13 +936,13 @@ describe('runApply', () => {
     );
     await runApply({
       ...baseRunOpts,
-      // Override the rootful default — return SecurityOptions
-      // containing the `name=rootless` marker.
+      // Force the rootless code path — the test guards both modes
+      // by ensuring the result is identical.
       dockerInfoSpawn: async () => ({
-        stdout: '["name=seccomp,profile=builtin","name=rootless"]',
+        stdout: '["name=rootless"]',
         exitCode: 0,
       }),
-      name: 'rootless',
+      name: 'no-idmap',
       monocerosHome: home,
     });
     const devcontainer = JSON.parse(
@@ -948,51 +950,7 @@ describe('runApply', () => {
         path.join(
           home,
           'container',
-          'rootless',
-          '.devcontainer',
-          'devcontainer.json',
-        ),
-        'utf8',
-      ),
-    );
-    expect(devcontainer.workspaceMount).toMatch(
-      /^source=\$\{localWorkspaceFolder\},target=\/workspaces\/rootless,type=bind,idmap=true$/,
-    );
-    // The claude-code feature contributes a persistent /home/node/.claude
-    // mount — that one also needs idmap.
-    expect(devcontainer.mounts).toBeDefined();
-    expect(
-      (devcontainer.mounts as string[]).every((m: string) =>
-        m.endsWith(',idmap=true'),
-      ),
-    ).toBe(true);
-  });
-
-  it('rootful docker → no idmap, no workspaceMount override (default behavior)', async () => {
-    // The Mac / Linux-native-rootful / Windows-WSL2 case. idmap on
-    // these is at best a no-op, at worst a mount error (macOS kernel
-    // doesn't support it), so we omit it.
-    await writeYml(
-      'rootful',
-      [
-        'schemaVersion: 1',
-        'name: rootful',
-        'features:',
-        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
-        '',
-      ].join('\n'),
-    );
-    await runApply({
-      ...baseRunOpts,
-      name: 'rootful',
-      monocerosHome: home,
-    });
-    const devcontainer = JSON.parse(
-      await readFile(
-        path.join(
-          home,
-          'container',
-          'rootful',
+          'no-idmap',
           '.devcontainer',
           'devcontainer.json',
         ),
@@ -1007,16 +965,12 @@ describe('runApply', () => {
     ).toBe(true);
   });
 
-  it('rootless + compose mode → workspace volume uses long syntax with idmap: true', async () => {
-    // Compose mode kicks in as soon as one service is configured.
-    // The compose.yaml volumes need idmap on rootless too — long
-    // syntax is required since compose's short syntax has no idmap
-    // slot.
+  it('compose mode never emits idmap either (same reason)', async () => {
     await writeYml(
-      'rootless-compose',
+      'cmp-clean',
       [
         'schemaVersion: 1',
-        'name: rootless-compose',
+        'name: cmp-clean',
         'services:',
         '  - postgres',
         '',
@@ -1028,22 +982,20 @@ describe('runApply', () => {
         stdout: '["name=rootless"]',
         exitCode: 0,
       }),
-      name: 'rootless-compose',
+      name: 'cmp-clean',
       monocerosHome: home,
     });
     const compose = await readFile(
       path.join(
         home,
         'container',
-        'rootless-compose',
+        'cmp-clean',
         '.devcontainer',
         'compose.yaml',
       ),
       'utf8',
     );
-    expect(compose).toMatch(/type: bind/);
-    expect(compose).toMatch(/target: \/workspaces\/rootless-compose/);
-    expect(compose).toMatch(/idmap: true/);
+    expect(compose).not.toContain('idmap');
   });
 
   it('pre-flight stage 2 (reachability) catches a missing repo before docker build', async () => {

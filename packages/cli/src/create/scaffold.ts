@@ -465,22 +465,24 @@ export function buildDevcontainerJson(
   const featuresField =
     Object.keys(features).length > 0 ? { features } : undefined;
 
-  // `idmap=true` is the bind-mount option that asks the Linux kernel
-  // to apply the user-namespace mapping to the mount. Required on
-  // rootless Docker so that host-pre-created files (`projects/`,
-  // `home/`, `.monoceros/`) are writable by the container's `node`
-  // user and container-written files land on the host with the
-  // host user's UID instead of a shifted /etc/subuid id. On rootful
-  // Docker and on Mac/Windows Docker Desktop, idmap is either a
-  // no-op (extra round-trip) or an outright mount error — so we
-  // ONLY emit it when the host probe confirmed rootless.
+  // Rootless-Docker bind-mount handling is currently a TODO. Earlier
+  // attempts (1.6.3 / 1.6.5) appended `,idmap` / `,idmap=true` to the
+  // mount string in the belief Docker supports idmapped mounts via
+  // `--mount`. It doesn't — verified against the official docs at
+  // https://docs.docker.com/engine/storage/bind-mounts/ — there is
+  // no `idmap` key in the `--mount` syntax. Podman supports it,
+  // Docker presently doesn't expose the kernel feature on the CLI.
   //
-  // Docker 25+ accepts the option in `key=value` form
-  // (`idmap=true`). Older docker versions that briefly accepted the
-  // bare `idmap` flag are out of scope — Ubuntu 24.04 ships docker
-  // 27.x via get.docker.com, which strictly requires the key=value
-  // syntax (we hit this in M5 testing 2026-05-23).
-  const idmapSuffix = dockerMode === 'rootless' ? ',idmap=true' : '';
+  // For now we emit the same mount strings regardless of dockerMode.
+  // That leaves the rootless UID-shift problem (host pre-created
+  // dirs appear as root in container; container-written files end
+  // up at shifted UIDs on the host) unsolved — separate fix needed,
+  // most likely via remoteUser=root in rootless mode so the
+  // container's "root" maps to the host workspace owner. The
+  // dockerMode parameter stays plumbed in so the next attempt can
+  // diverge cleanly.
+  void dockerMode;
+  const idmapSuffix = '';
 
   // Bind-mounts for per-feature persistent home entries. Source on
   // the host is `<container-dir>/home/<subpath>` (under the
@@ -529,17 +531,10 @@ export function buildDevcontainerJson(
   const mounts: string[] = [...homeMounts];
   const mountsField = mounts.length > 0 ? { mounts } : {};
 
-  // On rootless we also override the workspace bind-mount so the
-  // main /workspaces/<name> mount gets idmap. Without this override,
-  // devcontainer-cli generates the workspace mount itself without
-  // idmap, and the post-create.sh that runs inside hits permission-
-  // denied on host-pre-created `projects/`.
-  const workspaceMountField =
-    dockerMode === 'rootless'
-      ? {
-          workspaceMount: `source=\${localWorkspaceFolder},target=/workspaces/${opts.name},type=bind${idmapSuffix}`,
-        }
-      : {};
+  // No workspaceMount override today — see the comment above about
+  // the reverted idmap attempt. Once we have a working rootless
+  // strategy, the override comes back here.
+  const workspaceMountField = {};
 
   return {
     name: opts.name,
@@ -557,19 +552,16 @@ export function buildDevcontainerJson(
 // Hand-rolled YAML for compose.yaml. The shape is narrow enough that
 // avoiding a YAML dependency outweighs the cost of careful indentation.
 //
-// `dockerMode === 'rootless'` switches every workspace-side bind to
-// the long-syntax with `bind: { create_host_path: true }` plus the
-// `idmap` flag — same fix as in image mode (see buildDevcontainerJson),
-// just expressed in compose's volume long-form. Compose spec exposes
-// idmap as of compose-spec 1.16 (docker compose v2.30+, Ubuntu 24.04
-// has compatible versions). On rootful we keep the short syntax — it
-// stays readable and avoids any compose-version friction.
+// `dockerMode` is plumbed in for symmetry with buildDevcontainerJson
+// and future rootless-specific tweaks, but currently unused (see the
+// TODO in buildDevcontainerJson re: docker not exposing idmap on
+// `--mount`).
 export function buildComposeYaml(
   opts: CreateOptions,
   dockerMode: DockerMode = 'rootful',
 ): string {
+  void dockerMode;
   const lines: string[] = ['services:'];
-  const isRootless = dockerMode === 'rootless';
 
   lines.push('  workspace:');
   lines.push(`    image: ${BASE_IMAGE}`);
@@ -581,19 +573,7 @@ export function buildComposeYaml(
   lines.push('    cap_add:');
   lines.push('      - NET_ADMIN');
   lines.push('    volumes:');
-  if (isRootless) {
-    // Long syntax + idmap so the kernel applies the user-ns mapping
-    // to the workspace bind. Without it, the container's `node` can't
-    // write into host-pre-created `projects/`.
-    lines.push('      - type: bind');
-    lines.push('        source: ..');
-    lines.push(`        target: /workspaces/${opts.name}`);
-    lines.push('        bind:');
-    lines.push('          create_host_path: true');
-    lines.push('          idmap: true');
-  } else {
-    lines.push(`      - ..:/workspaces/${opts.name}:cached`);
-  }
+  lines.push(`      - ..:/workspaces/${opts.name}:cached`);
   // Per-feature persistent home subpaths (dirs and files alike).
   // Paths inside compose.yaml are relative to the .devcontainer/
   // directory; `..` walks up to the container root, where `home/`
@@ -606,16 +586,7 @@ export function buildComposeYaml(
       ...f.persistentHomeFiles.map((entry) => entry.path),
     ];
     for (const sub of allSubs) {
-      if (isRootless) {
-        lines.push('      - type: bind');
-        lines.push(`        source: ../home/${sub}`);
-        lines.push(`        target: /home/node/${sub}`);
-        lines.push('        bind:');
-        lines.push('          create_host_path: true');
-        lines.push('          idmap: true');
-      } else {
-        lines.push(`      - ../home/${sub}:/home/node/${sub}`);
-      }
+      lines.push(`      - ../home/${sub}:/home/node/${sub}`);
     }
   }
   for (const svcId of opts.services) {
