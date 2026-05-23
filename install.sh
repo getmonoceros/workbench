@@ -112,19 +112,27 @@ EOF
 
 Monoceros needs Docker. Install it + grant your user access — paste this block:
 
+  ${CYAN}sudo -v${RESET}
   ${CYAN}curl -fsSL https://get.docker.com | sudo sh${RESET}
   ${CYAN}sudo usermod -aG docker \$USER${RESET}
   ${CYAN}newgrp docker${RESET}
 
 What each line does:
 
-  1. installs Docker Engine (rootful) + starts it as a systemd service
-  2. adds your user to the 'docker' group — required because the
+  1. caches your sudo password ONCE so the rest of the block runs
+     without further prompts. Critical when pasting all four lines
+     at once — otherwise a delayed sudo prompt later in the block
+     can silently swallow 'newgrp docker' as keyboard input.
+  2. installs Docker Engine (rootful) + starts it as a systemd service
+  3. adds your user to the 'docker' group — required because the
      daemon socket is root-owned. Without it, every 'docker' call
      would need sudo.
-  3. activates the group in your current shell — Linux only loads
-     group memberships at login, so this is what spares you a
-     logout/login. (Alternative: open a new terminal — same effect.)
+  4. activates the group in your current shell. Linux loads group
+     memberships only at desktop-session login; opening a new
+     terminal in the same GNOME/KDE session does NOT pick up the
+     new group. 'newgrp docker' fixes that without a full session
+     logout (alternative: log out of the desktop session entirely
+     and back in).
 
 The trailing notes $(dim "get.docker.com") prints about "rootless mode"
 and "privileged service" are alternative install paths — ignore them.
@@ -173,14 +181,20 @@ EOF
 Most common case after a fresh Docker install: your user isn't in
 the 'docker' group yet. Paste this block:
 
+  ${CYAN}sudo -v${RESET}
   ${CYAN}sudo usermod -aG docker \$USER${RESET}
   ${CYAN}newgrp docker${RESET}
 
-Why both lines: the daemon socket is root-owned. usermod adds you
-to the group that's allowed to talk to it. Linux only loads group
-memberships at login, so newgrp activates the change in your
-current shell without a logout. (Alternative: open a new terminal
-— the group is loaded at login.)
+Why three lines:
+
+  1. caches your sudo password ONCE so the third line doesn't get
+     silently swallowed as input to a delayed sudo prompt
+  2. adds you to the 'docker' group (daemon socket is root-owned)
+  3. activates the group in your current shell. Linux loads group
+     memberships only at desktop-session login; opening a new
+     terminal in the same GNOME/KDE session does NOT pick it up.
+     'newgrp docker' is the in-place fix (alternative: full desktop
+     logout + login).
 
 If you're already in the 'docker' group and 'docker info' still
 fails, the daemon may not be running:
