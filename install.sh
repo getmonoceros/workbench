@@ -152,32 +152,26 @@ Monoceros needs Docker. Install it + grant your user access — paste this block
   ${CYAN}sudo -v${RESET}
   ${CYAN}curl -fsSL https://get.docker.com | sudo sh${RESET}
   ${CYAN}sudo usermod -aG docker \$USER${RESET}
-  ${CYAN}newgrp docker${RESET}
 
 What each line does:
 
   1. caches your sudo password ONCE so the rest of the block runs
-     without further prompts. Critical when pasting all four lines
-     at once — otherwise a delayed sudo prompt later in the block
-     can silently swallow 'newgrp docker' as keyboard input.
-  2. installs Docker Engine (rootful) + starts it as a systemd service
-  3. adds your user to the 'docker' group — required because the
-     daemon socket is root-owned. Without it, every 'docker' call
-     would need sudo.
-  4. activates the group in your current shell. Linux loads group
-     memberships only at desktop-session login; opening a new
-     terminal in the same GNOME/KDE session does NOT pick up the
-     new group. 'newgrp docker' fixes that without a full session
-     logout (alternative: log out of the desktop session entirely
-     and back in).
+     without further prompts. Critical for paste-blocks with multiple
+     sudo calls — otherwise a delayed password prompt could swallow
+     subsequent lines as keyboard input.
+  2. installs Docker Engine (rootful) + starts it as a systemd service.
+  3. adds your user to the 'docker' group. The daemon socket is
+     root-owned; group membership is what lets you talk to it
+     without sudo. On a single-user dev VM you have sudo anyway,
+     so this is convenience, not a new privilege boundary.
+
+No 'newgrp docker' / no logout / no relog needed. Monoceros detects
+the "I'm in /etc/group but my current shell hasn't loaded that yet"
+state and self-recovers via 'sg docker' under the hood — every
+'monoceros …' call in any terminal just works.
 
 The trailing notes $(dim "get.docker.com") prints about "rootless mode"
 and "privileged service" are alternative install paths — ignore them.
-
-Why 'docker' group is fine here: on a single-user dev VM, you have
-sudo anyway. The group membership is convenience, not a new
-privilege boundary. On a multi-user server it would be — different
-context.
 
 Other paths (distro packages, Docker Desktop, etc.):
 
@@ -216,22 +210,14 @@ EOF
       cat >&2 <<EOF
 
 Most common case after a fresh Docker install: your user isn't in
-the 'docker' group yet. Paste this block:
+the 'docker' group yet. Paste:
 
-  ${CYAN}sudo -v${RESET}
   ${CYAN}sudo usermod -aG docker \$USER${RESET}
-  ${CYAN}newgrp docker${RESET}
 
-Why three lines:
-
-  1. caches your sudo password ONCE so the third line doesn't get
-     silently swallowed as input to a delayed sudo prompt
-  2. adds you to the 'docker' group (daemon socket is root-owned)
-  3. activates the group in your current shell. Linux loads group
-     memberships only at desktop-session login; opening a new
-     terminal in the same GNOME/KDE session does NOT pick it up.
-     'newgrp docker' is the in-place fix (alternative: full desktop
-     logout + login).
+Then re-run this installer. No 'newgrp', no logout, no relog —
+the installer + monoceros itself detect the "I'm in /etc/group but
+my current shell hasn't loaded it" state and self-recover via
+'sg docker' under the hood.
 
 If you're already in the 'docker' group and 'docker info' still
 fails, the daemon may not be running:
