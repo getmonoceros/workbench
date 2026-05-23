@@ -36,6 +36,43 @@ fi
 
 set -euo pipefail
 
+# ── Auto-recover from missing docker group in current shell ────────
+#
+# After `sudo usermod -aG docker $USER`, the user is in /etc/group's
+# docker line but the running shell session loaded its group list at
+# desktop-login time and has no way to refresh. Every subsequent
+# `docker info` fails until the user runs `newgrp docker` manually
+# or logs out + back in.
+#
+# This block sidesteps that for install.sh's own purposes: probe
+# docker, check /etc/group membership, re-exec via `sg docker` if
+# the gap is exactly that. The user sees a single `curl ... | bash`
+# command in their history; they don't have to know about newgrp.
+#
+# Guarded against infinite loops via the env var; Linux-only.
+if [ -z "${MONOCEROS_DOCKER_GROUP_REEXEC:-}" ] \
+   && [ "$(uname -s)" = "Linux" ] \
+   && command -v docker >/dev/null 2>&1 \
+   && ! docker info >/dev/null 2>&1 \
+   && command -v sg >/dev/null 2>&1 \
+   && command -v getent >/dev/null 2>&1 \
+   && getent group docker 2>/dev/null \
+        | cut -d: -f4 \
+        | tr ',' '\n' \
+        | grep -qxF "$USER"; then
+  # We're in the "usermod already ran, current shell is stale" trap.
+  # Re-download ourselves to a temp file (the curl|bash invocation
+  # consumed stdin, so we can't replay it) and exec under sg.
+  __mono_self=$(mktemp -t monoceros-install.XXXXXX.sh)
+  trap 'rm -f "$__mono_self"' EXIT
+  if curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh > "$__mono_self" 2>/dev/null; then
+    export MONOCEROS_DOCKER_GROUP_REEXEC=1
+    exec sg docker -c "bash $__mono_self"
+  fi
+  # If the re-download fails (offline?), fall through and let the
+  # downstream docker-info check render its usual setup hint.
+fi
+
 PACKAGE="@getmonoceros/workbench"
 NODE_MIN_MAJOR=20
 

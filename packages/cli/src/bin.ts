@@ -1,8 +1,22 @@
 #!/usr/bin/env node
 import { runMain } from 'citty';
+import { bootstrapDockerGroup } from './devcontainer/docker-group-bootstrap.js';
 import { maybeRenderHelp } from './help.js';
 import { consumeInnerArgsFromProcessArgv } from './inner-args.js';
 import { main } from './main.js';
+
+// On Linux: transparently re-exec under the docker group if the
+// current shell hasn't loaded it yet (typical after a fresh
+// `usermod -aG docker $USER` until the GNOME/KDE session is logged
+// out + back in). See docker-group-bootstrap.ts for the rationale.
+// No-op on macOS/Windows and when docker access already works.
+//
+// Runs BEFORE argv munging / help / runMain because if a re-exec
+// fires, we want the child process to receive the original argv
+// verbatim — let consumeInnerArgsFromProcessArgv / citty / help do
+// their work in the re-exec'd process, not in the about-to-die
+// parent.
+bootstrapDockerGroup();
 
 // Pull everything after `--` out of argv before citty starts parsing.
 // Otherwise citty's eager --help/--version handling shadows the inner
