@@ -110,13 +110,33 @@ EOF
     linux)
       cat >&2 <<EOF
 
-Monoceros needs Docker. Install it before continuing:
+Monoceros needs Docker. Install it + grant your user access — paste this block:
 
-  curl -fsSL https://get.docker.com | sudo sh
+  ${CYAN}curl -fsSL https://get.docker.com | sudo sh${RESET}
+  ${CYAN}sudo usermod -aG docker \$USER${RESET}
+  ${CYAN}newgrp docker${RESET}
 
-Other paths (distro packages, rootless mode, etc.):
+What each line does:
 
-  https://docs.docker.com/engine/install/
+  1. installs Docker Engine (rootful) + starts it as a systemd service
+  2. adds your user to the 'docker' group — required because the
+     daemon socket is root-owned. Without it, every 'docker' call
+     would need sudo.
+  3. activates the group in your current shell — Linux only loads
+     group memberships at login, so this is what spares you a
+     logout/login. (Alternative: open a new terminal — same effect.)
+
+The trailing notes $(dim "get.docker.com") prints about "rootless mode"
+and "privileged service" are alternative install paths — ignore them.
+
+Why 'docker' group is fine here: on a single-user dev VM, you have
+sudo anyway. The group membership is convenience, not a new
+privilege boundary. On a multi-user server it would be — different
+context.
+
+Other paths (distro packages, Docker Desktop, etc.):
+
+  $(dim "https://docs.docker.com/engine/install/")
 
 Then re-run this installer.
 EOF
@@ -150,14 +170,22 @@ EOF
     linux)
       cat >&2 <<EOF
 
-Start the Docker service:
+Most common case after a fresh Docker install: your user isn't in
+the 'docker' group yet. Paste this block:
 
-  sudo systemctl start docker
+  ${CYAN}sudo usermod -aG docker \$USER${RESET}
+  ${CYAN}newgrp docker${RESET}
 
-If 'docker info' still fails after that, your user may not be in the
-'docker' group:
+Why both lines: the daemon socket is root-owned. usermod adds you
+to the group that's allowed to talk to it. Linux only loads group
+memberships at login, so newgrp activates the change in your
+current shell without a logout. (Alternative: open a new terminal
+— the group is loaded at login.)
 
-  sudo usermod -aG docker \$USER     # then log out and back in
+If you're already in the 'docker' group and 'docker info' still
+fails, the daemon may not be running:
+
+  ${CYAN}sudo systemctl start docker${RESET}
 
 Then re-run this installer.
 EOF
