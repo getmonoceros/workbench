@@ -278,6 +278,70 @@ describe('runInit', () => {
     expect(text).toContain('- url: https://github.com/foo/bar.git');
   });
 
+  it('--with-ports: writes an active routing block, first entry default', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      with: ['node'],
+      withPorts: [3000, 5173, 6006],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    expect(text).toContain('routing:');
+    // First entry annotated as the default route
+    expect(text).toMatch(/- 3000.*default/);
+    expect(text).toMatch(/^\s+- 5173\s*$/m);
+    expect(text).toMatch(/^\s+- 6006\s*$/m);
+    const parsed = parseConfig(text);
+    // Verify the routing block round-trips through the real schema —
+    // typo in the active-routing renderer would catch here.
+    expect(parsed.config.routing?.ports).toEqual([3000, 5173, 6006]);
+  });
+
+  it('--with-ports: works in documented mode too (replaces the hint block)', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      withPorts: [3000],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    // Active routing block is present...
+    expect(text).toMatch(/^routing:\s*$/m);
+    expect(text).toMatch(/- 3000.*default/);
+    // ...and the documented-mode hint comments are NOT (otherwise
+    // we'd be writing both).
+    expect(text).not.toMatch(/^#\s+routing:\s*$/m);
+  });
+
+  it('--with-ports: dedupes repeated values, preserving order', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      with: ['node'],
+      withPorts: [3000, 5173, 3000, 6006],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const parsed = parseConfig(await readFile(result.configPath, 'utf8'));
+    expect(parsed.config.routing?.ports).toEqual([3000, 5173, 6006]);
+  });
+
+  it('--with-ports: rejects out-of-range values with a usage error', async () => {
+    await expect(
+      runInit({
+        name: 'sandbox',
+        with: ['node'],
+        withPorts: [70000],
+        workbenchRoot: root,
+        monocerosHome,
+        logger: silentLogger,
+      }),
+    ).rejects.toThrow(/Invalid port in --with-ports: 70000/);
+  });
+
   it('--with-repo: rejects non-canonical hosts pointing to add-repo --provider', async () => {
     // Self-hosted GitLab / Gitea / corporate domains: we can't tell
     // the provider from the URL, and init has no --provider flag.

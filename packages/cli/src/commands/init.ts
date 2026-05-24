@@ -28,15 +28,25 @@ export const initCommand = defineCommand({
         'Git URL of a repo to clone into projects/ on first apply. Repeatable: pass --with-repo=URL1 --with-repo=URL2 for multiple repos. Folder name derived from URL (foo.git → projects/foo/); use `monoceros add-repo --path=...` post-init for subfolder paths.',
       required: false,
     },
+    'with-ports': {
+      type: 'string',
+      description:
+        'Comma-separated list of container-internal ports to expose via Traefik, e.g. --with-ports=3000,5173,6006. First entry doubles as http://<name>.localhost (default route). Equivalent to `monoceros add-port` after init. Each must be an integer in 1–65535.',
+      required: false,
+    },
   },
   async run({ args, rawArgs }) {
     try {
       const withList = collectWithList(args.with, rawArgs);
       const withRepoList = collectWithRepoList(rawArgs);
+      const withPortsList = collectWithPortsList(args['with-ports'], rawArgs);
       await runInit({
         name: args.name,
         ...(withList ? { with: withList } : {}),
         ...(withRepoList.length > 0 ? { withRepo: withRepoList } : {}),
+        ...(withPortsList && withPortsList.length > 0
+          ? { withPorts: withPortsList }
+          : {}),
       });
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
@@ -44,6 +54,66 @@ export const initCommand = defineCommand({
     }
   },
 });
+
+/**
+ * Collect ports from every `--with-ports` occurrence (both `=value`
+ * and two-token forms) plus the shell-tokenization fallback for
+ * `--with-ports=3000, 5173, 6006` where the shell strips the spaces
+ * and leaves bare value tokens after the flag.
+ *
+ * We walk rawArgs only and ignore the args['with-ports'] value —
+ * citty drops earlier occurrences when the flag is repeated, but
+ * rawArgs has them all in order.
+ *
+ * Validation (integer, 1..65535) lives in runInit so the same error
+ * surface covers both the CLI and direct runInit callers.
+ */
+export function collectWithPortsList(
+  _withPortsArg: string | undefined,
+  rawArgs: string[],
+): number[] | undefined {
+  const pieces: string[] = [];
+  for (let i = 0; i < rawArgs.length; i += 1) {
+    const t = rawArgs[i]!;
+    let scanStart = -1;
+    if (t === '--with-ports') {
+      scanStart = i + 1; // value sits after the flag, picked up below
+    } else if (t.startsWith('--with-ports=')) {
+      pieces.push(t.slice('--with-ports='.length));
+      scanStart = i + 1;
+    }
+    if (scanStart < 0) continue;
+    // Sweep subsequent non-flag tokens — covers both the two-token
+    // form (`--with-ports VALUE`) and the shell-tokenized
+    // `--with-ports=3000, 5173, 6006` case where 5173/6006 land as
+    // bare tokens after the flag.
+    let j = scanStart;
+    while (j < rawArgs.length) {
+      const u = rawArgs[j]!;
+      if (u.startsWith('-')) break;
+      pieces.push(u);
+      j += 1;
+    }
+    // Skip everything we just consumed; the outer i++ resumes at j.
+    i = j - 1;
+  }
+  const parts = pieces
+    .flatMap((s) => s.split(','))
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (parts.length === 0) return undefined;
+  const out: number[] = [];
+  for (const p of parts) {
+    const n = Number(p);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) {
+      throw new Error(
+        `Invalid port in --with-ports: ${JSON.stringify(p)}. Expected integers between 1 and 65535, comma-separated.`,
+      );
+    }
+    out.push(n);
+  }
+  return out;
+}
 
 /**
  * Collect all `--with-repo=<url>` and `--with-repo <url>` tokens from

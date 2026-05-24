@@ -52,6 +52,7 @@ export function generateComposedYml(
   components: ResolvedComponent[],
   lookupManifest: ManifestLookup,
   repoUrls: readonly string[] = [],
+  ports: readonly number[] = [],
 ): string {
   const merged = mergeComponents(components);
   const lines: string[] = [];
@@ -91,6 +92,12 @@ export function generateComposedYml(
   if (repoUrls.length > 0) {
     renderReposBlock(lines, repoUrls, /* commented */ false);
   }
+  // Same convention for ports: active `routing:` block when
+  // `--with-ports` provided values, nothing otherwise. Builder runs
+  // `monoceros add-port` later if they want it post-init.
+  if (ports.length > 0) {
+    renderActiveRoutingBlock(lines, ports);
+  }
 
   return ensureTrailingNewline(lines.join('\n'));
 }
@@ -105,6 +112,7 @@ export function generateDocumentedYml(
   catalog: Map<string, Component>,
   lookupManifest: ManifestLookup,
   repoUrls: readonly string[] = [],
+  ports: readonly number[] = [],
 ): string {
   const byCategory = groupByCategory(catalog);
   const lines: string[] = [];
@@ -223,9 +231,15 @@ export function generateDocumentedYml(
   // features block above.
   renderReposBlock(lines, repoUrls, /* commented */ repoUrls.length === 0);
 
-  // Routing — same visibility rule, but always fully commented:
-  // `monoceros add-port` is what activates the block.
-  renderRoutingBlock(lines);
+  // Routing — active when --with-ports provided values, otherwise
+  // a fully-commented hint block (same "all options visible" rule
+  // that drives repos and features). `monoceros add-port` activates
+  // it later if the builder didn't pass --with-ports.
+  if (ports.length > 0) {
+    renderActiveRoutingBlock(lines, ports);
+  } else {
+    renderRoutingHintBlock(lines);
+  }
 
   return ensureTrailingNewline(lines.join('\n'));
 }
@@ -392,20 +406,19 @@ function renderReposBlock(
 }
 
 /**
- * Render the `routing:` section. Always commented in the documented
- * mode — the block stays absent from a fresh yml until the builder
- * runs `monoceros add-port`, at which point the AST mutator
- * materializes it. The commented form shows the full set of fields
- * the schema accepts (same "all available options visible" rule as
- * features and repos). See ADR 0007.
+ * Render the fully-commented `routing:` hint block. Used in
+ * documented-mode init when the builder did not pass `--with-ports`.
+ * Shows the full set of fields the schema accepts so the option
+ * surface stays discoverable from inside the yml. See ADR 0007.
  */
-function renderRoutingBlock(out: string[]): void {
+function renderRoutingHintBlock(out: string[]): void {
   out.push('# Routing — expose container ports to the host through the');
   out.push('# shared Traefik singleton. Once any port is declared the');
   out.push('# container joins the monoceros-proxy network and the proxy');
   out.push('# routes <name>.localhost (default port) and');
   out.push('# <name>-<port>.localhost (explicit). `monoceros add-port`');
-  out.push('# manages the list; the block appears on first add.');
+  out.push('# manages the list; the block appears on first add. You can');
+  out.push('# also pre-seed at init time via `--with-ports=3000,5173,…`.');
   out.push('#');
   out.push('# routing:');
   out.push('#   ports:                    # internal container ports');
@@ -422,6 +435,36 @@ function renderRoutingBlock(out: string[]): void {
   out.push(
     "#                             # want VS Code's port panel as primary.",
   );
+  out.push('');
+}
+
+/**
+ * Render an active `routing:` block — used when `--with-ports`
+ * provided values. First entry is the default (matches what
+ * add-port writes, what proxyUrlsFor surfaces under <name>.localhost,
+ * and what setDefaultPortInDoc moves to position 0). Order from the
+ * CLI is preserved.
+ *
+ * `vscodeAutoForward` is NOT emitted — the schema default (false) is
+ * what we want, and a commented hint after the active list would just
+ * be noise. Builder edits the yml directly when they want it true.
+ */
+function renderActiveRoutingBlock(
+  out: string[],
+  ports: readonly number[],
+): void {
+  out.push('# Routing — expose these container ports to the host through');
+  out.push('# the shared Traefik singleton. First entry doubles as');
+  out.push('# http://<name>.localhost (the default route). See ADR 0007.');
+  out.push('routing:');
+  out.push('  ports:');
+  ports.forEach((port, idx) => {
+    if (idx === 0) {
+      out.push(`    - ${port} # default → http://<name>.localhost`);
+    } else {
+      out.push(`    - ${port}`);
+    }
+  });
   out.push('');
 }
 

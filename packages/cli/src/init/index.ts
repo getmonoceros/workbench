@@ -58,6 +58,14 @@ export interface RunInitOptions {
    * post-init — the init flag intentionally keeps the syntax minimal.
    */
   withRepo?: string[];
+  /**
+   * Container-internal ports to pre-seed in `routing.ports`. First
+   * entry doubles as the bare `<name>.localhost` default route in
+   * Traefik. Equivalent to running `monoceros add-port` after init.
+   * Each must be an integer in [1, 65535]; invalid values raise a
+   * usage error before the yml is written.
+   */
+  withPorts?: number[];
   /** Override of the CLI-bundle root that holds `templates/components/`. */
   workbenchRoot?: string;
   /** Override of the user-data home that owns `container-configs/`. */
@@ -155,19 +163,36 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     }
   }
 
-  // Both generators take the URL list directly — no AST round-trip
-  // after the fact. That lets each generator decide how to render the
-  // repos block (commented hints in documented mode, active entries
-  // with commented per-entry hint lines in composed mode), keeping
-  // the "all available options visible" rule consistent across
-  // sections.
+  // --with-ports validation: integer 1..65535, dedupe preserving
+  // insertion order (first entry = the default route — collapsing two
+  // mentions of 3000 to a single entry keeps that semantics
+  // unambiguous).
+  const portsRaw = opts.withPorts ?? [];
+  const ports: number[] = [];
+  const seenPorts = new Set<number>();
+  for (const raw of portsRaw) {
+    if (!Number.isInteger(raw) || raw < 1 || raw > 65535) {
+      throw new Error(
+        `Invalid port in --with-ports: ${JSON.stringify(raw)}. Expected integers between 1 and 65535.`,
+      );
+    }
+    if (seenPorts.has(raw)) continue;
+    seenPorts.add(raw);
+    ports.push(raw);
+  }
+
+  // Both generators take the URL + port lists directly — no AST
+  // round-trip after the fact. That lets each generator decide how
+  // to render the routing/repos block (commented hints in documented
+  // mode, active entries in composed mode), keeping the "all
+  // available options visible" rule consistent across sections.
   let text: string;
   const requested = opts.with ?? [];
   if (requested.length === 0) {
-    text = generateDocumentedYml(opts.name, catalog, lookup, repos);
+    text = generateDocumentedYml(opts.name, catalog, lookup, repos, ports);
   } else {
     const components = resolveComponents(catalog, requested);
-    text = generateComposedYml(opts.name, components, lookup, repos);
+    text = generateComposedYml(opts.name, components, lookup, repos, ports);
   }
 
   await fs.mkdir(containerConfigsDir(home), { recursive: true });
