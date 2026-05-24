@@ -69,6 +69,68 @@ export function addAptPackagesToDoc(
   return changed;
 }
 
+/**
+ * Read the port number from a `ports:` entry — handles both the short
+ * form (`- 3000`) and the long form (`- port: 3000`). Returns `null`
+ * for malformed entries (the schema catches them, but the mutator is
+ * defensive).
+ */
+function portOfItem(item: unknown): number | null {
+  const scalar = scalarValue(item);
+  if (typeof scalar === 'number' && Number.isInteger(scalar)) {
+    return scalar;
+  }
+  if (isMap(item)) {
+    const p = item.get('port');
+    if (typeof p === 'number' && Number.isInteger(p)) return p;
+  }
+  return null;
+}
+
+/**
+ * Add (or no-op) one or more ports to the `ports:` sequence.
+ * Comparison is by port number, so a long-form entry (`- port: 3000`)
+ * matches a short-form input (`3000`) and vice versa — that keeps
+ * `add-port` idempotent against either form the builder may have
+ * written by hand.
+ *
+ * Writes the short form for new entries (lowest-noise yml). To get the
+ * long form, the builder edits the yml directly — relevant once the
+ * long form carries additional fields (TLS entrypoint, path prefix …
+ * see ADR 0007).
+ */
+export function addPortsToDoc(doc: Document, ports: number[]): boolean {
+  const seq = ensureSeq(doc, 'ports');
+  let changed = false;
+  for (const port of ports) {
+    if (seq.items.some((i) => portOfItem(i) === port)) continue;
+    seq.add(port);
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * Remove one or more ports from the `ports:` sequence. Matches both
+ * short and long form. Idempotent — ports not present are skipped
+ * silently, the return reflects whether any actual removal happened.
+ */
+export function removePortsFromDoc(doc: Document, ports: number[]): boolean {
+  const seq = doc.get('ports', true);
+  if (!seq || !isSeq(seq)) return false;
+  const targets = new Set(ports);
+  let changed = false;
+  for (let i = seq.items.length - 1; i >= 0; i--) {
+    const p = portOfItem(seq.items[i]);
+    if (p !== null && targets.has(p)) {
+      seq.items.splice(i, 1);
+      changed = true;
+    }
+  }
+  if (changed) pruneEmptySeq(doc, 'ports');
+  return changed;
+}
+
 export function addInstallUrlToDoc(doc: Document, url: string): boolean {
   const seq = ensureSeq(doc, 'installUrls');
   if (seq.items.some((i) => scalarValue(i) === url)) return false;

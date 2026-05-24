@@ -86,6 +86,7 @@ monoceros apply <name>                                    # neu bauen, picks up 
 | `monoceros add-feature <name> <ref> [-- …]` | Beliebiges Devcontainer-Feature ergänzen                              | [add-feature.md](./add-feature.md)           |
 | `monoceros add-from-url <name> <url>`       | HTTPS-Install-Script per `curl … \| sh` registrieren                  | [add-from-url.md](./add-from-url.md)         |
 | `monoceros add-repo <name> <url> [--as=…]`  | Git-Repo nach `projects/<folder>/` klonen (idempotent, post-create)   | [add-repo.md](./add-repo.md)                 |
+| `monoceros add-port <name> -- <port>…`      | Port(s) in die Container-yml eintragen (Traefik-Routing folgt in M5)  | [add-port.md](./add-port.md)                 |
 
 ### Entfernen
 
@@ -97,6 +98,7 @@ monoceros apply <name>                                    # neu bauen, picks up 
 | `monoceros remove-feature <name> <ref>`      | Devcontainer-Feature entfernen                                         | [remove-feature.md](./remove-feature.md)           |
 | `monoceros remove-from-url <name> <url>`     | Install-URL entfernen (Install-Resultat bleibt im aktuellen Container) | [remove-from-url.md](./remove-from-url.md)         |
 | `monoceros remove-repo <name> <url-or-name>` | Repo-Eintrag entfernen (lokaler `projects/<folder>/`-Folder bleibt)    | [remove-repo.md](./remove-repo.md)                 |
+| `monoceros remove-port <name> -- <port>…`    | Port(s) aus der Container-yml entfernen                                | [remove-port.md](./remove-port.md)                 |
 
 ## Tooling
 

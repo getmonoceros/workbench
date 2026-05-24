@@ -27,12 +27,14 @@ import {
   addFeatureToDoc,
   addInstallUrlToDoc,
   addLanguageToDoc,
+  addPortsToDoc,
   addRepoToDoc,
   addServiceToDoc,
   removeAptPackagesFromDoc,
   removeFeatureFromDoc,
   removeInstallUrlFromDoc,
   removeLanguageFromDoc,
+  removePortsFromDoc,
   removeRepoFromDoc,
   removeServiceFromDoc,
 } from './yml.js';
@@ -125,6 +127,13 @@ export interface RemoveFromUrlInput extends ModifyOptions {
 export interface RemoveRepoInput extends ModifyOptions {
   /** url or (effective) name — `monoceros remove-repo` accepts either. */
   target: string;
+}
+
+export interface AddPortInput extends ModifyOptions {
+  ports: number[];
+}
+export interface RemovePortInput extends ModifyOptions {
+  ports: number[];
 }
 
 export type ModifyResult =
@@ -261,6 +270,39 @@ export function runAddFromUrl(input: AddFromUrlInput): Promise<ModifyResult> {
   return mutate(input, (doc) => addInstallUrlToDoc(doc, url));
 }
 
+export async function runAddPort(input: AddPortInput): Promise<ModifyResult> {
+  if (input.ports.length === 0) {
+    throw new Error(
+      'No ports given. Usage: monoceros add-port <containername> -- <port> [<port> …].',
+    );
+  }
+  const ports = normalizePorts(input.ports);
+  return mutate(input, (doc) => addPortsToDoc(doc, ports));
+}
+
+/**
+ * Validate each entry as an integer in [1, 65535] and dedupe — same
+ * port listed twice in the CLI args is treated as one. Throws on
+ * any non-integer or out-of-range value with the offending input
+ * verbatim so the builder can fix the typo.
+ */
+function normalizePorts(raw: readonly (number | string)[]): number[] {
+  const result: number[] = [];
+  const seen = new Set<number>();
+  for (const item of raw) {
+    const n = typeof item === 'number' ? item : Number(item);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) {
+      throw new Error(
+        `Invalid port: ${JSON.stringify(item)}. Expected an integer between 1 and 65535.`,
+      );
+    }
+    if (seen.has(n)) continue;
+    seen.add(n);
+    result.push(n);
+  }
+  return result;
+}
+
 export function runAddFeature(input: AddFeatureInput): Promise<ModifyResult> {
   const ref = input.ref.trim();
   if (ref.length === 0) {
@@ -318,6 +360,18 @@ export function runRemoveFromUrl(
     );
   }
   return mutate(input, (doc) => removeInstallUrlFromDoc(doc, url));
+}
+
+export async function runRemovePort(
+  input: RemovePortInput,
+): Promise<ModifyResult> {
+  if (input.ports.length === 0) {
+    throw new Error(
+      'No ports given. Usage: monoceros remove-port <containername> -- <port> [<port> …].',
+    );
+  }
+  const ports = normalizePorts(input.ports);
+  return mutate(input, (doc) => removePortsFromDoc(doc, ports));
 }
 
 export function runRemoveRepo(input: RemoveRepoInput): Promise<ModifyResult> {

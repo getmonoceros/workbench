@@ -158,6 +158,44 @@ export const RepoEntrySchema = z.object({
   provider: z.enum(PROVIDER_VALUES).optional(),
 });
 
+/**
+ * A single entry under `ports:`. Two forms accepted:
+ *
+ *   ports:
+ *     - 3000          # short form: just the port number
+ *     - port: 9229    # long form, leaves room for future fields
+ *                     # (protocol, path-prefix, entrypoint …)
+ *
+ * Today both forms carry the same information. The long form exists
+ * so additive extensions (TLS entrypoint, path-based routing) don't
+ * require a schema break. See ADR 0007.
+ */
+export const PortEntrySchema = z.union([
+  z
+    .number()
+    .int()
+    .min(1, 'Port must be ≥ 1.')
+    .max(65535, 'Port must be ≤ 65535.'),
+  z.object({
+    port: z
+      .number()
+      .int()
+      .min(1, 'Port must be ≥ 1.')
+      .max(65535, 'Port must be ≤ 65535.'),
+  }),
+]);
+
+/**
+ * IDE-specific knobs. Currently the only field is
+ * `vscodeAutoForwardPorts` — defaults to `false` (Traefik routes via
+ * `<container>.localhost` so VS Code's parallel port-forward would be
+ * a confusing second URL for the same app). Reversible per container
+ * by setting it to `true`. See ADR 0007.
+ */
+export const IdeSchema = z.object({
+  vscodeAutoForwardPorts: z.boolean().optional(),
+});
+
 export const ExternalServicesSchema = z.object({
   postgres: z
     .string()
@@ -200,6 +238,8 @@ export const SolutionConfigSchema = z.object({
     .default([]),
   services: z.array(z.string().min(1)).default([]),
   repos: z.array(RepoEntrySchema).default([]),
+  ports: z.array(PortEntrySchema).default([]),
+  ide: IdeSchema.optional(),
   externalServices: ExternalServicesSchema.default({}),
   git: z
     .object({
@@ -213,6 +253,13 @@ export type FeatureEntry = z.infer<typeof FeatureEntrySchema>;
 export type RepoEntry = z.infer<typeof RepoEntrySchema>;
 export type GitUser = z.infer<typeof GitUserSchema>;
 export type ExternalServices = z.infer<typeof ExternalServicesSchema>;
+export type PortEntry = z.infer<typeof PortEntrySchema>;
+export type Ide = z.infer<typeof IdeSchema>;
+
+/** Resolve a `PortEntry` (short or long form) to a plain port number. */
+export function portNumber(entry: PortEntry): number {
+  return typeof entry === 'number' ? entry : entry.port;
+}
 
 /**
  * Validate parsed yml (e.g. from `doc.toJS()`) against the schema. On

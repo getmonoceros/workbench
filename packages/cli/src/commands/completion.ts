@@ -49,12 +49,14 @@ const ALL_COMMANDS = [
   'add-feature',
   'add-from-url',
   'add-repo',
+  'add-port',
   'remove-service',
   'remove-language',
   'remove-apt-packages',
   'remove-feature',
   'remove-from-url',
   'remove-repo',
+  'remove-port',
   'completion',
 ] as const;
 
@@ -76,12 +78,14 @@ const COMMANDS_WITH_CONTAINER_ARG = [
   'add-feature',
   'add-from-url',
   'add-repo',
+  'add-port',
   'remove-service',
   'remove-language',
   'remove-apt-packages',
   'remove-feature',
   'remove-from-url',
   'remove-repo',
+  'remove-port',
 ] as const;
 
 const SHELLS = ['bash', 'zsh', 'pwsh'] as const;

@@ -4,15 +4,20 @@ export {
   FeatureEntrySchema,
   FeatureOptionValueSchema,
   GitUserSchema,
+  IdeSchema,
+  PortEntrySchema,
   REGEX,
   RepoEntrySchema,
   SolutionConfigSchema,
+  portNumber,
   validateConfig,
 } from './schema.js';
 export type {
   ExternalServices,
   FeatureEntry,
   GitUser,
+  Ide,
+  PortEntry,
   RepoEntry,
   SolutionConfig,
 } from './schema.js';

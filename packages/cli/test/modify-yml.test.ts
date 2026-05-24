@@ -8,12 +8,14 @@ import {
   runAddFeature,
   runAddFromUrl,
   runAddLanguage,
+  runAddPort,
   runAddRepo,
   runAddService,
   runRemoveAptPackages,
   runRemoveFeature,
   runRemoveFromUrl,
   runRemoveLanguage,
+  runRemovePort,
   runRemoveRepo,
   runRemoveService,
 } from '../src/modify/index.js';
@@ -628,5 +630,152 @@ describe('add-*/remove-* against the yml', () => {
     });
     const yml = await ymlOf('demo');
     expect(yml).not.toContain('repos:');
+  });
+
+  // ─── ports ──────────────────────────────────────────────────────
+
+  it('runAddPort appends ports in short form and validates round-trip', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const result = await runAddPort({
+      ...baseOpts,
+      name: 'demo',
+      ports: [3000, 5173, 6006],
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('ports:');
+    expect(yml).toContain('- 3000');
+    expect(yml).toContain('- 5173');
+    expect(yml).toContain('- 6006');
+  });
+
+  it('runAddPort is a no-op when every port is already present', async () => {
+    await writeYml(
+      'demo',
+      ['schemaVersion: 1', 'name: demo', 'ports:', '  - 3000', ''].join('\n'),
+    );
+    const result = await runAddPort({
+      ...baseOpts,
+      name: 'demo',
+      ports: [3000],
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('no-change');
+  });
+
+  it('runAddPort only appends the missing ports — comments survive', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'ports:',
+        '  - 3000 # vite',
+        '  - 5173 # api',
+        '',
+      ].join('\n'),
+    );
+    const result = await runAddPort({
+      ...baseOpts,
+      name: 'demo',
+      ports: [3000, 6006],
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('# vite');
+    expect(yml).toContain('# api');
+    expect(yml.match(/- 3000\b/g)).toHaveLength(1);
+    expect(yml).toContain('- 6006');
+  });
+
+  it('runAddPort matches the long form when checking for duplicates', async () => {
+    await writeYml(
+      'demo',
+      ['schemaVersion: 1', 'name: demo', 'ports:', '  - port: 9229', ''].join(
+        '\n',
+      ),
+    );
+    const result = await runAddPort({
+      ...baseOpts,
+      name: 'demo',
+      ports: [9229],
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('no-change');
+  });
+
+  it('runAddPort rejects out-of-range values verbatim', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      runAddPort({
+        ...baseOpts,
+        name: 'demo',
+        ports: [70000],
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Invalid port: 70000/);
+    await expect(
+      runAddPort({
+        ...baseOpts,
+        name: 'demo',
+        ports: [0],
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Invalid port: 0/);
+  });
+
+  it('runRemovePort drops a port and prunes the empty list', async () => {
+    await writeYml(
+      'demo',
+      ['schemaVersion: 1', 'name: demo', 'ports:', '  - 3000', ''].join('\n'),
+    );
+    await runRemovePort({
+      ...baseOpts,
+      name: 'demo',
+      ports: [3000],
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).not.toContain('ports:');
+    expect(yml).not.toContain('3000');
+  });
+
+  it('runRemovePort matches the long form too', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'ports:',
+        '  - 3000',
+        '  - port: 9229',
+        '',
+      ].join('\n'),
+    );
+    await runRemovePort({
+      ...baseOpts,
+      name: 'demo',
+      ports: [9229],
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('- 3000');
+    expect(yml).not.toContain('9229');
+  });
+
+  it('runRemovePort is a no-op when the port is not present', async () => {
+    await writeYml(
+      'demo',
+      ['schemaVersion: 1', 'name: demo', 'ports:', '  - 3000', ''].join('\n'),
+    );
+    const result = await runRemovePort({
+      ...baseOpts,
+      name: 'demo',
+      ports: [9999],
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('no-change');
   });
 });
