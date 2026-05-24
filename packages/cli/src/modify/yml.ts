@@ -97,6 +97,40 @@ function ensureRoutingMap(doc: Document): YAMLMap {
 }
 
 /**
+ * Move a port to position 0 in the `routing.ports` sequence (or add
+ * it there if it isn't already in the list). The first entry doubles
+ * as the bare `<name>.localhost` default route in the Traefik dynamic
+ * config, so this is how the builder picks which app the bare URL
+ * points at.
+ *
+ * Returns `true` if anything changed. Idempotent: when the port is
+ * already at index 0, the call is a no-op.
+ */
+export function setDefaultPortInDoc(doc: Document, port: number): boolean {
+  const routing = ensureRoutingMap(doc);
+  const existing = routing.get('ports', true);
+  let seq: YAMLSeq;
+  if (existing && isSeq(existing)) {
+    seq = existing;
+  } else {
+    seq = new YAMLSeq();
+    routing.set('ports', seq);
+  }
+  const currentIdx = seq.items.findIndex((i) => portOfItem(i) === port);
+  if (currentIdx === 0) return false;
+  if (currentIdx > 0) {
+    // Splice out preserves the node — comments attached to the entry
+    // ride along to the new position. Then unshift back at index 0.
+    const [item] = seq.items.splice(currentIdx, 1);
+    seq.items.unshift(item);
+    return true;
+  }
+  // Not in the list yet — insert at the front.
+  seq.items.unshift(port);
+  return true;
+}
+
+/**
  * Add (or no-op) one or more ports to `routing.ports`. Comparison is
  * by port number, so a long-form entry (`- port: 3000`) matches a
  * short-form input (`3000`) and vice versa — that keeps `add-port`

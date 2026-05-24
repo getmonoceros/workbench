@@ -4,7 +4,7 @@ Trägt einen oder mehrere Ports in die Container-Konfig ein.
 Idempotent, zeigt vor dem Schreiben einen Diff.
 
 ```sh
-monoceros add-port <name> [--yes] -- <port> [<port> …]
+monoceros add-port <name> [--yes] [--default] -- <port> [<port> …]
 ```
 
 ## Zweck
@@ -54,9 +54,10 @@ routing:
 
 ## Optionen
 
-| Option      | Bedeutung                                       |
-| ----------- | ----------------------------------------------- |
-| `--yes, -y` | Diff-Confirm-Prompt überspringen (für Scripts). |
+| Option      | Bedeutung                                                                      |
+| ----------- | ------------------------------------------------------------------------------ |
+| `--yes, -y` | Diff-Confirm-Prompt überspringen (für Scripts).                                |
+| `--default` | Genannten Port zum Default-Routen-Ziel machen (Position 0 in `routing.ports`). |
 
 ## Hostname-Schema
 
@@ -79,6 +80,27 @@ Beispiel: nach `monoceros add-port sandbox -- 3000 5173 6006`:
 
 `*.localhost` löst per RFC 6761 auf jedem modernen OS automatisch auf
 127.0.0.1 auf — kein `hosts`-File-Eingriff nötig.
+
+## Default-Port wechseln
+
+Der erste Eintrag in `routing.ports` doppelt sich als
+`<container>.localhost`-Route. Um einen anderen Port zum Default zu
+machen, ohne Liste neu aufzubauen:
+
+```sh
+monoceros add-port sandbox -y --default -- 5173
+```
+
+Wirkung:
+
+- Port schon in der Liste → wird an Position 0 verschoben, restliche
+  Reihenfolge bleibt erhalten
+- Port noch nicht in der Liste → wird vorne eingefügt
+- Port ist schon der Default → no-change
+
+Mehr als ein Port mit `--default` ist ein Fehler — welcher von mehreren
+soll Default sein? Bei Bedarf zwei Aufrufe: erst `--default`, dann der
+Rest ohne Flag.
 
 ## Idempotenz
 

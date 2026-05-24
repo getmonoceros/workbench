@@ -50,6 +50,7 @@ import {
   removePortsFromDoc,
   removeRepoFromDoc,
   removeServiceFromDoc,
+  setDefaultPortInDoc,
 } from './yml.js';
 
 /**
@@ -144,6 +145,13 @@ export interface RemoveRepoInput extends ModifyOptions {
 
 export interface AddPortInput extends ModifyOptions {
   ports: number[];
+  /**
+   * When true, the (single) port in `ports` is moved to / inserted at
+   * the front of `routing.ports` — making it the bare
+   * `<name>.localhost` default route. Only valid with exactly one
+   * port in the args; multiple ports + `asDefault` is a usage error.
+   */
+  asDefault?: boolean;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
 }
@@ -294,7 +302,19 @@ export async function runAddPort(input: AddPortInput): Promise<ModifyResult> {
     );
   }
   const ports = normalizePorts(input.ports);
-  const result = await mutate(input, (doc) => addPortsToDoc(doc, ports));
+  if (input.asDefault && ports.length > 1) {
+    throw new Error(
+      `--default takes exactly one port. Got: ${ports.join(', ')}. Run add-port once with --default for the new default, then again (without --default) for the rest.`,
+    );
+  }
+  const result = await mutate(input, (doc) => {
+    if (input.asDefault) {
+      // --default semantics: ensure the port exists AND sits at index
+      // 0. setDefaultPortInDoc covers both (insert-or-move).
+      return setDefaultPortInDoc(doc, ports[0]!);
+    }
+    return addPortsToDoc(doc, ports);
+  });
   // Hot-reload path: when the yml actually changed, push the new
   // route set to the Traefik dynamic-config directory and make sure
   // the proxy is up. The yml is the source of truth — we re-read it

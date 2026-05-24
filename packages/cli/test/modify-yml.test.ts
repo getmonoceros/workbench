@@ -762,6 +762,101 @@ describe('add-*/remove-* against the yml', () => {
     ).rejects.toThrow(/Invalid port: 0/);
   });
 
+  it('runAddPort --default moves an existing port to position 0', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'routing:',
+        '  ports:',
+        '    - 3000',
+        '    - 5173',
+        '    - 6006',
+        '',
+      ].join('\n'),
+    );
+    const result = await runAddPort({
+      ...portOpts,
+      name: 'demo',
+      ports: [5173],
+      asDefault: true,
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    // 5173 now first, then 3000, then 6006 — original order preserved
+    // among the non-promoted entries.
+    const portLines = yml
+      .split('\n')
+      .filter((l) => /^\s+- \d+/.test(l))
+      .map((l) => l.trim());
+    expect(portLines).toEqual(['- 5173', '- 3000', '- 6006']);
+  });
+
+  it('runAddPort --default inserts the port at position 0 when not present', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'routing:',
+        '  ports:',
+        '    - 3000',
+        '',
+      ].join('\n'),
+    );
+    await runAddPort({
+      ...portOpts,
+      name: 'demo',
+      ports: [9229],
+      asDefault: true,
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    const portLines = yml
+      .split('\n')
+      .filter((l) => /^\s+- \d+/.test(l))
+      .map((l) => l.trim());
+    expect(portLines).toEqual(['- 9229', '- 3000']);
+  });
+
+  it('runAddPort --default is a no-op when the port is already at position 0', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'routing:',
+        '  ports:',
+        '    - 3000',
+        '    - 5173',
+        '',
+      ].join('\n'),
+    );
+    const result = await runAddPort({
+      ...portOpts,
+      name: 'demo',
+      ports: [3000],
+      asDefault: true,
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('no-change');
+  });
+
+  it('runAddPort --default rejects more than one port', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      runAddPort({
+        ...portOpts,
+        name: 'demo',
+        ports: [3000, 5173],
+        asDefault: true,
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/--default takes exactly one port/);
+  });
+
   it('runRemovePort drops a port, prunes the empty routing block, and removes the dynamic config', async () => {
     await writeYml(
       'demo',
