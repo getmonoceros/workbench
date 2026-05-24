@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildComposeYaml,
   buildDevcontainerJson,
+  normalizeOptions,
 } from '../src/create/scaffold.js';
 import type { CreateOptions } from '../src/create/types.js';
 
@@ -86,5 +87,35 @@ describe('buildComposeYaml — ports & networks', () => {
     expect(yaml).toMatch(
       /^networks:\s*\n\s+monoceros-proxy:\s*\n\s+external: true/m,
     );
+  });
+});
+
+describe('normalizeOptions — ports / vscodeAutoForwardPorts pass-through', () => {
+  // Regression guard: an earlier version of normalizeOptions rebuilt
+  // the result object field-by-field and silently dropped `ports` and
+  // `vscodeAutoForwardPorts`. Apply then took its `removeDynamicConfig`
+  // branch right after `add-port` had just written the file. The fix
+  // is to plumb both fields through; this test pins it.
+  it('preserves ports (deduped, original order)', () => {
+    const out = normalizeOptions({
+      ...base,
+      ports: [3000, 5173, 3000, 6006],
+    });
+    expect(out.ports).toEqual([3000, 5173, 6006]);
+  });
+
+  it('preserves an explicit vscodeAutoForwardPorts=true', () => {
+    const out = normalizeOptions({
+      ...base,
+      ports: [3000],
+      vscodeAutoForwardPorts: true,
+    });
+    expect(out.vscodeAutoForwardPorts).toBe(true);
+  });
+
+  it('omits ports when the input has none', () => {
+    const out = normalizeOptions(base);
+    expect(out.ports).toBeUndefined();
+    expect(out.vscodeAutoForwardPorts).toBeUndefined();
   });
 });

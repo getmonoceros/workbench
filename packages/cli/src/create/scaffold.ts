@@ -159,6 +159,11 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
         new Map(opts.repos.map((r) => [`${r.url}${r.path}`, r])).values(),
       )
     : undefined;
+  // Ports: preserve insertion order — the first entry doubles as the
+  // default route under `<name>.localhost`, so reordering would
+  // silently change which app the bare hostname points at. Dedupe to
+  // keep the dynamic config and `forwardPorts` deterministic.
+  const ports = opts.ports ? [...new Set(opts.ports)] : undefined;
   return {
     name: opts.name,
     languages,
@@ -168,6 +173,10 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
     ...(features && Object.keys(features).length > 0 ? { features } : {}),
     ...(installUrls && installUrls.length > 0 ? { installUrls } : {}),
     ...(repos && repos.length > 0 ? { repos } : {}),
+    ...(ports && ports.length > 0 ? { ports } : {}),
+    ...(opts.vscodeAutoForwardPorts !== undefined
+      ? { vscodeAutoForwardPorts: opts.vscodeAutoForwardPorts }
+      : {}),
   };
 }
 
