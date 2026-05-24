@@ -289,14 +289,35 @@ describe('runInit', () => {
     });
     const text = await readFile(result.configPath, 'utf8');
     expect(text).toContain('routing:');
-    // First entry annotated as the default route
-    expect(text).toMatch(/- 3000.*default/);
+    // First entry annotated as the default route — and the
+    // container name is substituted into the comment (no literal
+    // `<name>` placeholder left in the active block).
+    expect(text).toMatch(/- 3000 # default → http:\/\/sandbox\.localhost/);
+    // Slice the active block (header + body, up to the blank line
+    // that terminates it) and assert no `<name>` placeholder slips
+    // through. The documented-mode hint block elsewhere in the
+    // generator is allowed to keep `<name>` as a generic example;
+    // we narrow the check to the actually-substituted active block.
+    // The active block runs from its header to either the next
+    // blank-line section break OR end-of-file (the routing block
+    // can be the last thing in the yml).
+    const activeBlockMatch = text.match(
+      /# Routing — expose these container ports[\s\S]*?(?=\n\n|$)/,
+    );
+    expect(activeBlockMatch).not.toBeNull();
+    expect(activeBlockMatch![0]).not.toContain('<name>');
+    expect(activeBlockMatch![0]).toContain('http://sandbox.localhost');
     expect(text).toMatch(/^\s+- 5173\s*$/m);
     expect(text).toMatch(/^\s+- 6006\s*$/m);
+    // vscodeAutoForward must appear as a commented hint so the full
+    // routing surface is discoverable from inside the yml.
+    expect(text).toMatch(/^\s+# vscodeAutoForward: false\b/m);
     const parsed = parseConfig(text);
     // Verify the routing block round-trips through the real schema —
     // typo in the active-routing renderer would catch here.
     expect(parsed.config.routing?.ports).toEqual([3000, 5173, 6006]);
+    // The commented hint must not leak into the parsed model.
+    expect(parsed.config.routing?.vscodeAutoForward).toBeUndefined();
   });
 
   it('--with-ports: works in documented mode too (replaces the hint block)', async () => {

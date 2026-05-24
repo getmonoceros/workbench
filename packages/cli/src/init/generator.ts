@@ -96,7 +96,7 @@ export function generateComposedYml(
   // `--with-ports` provided values, nothing otherwise. Builder runs
   // `monoceros add-port` later if they want it post-init.
   if (ports.length > 0) {
-    renderActiveRoutingBlock(lines, ports);
+    renderActiveRoutingBlock(lines, name, ports);
   }
 
   return ensureTrailingNewline(lines.join('\n'));
@@ -236,7 +236,7 @@ export function generateDocumentedYml(
   // that drives repos and features). `monoceros add-port` activates
   // it later if the builder didn't pass --with-ports.
   if (ports.length > 0) {
-    renderActiveRoutingBlock(lines, ports);
+    renderActiveRoutingBlock(lines, name, ports);
   } else {
     renderRoutingHintBlock(lines);
   }
@@ -440,31 +440,39 @@ function renderRoutingHintBlock(out: string[]): void {
 
 /**
  * Render an active `routing:` block — used when `--with-ports`
- * provided values. First entry is the default (matches what
- * add-port writes, what proxyUrlsFor surfaces under <name>.localhost,
- * and what setDefaultPortInDoc moves to position 0). Order from the
- * CLI is preserved.
+ * provided values. First entry is the default (matches what add-port
+ * writes, what proxyUrlsFor surfaces under `<name>.localhost`, and
+ * what setDefaultPortInDoc moves to position 0). CLI order is
+ * preserved.
  *
- * `vscodeAutoForward` is NOT emitted — the schema default (false) is
- * what we want, and a commented hint after the active list would just
- * be noise. Builder edits the yml directly when they want it true.
+ * `vscodeAutoForward` is emitted as a commented hint with its
+ * default value spelled out — same "all options visible" rule that
+ * drives the features and repos blocks. Builder removes the `#` to
+ * activate.
  */
 function renderActiveRoutingBlock(
   out: string[],
+  name: string,
   ports: readonly number[],
 ): void {
   out.push('# Routing — expose these container ports to the host through');
   out.push('# the shared Traefik singleton. First entry doubles as');
-  out.push('# http://<name>.localhost (the default route). See ADR 0007.');
+  out.push(`# http://${name}.localhost (the default route). See ADR 0007.`);
   out.push('routing:');
   out.push('  ports:');
   ports.forEach((port, idx) => {
     if (idx === 0) {
-      out.push(`    - ${port} # default → http://<name>.localhost`);
+      out.push(`    - ${port} # default → http://${name}.localhost`);
     } else {
       out.push(`    - ${port}`);
     }
   });
+  // Commented hint so the builder discovers the toggle without
+  // leaving the file. Default `false` makes Traefik the single
+  // source of truth — flip to `true` to keep VS Code's port-panel
+  // alongside.
+  out.push("  # vscodeAutoForward: false   # set true to keep VS Code's");
+  out.push('  #                            # port-panel alongside Traefik');
   out.push('');
 }
 
