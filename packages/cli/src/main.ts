@@ -11,6 +11,7 @@ import { completionCommand } from './commands/completion.js';
 import { initCommand } from './commands/init.js';
 import { listComponentsCommand } from './commands/list-components.js';
 import { logsCommand } from './commands/logs.js';
+import { portCommand } from './commands/port.js';
 import { removeAptPackagesCommand } from './commands/remove-apt-packages.js';
 import { removeFeatureCommand } from './commands/remove-feature.js';
 import { removeCommand } from './commands/remove.js';
@@ -60,6 +61,7 @@ export const main = defineCommand({
     'remove-from-url': removeFromUrlCommand,
     'remove-repo': removeRepoCommand,
     'remove-port': removePortCommand,
+    port: portCommand,
     completion: completionCommand,
   },
 });

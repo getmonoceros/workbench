@@ -37,6 +37,7 @@ describe('monoceros main command', () => {
       'remove-from-url',
       'remove-repo',
       'remove-port',
+      'port',
       'completion',
     ];
 

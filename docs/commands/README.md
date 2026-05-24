@@ -100,6 +100,14 @@ monoceros apply <name>                                    # neu bauen, picks up 
 | `monoceros remove-repo <name> <url-or-name>` | Repo-Eintrag entfernen (lokaler `projects/<folder>/`-Folder bleibt)    | [remove-repo.md](./remove-repo.md)                 |
 | `monoceros remove-port <name> -- <port>…`    | Port(s) aus der Container-yml entfernen                                | [remove-port.md](./remove-port.md)                 |
 
+## Discovery
+
+| Befehl                  | Zweck                                                       | Detail               |
+| ----------------------- | ----------------------------------------------------------- | -------------------- |
+| `monoceros port <name>` | Traefik-URLs eines Containers anzeigen (Default + per Port) | [port.md](./port.md) |
+
+(`monoceros list-components` ist oben unter „Solution anlegen + Lifecycle" aufgeführt — gehört konzeptuell auch zu Discovery.)
+
 ## Tooling
 
 | Befehl                         | Zweck                                                         | Detail                           |

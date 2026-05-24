@@ -586,43 +586,50 @@ Zustände dokumentieren.
      unterschiedlicher Path → zweiter Eintrag (zwei Klone), gleicher
      Path + andere URL → Validierungsfehler beim Apply
 
-2. **`add-port` / Port-Management via Reverse-Proxy mit
-   Hostname-Routing** — der heutige `forwardPorts`-Eintrag in der
-   generierten devcontainer.json wird vom `@devcontainers/cli`
-   außerhalb von VS Code ignoriert (siehe Recherche bei M4 Task 9).
-   Apps in Image-Mode-Containern sind darum vom Host-Browser nicht
-   ohne Weiteres erreichbar.
+2. ✅ **`add-port` / Port-Management via Reverse-Proxy mit
+   Hostname-Routing** — erledigt 2026-05-24. Designentscheidung in
+   [ADR 0007](./adr/0007-port-management-traefik.md): Singleton-Traefik
+   im Docker-Network `monoceros-proxy`, Hostname-Routing über
+   `*.localhost` (RFC 6761), Hot-Reload via File-Provider unter
+   `$MONOCEROS_HOME/traefik/dynamic/<name>.yml`.
 
-   **Designentscheidung steht in
-   [ADR 0007](./adr/0007-port-management-traefik.md)** (2026-05-24):
-   Singleton-Traefik im Docker-Network `monoceros-proxy`, Hostname-
-   Routing über `*.localhost` (RFC 6761), Hot-Reload via File-
-   Provider unter `$MONOCEROS_HOME/traefik/dynamic/<name>.yml`.
-   `add-port` schreibt parallel in die Container-yml, damit spätere
-   `apply`-Läufe die Routes wiederherstellen.
-
-   **Geklärte offene Punkte** (Diskussion 2026-05-24):
-   - VS-Code-Auto-Forward → per Default aus, via neuem yml-Feld
-     `ide.vscodeAutoForwardPorts` reversibel pro Container.
-   - Traefik-Lifecycle → dynamisch (kein `--restart`-Policy), an
-     `apply`/`start`/`stop`/`remove` gekoppelt. `stop` und `remove`
-     gleich behandelt (Variante A).
-   - TLS/HTTPS → später; Config-Struktur (`entryPoints: [web]`)
-     so geschrieben, dass `websecure` additiv reingeht ohne Schema-
-     Bruch.
-   - Migration bestehender Container → keine. README-Status-Banner
-     dokumentiert pre-1.x-Brechung. Builder macht `remove` +
-     `apply` wenn nötig.
-
-   **Implementation-Skizze**:
-   - Neues Schema: `ports: (number | { port: number; … })[]` +
-     `ide.vscodeAutoForwardPorts: boolean`
-   - Neuer Modul-Block `proxy/` mit `ensureProxy()`, `maybeStopProxy()`,
-     `writeDynamicConfig()`, `removeDynamicConfig()`
-   - Neue Befehle: `add-port`, `remove-port`, `port`
+   **Was live ist**:
+   - Schema umgebaut zu einem `routing:`-Block (`routing.ports`,
+     `routing.vscodeAutoForward`); `ide.vscodeAutoForwardPorts` aus
+     früherem Zwischenstand verworfen zugunsten der konsolidierten
+     Struktur.
+   - `monoceros-config.yml` erweitert um `routing.hostPort`
+     (Default 80, konfigurierbar wenn 80 dauerhaft belegt ist).
+   - Neuer Modul-Block `proxy/` mit `ensureProxy()`,
+     `maybeStopProxy()`, `writeDynamicConfig()`, `removeDynamicConfig()`,
+     `proxyUrlsFor()`.
+   - Pre-Flight-Port-Check (`proxy/port-check.ts`) vor `apply`/
+     `start`/`add-port`: erkennt belegten Host-Port (oder Traefik
+     selbst als Halter), gibt im Konflikt-Fall einen klaren
+     Hint und bricht ab.
+   - Neue Befehle: `add-port`, `remove-port` (yml-Mutation + Hot-Reload),
+     `port` (Discovery — listet die Traefik-URLs).
    - Scaffold joint `monoceros-proxy`-Network bei nicht-leerer
-     `ports:`-Liste (Compose-Mode: external network; Image-Mode:
-     `runArgs: ["--network", "monoceros-proxy"]`)
+     `routing.ports`-Liste mit stabilem DNS-Alias (`--network-alias=<name>`
+     in Image-Mode, `networks.monoceros-proxy.aliases: [<name>]` in
+     Compose), damit Traefik via `http://<name>:<port>` routen kann.
+   - Lifecycle: `apply` und `start` rufen `ensureProxy()` vor dem
+     Container-Up; `stop` und `remove` rufen `maybeStopProxy()` —
+     letzteres ist no-op wenn noch ein anderer Container am
+     Proxy-Network hängt (Variante A aus der Designdiskussion).
+   - Beispiel-Skript `docs/examples/serve-ports.mjs` für manuelle
+     Browser-Smoketests.
+
+   **Bewusst aufgeschoben** (nicht Teil von Task 2):
+   - TLS / HTTPS — `entryPoints: [web]` ist so verdrahtet, dass ein
+     `websecure`-Entrypoint später additiv reingeht.
+   - Auto-Migration bestehender Container — pre-1.x-Brechung
+     akzeptiert; `monoceros remove <name>` + `apply <name>` ist
+     der dokumentierte Pfad.
+   - TCP-Tunnel für DB-Services — separates Geschwister-Item
+     (Task 3 unten).
+   - Test-Plan-Update für die Port-Strecke — Teil von Task 4
+     (Test-Plan-Rewrite).
 
 3. **`monoceros tunnel <name>` — TCP-Tunnel zu Container-Services** —
    Geschwister-Lösung zu Task 2 (HTTP via Traefik). Für TCP-Services

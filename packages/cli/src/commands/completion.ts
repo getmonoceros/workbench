@@ -57,6 +57,7 @@ const ALL_COMMANDS = [
   'remove-from-url',
   'remove-repo',
   'remove-port',
+  'port',
   'completion',
 ] as const;
 
@@ -86,6 +87,7 @@ const COMMANDS_WITH_CONTAINER_ARG = [
   'remove-from-url',
   'remove-repo',
   'remove-port',
+  'port',
 ] as const;
 
 const SHELLS = ['bash', 'zsh', 'pwsh'] as const;

@@ -38,7 +38,7 @@ defaults:
   # EVERY option each Monoceros-curated feature accepts, with its
   # default value. Refs without an entry here behave as if every
   # option were unset.
-  # features:
+  features:
   #   # ── Anthropic Claude Code CLI ───────────────────────────────
   #   ghcr.io/getmonoceros/monoceros-features/claude-code:1:
   #     version: latest               # npm-style spec ('latest', '0.4.2', '^0.4')
