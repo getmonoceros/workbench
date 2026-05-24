@@ -18,7 +18,7 @@ Konzeptioneller Überbau: [`konzept.md`](konzept.md).
 | ~~M3 (alt)~~ | Externe Tracking-Adapter                                       | ❌ ausgelagert 2026-05-17 |
 | **M3 (neu)** | AI-Tool-Feature-Library                                        | ✅ 2026-05-19             |
 | M4           | Distribution / Go-Live                                         | 🚧 ab 2026-05-19          |
-| M5           | Stabilisierung + Doku                                          | 🔜                        |
+| M5           | Stabilisierung + Doku                                          | 🚧 ab 2026-05-23          |
 
 ---
 
@@ -551,7 +551,7 @@ completion <shell>` druckt das Skript; Completion versteht
 
 ---
 
-## 🔜 M5 — Stabilisierung + Doku
+## 🚧 M5 — Stabilisierung + Doku
 
 **Ziel:** Was M2.5 + M3 + M4 geliefert haben, ist robust und gut
 beschrieben.
@@ -564,38 +564,27 @@ Oberflächen (init --with-repo, add-port, tunnel), damit Doku und
 Tests die finale Surface abdecken und nicht zwischenzeitliche
 Zustände dokumentieren.
 
-1. **`init --with-repo` — Repo direkt in init reinziehen** — heute
-   muss der Builder erst `init`, dann separat `add-repo`. Lück
-   schließen mit einem neuen wiederholbaren Flag:
-
-   ```sh
-   monoceros init hello --with=node,claude \
-     --with-repo=https://github.com/foo/api \
-     --with-repo=https://github.com/foo/ui:develop
-   ```
-
-   - **Syntax**: `URL[:branch]`. Branch wird via "letzter `:` nach
-     letztem `/`"-Regel abgespalten. Robust gegen SSH-URLs
-     (`git@github.com:foo/bar.git` hat das `:` _vor_ dem letzten
-     `/`, also kein Branch-Match) und URLs mit Port-Angabe.
-   - **`--as` (Folder-Override)** bleibt explizit raus aus init —
-     wird nur über `monoceros add-repo --as=<name>` post-init
-     gesetzt. Hält die init-Flag-Syntax knackig; der seltene
-     Folder-Rename-Fall braucht keine Inline-Lösung.
-   - **Mehrfach-Repo**: `--with-repo` wiederholbar wie `--with`.
-   - **Integration**: nutzt intern dieselbe Logik wie `add-repo`
-     (yml-Eintrag in `repos:`, post-create.sh-Clone-Block,
-     `<solution>.code-workspace`-Folder-Root) — also kein neuer
-     Code-Pfad, nur ein neuer Entry-Point.
-   - **Offene Frage — Duplikat-Behandlung**: Was passiert wenn nach
-     `init --with-repo=URL` ein nachträgliches `add-repo URL`
-     (oder `add-repo --branch=X URL`) auf dieselbe URL trifft? Drei
-     diskutierte Verhaltensweisen:
-     - (A) Hard-Error mit klarer Remediation ("schon drin, remove-
-       repo + neu, oder --as=<other> für zweiten Klon")
-     - (B) Upgrade-in-place — gleiche URL überschreibt Branch/Settings
-     - (C) Idempotenz wenn identisch, Error wie A wenn divergent
-       Aktueller Lean: C. Entscheidung steht aus.
+1. ✅ **`init --with-repo` — Repo direkt in init reinziehen** —
+   erledigt 2026-05-23, ausgeliefert in 1.6.x. Im Verlauf deutlich
+   über das Original-Scope erweitert (siehe Abschnitt
+   „Zusätzliche Arbeiten" weiter unten):
+   - `--with-repo=<url>` wiederholbar, akzeptiert nur kanonische
+     Hosts (github.com / gitlab.com / bitbucket.org); andere Hosts
+     müssen über `monoceros add-repo --provider=…` rein
+   - Branch-Suffix aus der URL gedroppt — `git checkout` im Container
+     ist der richtige Hebel, nicht ein yml-Feld
+   - `add-repo` neu strukturiert: `--path` (mit Subfolder-Support)
+     statt `--as`, `--git-name`/`--git-email` als Pair für per-Repo
+     Identität, `--provider`-Flag
+   - Schema-Umbau: `repos[].name` → `repos[].path`, `branch`
+     entfernt, neues `provider`-Feld, neues `git.user`-Override pro
+     Repo
+   - HTTPS-only festgeklopft via [ADR 0006](./adr/0006-https-only-repo-auth.md);
+     SSH-Code komplett raus
+   - Offene Frage „Duplikat-Behandlung" durch C (Idempotenz)
+     materialisiert: gleicher URL + gleicher Path → no-op,
+     unterschiedlicher Path → zweiter Eintrag (zwei Klone), gleicher
+     Path + andere URL → Validierungsfehler beim Apply
 
 2. **`add-port` / Port-Management via Reverse-Proxy mit
    Hostname-Routing** — der heutige `forwardPorts`-Eintrag in der
@@ -802,6 +791,103 @@ unless-stopped`, ab erstem Bedarf permanent) vs. bedarfsbasiert
    Mechanik im Image bleibt (opt-in für CI/headless) oder ganz raus
    kann. Heute beides möglich, kein akuter Druck. Unabhängig von
    Tasks 1–3.
+
+### Zusätzliche Arbeiten die während M5 dazukamen
+
+Nicht im Original-Plan (Task 1 war eine schlanke „init --with-repo"-
+Erweiterung). Im Verlauf der Linux-rootful-E2E-Strecke + Diskussionen
+über Provider-Modell und Docker-Setup-Quirks deutlich gewachsen.
+Alle live in den 1.6.x-Releases:
+
+- **HTTPS-only Repo-Modell** ([ADR 0006](./adr/0006-https-only-repo-auth.md))
+  — SSH-Style-URLs (`git@host:…`, `ssh://…`) werden auf Schema-Ebene
+  abgelehnt. Cross-Plattform-SSH-Agent-Forwarding (macOS launchd-
+  Sockets, Windows Named Pipes, Multi-Identity-Wiring, Passphrase-
+  Edge-Cases) entfällt damit komplett. SSH-Code aus
+  `create/scaffold.ts` rausgenommen, ContainerEnv + mounts sind
+  SSH-frei.
+
+- **Provider-Modell** — neues `repos[].provider`-Feld mit Enum
+  `github | gitlab | bitbucket | gitea` (gitea deckt Forgejo).
+  Kanonische Hosts (github.com / gitlab.com / bitbucket.org) werden
+  auto-detected; alles andere (self-hosted GitLab, GitHub Enterprise,
+  Bitbucket Data Center, Gitea) braucht explizites `provider:` im
+  yml, sonst bricht der Apply-Pre-Flight ab. Hintergrund: Hostname-
+  Heuristiken wie `startsWith('gitlab.')` haben self-hosted Cases
+  übersehen — explizite Deklaration ist die saubere Lösung.
+
+- **Apply-Pre-Flight Stage 1 — Credentials** —
+  `devcontainer/credentials.ts`. Host-side `git credential fill` pro
+  unique HTTPS-Host. Bei missing creds: provider-spezifische
+  Setup-Hints (gh auth login / glab auth login mit `--hostname` bei
+  Self-Hosted / Atlassian-API-Token für Bitbucket Cloud / Gitea-UI-
+  Token-Flow). Linux: brew als install-Empfehlung für gh + glab
+  (Linuxbrew supportet beide first-class).
+
+- **Apply-Pre-Flight Stage 2 — Reachability** —
+  `devcontainer/repo-reachability.ts`. `git ls-remote` pro deklariertem
+  Repo nach Credential-Fetch. Stderr-Klassifikation in vier Kinds
+  (`not-found-or-no-access` / `auth-failed` / `dns` / `unknown`) mit
+  per-Kind Actionable Advice. Fängt „Repo gibt's nicht / Token kann's
+  nicht sehen / DNS broken" ab, bevor Docker auch nur startet —
+  spart 1–2 min Docker-Build-Zeit bei Fail-Fast.
+
+- **Init-Generator-Repos-Block** — in `documented mode` zeigt der
+  generator jetzt einen kompletten `# repos:`-Hint-Block mit allen
+  optionalen Feldern (path, provider, git.user) als kommentierte
+  Beispiele. Bei `--with-repo` aktiv mit kommentierten Hint-Lines
+  pro Entry. „Alle verfügbaren Optionen sichtbar"-Regel — gleiche
+  Behandlung wie der features-Block.
+
+- **Partial-Apply-Remnant Recovery** —
+  `assertSafeTargetDir`-Anpassung in `apply/index.ts`. Wenn der
+  Container-Dir genau `.monoceros/` enthält (Pre-Flight-Remnant von
+  einem abgebrochenen Apply) aber kein state.json → recoverable, wir
+  applyien drüber. Wenn unrelated Files dazu kommen: bleibt strikt.
+
+- **Docker-Group-Bootstrap** —
+  `devcontainer/docker-group-bootstrap.ts`. Auf Linux: wenn
+  `docker info` mit Permission-Denied scheitert UND der User in
+  `/etc/group`s docker-Zeile steht, re-execed sich monoceros
+  transparent via `sg docker -c "node …"`. Effekt: nach
+  `usermod -aG docker $USER` braucht der Builder **kein** newgrp /
+  logout / relog — jedes `monoceros …` in jedem Terminal funktioniert
+  sofort. Selbe Recovery in `install.sh` (Re-Download in tmpfile +
+  `exec sg docker -c "bash tmpfile"`, weil `curl | bash` stdin
+  bereits konsumiert hat).
+
+- **Identity-Prompt nur wenn nötig** — `collectGitIdentity` läuft
+  jetzt nur wenn `createOpts.repos` nicht leer ist ODER `git.user`
+  irgendwo gesetzt ist (yml / monoceros-config defaults). Sandbox-
+  Container ohne Repos: kein Prompt.
+
+- **CLI_VERSION aus package.json injizieren** — tsup substituiert
+  beim Build den `__CLI_VERSION__`-Platzhalter in `version.ts`.
+  Vorher hatte version.ts einen hardcodierten String, der mehrfach
+  desync zu package.json geriet (1.6.0 / 1.6.1 / 1.6.2 / 1.6.3 alle
+  ausgeliefert mit `--version` → 1.5.0). Jetzt ein Bump-Ort.
+
+- **macOS bash 3.2 install.sh-Fix** — `"${arr[@]}"` für leere Arrays
+  unter `set -u` crasht auf macOS-Default-bash. Portable Form
+  `${arr[@]+"${arr[@]}"}` ersetzt.
+
+- **install.sh Docker-Hinweise** — Linux-Blöcke neu strukturiert:
+  paste-fertiger 3-Befehl-Block (sudo -v + curl + usermod), Hinweis
+  dass die Tail-Notiz von get.docker.com ignoriert werden kann, kein
+  newgrp/logout-Geschwätz mehr in der Error-Box (gehört in die
+  separate Doku `docs/docker-on-linux.md`).
+
+- **Idmap-Rabbit-Hole + Revert** — kurzer Ausflug in den Versuch,
+  rootless-Docker mit `,idmap=true`-Mount-Option zu unterstützen.
+  Docker exponiert das Feature **nicht** über `--mount` (Podman ja,
+  Docker nein — verifiziert in [Docker bind-mounts docs](https://docs.docker.com/engine/storage/bind-mounts/)).
+  Revert in 1.6.6 zurück. Rootless Docker bleibt als Use-Case
+  „nicht unterstützt" — der dokumentierte Pfad ist rootful Docker
+  via `get.docker.com | sudo sh`.
+
+- **monetization.md** — `docs/private/monetization.md` als
+  gitignored Sammlung für Premium-Feature-Kandidaten angelegt;
+  erster Eintrag: Commit-Signing im Container.
 
 ---
 
