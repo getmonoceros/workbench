@@ -239,17 +239,20 @@ fail with permission errors at the first attempt.
 
 To fix, switch back to standard rootful Docker:
 
-  ${CYAN}systemctl --user disable --now docker.service docker.socket${RESET}
+  ${CYAN}systemctl --user stop docker.service docker.socket 2>/dev/null || true${RESET}
   ${CYAN}dockerd-rootless-setuptool.sh uninstall${RESET}
-  ${CYAN}rm -rf ~/.local/share/docker${RESET}
-  ${CYAN}unset DOCKER_HOST${RESET}
+  ${CYAN}rootlesskit rm -rf ~/.local/share/docker${RESET}
+  ${CYAN}unset DOCKER_HOST DOCKER_CONTEXT${RESET}
   ${CYAN}sudo systemctl enable --now docker${RESET}
   ${CYAN}sudo usermod -aG docker \$USER${RESET}
 
-Verify with ${CYAN}docker info | grep -i rootless${RESET} — it should
-produce no output. Then re-run this installer.
+If you added DOCKER_HOST or DOCKER_CONTEXT to ~/.bashrc / ~/.profile
+(the rootless setup may have suggested it), remove those lines too —
+the 'unset' above only affects your current shell. Otherwise new
+terminals keep pointing at the rootless socket.
 
-Background: see $(dim "docs/docker-on-linux.md") in the workbench repo.
+Then re-run this installer. Background: see $(dim "docs/docker-on-linux.md")
+in the workbench repo.
 EOF
   exit 1
 fi

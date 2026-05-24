@@ -213,22 +213,39 @@ rootless installiert hast:
 
 ```sh
 # Rootless deaktivieren
-systemctl --user disable --now docker.service docker.socket
+systemctl --user stop docker.service docker.socket 2>/dev/null || true
 dockerd-rootless-setuptool.sh uninstall
-rm -rf ~/.local/share/docker
-unset DOCKER_HOST
+rootlesskit rm -rf ~/.local/share/docker
+unset DOCKER_HOST DOCKER_CONTEXT
 
 # Rootful aktivieren (sollte vom get.docker.com-Install schon
 # da sein, sonst install.sh nochmal)
 sudo systemctl enable --now docker
 sudo usermod -aG docker $USER
-# Dann ein neues Terminal öffnen oder Auto-Recovery in Monoceros
-# regelt es
+```
 
-# Verifizieren
+Plus: `~/.bashrc` / `~/.profile` auf `DOCKER_HOST` und
+`DOCKER_CONTEXT`-Reste checken — der rootless-Setup-Tool schreibt
+da gerne was rein, was sonst neue Shells weiter zum rootless-Socket
+schickt:
+
+```sh
+grep -E 'DOCKER_HOST|DOCKER_CONTEXT' ~/.bashrc ~/.profile 2>/dev/null
+```
+
+Wenn da Treffer kommen → editieren oder per `sed -i` rausstreichen.
+
+Verifizieren:
+
+```sh
 docker info | grep -i rootless   # → muss leer sein
 docker info | grep "Docker Root Dir"   # → /var/lib/docker
 ```
+
+Wenn `docker info` Permission-Denied wirft, hat deine aktuelle
+Shell die docker-Gruppe noch nicht geladen — einfach `newgrp docker`
+oder direkt `monoceros apply <name>` aufrufen, der Auto-Recovery-
+Bootstrap fängt's ab.
 
 ---
 
