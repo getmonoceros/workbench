@@ -14,6 +14,7 @@ import {
   type ComposeSpawn,
 } from '../devcontainer/compose.js';
 import { maybeStopProxy, type DockerExec } from '../proxy/index.js';
+import { removeDynamicConfig } from '../proxy/dynamic.js';
 
 /**
  * `monoceros remove <name>` — wipe everything belonging to one
@@ -160,6 +161,17 @@ export async function runRemove(
   if (!backupPath) {
     logger.warn?.(
       'No backup created (--no-backup). The host-side state is gone for good.',
+    );
+  }
+
+  // Drop the container's Traefik dynamic-config file so a future
+  // container with the same yml-name (re-init after remove) starts
+  // with a clean slate. No-op when the file is absent.
+  try {
+    await removeDynamicConfig(opts.name, { monocerosHome: home });
+  } catch (err) {
+    logger.warn?.(
+      `Could not remove Traefik dynamic config for ${opts.name}: ${err instanceof Error ? err.message : String(err)}. Ignored.`,
     );
   }
 

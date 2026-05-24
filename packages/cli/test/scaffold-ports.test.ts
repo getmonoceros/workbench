@@ -23,11 +23,12 @@ describe('buildDevcontainerJson — ports & vscode autoForward', () => {
     }
   });
 
-  it('wires runArgs network, forwardPorts, and the autoForward override in image-mode', () => {
+  it('wires runArgs network, alias, forwardPorts, and the autoForward override in image-mode', () => {
     const dc = buildDevcontainerJson({ ...base, ports: [3000, 5173, 6006] });
     if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
     expect(dc.forwardPorts).toEqual([3000, 5173, 6006]);
     expect(dc.runArgs).toContain('--network=monoceros-proxy');
+    expect(dc.runArgs).toContain('--network-alias=sandbox');
     expect(
       dc.customizations?.vscode?.settings?.['remote.autoForwardPorts'],
     ).toBe(false);
@@ -70,15 +71,17 @@ describe('buildComposeYaml — ports & networks', () => {
     expect(yaml).not.toMatch(/^networks:/m);
   });
 
-  it('attaches the workspace to default + monoceros-proxy and declares the external network', () => {
+  it('attaches the workspace to default + monoceros-proxy with the yml name as alias', () => {
     const yaml = buildComposeYaml({
       ...base,
       services: ['postgres'],
       ports: [3000],
     });
     expect(yaml).toMatch(/workspace:/);
-    // service-level networks list
-    expect(yaml).toMatch(/networks:\s*\n\s+- default\s*\n\s+- monoceros-proxy/);
+    // service-level networks list — long form so we can pin the alias
+    expect(yaml).toMatch(
+      /networks:\s*\n\s+default: \{\}\s*\n\s+monoceros-proxy:\s*\n\s+aliases:\s*\n\s+- sandbox/,
+    );
     // top-level networks block with external
     expect(yaml).toMatch(
       /^networks:\s*\n\s+monoceros-proxy:\s*\n\s+external: true/m,

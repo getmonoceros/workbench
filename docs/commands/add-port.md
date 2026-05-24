@@ -9,15 +9,14 @@ monoceros add-port <name> [--yes] -- <port> [<port> …]
 
 ## Zweck
 
-Im aktuellen Stand der Workbench (M5 Task 2, in Arbeit) **schreibt
-add-port den Port in die yml** unter
-`$MONOCEROS_HOME/container-configs/<name>.yml`. Die eigentliche
-Erreichbarkeit vom Host über Traefik wird in den Folge-Schritten von
-M5 Task 2 verdrahtet (siehe
-[ADR 0007](../adr/0007-port-management-traefik.md)) — sobald die
-Traefik-Singleton-Mechanik landet, wirkt `add-port` on-the-fly ohne
-Container-Restart und legt zusätzlich die Dynamic-Config für Traefik
-ab.
+`add-port` schreibt den Port in die yml unter
+`$MONOCEROS_HOME/container-configs/<name>.yml` **und** legt parallel
+die Traefik-Dynamic-Config unter
+`$MONOCEROS_HOME/traefik/dynamic/<name>.yml` ab. Der Singleton-Proxy
+wird bei Bedarf hochgefahren (`ensureProxy()` — idempotent). Hot-
+Reload: Traefik picks up die Datei innerhalb ~100 ms, **kein**
+Container-Restart, **kein** Proxy-Restart. Siehe
+[ADR 0007](../adr/0007-port-management-traefik.md).
 
 ## Mechanik
 
@@ -45,9 +44,7 @@ ab.
 | ----------- | ----------------------------------------------- |
 | `--yes, -y` | Diff-Confirm-Prompt überspringen (für Scripts). |
 
-## Hostname-Schema (für die Traefik-Integration)
-
-Sobald die Traefik-Mechanik live ist, gilt:
+## Hostname-Schema
 
 - `<container>.localhost` → Default-Port (erster Eintrag in `ports:`)
 - `<container>-<port>.localhost` → expliziter interner Port
@@ -73,8 +70,8 @@ ein no-change. `add-port sandbox -- 3000 5173` nach einem ersten
 ## Verwandte Befehle
 
 - [`remove-port`](./remove-port.md) — Inverse
-- [`monoceros apply <name>`](./apply.md) — Änderung wirksam machen
-  (bis die Hot-Reload-Mechanik landet)
+- [`monoceros apply <name>`](./apply.md) — refreshed beim nächsten
+  Apply die Routes konsistent zur yml (zustands-driven)
 
 ## Fail-Modi
 

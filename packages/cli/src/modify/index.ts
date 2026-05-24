@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import { consola } from 'consola';
 import { createPatch } from 'diff';
 import type { Document } from 'yaml';
-import { parseConfig, stringifyConfig } from '../config/io.js';
+import { parseConfig, readConfig, stringifyConfig } from '../config/io.js';
 import {
   containerConfigPath,
   monocerosHome as defaultMonocerosHome,
@@ -11,8 +11,19 @@ import {
   KNOWN_PROVIDER_HOSTS,
   PROVIDER_VALUES,
   REGEX,
+  portNumber,
   type RepoProvider,
 } from '../config/schema.js';
+import {
+  ensureProxy,
+  maybeStopProxy,
+  type DockerExec as ProxyDockerExec,
+} from '../proxy/index.js';
+import {
+  proxyUrlsFor,
+  removeDynamicConfig,
+  writeDynamicConfig,
+} from '../proxy/dynamic.js';
 import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
@@ -131,9 +142,13 @@ export interface RemoveRepoInput extends ModifyOptions {
 
 export interface AddPortInput extends ModifyOptions {
   ports: number[];
+  /** Override the docker exec used by the Traefik proxy lifecycle. */
+  proxyDocker?: ProxyDockerExec;
 }
 export interface RemovePortInput extends ModifyOptions {
   ports: number[];
+  /** Override the docker exec used by the Traefik proxy lifecycle. */
+  proxyDocker?: ProxyDockerExec;
 }
 
 export type ModifyResult =
@@ -277,7 +292,18 @@ export async function runAddPort(input: AddPortInput): Promise<ModifyResult> {
     );
   }
   const ports = normalizePorts(input.ports);
-  return mutate(input, (doc) => addPortsToDoc(doc, ports));
+  const result = await mutate(input, (doc) => addPortsToDoc(doc, ports));
+  // Hot-reload path: when the yml actually changed, push the new
+  // route set to the Traefik dynamic-config directory and make sure
+  // the proxy is up. The yml is the source of truth — we re-read it
+  // so the dynamic config reflects the FULL port list (including
+  // entries that pre-existed this `add-port` call), not just the
+  // delta. Proxy failures surface as warns but never roll back the
+  // yml write. See ADR 0007.
+  if (result.status === 'updated') {
+    await syncPortsToProxy(input);
+  }
+  return result;
 }
 
 /**
@@ -371,7 +397,16 @@ export async function runRemovePort(
     );
   }
   const ports = normalizePorts(input.ports);
-  return mutate(input, (doc) => removePortsFromDoc(doc, ports));
+  const result = await mutate(input, (doc) => removePortsFromDoc(doc, ports));
+  // Hot-reload path: same state-driven sync as add-port. When the
+  // last port is gone the dynamic-config file is dropped and the
+  // Traefik singleton is offered up for teardown via maybeStopProxy
+  // (which no-ops if any other container is still attached). See
+  // ADR 0007.
+  if (result.status === 'updated') {
+    await syncPortsToProxy(input);
+  }
+  return result;
 }
 
 export function runRemoveRepo(input: RemoveRepoInput): Promise<ModifyResult> {
@@ -457,3 +492,65 @@ const defaultConfirm: ConfirmFn = async (message) => {
   });
   return result === true;
 };
+
+/**
+ * State-driven sync between the yml's `ports:` and Traefik's
+ * dynamic-config directory + proxy lifecycle. Called from
+ * `runAddPort` / `runRemovePort` after a successful yml change.
+ *
+ *   - ports non-empty → write `<home>/traefik/dynamic/<name>.yml`
+ *     and call `ensureProxy()` (idempotent — no-op when Traefik is
+ *     already up).
+ *   - ports empty → remove the file and call `maybeStopProxy()`
+ *     (no-op when other containers still depend on the proxy).
+ *
+ * Any proxy or filesystem failure is surfaced as a warn but never
+ * rolls back the yml write. The yml is the source of truth; proxy
+ * state is derived and self-healing on the next apply/start.
+ */
+async function syncPortsToProxy(
+  input: AddPortInput | RemovePortInput,
+): Promise<void> {
+  const home = input.monocerosHome ?? defaultMonocerosHome();
+  const ymlPath = containerConfigPath(input.name, home);
+  const logger = input.logger ?? defaultLogger();
+
+  let allPorts: number[];
+  try {
+    const parsed = await readConfig(ymlPath);
+    allPorts = parsed.config.ports.map(portNumber);
+  } catch (err) {
+    logger.warn(
+      `Could not re-read yml after edit to sync Traefik routes: ${err instanceof Error ? err.message : String(err)}. The yml is correct; \`monoceros apply ${input.name}\` will rebuild the routes.`,
+    );
+    return;
+  }
+
+  try {
+    if (allPorts.length > 0) {
+      await writeDynamicConfig(input.name, allPorts, { monocerosHome: home });
+      await ensureProxy({
+        monocerosHome: home,
+        ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
+        logger: { info: (m) => logger.info(m), warn: (m) => logger.warn(m) },
+      });
+      const urls = proxyUrlsFor(input.name, allPorts);
+      const lines = urls.map((u) => {
+        const tag = u.isDefault ? ' (default)' : '';
+        return `  ${u.url}${tag}`;
+      });
+      logger.info(`Traefik routes refreshed:\n${lines.join('\n')}`);
+    } else {
+      await removeDynamicConfig(input.name, { monocerosHome: home });
+      await maybeStopProxy({
+        monocerosHome: home,
+        ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
+        logger: { info: (m) => logger.info(m), warn: (m) => logger.warn(m) },
+      });
+    }
+  } catch (err) {
+    logger.warn(
+      `Could not sync Traefik routes after yml edit: ${err instanceof Error ? err.message : String(err)}. The yml is correct; \`monoceros apply ${input.name}\` will rebuild the routes.`,
+    );
+  }
+}

@@ -572,13 +572,21 @@ export function buildDevcontainerJson(
 
   // Image-mode: when ports are declared, hook the container into the
   // `monoceros-proxy` network so the Traefik singleton can reach it
-  // by container name. `--network` replaces docker's default bridge —
-  // for image-mode that's the only network in play, so swapping is fine.
-  // ensureProxy() (called from apply/start) creates the network before
-  // this `runArgs` value is used.
+  // by yml name (`http://<name>:<port>`). `--network` replaces
+  // docker's default bridge — for image-mode that's the only network
+  // in play, so swapping is fine. ensureProxy() (called from
+  // apply/start) creates the network before this `runArgs` value is
+  // used.
+  //
+  // `--network-alias` pins a stable DNS name on the network: by
+  // default devcontainer-cli labels image-mode containers with random
+  // names like `thirsty_bartik`, which would make Traefik's backend
+  // URL non-deterministic. With the alias we know the route in the
+  // dynamic config can always point at `http://<name>:<port>`.
   const runArgs = ['--cap-add=NET_ADMIN'];
   if (ports.length > 0) {
     runArgs.push('--network=monoceros-proxy');
+    runArgs.push(`--network-alias=${opts.name}`);
   }
 
   return {
@@ -622,12 +630,18 @@ export function buildComposeYaml(
   if (hasPorts) {
     // Workspace joins both the compose-default network (so it can
     // reach postgres/redis/… that share the project) and the
-    // monoceros-proxy network (so Traefik can route to it by service
-    // name). Compose auto-creates `default` since it's not redeclared
-    // at the top-level networks block. See ADR 0007.
+    // monoceros-proxy network (so Traefik can route to it). Use the
+    // long form so we can pin a stable DNS alias on monoceros-proxy:
+    // without the alias every compose-mode container would show up
+    // as `workspace` (compose service name) and collide between
+    // multiple monoceros containers. The alias is the yml name; the
+    // dynamic config writes routes against `http://<name>:<port>`.
+    // See ADR 0007.
     lines.push('    networks:');
-    lines.push('      - default');
-    lines.push('      - monoceros-proxy');
+    lines.push('      default: {}');
+    lines.push('      monoceros-proxy:');
+    lines.push('        aliases:');
+    lines.push(`          - ${opts.name}`);
   }
   lines.push('    volumes:');
   lines.push(`      - ..:/workspaces/${opts.name}:cached`);

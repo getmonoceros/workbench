@@ -50,6 +50,7 @@ import {
   ensureProxy,
   type DockerExec as ProxyDockerExec,
 } from '../proxy/index.js';
+import { removeDynamicConfig, writeDynamicConfig } from '../proxy/dynamic.js';
 import {
   collectGitIdentity,
   type IdentityPrompt,
@@ -309,26 +310,36 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   );
 
   // Bring up the shared Traefik singleton ahead of the devcontainer
-  // when the yml declares ports. `ensureProxy` is idempotent — a
-  // second devcontainer that also wants Traefik just joins the
-  // already-running proxy. See ADR 0007.
-  const hasPorts = (createOpts.ports?.length ?? 0) > 0;
-  if (hasPorts) {
-    try {
+  // when the yml declares ports, and refresh the dynamic config so
+  // the routes match whatever the yml currently says. `ensureProxy`
+  // and `writeDynamicConfig` are both idempotent; a second
+  // devcontainer that also wants Traefik just joins the already-
+  // running proxy. See ADR 0007.
+  const ports = createOpts.ports ?? [];
+  const hasPorts = ports.length > 0;
+  try {
+    if (hasPorts) {
+      await writeDynamicConfig(opts.name, ports, { monocerosHome: home });
       await ensureProxy({
         ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
-        ...(opts.monocerosHome ? { monocerosHome: opts.monocerosHome } : {}),
+        monocerosHome: home,
         logger,
       });
-    } catch (err) {
-      // Don't strand the apply if Traefik can't come up — surface the
-      // failure as a warn and continue. The devcontainer itself is
-      // still usable; the builder loses only the `<name>.localhost`
-      // routing, which they can fix manually before the next apply.
-      logger.warn?.(
-        `Could not start the Traefik proxy: ${err instanceof Error ? err.message : String(err)}. The container will start, but \`<name>.localhost\` routing will not work until the next \`monoceros apply\`.`,
-      );
+    } else {
+      // `ports:` is empty (or was removed since the last apply) —
+      // drop any stale dynamic-config file. Filesystem only; the
+      // proxy itself is offered for teardown by stop/remove, not
+      // here (apply ends with the container up, not stopped).
+      await removeDynamicConfig(opts.name, { monocerosHome: home });
     }
+  } catch (err) {
+    // Don't strand the apply if Traefik bookkeeping fails — surface
+    // as a warn and keep going. The devcontainer itself is still
+    // usable; the builder loses only the `<name>.localhost` routing,
+    // which the next apply / `add-port` will retry.
+    logger.warn?.(
+      `Could not sync Traefik routes: ${err instanceof Error ? err.message : String(err)}. The container will start, but \`<name>.localhost\` routing may not work until the next \`monoceros apply\`.`,
+    );
   }
 
   const exitCode = await runContainerCycle(targetDir, {

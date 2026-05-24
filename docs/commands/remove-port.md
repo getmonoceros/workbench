@@ -10,11 +10,13 @@ monoceros remove-port <name> [--yes] -- <port> [<port> …]
 ## Zweck
 
 Spiegelbild zu [`add-port`](./add-port.md). Entfernt die genannten
-Einträge aus dem `ports:`-Block der Container-yml. Sobald die
-Traefik-Mechanik live ist (M5 Task 2), räumt `remove-port` zusätzlich
-die Dynamic-Config-Datei für den Port weg, und beim letzten verbleibenden
-Port stoppt Monoceros den Traefik-Singleton (siehe
-[ADR 0007](../adr/0007-port-management-traefik.md)).
+Einträge aus dem `ports:`-Block der Container-yml. Wenn nach der
+Mutation noch Ports übrig sind, wird die Dynamic-Config unter
+`$MONOCEROS_HOME/traefik/dynamic/<name>.yml` mit dem neuen Stand
+überschrieben. Wenn alle Ports weg sind, wird die Datei gelöscht und
+Monoceros bietet den Traefik-Singleton zum Stop an (`maybeStopProxy()`
+— stoppt nur wenn kein anderer Container mehr im Proxy-Network ist).
+Siehe [ADR 0007](../adr/0007-port-management-traefik.md).
 
 ## Mechanik
 

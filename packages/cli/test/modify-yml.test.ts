@@ -33,6 +33,20 @@ const baseOpts = {
   output: () => {},
 };
 
+// Stub the docker exec the proxy module reaches for in runAddPort /
+// runRemovePort. Reports "everything exists and is running" so the
+// happy paths don't actually spawn a docker process during yml-only
+// unit tests. Returning OK with empty stdout from `network inspect`
+// makes maybeStopProxy see an empty network and proceed through its
+// rm calls — also OK-stubbed.
+const noopProxyDocker = async () => ({
+  stdout: 'true\n',
+  stderr: '',
+  exitCode: 0,
+});
+
+const portOpts = { ...baseOpts, proxyDocker: noopProxyDocker };
+
 describe('add-*/remove-* against the yml', () => {
   let home: string;
 
@@ -623,7 +637,7 @@ describe('add-*/remove-* against the yml', () => {
       ].join('\n'),
     );
     await runRemoveRepo({
-      ...baseOpts,
+      ...portOpts,
       name: 'demo',
       target: 'ui',
       monocerosHome: home,
@@ -637,7 +651,7 @@ describe('add-*/remove-* against the yml', () => {
   it('runAddPort appends ports in short form and validates round-trip', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     const result = await runAddPort({
-      ...baseOpts,
+      ...portOpts,
       name: 'demo',
       ports: [3000, 5173, 6006],
       monocerosHome: home,
@@ -648,6 +662,14 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toContain('- 3000');
     expect(yml).toContain('- 5173');
     expect(yml).toContain('- 6006');
+    // Hot-reload side effect: Traefik dynamic config file is now there
+    const dyn = await fs.readFile(
+      path.join(home, 'traefik', 'dynamic', 'demo.yml'),
+      'utf8',
+    );
+    expect(dyn).toContain('http://demo:3000');
+    expect(dyn).toContain('http://demo:5173');
+    expect(dyn).toContain('http://demo:6006');
   });
 
   it('runAddPort is a no-op when every port is already present', async () => {
@@ -656,7 +678,7 @@ describe('add-*/remove-* against the yml', () => {
       ['schemaVersion: 1', 'name: demo', 'ports:', '  - 3000', ''].join('\n'),
     );
     const result = await runAddPort({
-      ...baseOpts,
+      ...portOpts,
       name: 'demo',
       ports: [3000],
       monocerosHome: home,
@@ -677,7 +699,7 @@ describe('add-*/remove-* against the yml', () => {
       ].join('\n'),
     );
     const result = await runAddPort({
-      ...baseOpts,
+      ...portOpts,
       name: 'demo',
       ports: [3000, 6006],
       monocerosHome: home,
@@ -698,7 +720,7 @@ describe('add-*/remove-* against the yml', () => {
       ),
     );
     const result = await runAddPort({
-      ...baseOpts,
+      ...portOpts,
       name: 'demo',
       ports: [9229],
       monocerosHome: home,
@@ -710,7 +732,7 @@ describe('add-*/remove-* against the yml', () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await expect(
       runAddPort({
-        ...baseOpts,
+        ...portOpts,
         name: 'demo',
         ports: [70000],
         monocerosHome: home,
@@ -718,7 +740,7 @@ describe('add-*/remove-* against the yml', () => {
     ).rejects.toThrow(/Invalid port: 70000/);
     await expect(
       runAddPort({
-        ...baseOpts,
+        ...portOpts,
         name: 'demo',
         ports: [0],
         monocerosHome: home,
@@ -726,13 +748,19 @@ describe('add-*/remove-* against the yml', () => {
     ).rejects.toThrow(/Invalid port: 0/);
   });
 
-  it('runRemovePort drops a port and prunes the empty list', async () => {
+  it('runRemovePort drops a port, prunes the empty list, and removes the dynamic config', async () => {
     await writeYml(
       'demo',
       ['schemaVersion: 1', 'name: demo', 'ports:', '  - 3000', ''].join('\n'),
     );
+    // Seed a stale dynamic-config file so we can prove removal sweeps it.
+    await mkdir(path.join(home, 'traefik', 'dynamic'), { recursive: true });
+    await writeFile(
+      path.join(home, 'traefik', 'dynamic', 'demo.yml'),
+      'stale\n',
+    );
     await runRemovePort({
-      ...baseOpts,
+      ...portOpts,
       name: 'demo',
       ports: [3000],
       monocerosHome: home,
@@ -740,6 +768,9 @@ describe('add-*/remove-* against the yml', () => {
     const yml = await ymlOf('demo');
     expect(yml).not.toContain('ports:');
     expect(yml).not.toContain('3000');
+    expect(existsSync(path.join(home, 'traefik', 'dynamic', 'demo.yml'))).toBe(
+      false,
+    );
   });
 
   it('runRemovePort matches the long form too', async () => {
@@ -755,7 +786,7 @@ describe('add-*/remove-* against the yml', () => {
       ].join('\n'),
     );
     await runRemovePort({
-      ...baseOpts,
+      ...portOpts,
       name: 'demo',
       ports: [9229],
       monocerosHome: home,
@@ -771,7 +802,7 @@ describe('add-*/remove-* against the yml', () => {
       ['schemaVersion: 1', 'name: demo', 'ports:', '  - 3000', ''].join('\n'),
     );
     const result = await runRemovePort({
-      ...baseOpts,
+      ...portOpts,
       name: 'demo',
       ports: [9999],
       monocerosHome: home,
