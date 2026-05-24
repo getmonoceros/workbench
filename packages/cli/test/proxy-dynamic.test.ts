@@ -113,4 +113,17 @@ describe('proxyUrlsFor', () => {
   it('returns an empty list for no ports', () => {
     expect(proxyUrlsFor('sandbox', [])).toEqual([]);
   });
+
+  it('suffixes the host port when not 80', () => {
+    const urls = proxyUrlsFor('sandbox', [3000, 5173], 8080);
+    expect(urls.map((u) => u.url)).toEqual([
+      'http://sandbox-3000.localhost:8080',
+      'http://sandbox-5173.localhost:8080',
+    ]);
+  });
+
+  it('omits the host port when explicitly 80', () => {
+    const urls = proxyUrlsFor('sandbox', [3000], 80);
+    expect(urls[0]!.url).toBe('http://sandbox-3000.localhost');
+  });
 });

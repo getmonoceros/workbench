@@ -361,7 +361,6 @@ describe('createDoc', () => {
       installUrls: [],
       services: [],
       repos: [],
-      ports: [],
       externalServices: {},
     });
     const out = stringifyConfig(doc);
@@ -392,7 +391,6 @@ describe('createDoc', () => {
       installUrls: [],
       services: ['postgres'],
       repos: [],
-      ports: [],
       externalServices: {},
     };
     const doc = createDoc(config);
@@ -424,7 +422,6 @@ describe('readConfig / writeConfig', () => {
       installUrls: [],
       services: [],
       repos: [],
-      ports: [],
       externalServices: {},
     });
     await writeConfig(file, doc);
@@ -451,7 +448,6 @@ describe('readConfig / writeConfig', () => {
         installUrls: [],
         services: [],
         repos: [],
-        ports: [],
         externalServices: {},
       }),
     );

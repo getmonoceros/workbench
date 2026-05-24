@@ -89,8 +89,7 @@ const KEY_ORDER = [
   'installUrls',
   'services',
   'repos',
-  'ports',
-  'ide',
+  'routing',
   'externalServices',
   'git',
 ] as const;

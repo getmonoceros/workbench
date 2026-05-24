@@ -2,6 +2,13 @@
 
 - Status: accepted
 - Datum: 2026-05-24
+- Updated: 2026-05-24 — Schema-Struktur verfeinert während der
+  Implementierung. Container-yml-Felder `ports:` (flach) und
+  `ide.vscodeAutoForwardPorts` wurden zu einem `routing:`-Block
+  zusammengefasst (`routing.ports`, `routing.vscodeAutoForward`).
+  Neu in `monoceros-config.yml`: `routing.hostPort` (default 80,
+  konfigurierbar wenn Port 80 dauerhaft belegt ist). Hostname-
+  Routing, Lifecycle und alles andere unverändert.
 
 ## Kontext
 

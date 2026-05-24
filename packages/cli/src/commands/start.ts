@@ -1,5 +1,6 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
+import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
 import { readConfig } from '../config/io.js';
 import { containerConfigPath, containerDir } from '../config/paths.js';
 import { runStart } from '../devcontainer/compose.js';
@@ -29,8 +30,9 @@ export const startCommand = defineCommand({
       // yml exists (start would have failed anyway). See ADR 0007.
       try {
         const parsed = await readConfig(containerConfigPath(args.name));
-        if (parsed.config.ports.length > 0) {
-          await ensureProxy();
+        if ((parsed.config.routing?.ports ?? []).length > 0) {
+          const global = await readMonocerosConfig();
+          await ensureProxy({ hostPort: proxyHostPort(global) });
         }
       } catch (err) {
         consola.warn(

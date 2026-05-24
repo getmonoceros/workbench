@@ -123,22 +123,29 @@ export function renderDynamicConfig(name: string, ports: number[]): string {
 
 /**
  * URLs the proxy exposes for a container. Pure derivation — used by
- * the `monoceros port` command in step 4 and by `add-port` to print
- * the resulting routes after a write.
+ * the `monoceros port` command and by `add-port` to print the
+ * resulting routes after a write. `hostPort` (default 80) gets
+ * suffixed to the URL only when it's non-default — the URLs stay
+ * clean for the common case.
  */
 export interface ProxyUrl {
   /** Internal container port. */
   port: number;
-  /** `http://<name>-<port>.localhost`. */
+  /** `http://<name>-<port>.localhost[:<hostPort>]`. */
   url: string;
   /** True for the first port: also reachable at `<name>.localhost`. */
   isDefault: boolean;
 }
 
-export function proxyUrlsFor(name: string, ports: number[]): ProxyUrl[] {
+export function proxyUrlsFor(
+  name: string,
+  ports: number[],
+  hostPort: number = 80,
+): ProxyUrl[] {
+  const portSuffix = hostPort === 80 ? '' : `:${hostPort}`;
   return ports.map((port, idx) => ({
     port,
-    url: `http://${name}-${port}.localhost`,
+    url: `http://${name}-${port}.localhost${portSuffix}`,
     isDefault: idx === 0,
   }));
 }

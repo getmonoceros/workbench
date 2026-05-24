@@ -44,3 +44,14 @@ defaults:
   #     email: you@example.com
   #     apiToken: ATATT3xFf…
   #     # bitbucketToken: ATBB…       # optional, only for twg's Bitbucket commands
+
+# Routing — settings for the shared Traefik singleton that fronts
+# every container with declared ports. See ADR 0007.
+# routing:
+#   hostPort: 80                    # Default 80. URLs are then
+#                                   # http://<name>.localhost/. If port
+#                                   # 80 is permanently held by another
+#                                   # service on this machine (system
+#                                   # nginx, Pi-hole, …) set a free
+#                                   # port here, e.g. 8080. URLs become
+#                                   # http://<name>.localhost:8080/.

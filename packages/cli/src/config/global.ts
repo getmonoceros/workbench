@@ -55,6 +55,22 @@ export const MonocerosConfigSchema = z.object({
         .optional(),
     })
     .nullish(),
+  // Machine-global routing settings — one Traefik per builder, so
+  // host-port and similar live here rather than in any container yml.
+  // See ADR 0007.
+  routing: z
+    .object({
+      hostPort: z
+        .number()
+        .int()
+        .min(1)
+        .max(65535)
+        .optional()
+        .describe(
+          'Host port the Traefik singleton binds. Default 80. Set this when 80 is held by another service on your machine — URLs then become http://<name>.localhost:<port>/.',
+        ),
+    })
+    .nullish(),
 });
 
 export type MonocerosConfig = z.infer<typeof MonocerosConfigSchema>;
@@ -103,4 +119,16 @@ export async function readMonocerosConfig(
     );
   }
   return result.data;
+}
+
+/** Default Traefik host port when `routing.hostPort` is unset. */
+export const DEFAULT_PROXY_HOST_PORT = 80;
+
+/**
+ * Effective host port the Traefik singleton should bind. Falls back
+ * to `DEFAULT_PROXY_HOST_PORT` (80) when the global config or its
+ * `routing.hostPort` field is absent.
+ */
+export function proxyHostPort(config?: MonocerosConfig | undefined): number {
+  return config?.routing?.hostPort ?? DEFAULT_PROXY_HOST_PORT;
 }

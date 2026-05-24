@@ -24,9 +24,10 @@ Siehe [ADR 0007](../adr/0007-port-management-traefik.md).
 2. **Matching** gegen Short- und Long-Form: `remove-port sandbox -- 9229`
    entfernt sowohl einen Eintrag `- 9229` als auch `- port: 9229`.
 3. **Diff-Vorschau** vor dem Schreiben (mit `--yes` übersprungen).
-4. **AST-Mutation**: entfernt die Einträge comment-preserving. Wenn
-   die Liste danach leer ist, wird der `ports:`-Schlüssel ganz
-   gepruned.
+4. **AST-Mutation**: entfernt die Einträge comment-preserving aus
+   `routing.ports`. Wenn die Liste danach leer ist, wird das
+   `ports:`-Feld gepruned; wenn `routing:` dann komplett leer ist
+   (kein `vscodeAutoForward` gesetzt), entfällt der ganze Block.
 
 ## Argumente
 

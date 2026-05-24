@@ -2,7 +2,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readMonocerosConfig } from '../src/config/global.js';
+import {
+  DEFAULT_PROXY_HOST_PORT,
+  proxyHostPort,
+  readMonocerosConfig,
+} from '../src/config/global.js';
 
 describe('readMonocerosConfig', () => {
   let home: string;
@@ -148,5 +152,36 @@ describe('readMonocerosConfig', () => {
     await expect(readMonocerosConfig({ monocerosHome: home })).rejects.toThrow(
       /monoceros-config\.yml/,
     );
+  });
+
+  it('accepts and surfaces routing.hostPort', async () => {
+    await writeFile(
+      path.join(home, 'monoceros-config.yml'),
+      ['schemaVersion: 1', 'routing:', '  hostPort: 8080', ''].join('\n'),
+    );
+    const result = await readMonocerosConfig({ monocerosHome: home });
+    expect(result?.routing?.hostPort).toBe(8080);
+    expect(proxyHostPort(result)).toBe(8080);
+  });
+
+  it('rejects out-of-range routing.hostPort values', async () => {
+    await writeFile(
+      path.join(home, 'monoceros-config.yml'),
+      ['schemaVersion: 1', 'routing:', '  hostPort: 70000', ''].join('\n'),
+    );
+    await expect(readMonocerosConfig({ monocerosHome: home })).rejects.toThrow(
+      /hostPort|less than or equal/i,
+    );
+  });
+});
+
+describe('proxyHostPort', () => {
+  it('falls back to 80 when the config is undefined', () => {
+    expect(proxyHostPort(undefined)).toBe(DEFAULT_PROXY_HOST_PORT);
+    expect(DEFAULT_PROXY_HOST_PORT).toBe(80);
+  });
+
+  it('falls back to 80 when routing.hostPort is unset', () => {
+    expect(proxyHostPort({ schemaVersion: 1 })).toBe(80);
   });
 });

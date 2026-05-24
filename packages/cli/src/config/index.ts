@@ -4,10 +4,10 @@ export {
   FeatureEntrySchema,
   FeatureOptionValueSchema,
   GitUserSchema,
-  IdeSchema,
   PortEntrySchema,
   REGEX,
   RepoEntrySchema,
+  RoutingSchema,
   SolutionConfigSchema,
   portNumber,
   validateConfig,
@@ -16,9 +16,9 @@ export type {
   ExternalServices,
   FeatureEntry,
   GitUser,
-  Ide,
   PortEntry,
   RepoEntry,
+  Routing,
   SolutionConfig,
 } from './schema.js';
 export {
@@ -47,5 +47,9 @@ export {
 } from './state.js';
 export type { StateFile } from './state.js';
 export { solutionConfigToCreateOptions } from './transform.js';
-export { readMonocerosConfig } from './global.js';
+export {
+  DEFAULT_PROXY_HOST_PORT,
+  proxyHostPort,
+  readMonocerosConfig,
+} from './global.js';
 export type { MonocerosConfig } from './global.js';

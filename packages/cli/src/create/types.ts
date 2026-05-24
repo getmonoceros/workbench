@@ -97,8 +97,9 @@ export interface CreateOptions {
    * non-empty — Traefik is the single source of truth for external
    * URLs and a parallel `localhost:NNNNN` from VS Code would be a
    * confusing second URL for the same app. Builders that want VS
-   * Code's panel as the primary entry set this to `true` in the yml.
-   * Ignored when `ports` is empty.
+   * Code's panel as the primary entry set this to `true` under
+   * `routing.vscodeAutoForward` in the yml. Ignored when `ports` is
+   * empty.
    */
-  vscodeAutoForwardPorts?: boolean;
+  vscodeAutoForward?: boolean;
 }

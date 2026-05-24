@@ -35,11 +35,11 @@ describe('buildDevcontainerJson — ports & vscode autoForward', () => {
     ).toBe(false);
   });
 
-  it('respects an explicit vscodeAutoForwardPorts=true override', () => {
+  it('respects an explicit vscodeAutoForward=true override', () => {
     const dc = buildDevcontainerJson({
       ...base,
       ports: [3000],
-      vscodeAutoForwardPorts: true,
+      vscodeAutoForward: true,
     });
     if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
     expect(
@@ -90,10 +90,10 @@ describe('buildComposeYaml — ports & networks', () => {
   });
 });
 
-describe('normalizeOptions — ports / vscodeAutoForwardPorts pass-through', () => {
+describe('normalizeOptions — ports / vscodeAutoForward pass-through', () => {
   // Regression guard: an earlier version of normalizeOptions rebuilt
   // the result object field-by-field and silently dropped `ports` and
-  // `vscodeAutoForwardPorts`. Apply then took its `removeDynamicConfig`
+  // `vscodeAutoForward`. Apply then took its `removeDynamicConfig`
   // branch right after `add-port` had just written the file. The fix
   // is to plumb both fields through; this test pins it.
   it('preserves ports (deduped, original order)', () => {
@@ -104,18 +104,18 @@ describe('normalizeOptions — ports / vscodeAutoForwardPorts pass-through', () 
     expect(out.ports).toEqual([3000, 5173, 6006]);
   });
 
-  it('preserves an explicit vscodeAutoForwardPorts=true', () => {
+  it('preserves an explicit vscodeAutoForward=true', () => {
     const out = normalizeOptions({
       ...base,
       ports: [3000],
-      vscodeAutoForwardPorts: true,
+      vscodeAutoForward: true,
     });
-    expect(out.vscodeAutoForwardPorts).toBe(true);
+    expect(out.vscodeAutoForward).toBe(true);
   });
 
   it('omits ports when the input has none', () => {
     const out = normalizeOptions(base);
     expect(out.ports).toBeUndefined();
-    expect(out.vscodeAutoForwardPorts).toBeUndefined();
+    expect(out.vscodeAutoForward).toBeUndefined();
   });
 });

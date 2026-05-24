@@ -223,6 +223,10 @@ export function generateDocumentedYml(
   // features block above.
   renderReposBlock(lines, repoUrls, /* commented */ repoUrls.length === 0);
 
+  // Routing — same visibility rule, but always fully commented:
+  // `monoceros add-port` is what activates the block.
+  renderRoutingBlock(lines);
+
   return ensureTrailingNewline(lines.join('\n'));
 }
 
@@ -384,6 +388,40 @@ function renderReposBlock(
     out.push('    #     name: Your Name');
     out.push('    #     email: you@example.com');
   }
+  out.push('');
+}
+
+/**
+ * Render the `routing:` section. Always commented in the documented
+ * mode — the block stays absent from a fresh yml until the builder
+ * runs `monoceros add-port`, at which point the AST mutator
+ * materializes it. The commented form shows the full set of fields
+ * the schema accepts (same "all available options visible" rule as
+ * features and repos). See ADR 0007.
+ */
+function renderRoutingBlock(out: string[]): void {
+  out.push('# Routing — expose container ports to the host through the');
+  out.push('# shared Traefik singleton. Once any port is declared the');
+  out.push('# container joins the monoceros-proxy network and the proxy');
+  out.push('# routes <name>.localhost (default port) and');
+  out.push('# <name>-<port>.localhost (explicit). `monoceros add-port`');
+  out.push('# manages the list; the block appears on first add.');
+  out.push('#');
+  out.push('# routing:');
+  out.push('#   ports:                    # internal container ports');
+  out.push(
+    '#     - 3000                  # first entry doubles as <name>.localhost',
+  );
+  out.push('#     - 5173');
+  out.push(
+    '#   vscodeAutoForward: false  # default: false. Traefik is the single',
+  );
+  out.push(
+    '#                             # source of truth — set true only if you',
+  );
+  out.push(
+    "#                             # want VS Code's port panel as primary.",
+  );
   out.push('');
 }
 

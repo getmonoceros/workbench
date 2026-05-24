@@ -174,8 +174,8 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
     ...(installUrls && installUrls.length > 0 ? { installUrls } : {}),
     ...(repos && repos.length > 0 ? { repos } : {}),
     ...(ports && ports.length > 0 ? { ports } : {}),
-    ...(opts.vscodeAutoForwardPorts !== undefined
-      ? { vscodeAutoForwardPorts: opts.vscodeAutoForwardPorts }
+    ...(opts.vscodeAutoForward !== undefined
+      ? { vscodeAutoForward: opts.vscodeAutoForward }
       : {}),
   };
 }
@@ -213,7 +213,7 @@ interface DevcontainerImageMode {
   containerEnv?: Record<string, string>;
   // VS Code-specific overrides written into the materialized
   // devcontainer.json. Today only carries `remote.autoForwardPorts`
-  // (toggled by `ide.vscodeAutoForwardPorts` from the yml). Future
+  // (toggled by `ide.vscodeAutoForward` from the yml). Future
   // feature/yml fields can extend the shape additively.
   customizations?: DevcontainerCustomizations;
 }
@@ -532,7 +532,7 @@ export function buildDevcontainerJson(
   // toggle when ports are declared. The default is `false` (Traefik is
   // the single source of truth for external URLs — VS Code's parallel
   // port-forward would be a confusing second URL for the same app).
-  // Builders can flip it via `ide.vscodeAutoForwardPorts: true` in the
+  // Builders can flip it via `ide.vscodeAutoForward: true` in the
   // yml. See ADR 0007. Other extension hints belong with the feature
   // that needs them (e.g. the claude-code feature recommends
   // `anthropic.claude-code`).
@@ -543,7 +543,7 @@ export function buildDevcontainerJson(
           customizations: {
             vscode: {
               settings: {
-                'remote.autoForwardPorts': opts.vscodeAutoForwardPorts ?? false,
+                'remote.autoForwardPorts': opts.vscodeAutoForward ?? false,
               },
             },
           },

@@ -34,9 +34,6 @@ export const PROXY_NETWORK_NAME = 'monoceros-proxy';
 /** Traefik release we pin against. Bump deliberately, not floating. */
 export const TRAEFIK_IMAGE = 'traefik:v3.3';
 
-/** Host port the proxy binds. Single fixed entrypoint per ADR 0007. */
-export const PROXY_HOST_PORT = 80;
-
 export interface DockerResult {
   stdout: string;
   stderr: string;
@@ -75,6 +72,13 @@ export interface ProxyOptions {
   docker?: DockerExec;
   /** Override the resolved MONOCEROS_HOME (tests inject a tmpdir). */
   monocerosHome?: string;
+  /**
+   * Host port Traefik binds. Read from `monoceros-config.yml`'s
+   * `routing.hostPort` by callers; the proxy module itself just gets
+   * a number and uses it for the `-p` mapping. Defaults to 80 (see
+   * `config/global.ts → DEFAULT_PROXY_HOST_PORT`) when omitted.
+   */
+  hostPort?: number;
   logger?: ProxyLogger;
 }
 
@@ -137,6 +141,10 @@ export async function ensureProxy(opts: ProxyOptions = {}): Promise<void> {
   // dynamic-config writes propagate without a Traefik restart. The
   // docker provider is explicitly off — we route via file-provider
   // only, so container labels can't accidentally publish a route.
+  // Default 80 — kept as a literal here to avoid a back-reference into
+  // config/global.ts. The authoritative value (and the merge logic
+  // with `monoceros-config.yml`) lives in config/global.ts.
+  const hostPort = opts.hostPort ?? 80;
   const run = await docker([
     'run',
     '-d',
@@ -145,7 +153,7 @@ export async function ensureProxy(opts: ProxyOptions = {}): Promise<void> {
     '--network',
     PROXY_NETWORK_NAME,
     '-p',
-    `${PROXY_HOST_PORT}:80`,
+    `${hostPort}:80`,
     '-v',
     `${dyn}:/etc/traefik/dynamic:ro`,
     '--label',
@@ -164,7 +172,7 @@ export async function ensureProxy(opts: ProxyOptions = {}): Promise<void> {
     );
   }
   opts.logger?.info(
-    `Started ${PROXY_CONTAINER_NAME} (Traefik on :${PROXY_HOST_PORT}).`,
+    `Started ${PROXY_CONTAINER_NAME} (Traefik on :${hostPort}).`,
   );
 }
 

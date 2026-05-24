@@ -186,14 +186,27 @@ export const PortEntrySchema = z.union([
 ]);
 
 /**
- * IDE-specific knobs. Currently the only field is
- * `vscodeAutoForwardPorts` — defaults to `false` (Traefik routes via
- * `<container>.localhost` so VS Code's parallel port-forward would be
- * a confusing second URL for the same app). Reversible per container
- * by setting it to `true`. See ADR 0007.
+ * Routing block — everything Monoceros uses to expose container ports
+ * to the host through the shared Traefik singleton.
+ *
+ *   - `ports`: container-internal ports the builder wants reachable
+ *     via `<name>.localhost` / `<name>-<port>.localhost`. Short form
+ *     `3000` or long form `{ port: 3000 }` are both accepted; mutators
+ *     write the short form by default. First port doubles as the
+ *     default route under the bare `<name>.localhost`.
+ *
+ *   - `vscodeAutoForward`: whether VS Code's Dev-Containers extension
+ *     should also auto-forward ports on top of Traefik. Default
+ *     `false`. Set to `true` only if VS Code's port panel should be
+ *     the primary entry rather than `<name>.localhost`.
+ *
+ * Host-port for the Traefik singleton itself is global (one Traefik
+ * per machine), not per container — it lives in `monoceros-config.yml`
+ * under `routing.hostPort`. See ADR 0007.
  */
-export const IdeSchema = z.object({
-  vscodeAutoForwardPorts: z.boolean().optional(),
+export const RoutingSchema = z.object({
+  ports: z.array(PortEntrySchema).default([]),
+  vscodeAutoForward: z.boolean().optional(),
 });
 
 export const ExternalServicesSchema = z.object({
@@ -238,8 +251,7 @@ export const SolutionConfigSchema = z.object({
     .default([]),
   services: z.array(z.string().min(1)).default([]),
   repos: z.array(RepoEntrySchema).default([]),
-  ports: z.array(PortEntrySchema).default([]),
-  ide: IdeSchema.optional(),
+  routing: RoutingSchema.optional(),
   externalServices: ExternalServicesSchema.default({}),
   git: z
     .object({
@@ -254,7 +266,7 @@ export type RepoEntry = z.infer<typeof RepoEntrySchema>;
 export type GitUser = z.infer<typeof GitUserSchema>;
 export type ExternalServices = z.infer<typeof ExternalServicesSchema>;
 export type PortEntry = z.infer<typeof PortEntrySchema>;
-export type Ide = z.infer<typeof IdeSchema>;
+export type Routing = z.infer<typeof RoutingSchema>;
 
 /** Resolve a `PortEntry` (short or long form) to a plain port number. */
 export function portNumber(entry: PortEntry): number {

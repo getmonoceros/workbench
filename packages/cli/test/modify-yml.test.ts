@@ -658,7 +658,8 @@ describe('add-*/remove-* against the yml', () => {
     });
     expect(result.status).toBe('updated');
     const yml = await ymlOf('demo');
-    expect(yml).toContain('ports:');
+    expect(yml).toContain('routing:');
+    expect(yml).toMatch(/routing:\s*\n\s+ports:/);
     expect(yml).toContain('- 3000');
     expect(yml).toContain('- 5173');
     expect(yml).toContain('- 6006');
@@ -675,7 +676,14 @@ describe('add-*/remove-* against the yml', () => {
   it('runAddPort is a no-op when every port is already present', async () => {
     await writeYml(
       'demo',
-      ['schemaVersion: 1', 'name: demo', 'ports:', '  - 3000', ''].join('\n'),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'routing:',
+        '  ports:',
+        '    - 3000',
+        '',
+      ].join('\n'),
     );
     const result = await runAddPort({
       ...portOpts,
@@ -692,9 +700,10 @@ describe('add-*/remove-* against the yml', () => {
       [
         'schemaVersion: 1',
         'name: demo',
-        'ports:',
-        '  - 3000 # vite',
-        '  - 5173 # api',
+        'routing:',
+        '  ports:',
+        '    - 3000 # vite',
+        '    - 5173 # api',
         '',
       ].join('\n'),
     );
@@ -715,9 +724,14 @@ describe('add-*/remove-* against the yml', () => {
   it('runAddPort matches the long form when checking for duplicates', async () => {
     await writeYml(
       'demo',
-      ['schemaVersion: 1', 'name: demo', 'ports:', '  - port: 9229', ''].join(
-        '\n',
-      ),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'routing:',
+        '  ports:',
+        '    - port: 9229',
+        '',
+      ].join('\n'),
     );
     const result = await runAddPort({
       ...portOpts,
@@ -748,10 +762,17 @@ describe('add-*/remove-* against the yml', () => {
     ).rejects.toThrow(/Invalid port: 0/);
   });
 
-  it('runRemovePort drops a port, prunes the empty list, and removes the dynamic config', async () => {
+  it('runRemovePort drops a port, prunes the empty routing block, and removes the dynamic config', async () => {
     await writeYml(
       'demo',
-      ['schemaVersion: 1', 'name: demo', 'ports:', '  - 3000', ''].join('\n'),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'routing:',
+        '  ports:',
+        '    - 3000',
+        '',
+      ].join('\n'),
     );
     // Seed a stale dynamic-config file so we can prove removal sweeps it.
     await mkdir(path.join(home, 'traefik', 'dynamic'), { recursive: true });
@@ -766,7 +787,9 @@ describe('add-*/remove-* against the yml', () => {
       monocerosHome: home,
     });
     const yml = await ymlOf('demo');
-    expect(yml).not.toContain('ports:');
+    // The whole routing block is gone — no vscodeAutoForward set, so
+    // an empty `routing:` is meaningless and gets pruned.
+    expect(yml).not.toContain('routing:');
     expect(yml).not.toContain('3000');
     expect(existsSync(path.join(home, 'traefik', 'dynamic', 'demo.yml'))).toBe(
       false,
@@ -779,9 +802,10 @@ describe('add-*/remove-* against the yml', () => {
       [
         'schemaVersion: 1',
         'name: demo',
-        'ports:',
-        '  - 3000',
-        '  - port: 9229',
+        'routing:',
+        '  ports:',
+        '    - 3000',
+        '    - port: 9229',
         '',
       ].join('\n'),
     );
@@ -793,13 +817,20 @@ describe('add-*/remove-* against the yml', () => {
     });
     const yml = await ymlOf('demo');
     expect(yml).toContain('- 3000');
-    expect(yml).not.toContain('9229');
+    expect(yml).not.toMatch(/9229/);
   });
 
   it('runRemovePort is a no-op when the port is not present', async () => {
     await writeYml(
       'demo',
-      ['schemaVersion: 1', 'name: demo', 'ports:', '  - 3000', ''].join('\n'),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'routing:',
+        '  ports:',
+        '    - 3000',
+        '',
+      ].join('\n'),
     );
     const result = await runRemovePort({
       ...portOpts,

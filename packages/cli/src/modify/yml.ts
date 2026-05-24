@@ -70,10 +70,10 @@ export function addAptPackagesToDoc(
 }
 
 /**
- * Read the port number from a `ports:` entry — handles both the short
- * form (`- 3000`) and the long form (`- port: 3000`). Returns `null`
- * for malformed entries (the schema catches them, but the mutator is
- * defensive).
+ * Read the port number from a `routing.ports:` entry — handles both
+ * the short form (`- 3000`) and the long form (`- port: 3000`).
+ * Returns `null` for malformed entries (the schema catches them, but
+ * the mutator is defensive).
  */
 function portOfItem(item: unknown): number | null {
   const scalar = scalarValue(item);
@@ -87,36 +87,63 @@ function portOfItem(item: unknown): number | null {
   return null;
 }
 
+/** Ensure `routing` is a map and return it (created if absent). */
+function ensureRoutingMap(doc: Document): YAMLMap {
+  const existing = doc.get('routing', true);
+  if (existing && isMap(existing)) return existing;
+  const map = new YAMLMap();
+  doc.set('routing', map);
+  return map;
+}
+
 /**
- * Add (or no-op) one or more ports to the `ports:` sequence.
- * Comparison is by port number, so a long-form entry (`- port: 3000`)
- * matches a short-form input (`3000`) and vice versa — that keeps
- * `add-port` idempotent against either form the builder may have
- * written by hand.
+ * Add (or no-op) one or more ports to `routing.ports`. Comparison is
+ * by port number, so a long-form entry (`- port: 3000`) matches a
+ * short-form input (`3000`) and vice versa — that keeps `add-port`
+ * idempotent against either form the builder may have written by
+ * hand.
  *
- * Writes the short form for new entries (lowest-noise yml). To get the
- * long form, the builder edits the yml directly — relevant once the
- * long form carries additional fields (TLS entrypoint, path prefix …
- * see ADR 0007).
+ * Writes the short form for new entries (lowest-noise yml). To get
+ * the long form, the builder edits the yml directly — relevant once
+ * the long form carries additional fields (TLS entrypoint, path
+ * prefix … see ADR 0007).
  */
 export function addPortsToDoc(doc: Document, ports: number[]): boolean {
-  const seq = ensureSeq(doc, 'ports');
+  const routing = ensureRoutingMap(doc);
+  const existing = routing.get('ports', true);
+  let seq: YAMLSeq;
+  if (existing && isSeq(existing)) {
+    seq = existing;
+  } else {
+    seq = new YAMLSeq();
+    routing.set('ports', seq);
+  }
   let changed = false;
   for (const port of ports) {
     if (seq.items.some((i) => portOfItem(i) === port)) continue;
     seq.add(port);
     changed = true;
   }
+  // No prune here — a non-empty `routing.ports` is the whole point of
+  // add-port. If `routing` was freshly created with only this `ports:`
+  // field, leaving it bare is fine; future fields (vscodeAutoForward
+  // etc.) attach to the same map.
   return changed;
 }
 
 /**
- * Remove one or more ports from the `ports:` sequence. Matches both
- * short and long form. Idempotent — ports not present are skipped
- * silently, the return reflects whether any actual removal happened.
+ * Remove one or more ports from `routing.ports`. Matches both short
+ * and long form. Idempotent — ports not present are skipped silently,
+ * the return reflects whether any actual removal happened. When the
+ * port list is empty after removal, the `ports:` key is pruned. If
+ * `routing` becomes completely empty (no other sub-keys), the whole
+ * block is dropped too — symmetric to how other sequence-emptying
+ * mutators behave.
  */
 export function removePortsFromDoc(doc: Document, ports: number[]): boolean {
-  const seq = doc.get('ports', true);
+  const routing = doc.get('routing', true);
+  if (!routing || !isMap(routing)) return false;
+  const seq = routing.get('ports', true);
   if (!seq || !isSeq(seq)) return false;
   const targets = new Set(ports);
   let changed = false;
@@ -127,7 +154,10 @@ export function removePortsFromDoc(doc: Document, ports: number[]): boolean {
       changed = true;
     }
   }
-  if (changed) pruneEmptySeq(doc, 'ports');
+  if (changed) {
+    if (seq.items.length === 0) routing.delete('ports');
+    if (routing.items.length === 0) doc.delete('routing');
+  }
   return changed;
 }
 

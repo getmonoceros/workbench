@@ -7,6 +7,7 @@ import {
   containerConfigPath,
   monocerosHome as defaultMonocerosHome,
 } from '../config/paths.js';
+import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
 import {
   KNOWN_PROVIDER_HOSTS,
   PROVIDER_VALUES,
@@ -518,7 +519,7 @@ async function syncPortsToProxy(
   let allPorts: number[];
   try {
     const parsed = await readConfig(ymlPath);
-    allPorts = parsed.config.ports.map(portNumber);
+    allPorts = (parsed.config.routing?.ports ?? []).map(portNumber);
   } catch (err) {
     logger.warn(
       `Could not re-read yml after edit to sync Traefik routes: ${err instanceof Error ? err.message : String(err)}. The yml is correct; \`monoceros apply ${input.name}\` will rebuild the routes.`,
@@ -526,15 +527,29 @@ async function syncPortsToProxy(
     return;
   }
 
+  // Effective host port for the Traefik singleton — falls back to 80
+  // when monoceros-config.yml has no `routing.hostPort`. Read once per
+  // sync so we have the right value for both ensureProxy and the URLs
+  // we print back.
+  let hostPort = 80;
+  try {
+    const globalConfig = await readMonocerosConfig({ monocerosHome: home });
+    hostPort = proxyHostPort(globalConfig);
+  } catch {
+    // Bad monoceros-config.yml is the user's problem to fix; don't
+    // strand the sync over it. Default 80 is the right fallback.
+  }
+
   try {
     if (allPorts.length > 0) {
       await writeDynamicConfig(input.name, allPorts, { monocerosHome: home });
       await ensureProxy({
         monocerosHome: home,
+        hostPort,
         ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
         logger: { info: (m) => logger.info(m), warn: (m) => logger.warn(m) },
       });
-      const urls = proxyUrlsFor(input.name, allPorts);
+      const urls = proxyUrlsFor(input.name, allPorts, hostPort);
       const lines = urls.map((u) => {
         const tag = u.isDefault ? ' (default)' : '';
         return `  ${u.url}${tag}`;

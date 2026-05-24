@@ -1,6 +1,10 @@
 import { existsSync, promises as fs } from 'node:fs';
 import { consola } from 'consola';
-import { type MonocerosConfig, readMonocerosConfig } from '../config/global.js';
+import {
+  type MonocerosConfig,
+  proxyHostPort,
+  readMonocerosConfig,
+} from '../config/global.js';
 import { readConfig } from '../config/io.js';
 import {
   containerConfigPath,
@@ -323,6 +327,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       await ensureProxy({
         ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
         monocerosHome: home,
+        hostPort: proxyHostPort(globalConfig),
         logger,
       });
     } else {

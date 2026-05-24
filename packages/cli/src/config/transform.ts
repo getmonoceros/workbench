@@ -67,14 +67,15 @@ export function solutionConfigToCreateOptions(
       ...(r.provider ? { provider: r.provider } : {}),
     }));
   }
-  if (config.ports.length > 0) {
+  const routingPorts = config.routing?.ports ?? [];
+  if (routingPorts.length > 0) {
     // Collapse both yml forms (`- 3000` and `- port: 9229`) to a flat
     // number array. Dedupe by port number — repeated entries in the
     // yml would otherwise show up twice in `forwardPorts` and in the
     // Traefik route set.
     const seen = new Set<number>();
     const ports: number[] = [];
-    for (const entry of config.ports) {
+    for (const entry of routingPorts) {
       const n = portNumber(entry);
       if (seen.has(n)) continue;
       seen.add(n);
@@ -82,8 +83,8 @@ export function solutionConfigToCreateOptions(
     }
     result.ports = ports;
   }
-  if (config.ide?.vscodeAutoForwardPorts !== undefined) {
-    result.vscodeAutoForwardPorts = config.ide.vscodeAutoForwardPorts;
+  if (config.routing?.vscodeAutoForward !== undefined) {
+    result.vscodeAutoForward = config.routing.vscodeAutoForward;
   }
   return result;
 }

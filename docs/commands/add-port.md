@@ -26,10 +26,24 @@ Container-Restart, **kein** Proxy-Restart. Siehe
 2. **Dedup** auf CLI-Ebene: `add-port sandbox -- 3000 3000` wird zu
    `[3000]`.
 3. **Diff-Vorschau** vor dem Schreiben (mit `--yes` übersprungen).
-4. **AST-Mutation**: schreibt das `ports:`-Feld comment-preserving.
-   Existierende Einträge werden gegen Short-Form (`- 3000`) **und**
-   Long-Form (`- port: 3000`) abgeglichen, damit Idempotenz egal
-   ist welche Form der Builder von Hand verwendet hat.
+4. **AST-Mutation**: schreibt das `routing.ports`-Feld comment-
+   preserving. Der `routing:`-Block wird beim ersten Aufruf angelegt
+   (vorher ist er kommentiert im Init-Output enthalten). Existierende
+   Einträge werden gegen Short-Form (`- 3000`) **und** Long-Form
+   (`- port: 3000`) abgeglichen, damit Idempotenz egal ist welche
+   Form der Builder von Hand verwendet hat.
+
+Das resultierende yml-Layout:
+
+```yaml
+routing:
+  ports:
+    - 3000 # erster Eintrag = <name>.localhost
+    - 5173
+  vscodeAutoForward:
+    false # default false; manuell auf true setzen, um
+    # VS Code's eigene Forwards parallel zu haben
+```
 
 ## Argumente
 
@@ -46,8 +60,13 @@ Container-Restart, **kein** Proxy-Restart. Siehe
 
 ## Hostname-Schema
 
-- `<container>.localhost` → Default-Port (erster Eintrag in `ports:`)
+- `<container>.localhost` → Default-Port (erster Eintrag in
+  `routing.ports`)
 - `<container>-<port>.localhost` → expliziter interner Port
+
+Wenn der Traefik-Host-Port über `monoceros-config.yml` von 80
+abweicht (siehe `routing.hostPort`), wird er den URLs angehängt:
+`http://<container>.localhost:<port>/`.
 
 Beispiel: nach `monoceros add-port sandbox -- 3000 5173 6006`:
 
