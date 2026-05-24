@@ -27,10 +27,10 @@ defaults:
   #   3. host's `git config --global user.{name,email}`
   #   4. `.monoceros/gitconfig` left by a previous apply
   #   5. interactive prompt (skipped in non-TTY)
-  # git:
-  #   user:
-  #     name: Your Name
-  #     email: you@example.com
+  git:
+    # user:
+    #   name: Your Name
+    #   email: you@example.com
 
   # Per-feature option defaults, keyed by the feature's OCI ref.
   # A container yml that activates the same feature without setting a
@@ -38,37 +38,37 @@ defaults:
   # EVERY option each Monoceros-curated feature accepts, with its
   # default value. Refs without an entry here behave as if every
   # option were unset.
-  # features:
-  #   # ── Anthropic Claude Code CLI ───────────────────────────────
-  #   ghcr.io/getmonoceros/monoceros-features/claude-code:1:
-  #     version: latest               # npm-style spec ('latest', '0.4.2', '^0.4')
-  #     apiKey: ''                    # Anthropic API key (`sk-ant-…`). Set →
-  #                                   # ANTHROPIC_API_KEY is exported and Claude
-  #                                   # Code uses API auth; empty → OAuth /
-  #                                   # subscription login inside the container.
-  #
-  #   # ── GitHub CLI ──────────────────────────────────────────────
-  #   ghcr.io/getmonoceros/monoceros-features/github-cli:1:
-  #     apiToken: ''                  # GitHub PAT (github.com → Settings →
-  #                                   # Developer settings → PAT, scopes
-  #                                   # repo + read:org + gist). Set → exported
-  #                                   # as GH_TOKEN; empty → no auto-login,
-  #                                   # `gh auth login` interactively in shell.
-  #
-  #   # ── Atlassian (Rovo Dev acli + Teamwork Graph twg) ──────────
-  #   ghcr.io/getmonoceros/monoceros-features/atlassian:1:
-  #     rovodev: true                 # install acli + Rovo Dev agent
-  #     twg: true                     # install twg (Teamwork Graph CLI)
-  #     instance: ''                  # site host like 'yoursite.atlassian.net',
-  #                                   # required for twg auto-login (Rovo Dev
-  #                                   # asks for it on first `acli rovodev run`)
-  #     email: ''                     # Atlassian-account email — paired with
-  #                                   # apiToken for both CLIs' non-interactive
-  #                                   # login
-  #     apiToken: ''                  # Atlassian API token from
-  #                                   # id.atlassian.com → Security → API tokens
-  #     bitbucketToken: ''            # optional, Bitbucket Cloud app-password.
-  #                                   # Used by twg's Bitbucket commands only.
+  features:
+    # ── Anthropic Claude Code CLI ───────────────────────────────
+    # ghcr.io/getmonoceros/monoceros-features/claude-code:1:
+    #   version: latest               # npm-style spec ('latest', '0.4.2', '^0.4')
+    #   apiKey: ''                    # Anthropic API key (`sk-ant-…`). Set →
+    #                                 # ANTHROPIC_API_KEY is exported and Claude
+    #                                 # Code uses API auth; empty → OAuth /
+    #                                 # subscription login inside the container.
+    #
+    # ── GitHub CLI ──────────────────────────────────────────────
+    # ghcr.io/getmonoceros/monoceros-features/github-cli:1:
+    #   apiToken: ''                  # GitHub PAT (github.com → Settings →
+    #                                 # Developer settings → PAT, scopes
+    #                                 # repo + read:org + gist). Set → exported
+    #                                 # as GH_TOKEN; empty → no auto-login,
+    #                                 # `gh auth login` interactively in shell.
+    #
+    # ── Atlassian (Rovo Dev acli + Teamwork Graph twg) ──────────
+    # ghcr.io/getmonoceros/monoceros-features/atlassian:1:
+    #   rovodev: true                 # install acli + Rovo Dev agent
+    #   twg: true                     # install twg (Teamwork Graph CLI)
+    #   instance: ''                  # site host like 'yoursite.atlassian.net',
+    #                                 # required for twg auto-login (Rovo Dev
+    #                                 # asks for it on first `acli rovodev run`)
+    #   email: ''                     # Atlassian-account email — paired with
+    #                                 # apiToken for both CLIs' non-interactive
+    #                                 # login
+    #   apiToken: ''                  # Atlassian API token from
+    #                                 # id.atlassian.com → Security → API tokens
+    #   bitbucketToken: ''            # optional, Bitbucket Cloud app-password.
+    #                                 # Used by twg's Bitbucket commands only.
 
 # ──────────────────────────────────────────────────────────────────
 # routing — machine-global Traefik singleton settings.

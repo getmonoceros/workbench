@@ -37,11 +37,17 @@ export const MonocerosConfigSchema = z.object({
   // we'd be back to forcing builders to comment-juggle three lines.
   defaults: z
     .object({
+      // .nullish() (not just .optional()) so the sample yml can leave
+      // `git:` uncommented as a category marker — YAML produces
+      // `git: null` for an empty mapping, which zod's plain
+      // `.optional()` would reject.
       git: z
         .object({
           user: GitUserSchema.optional(),
         })
-        .optional(),
+        .nullish(),
+      // .nullish() for the same reason as `git` — the sample keeps
+      // `features:` uncommented as a category marker.
       features: z
         .record(
           z
@@ -52,7 +58,7 @@ export const MonocerosConfigSchema = z.object({
             ),
           z.record(z.string(), FeatureOptionValueSchema),
         )
-        .optional(),
+        .nullish(),
     })
     .nullish(),
   // Machine-global routing settings — one Traefik per builder, so

@@ -154,6 +154,21 @@ describe('readMonocerosConfig', () => {
     );
   });
 
+  it('accepts uncommented `git:` and `features:` category markers without contents', async () => {
+    // Regression for the "all categories visible" sample-yml pattern:
+    // `git:` and `features:` are uncommented as structure markers even
+    // when nothing is configured under them. YAML parses both as null,
+    // schema must accept that via .nullish() rather than throwing.
+    await writeFile(
+      path.join(home, 'monoceros-config.yml'),
+      ['schemaVersion: 1', 'defaults:', '  git:', '  features:', ''].join('\n'),
+    );
+    const result = await readMonocerosConfig({ monocerosHome: home });
+    expect(result?.schemaVersion).toBe(1);
+    expect(result?.defaults?.git).toBeNull();
+    expect(result?.defaults?.features).toBeNull();
+  });
+
   it('accepts and surfaces routing.hostPort', async () => {
     await writeFile(
       path.join(home, 'monoceros-config.yml'),
