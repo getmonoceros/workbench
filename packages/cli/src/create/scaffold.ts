@@ -202,6 +202,11 @@ interface DevcontainerImageMode {
   // (inherited by postCreateCommand). Used by add-repo to wire the
   // forwarded SSH-agent socket and a permissive SSH host-key policy.
   containerEnv?: Record<string, string>;
+  // VS Code-specific overrides written into the materialized
+  // devcontainer.json. Today only carries `remote.autoForwardPorts`
+  // (toggled by `ide.vscodeAutoForwardPorts` from the yml). Future
+  // feature/yml fields can extend the shape additively.
+  customizations?: DevcontainerCustomizations;
 }
 
 interface DevcontainerComposeMode {
@@ -217,6 +222,14 @@ interface DevcontainerComposeMode {
   forwardPorts: number[];
   postCreateCommand: string;
   features?: Record<string, Record<string, unknown>>;
+  customizations?: DevcontainerCustomizations;
+}
+
+interface DevcontainerCustomizations {
+  vscode?: {
+    settings?: Record<string, unknown>;
+    extensions?: string[];
+  };
 }
 
 /**
@@ -506,14 +519,34 @@ export function buildDevcontainerJson(
     }
   }
 
-  // No scaffold-level VS Code customizations today — extension hints
-  // belong with the feature that needs them (e.g. the claude-code
-  // feature itself recommends `anthropic.claude-code`).
+  // VS Code customizations — currently only the `remote.autoForwardPorts`
+  // toggle when ports are declared. The default is `false` (Traefik is
+  // the single source of truth for external URLs — VS Code's parallel
+  // port-forward would be a confusing second URL for the same app).
+  // Builders can flip it via `ide.vscodeAutoForwardPorts: true` in the
+  // yml. See ADR 0007. Other extension hints belong with the feature
+  // that needs them (e.g. the claude-code feature recommends
+  // `anthropic.claude-code`).
+  const ports = opts.ports ?? [];
+  const customizationsField =
+    ports.length > 0
+      ? {
+          customizations: {
+            vscode: {
+              settings: {
+                'remote.autoForwardPorts': opts.vscodeAutoForwardPorts ?? false,
+              },
+            },
+          },
+        }
+      : undefined;
 
   if (needsCompose(opts)) {
     // Compose-mode: per-feature persistent home mounts go onto the
     // workspace service in compose.yaml (see buildComposeYaml). The
-    // devcontainer.json just references compose.
+    // devcontainer.json just references compose. Network membership
+    // (`monoceros-proxy`) lives in compose.yaml's `networks:` block,
+    // not here.
     return {
       name: opts.name,
       dockerComposeFile: 'compose.yaml',
@@ -521,9 +554,10 @@ export function buildDevcontainerJson(
       ...(opts.services.length > 0 ? { runServices: opts.services } : {}),
       workspaceFolder: `/workspaces/${opts.name}`,
       remoteUser: 'node',
-      forwardPorts: [3000, 4000],
+      forwardPorts: ports,
       postCreateCommand: '.devcontainer/post-create.sh',
       ...(featuresField ?? {}),
+      ...(customizationsField ?? {}),
     };
   }
 
@@ -536,16 +570,28 @@ export function buildDevcontainerJson(
   // strategy, the override comes back here.
   const workspaceMountField = {};
 
+  // Image-mode: when ports are declared, hook the container into the
+  // `monoceros-proxy` network so the Traefik singleton can reach it
+  // by container name. `--network` replaces docker's default bridge —
+  // for image-mode that's the only network in play, so swapping is fine.
+  // ensureProxy() (called from apply/start) creates the network before
+  // this `runArgs` value is used.
+  const runArgs = ['--cap-add=NET_ADMIN'];
+  if (ports.length > 0) {
+    runArgs.push('--network=monoceros-proxy');
+  }
+
   return {
     name: opts.name,
     image: BASE_IMAGE,
     remoteUser: 'node',
     ...workspaceMountField,
     ...mountsField,
-    runArgs: ['--cap-add=NET_ADMIN'],
-    forwardPorts: [3000, 4000],
+    runArgs,
+    forwardPorts: ports,
     postCreateCommand: '.devcontainer/post-create.sh',
     ...(featuresField ?? {}),
+    ...(customizationsField ?? {}),
   };
 }
 
@@ -561,6 +607,7 @@ export function buildComposeYaml(
   dockerMode: DockerMode = 'rootful',
 ): string {
   void dockerMode;
+  const hasPorts = (opts.ports?.length ?? 0) > 0;
   const lines: string[] = ['services:'];
 
   lines.push('  workspace:');
@@ -572,6 +619,16 @@ export function buildComposeYaml(
   // iptables setup; see ADR 0002.
   lines.push('    cap_add:');
   lines.push('      - NET_ADMIN');
+  if (hasPorts) {
+    // Workspace joins both the compose-default network (so it can
+    // reach postgres/redis/… that share the project) and the
+    // monoceros-proxy network (so Traefik can route to it by service
+    // name). Compose auto-creates `default` since it's not redeclared
+    // at the top-level networks block. See ADR 0007.
+    lines.push('    networks:');
+    lines.push('      - default');
+    lines.push('      - monoceros-proxy');
+  }
   lines.push('    volumes:');
   lines.push(`      - ..:/workspaces/${opts.name}:cached`);
   // Per-feature persistent home subpaths (dirs and files alike).
@@ -608,6 +665,17 @@ export function buildComposeYaml(
       lines.push('    volumes:');
       lines.push(`      - ../data/${def.id}:${def.dataMount}`);
     }
+  }
+
+  if (hasPorts) {
+    // `external: true` tells compose that `monoceros-proxy` is managed
+    // outside this stack (Monoceros's proxy module creates it via
+    // `docker network create`). Without this declaration compose would
+    // try to create its own scoped network with the same name and
+    // collide.
+    lines.push('networks:');
+    lines.push('  monoceros-proxy:');
+    lines.push('    external: true');
   }
 
   return lines.join('\n') + '\n';

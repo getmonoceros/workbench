@@ -79,4 +79,26 @@ export interface CreateOptions {
    * a rebuild.
    */
   repos?: RepoEntry[];
+  /**
+   * Container-internal ports the builder wants to reach from the host.
+   * When non-empty:
+   *   - the container joins the `monoceros-proxy` docker network,
+   *   - the singleton Traefik proxy fronts the ports via Hostname
+   *     routing (`<container>.localhost` / `<container>-<port>.localhost`),
+   *   - the entries are still written to `forwardPorts` so VS Code's
+   *     own port-panel reflects them when the builder opens the
+   *     devcontainer through the extension.
+   * See ADR 0007.
+   */
+  ports?: number[];
+  /**
+   * Whether VS Code's Dev-Containers extension should auto-forward
+   * ports on top of Traefik. Default `false` whenever `ports` is
+   * non-empty — Traefik is the single source of truth for external
+   * URLs and a parallel `localhost:NNNNN` from VS Code would be a
+   * confusing second URL for the same app. Builders that want VS
+   * Code's panel as the primary entry set this to `true` in the yml.
+   * Ignored when `ports` is empty.
+   */
+  vscodeAutoForwardPorts?: boolean;
 }

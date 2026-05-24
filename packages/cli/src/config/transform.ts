@@ -1,6 +1,6 @@
 import { deriveRepoName } from '../create/scaffold.js';
 import type { CreateOptions, FeatureOptions } from '../create/types.js';
-import type { SolutionConfig } from './schema.js';
+import { portNumber, type SolutionConfig } from './schema.js';
 
 /**
  * Translate a yml-shaped `SolutionConfig` into the `CreateOptions`
@@ -66,6 +66,24 @@ export function solutionConfigToCreateOptions(
         : {}),
       ...(r.provider ? { provider: r.provider } : {}),
     }));
+  }
+  if (config.ports.length > 0) {
+    // Collapse both yml forms (`- 3000` and `- port: 9229`) to a flat
+    // number array. Dedupe by port number — repeated entries in the
+    // yml would otherwise show up twice in `forwardPorts` and in the
+    // Traefik route set.
+    const seen = new Set<number>();
+    const ports: number[] = [];
+    for (const entry of config.ports) {
+      const n = portNumber(entry);
+      if (seen.has(n)) continue;
+      seen.add(n);
+      ports.push(n);
+    }
+    result.ports = ports;
+  }
+  if (config.ide?.vscodeAutoForwardPorts !== undefined) {
+    result.vscodeAutoForwardPorts = config.ide.vscodeAutoForwardPorts;
   }
   return result;
 }

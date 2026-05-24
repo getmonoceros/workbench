@@ -47,6 +47,10 @@ import {
 } from '../devcontainer/docker-mode.js';
 import { type DevcontainerSpawn } from '../devcontainer/cli.js';
 import {
+  ensureProxy,
+  type DockerExec as ProxyDockerExec,
+} from '../proxy/index.js';
+import {
   collectGitIdentity,
   type IdentityPrompt,
   type IdentitySpawn,
@@ -98,6 +102,8 @@ export interface RunApplyOptions {
   dockerInfoSpawn?: DockerInfoSpawn;
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
+  /** Override the docker exec used by the Traefik proxy lifecycle. */
+  proxyDocker?: ProxyDockerExec;
 }
 
 export interface RunApplyResult {
@@ -301,6 +307,29 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       'Pulling runtime image and building feature layers. First apply takes ~1–2 min (Docker downloads the multi-arch base); subsequent applies are cached and fast. devcontainer-cli may log a "No manifest found" line — harmless, the pull continues.',
     ),
   );
+
+  // Bring up the shared Traefik singleton ahead of the devcontainer
+  // when the yml declares ports. `ensureProxy` is idempotent — a
+  // second devcontainer that also wants Traefik just joins the
+  // already-running proxy. See ADR 0007.
+  const hasPorts = (createOpts.ports?.length ?? 0) > 0;
+  if (hasPorts) {
+    try {
+      await ensureProxy({
+        ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
+        ...(opts.monocerosHome ? { monocerosHome: opts.monocerosHome } : {}),
+        logger,
+      });
+    } catch (err) {
+      // Don't strand the apply if Traefik can't come up — surface the
+      // failure as a warn and continue. The devcontainer itself is
+      // still usable; the builder loses only the `<name>.localhost`
+      // routing, which they can fix manually before the next apply.
+      logger.warn?.(
+        `Could not start the Traefik proxy: ${err instanceof Error ? err.message : String(err)}. The container will start, but \`<name>.localhost\` routing will not work until the next \`monoceros apply\`.`,
+      );
+    }
+  }
 
   const exitCode = await runContainerCycle(targetDir, {
     hasCompose: needsCompose(createOpts),

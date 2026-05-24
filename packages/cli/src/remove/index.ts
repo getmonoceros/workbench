@@ -13,6 +13,7 @@ import {
   spawnBash,
   type ComposeSpawn,
 } from '../devcontainer/compose.js';
+import { maybeStopProxy, type DockerExec } from '../proxy/index.js';
 
 /**
  * `monoceros remove <name>` — wipe everything belonging to one
@@ -54,6 +55,8 @@ export interface RunRemoveOptions {
   now?: Date;
   /** Bash spawn for the docker cleanup script. Tests inject a stub. */
   dockerSpawn?: ComposeSpawn;
+  /** Override the docker exec used by the Traefik proxy lifecycle. */
+  proxyDocker?: DockerExec;
   logger?: {
     info: (msg: string) => void;
     success: (msg: string) => void;
@@ -157,6 +160,21 @@ export async function runRemove(
   if (!backupPath) {
     logger.warn?.(
       'No backup created (--no-backup). The host-side state is gone for good.',
+    );
+  }
+
+  // Tear down the Traefik singleton if this was the last container
+  // attached to its network. See ADR 0007 (variant A — stop and
+  // remove are treated identically).
+  try {
+    await maybeStopProxy({
+      ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
+      monocerosHome: home,
+      logger: { info: (msg) => logger.info(msg), warn: logger.warn },
+    });
+  } catch (err) {
+    logger.warn?.(
+      `Could not tear down the Traefik proxy: ${err instanceof Error ? err.message : String(err)}. Ignored.`,
     );
   }
 
