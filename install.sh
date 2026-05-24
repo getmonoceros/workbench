@@ -231,13 +231,11 @@ if [[ "$PLATFORM" == "linux" ]] \
   cat >&2 <<EOF
 
 You're running Docker in "rootless" mode right now. That setup runs
-the daemon without root privileges — sounds safer, but it doesn't
-play well with the way Monoceros shares files between your host and
-the container. Specifically: files created inside the container
-(cloned repos, new commits, build output) end up with ownership
-that your normal host user can't edit without sudo. That breaks the
-"edit on host, run in container" loop the entire workflow is built
-around.
+the daemon without root privileges — sounds safer, but it remaps
+user IDs between your host and the container in a way that prevents
+the container from writing into the directories Monoceros mounts
+into it. Cloning your repos, running 'npm install', building — all
+fail with permission errors at the first attempt.
 
 To fix, switch back to standard rootful Docker:
 
