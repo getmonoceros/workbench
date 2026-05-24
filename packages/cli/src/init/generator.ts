@@ -38,10 +38,9 @@ const SCHEMA_HEADER = [
   '# Monoceros solution-config. Edit freely, then run',
   '# `monoceros apply <name>` to materialize a dev-container.',
   '#',
-  '# Schema reference: see the workbench `templates/components/README.md`',
-  '# and `docs/konzept.md` for what each section does. Each feature',
-  '# under `features:` also accepts options not shown here — check',
-  "# the feature's `devcontainer-feature.json` for the full list.",
+  '# Each section below carries inline comments for the options it',
+  '# accepts. Features expose additional knobs as commented hints',
+  '# under their `options:` block — un-comment what you need.',
 ] as const;
 
 /**
@@ -355,7 +354,7 @@ function renderReposBlock(
   // Prose intro — always a comment block, regardless of whether the
   // section below is active or fully commented.
   out.push('# Repos — git repositories cloned into projects/ during');
-  out.push('# post-create. HTTPS-only (ADR 0006). Provider auto-detected');
+  out.push('# post-create. HTTPS URLs only. Provider auto-detected');
   out.push('# for github.com, gitlab.com, bitbucket.org; for any other host');
   out.push('# (self-hosted GitLab, Bitbucket Data Center, Gitea/Forgejo,');
   out.push('# GitHub Enterprise, …) declare provider explicitly.');
@@ -457,7 +456,7 @@ function renderActiveRoutingBlock(
 ): void {
   out.push('# Routing — expose these container ports to the host through');
   out.push('# the shared Traefik singleton. First entry doubles as');
-  out.push(`# http://${name}.localhost (the default route). See ADR 0007.`);
+  out.push(`# http://${name}.localhost (the default route).`);
   out.push('routing:');
   out.push('  ports:');
   ports.forEach((port, idx) => {

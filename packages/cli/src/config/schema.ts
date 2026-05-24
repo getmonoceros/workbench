@@ -124,7 +124,7 @@ export const RepoEntrySchema = z.object({
     .string()
     .regex(
       REPO_URL_RE,
-      'Invalid repo URL. Only HTTPS URLs are supported (https://...). SSH-style URLs (git@host:..., ssh://...) are not in scope — see ADR 0006.',
+      'Invalid repo URL. Only HTTPS URLs are supported (https://...). SSH-style URLs (git@host:..., ssh://...) are not supported.',
     ),
   path: z
     .string()

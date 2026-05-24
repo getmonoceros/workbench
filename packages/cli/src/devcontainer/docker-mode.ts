@@ -120,7 +120,6 @@ export function formatRootlessNotSupportedError(): string {
     `shell. Otherwise new terminals keep pointing at the rootless`,
     `socket and Monoceros's auto-recovery has nothing to fall back to.`,
     ``,
-    `Then re-run. Background: see ${cyan('docs/docker-on-linux.md')} in`,
-    `the workbench repo.`,
+    `Then re-run.`,
   ].join('\n');
 }
