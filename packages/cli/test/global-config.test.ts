@@ -185,3 +185,39 @@ describe('proxyHostPort', () => {
     expect(proxyHostPort({ schemaVersion: 1 })).toBe(80);
   });
 });
+
+// Regression guard: the shipped sample yml must parse cleanly — it
+// gets dropped verbatim into ~/.monoceros/ by install.sh / install.ps1
+// for fresh installs. A typo in the sample would only surface when an
+// actual builder tries to use it, which is too late.
+describe('monoceros-config.sample.yml', () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(path.join(tmpdir(), 'monoceros-sample-'));
+  });
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it('the shipped sample parses against the schema', async () => {
+    const sample = await import('node:fs').then((m) =>
+      m.promises.readFile(
+        path.resolve(
+          __dirname,
+          '..',
+          'templates',
+          'monoceros-config.sample.yml',
+        ),
+        'utf8',
+      ),
+    );
+    await writeFile(path.join(home, 'monoceros-config.yml'), sample);
+    // With every actual setting commented out, the parsed shape is
+    // schemaVersion + the bare `defaults:`/`routing:` containers
+    // (which become null thanks to .nullish() on those fields). The
+    // important assertion is just that readMonocerosConfig doesn't
+    // throw a schema error.
+    const result = await readMonocerosConfig({ monocerosHome: home });
+    expect(result?.schemaVersion).toBe(1);
+  });
+});

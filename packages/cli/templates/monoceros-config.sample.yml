@@ -1,57 +1,84 @@
-# Monoceros — global defaults for `monoceros apply`.
+# Monoceros — builder-global config for `monoceros apply`.
 #
-# This file is optional. The top two keys (schemaVersion, defaults)
-# are uncommented so the file parses as valid YAML out of the box;
-# every actual setting under `defaults` is commented out, so a
-# fresh-installed Monoceros behaves like there's no file at all.
+# This file is optional. Everything below is commented out by default;
+# a fresh-installed Monoceros behaves as if it didn't exist. To enable
+# a setting: remove the leading "# " from each line of that block.
 #
-# To set a value: uncomment one block (git, features, ...) — remove
-# the leading "# " from each line of that block. The keys above
-# (schemaVersion + defaults) stay as-is.
+# Two top-level sections:
+#   - `defaults`  — fall-throughs for container-yml fields (git
+#                   identity, per-feature options).
+#   - `routing`   — machine-global settings for the shared Traefik
+#                   singleton (only `hostPort` today).
 #
-# To verify what the resolved config looks like after edits:
-#   monoceros init --dry-run <name>
+# Per-container yml ALWAYS wins over these defaults. Setting a value
+# here just spares you from repeating it across every container.
 
 schemaVersion: 1
 
+# ──────────────────────────────────────────────────────────────────
+# defaults — fall-throughs for container-yml fields.
+# ──────────────────────────────────────────────────────────────────
+
 defaults:
-  # Git identity for any container the host hasn't already
-  # configured. Container yml's `git.user` overrides this;
-  # `git config --global` on the host overrides both. Removed →
-  # `monoceros apply` prompts at first run and persists per
-  # container.
+  # Git committer identity for any container whose yml omits
+  # `git.user`. Resolution order at apply time:
+  #   1. container yml's `git.user`
+  #   2. this `defaults.git.user`
+  #   3. host's `git config --global user.{name,email}`
+  #   4. `.monoceros/gitconfig` left by a previous apply
+  #   5. interactive prompt (skipped in non-TTY)
   # git:
   #   user:
   #     name: Your Name
   #     email: you@example.com
 
-  # Default options for Monoceros-curated devcontainer features,
-  # keyed by OCI ref. Per-container yml options override these.
-  # The feature itself decides what to do with the values (typically
-  # a post-create hook does a non-interactive login).
+  # Per-feature option defaults, keyed by the feature's OCI ref.
+  # A container yml that activates the same feature without setting a
+  # given option falls back to whatever's here. The list below shows
+  # EVERY option each Monoceros-curated feature accepts, with its
+  # default value. Refs without an entry here behave as if every
+  # option were unset.
   # features:
+  #   # ── Anthropic Claude Code CLI ───────────────────────────────
   #   ghcr.io/getmonoceros/monoceros-features/claude-code:1:
-  #     apiKey: sk-ant-…              # set → API auth; omit → OAuth/subscription login inside the container
+  #     version: latest               # npm-style spec ('latest', '0.4.2', '^0.4')
+  #     apiKey: ''                    # Anthropic API key (`sk-ant-…`). Set →
+  #                                   # ANTHROPIC_API_KEY is exported and Claude
+  #                                   # Code uses API auth; empty → OAuth /
+  #                                   # subscription login inside the container.
   #
+  #   # ── GitHub CLI ──────────────────────────────────────────────
   #   ghcr.io/getmonoceros/monoceros-features/github-cli:1:
-  #     apiToken: ghp_…               # PAT with scopes: repo, read:org, gist
+  #     apiToken: ''                  # GitHub PAT (github.com → Settings →
+  #                                   # Developer settings → PAT, scopes
+  #                                   # repo + read:org + gist). Set → exported
+  #                                   # as GH_TOKEN; empty → no auto-login,
+  #                                   # `gh auth login` interactively in shell.
   #
+  #   # ── Atlassian (Rovo Dev acli + Teamwork Graph twg) ──────────
   #   ghcr.io/getmonoceros/monoceros-features/atlassian:1:
-  #     # Both CLIs are on by default — toggle individually:
-  #     # rovodev: false              # `acli rovodev` (Rovo Dev agent)
-  #     # twg: false                  # `twg` (Teamwork Graph)
-  #     instance: yoursite.atlassian.net   # required for twg auto-login
-  #     email: you@example.com
-  #     apiToken: ATATT3xFf…
-  #     # bitbucketToken: ATBB…       # optional, only for twg's Bitbucket commands
+  #     rovodev: true                 # install acli + Rovo Dev agent
+  #     twg: true                     # install twg (Teamwork Graph CLI)
+  #     instance: ''                  # site host like 'yoursite.atlassian.net',
+  #                                   # required for twg auto-login (Rovo Dev
+  #                                   # asks for it on first `acli rovodev run`)
+  #     email: ''                     # Atlassian-account email — paired with
+  #                                   # apiToken for both CLIs' non-interactive
+  #                                   # login
+  #     apiToken: ''                  # Atlassian API token from
+  #                                   # id.atlassian.com → Security → API tokens
+  #     bitbucketToken: ''            # optional, Bitbucket Cloud app-password.
+  #                                   # Used by twg's Bitbucket commands only.
 
-# Routing — settings for the shared Traefik singleton that fronts
-# every container with declared ports. See ADR 0007.
-# routing:
-#   hostPort: 80                    # Default 80. URLs are then
-#                                   # http://<name>.localhost/. If port
-#                                   # 80 is permanently held by another
-#                                   # service on this machine (system
-#                                   # nginx, Pi-hole, …) set a free
-#                                   # port here, e.g. 8080. URLs become
-#                                   # http://<name>.localhost:8080/.
+# ──────────────────────────────────────────────────────────────────
+# routing — machine-global Traefik singleton settings.
+# ──────────────────────────────────────────────────────────────────
+
+routing:
+  # Host port the Traefik singleton binds. Default 80 → URLs are
+  # http://<name>.localhost/. If port 80 is permanently held on this
+  # machine (system nginx, Pi-hole, …) set any free port here, e.g.
+  # 8080. URLs then become http://<name>.localhost:8080/. The
+  # pre-flight check before apply / start / add-port reads this value
+  # and asks you to free the port or change this setting on conflict.
+  # hostPort: 80
