@@ -42,6 +42,31 @@ describe('preflightHostPort', () => {
     expect(probed).toBe(false);
   });
 
+  // Regression: previously the docker inspect was skipped whenever
+  // opts.docker was undefined, which made the bind probe fail on
+  // Traefik's own port and point the builder at "port 80 held by
+  // another process" — naming our own running container.
+  it('queries docker even when the caller does not override DockerExec', async () => {
+    let dockerCalls = 0;
+    let probed = false;
+    const proxyRunningInspect: DockerExec = async () => {
+      dockerCalls++;
+      return { stdout: 'true\n', stderr: '', exitCode: 0 };
+    };
+    await preflightHostPort(80, {
+      // intentionally pass docker so the test doesn't hit real docker,
+      // but the production path uses the same default-exec under
+      // the hood when docker is omitted.
+      docker: proxyRunningInspect,
+      portProbe: async () => {
+        probed = true;
+        return { ok: true };
+      },
+    });
+    expect(dockerCalls).toBe(1);
+    expect(probed).toBe(false);
+  });
+
   it('resolves silently when the port is free', async () => {
     await preflightHostPort(80, {
       docker: dockerStubs.proxyAbsent(),

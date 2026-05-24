@@ -1,6 +1,7 @@
 import { createServer } from 'node:net';
 import {
   PROXY_CONTAINER_NAME,
+  defaultDockerExec,
   type DockerExec,
   type ProxyLogger,
 } from './index.js';
@@ -83,16 +84,19 @@ export async function preflightHostPort(
 ): Promise<void> {
   // Is monoceros-proxy itself the current holder? If so, ensureProxy
   // will be a no-op and the port-check has nothing to tell us.
-  if (opts.docker) {
-    const inspect = await opts.docker([
-      'inspect',
-      '--format',
-      '{{.State.Running}}',
-      PROXY_CONTAINER_NAME,
-    ]);
-    if (inspect.exitCode === 0 && inspect.stdout.trim() === 'true') {
-      return;
-    }
+  // ALWAYS run this check (not just when opts.docker is overridden) —
+  // otherwise the bind probe would fail on Traefik's own port and
+  // the builder would see "port 80 held by another process" pointing
+  // at our own running container.
+  const docker = opts.docker ?? defaultDockerExec;
+  const inspect = await docker([
+    'inspect',
+    '--format',
+    '{{.State.Running}}',
+    PROXY_CONTAINER_NAME,
+  ]);
+  if (inspect.exitCode === 0 && inspect.stdout.trim() === 'true') {
+    return;
   }
 
   const probe = opts.portProbe ?? realPortProbe;

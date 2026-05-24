@@ -42,7 +42,13 @@ export interface DockerResult {
 
 export type DockerExec = (args: string[]) => Promise<DockerResult>;
 
-const realDocker: DockerExec = (args) => {
+/**
+ * Default docker invocation — exported so other modules in the proxy/
+ * family (port-check, …) can share the same spawn semantics without
+ * each having to re-implement child-process bookkeeping. Tests inject
+ * their own `DockerExec` and never hit this path.
+ */
+export const defaultDockerExec: DockerExec = (args) => {
   return new Promise((resolve, reject) => {
     const child = spawn('docker', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -61,6 +67,8 @@ const realDocker: DockerExec = (args) => {
     );
   });
 };
+
+const realDocker: DockerExec = defaultDockerExec;
 
 export interface ProxyLogger {
   info: (message: string) => void;
