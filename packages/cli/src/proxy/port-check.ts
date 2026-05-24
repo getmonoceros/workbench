@@ -1,4 +1,4 @@
-import { createServer } from 'node:net';
+import { Socket } from 'node:net';
 import {
   PROXY_CONTAINER_NAME,
   defaultDockerExec,
@@ -20,12 +20,26 @@ import {
  *   1. If the `monoceros-proxy` container is already running, the
  *      port is "in use" by us — nothing to check. Skip silently.
  *
- *   2. Otherwise, try to bind the port via Node's net.createServer
- *      and immediately release. Bind success ⇒ free. EADDRINUSE ⇒
- *      held by something we don't control; throw a clear error.
+ *   2. Otherwise, try to TCP-connect to `127.0.0.1:<port>`. Something
+ *      accepting the connection ⇒ port is taken; ECONNREFUSED ⇒
+ *      nobody's listening and the port is (probably) free for Docker.
  *
- * The bind probe is plumbed through `PortProbe` so tests can inject
- * a stub.
+ * We deliberately do NOT try to bind the port ourselves. On Linux,
+ * binding ports <1024 requires CAP_NET_BIND_SERVICE — which the
+ * unprivileged Node process running monoceros doesn't have, even when
+ * the docker daemon does. The bind probe would EACCES with our own
+ * lack of privilege, not with someone actually holding the port. The
+ * connect probe sidesteps that: connects don't need a privileged port.
+ *
+ * Trade-off: connect catches anything that's actively LISTEN'ing on
+ * 127.0.0.1 or 0.0.0.0 (system nginx, Pi-hole, …) — the cases that
+ * realistically conflict with Docker's `-p 80:80`. If something binds
+ * only on a specific external interface (192.168.x.x:80) and refuses
+ * loopback, the connect probe sees ECONNREFUSED and lets Docker
+ * surface its own error — which then carries our actionable hint via
+ * the error-message wrapping in apply/.
+ *
+ * The probe is plumbed through `PortProbe` so tests can inject a stub.
  */
 
 export type PortProbe = (port: number) => Promise<PortProbeResult>;
@@ -34,24 +48,50 @@ export type PortProbeResult =
   | { ok: true }
   | { ok: false; code: string; message: string };
 
+const CONNECT_TIMEOUT_MS = 750;
+
 const realPortProbe: PortProbe = (port) => {
   return new Promise((resolve) => {
-    const server = createServer();
-    server.unref();
-    server.once('error', (err: NodeJS.ErrnoException) => {
-      resolve({
+    const socket = new Socket();
+    let settled = false;
+    const settle = (result: PortProbeResult) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(result);
+    };
+    socket.setTimeout(CONNECT_TIMEOUT_MS);
+    socket.once('connect', () => {
+      // Something accepted our connection → the port is held.
+      settle({
         ok: false,
-        code: err.code ?? 'UNKNOWN',
-        message: err.message,
+        code: 'EADDRINUSE',
+        message: `another process is listening on ${port}`,
       });
     });
-    server.once('listening', () => {
-      server.close(() => resolve({ ok: true }));
+    socket.once('timeout', () => {
+      // No SYN-ACK within the timeout. Could be a firewalled bind or
+      // a daemon not on loopback; treat as "probably free" and let
+      // Docker speak up if it disagrees.
+      settle({ ok: true });
     });
-    // Bind on 0.0.0.0 — same address Docker's -p mapping reserves.
-    // Binding only on 127.0.0.1 wouldn't catch the case where another
-    // process holds the same port via 0.0.0.0.
-    server.listen(port, '0.0.0.0');
+    socket.once('error', (err: NodeJS.ErrnoException) => {
+      const code = err.code ?? 'UNKNOWN';
+      if (code === 'ECONNREFUSED') {
+        // Nobody listening — the typical "port is free" signal.
+        settle({ ok: true });
+      } else {
+        // Other errors (EHOSTUNREACH, ENETDOWN, …) aren't our bind
+        // story. Don't pretend we know — surface verbatim so the
+        // builder sees what their network is doing.
+        settle({
+          ok: false,
+          code,
+          message: err.message,
+        });
+      }
+    });
+    socket.connect(port, '127.0.0.1');
   });
 };
 
@@ -143,16 +183,16 @@ export function formatHostPortHeldError(
     lines.push('');
     lines.push(`Aborting — re-run after the conflict is resolved.`);
   } else {
-    lines.push(`Cannot bind host port ${hostPort}: ${systemMessage}`);
+    lines.push(`Cannot reach host port ${hostPort}: ${systemMessage}`);
     lines.push('');
-    if (code === 'EACCES') {
-      lines.push(`Port ${hostPort} is a privileged port (<1024) and your`);
-      lines.push(`current Docker setup can't bind it. For rootful Docker`);
-      lines.push(`(what Monoceros requires) this should normally work —`);
-      lines.push(`check that the docker daemon is running as root.`);
-      lines.push('');
-    }
-    lines.push('You can also move Monoceros off this port by setting');
+    lines.push(`This is not the typical "port already in use" case —`);
+    lines.push(`Monoceros's pre-flight uses a TCP-connect probe (not a`);
+    lines.push(`bind), so EACCES / privileged-port errors normally don't`);
+    lines.push(`appear here. Most likely something on your host network`);
+    lines.push(`stack (firewall, network namespace, …) is interfering with`);
+    lines.push(`loopback connects.`);
+    lines.push('');
+    lines.push('Workaround: move Monoceros off this port by setting');
     lines.push('`routing.hostPort` in ~/.monoceros/monoceros-config.yml.');
     lines.push('');
     lines.push(`Aborting — re-run after the issue is resolved.`);

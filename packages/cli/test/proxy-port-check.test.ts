@@ -121,9 +121,81 @@ describe('preflightHostPort', () => {
     expect(probed).toBe(true);
   });
 
-  it('frames EACCES with privileged-port hint', () => {
+  it('frames an EACCES result with a non-misleading hint', () => {
+    // Connect probes never raise EACCES themselves (connecting to a
+    // port doesn't need privilege the way binding does). But the
+    // formatter still has to render something usable if a probe
+    // override returns EACCES — assert it doesn't blame Docker.
     const msg = formatHostPortHeldError(80, 'EACCES', 'permission denied');
-    expect(msg).toContain('privileged port');
+    expect(msg).not.toContain('current Docker setup');
     expect(msg).toContain('routing.hostPort');
   });
 });
+
+// Direct integration test of the real port probe — no stubs, no
+// mocks, runs against a live TCP listener on a random high port.
+// Without this, an earlier version that bound (with Node) instead of
+// connecting passed every unit test and broke on Linux with EACCES
+// at port 80. The bind-probe vs connect-probe distinction is exactly
+// what this test exercises.
+describe('realPortProbe (live integration)', () => {
+  it('reports a port held by a real listener as not-free', async () => {
+    const { createServer } = await import('node:net');
+    const port = await new Promise<number>((resolve, reject) => {
+      const s = createServer();
+      s.listen(0, '127.0.0.1', () => {
+        const addr = s.address();
+        if (addr && typeof addr === 'object') {
+          // Defer the resolve so the listener has actually settled.
+          resolve(addr.port);
+        } else {
+          reject(new Error('no port assigned'));
+        }
+      });
+      s.once('error', reject);
+      // We DO NOT close — the server stays up while preflight probes.
+      // afterEach below tears it down.
+      heldServer = s;
+    });
+    try {
+      // The proxy is "absent" → preflight runs the probe.
+      await expect(
+        preflightHostPort(port, {
+          docker: dockerStubs.proxyAbsent(),
+        }),
+      ).rejects.toThrow(/already in use/i);
+    } finally {
+      heldServer?.close();
+      heldServer = undefined;
+    }
+  });
+
+  it('passes silently when nothing listens on the port', async () => {
+    // Bind + immediately release to grab a port we know is free.
+    const { createServer } = await import('node:net');
+    const port = await new Promise<number>((resolve, reject) => {
+      const s = createServer();
+      s.listen(0, '127.0.0.1', () => {
+        const addr = s.address();
+        if (addr && typeof addr === 'object') {
+          const p = addr.port;
+          s.close(() => resolve(p));
+        } else {
+          reject(new Error('no port assigned'));
+        }
+      });
+      s.once('error', reject);
+    });
+    // Now the port is free for the duration of this test (in practice
+    // — a brief race window, but vitest serializes within a file).
+    await expect(
+      preflightHostPort(port, {
+        docker: dockerStubs.proxyAbsent(),
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+// Hoisted so the rejects-toThrow case can clean up its listener even
+// when the assertion path bails early.
+let heldServer: import('node:net').Server | undefined;
