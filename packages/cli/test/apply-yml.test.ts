@@ -914,6 +914,33 @@ describe('runApply', () => {
     );
   });
 
+  it('refuses to apply on rootless Docker with a clear actionable error', async () => {
+    // Rootless Docker's UID-shift breaks bind-mount file ownership
+    // across the host/container boundary in a way we have no clean
+    // workaround for (docker doesn't expose idmap as a `--mount`
+    // option). Refusing early is much better UX than letting the
+    // builder hit opaque permission errors mid-clone.
+    await writeYml('rl-refuse', 'schemaVersion: 1\nname: rl-refuse\n');
+    let devcontainerCalled = false;
+    await expect(
+      runApply({
+        ...baseRunOpts,
+        devcontainerSpawn: async () => {
+          devcontainerCalled = true;
+          return 0;
+        },
+        dockerInfoSpawn: async () => ({
+          stdout: '["name=seccomp,profile=builtin","name=rootless"]',
+          exitCode: 0,
+        }),
+        name: 'rl-refuse',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/rootful.*mode[\s\S]*usermod -aG docker/);
+    // Confirm the short-circuit: no docker build attempted.
+    expect(devcontainerCalled).toBe(false);
+  });
+
   it('does NOT emit idmap on bind mounts (docker --mount does not accept it)', async () => {
     // Earlier attempts (1.6.3 / 1.6.5) tried `,idmap` and `,idmap=true`
     // as bind-mount options, on the (wrong) assumption that Docker
@@ -934,14 +961,13 @@ describe('runApply', () => {
         '',
       ].join('\n'),
     );
+    // Use the default rootful stub — rootless is refused entirely
+    // now (covered by the dedicated rootless-refuse test above), so
+    // testing "no idmap on rootless" is moot. What we still want to
+    // guard against is "someone re-introduces idmap on rootful by
+    // accident".
     await runApply({
       ...baseRunOpts,
-      // Force the rootless code path — the test guards both modes
-      // by ensuring the result is identical.
-      dockerInfoSpawn: async () => ({
-        stdout: '["name=rootless"]',
-        exitCode: 0,
-      }),
       name: 'no-idmap',
       monocerosHome: home,
     });
@@ -976,12 +1002,9 @@ describe('runApply', () => {
         '',
       ].join('\n'),
     );
+    // Default rootful stub — same reasoning as the test above.
     await runApply({
       ...baseRunOpts,
-      dockerInfoSpawn: async () => ({
-        stdout: '["name=rootless"]',
-        exitCode: 0,
-      }),
       name: 'cmp-clean',
       monocerosHome: home,
     });

@@ -214,6 +214,48 @@ EOF
 fi
 ok "Docker daemon reachable"
 
+# Rootless docker doesn't work with Monoceros's bind-mount model:
+# files created inside the container end up with shifted UIDs on the
+# host that the builder can't edit without sudo. Docker doesn't
+# expose the kernel's idmap mount option that would fix this. We
+# refuse here to keep builders from hitting opaque permission errors
+# half an hour into their first apply.
+#
+# Detection mirrors detectDockerMode() in TS: docker info exposes
+# `name=rootless` (or a bare `rootless` token in older versions)
+# under SecurityOptions when the daemon is rootless.
+if [[ "$PLATFORM" == "linux" ]] \
+   && docker info --format '{{json .SecurityOptions}}' 2>/dev/null \
+        | grep -qi 'rootless'; then
+  fail "Docker is running in rootless mode, which Monoceros doesn't support."
+  cat >&2 <<EOF
+
+You're running Docker in "rootless" mode right now. That setup runs
+the daemon without root privileges — sounds safer, but it doesn't
+play well with the way Monoceros shares files between your host and
+the container. Specifically: files created inside the container
+(cloned repos, new commits, build output) end up with ownership
+that your normal host user can't edit without sudo. That breaks the
+"edit on host, run in container" loop the entire workflow is built
+around.
+
+To fix, switch back to standard rootful Docker:
+
+  ${CYAN}systemctl --user disable --now docker.service docker.socket${RESET}
+  ${CYAN}dockerd-rootless-setuptool.sh uninstall${RESET}
+  ${CYAN}rm -rf ~/.local/share/docker${RESET}
+  ${CYAN}unset DOCKER_HOST${RESET}
+  ${CYAN}sudo systemctl enable --now docker${RESET}
+  ${CYAN}sudo usermod -aG docker \$USER${RESET}
+
+Verify with ${CYAN}docker info | grep -i rootless${RESET} — it should
+produce no output. Then re-run this installer.
+
+Background: see $(dim "docs/docker-on-linux.md") in the workbench repo.
+EOF
+  exit 1
+fi
+
 if ! command -v node >/dev/null 2>&1; then
   fail "Node is not installed."
   case "$PLATFORM" in

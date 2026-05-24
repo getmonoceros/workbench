@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { cyan } from '../util/format.js';
 
 /**
  * Whether the host's docker daemon runs as root (rootful) or under a
@@ -79,4 +80,42 @@ export async function detectDockerMode(
   } catch {
     return 'rootful';
   }
+}
+
+/**
+ * Builder-facing error rendered when we detect rootless Docker.
+ * Kept user-friendly on purpose — no "UID shift" / "subuid" jargon.
+ * Frames the consequence ("files you create in the container can't
+ * be edited from your host") rather than the cause, and gives the
+ * exact switch-to-rootful command block. install.sh duplicates this
+ * text in bash (deliberately — we can't share strings across
+ * runtimes without ceremony).
+ */
+export function formatRootlessNotSupportedError(): string {
+  return [
+    `Monoceros requires Docker in "rootful" mode.`,
+    ``,
+    `You're running Docker in "rootless" mode right now. That setup`,
+    `runs the daemon without root privileges — sounds safer, but it`,
+    `doesn't play well with the way Monoceros shares files between`,
+    `your host and the container. Specifically: files created inside`,
+    `the container (cloned repos, new commits, build output) end up`,
+    `with ownership that your normal host user can't edit without`,
+    `sudo. That breaks the "edit on host, run in container" loop the`,
+    `entire workflow is built around.`,
+    ``,
+    `To fix, switch back to standard rootful Docker:`,
+    ``,
+    cyan(`  systemctl --user disable --now docker.service docker.socket`),
+    cyan(`  dockerd-rootless-setuptool.sh uninstall`),
+    cyan(`  rm -rf ~/.local/share/docker`),
+    cyan(`  unset DOCKER_HOST`),
+    cyan(`  sudo systemctl enable --now docker`),
+    cyan(`  sudo usermod -aG docker $USER`),
+    ``,
+    `Verify with ${cyan('docker info | grep -i rootless')} — it should`,
+    `produce no output. Then re-run.`,
+    ``,
+    `Background: see ${cyan('docs/docker-on-linux.md')} in the workbench repo.`,
+  ].join('\n');
 }

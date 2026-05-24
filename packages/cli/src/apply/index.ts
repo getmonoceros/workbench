@@ -43,6 +43,7 @@ import {
 import {
   type DockerInfoSpawn,
   detectDockerMode,
+  formatRootlessNotSupportedError,
 } from '../devcontainer/docker-mode.js';
 import { type DevcontainerSpawn } from '../devcontainer/cli.js';
 import {
@@ -249,15 +250,22 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // ── Scaffold ─────────────────────────────────────────────────
   section('Scaffold');
 
-  // Probe the host docker daemon for its mode (rootful vs rootless).
-  // The result drives whether the generated devcontainer.json /
-  // compose.yaml include `idmap` on their bind mounts — required for
-  // rootless Docker on Linux where bind mounts otherwise apply a
-  // user-namespace shift that breaks file ownership across the
-  // host/container boundary. See docker-mode.ts for the rationale.
+  // Probe the host docker daemon. Two purposes today:
+  //   - Refuse to apply on rootless Docker, which doesn't work with
+  //     our bind-mount model (host/container file ownership doesn't
+  //     line up; Docker doesn't expose the `idmap` mount option that
+  //     would fix this). The refusal lands before any docker build
+  //     or container start, so the builder gets a clear actionable
+  //     message instead of permission-denied surprises mid-clone.
+  //   - Plumb the mode through to scaffold for any future mode-
+  //     dependent code paths (parameter is currently unused after
+  //     the idmap revert — kept so the wiring is in place).
   const dockerMode = await detectDockerMode({
     ...(opts.dockerInfoSpawn ? { spawn: opts.dockerInfoSpawn } : {}),
   });
+  if (dockerMode === 'rootless') {
+    throw new Error(formatRootlessNotSupportedError());
+  }
 
   await fs.mkdir(targetDir, { recursive: true });
   await writeScaffold(createOpts, targetDir, { dockerMode });
