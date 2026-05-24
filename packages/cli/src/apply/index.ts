@@ -171,21 +171,34 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // container teardown so they're in place when post-create.sh runs.
   // Identity resolution priority: yml override → monoceros-config.yml
   // defaults → host global → persisted .monoceros/gitconfig → prompt.
+  //
+  // Skip identity collection entirely when there's no obvious reason
+  // to need one: no repos to clone, no explicit yml.git.user, no
+  // defaults.git.user. Without those, asking the builder for a
+  // committer identity is pure friction — they didn't ask for git
+  // and might just want a sandbox container. They can `monoceros
+  // add-repo` later, at which point the next apply re-evaluates and
+  // collects identity then.
+  const hasRepos = (createOpts.repos ?? []).length > 0;
+  const hasContainerGitUser = parsed.config.git?.user !== undefined;
+  const hasDefaultGitUser = globalConfig?.defaults?.git?.user !== undefined;
   const idLogger = {
     info: logger.info,
     warn: logger.warn ?? logger.info,
   };
-  await collectGitIdentity(targetDir, {
-    ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
-    ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),
-    ...(parsed.config.git?.user
-      ? { containerOverride: parsed.config.git.user }
-      : {}),
-    ...(globalConfig?.defaults?.git?.user
-      ? { defaults: globalConfig.defaults.git.user }
-      : {}),
-    logger: idLogger,
-  });
+  if (hasRepos || hasContainerGitUser || hasDefaultGitUser) {
+    await collectGitIdentity(targetDir, {
+      ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
+      ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),
+      ...(parsed.config.git?.user
+        ? { containerOverride: parsed.config.git.user }
+        : {}),
+      ...(globalConfig?.defaults?.git?.user
+        ? { defaults: globalConfig.defaults.git.user }
+        : {}),
+      logger: idLogger,
+    });
+  }
   // Pre-fetch HTTPS credentials for every unique host derived from
   // the declared repos. Pre-flight: if any host returns no credentials,
   // fail fast with provider-specific setup hints — much more

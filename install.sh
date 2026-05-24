@@ -147,35 +147,16 @@ EOF
     linux)
       cat >&2 <<EOF
 
-Monoceros needs Docker. Install it + grant your user access — paste this block:
+Monoceros needs Docker. Paste this block to install + grant access:
 
   ${CYAN}sudo -v${RESET}
   ${CYAN}curl -fsSL https://get.docker.com | sudo sh${RESET}
   ${CYAN}sudo usermod -aG docker \$USER${RESET}
 
-What each line does:
+Ignore the trailing "rootless mode" / "privileged service" notes
+that $(dim "get.docker.com") prints — alternative install paths, not steps.
 
-  1. caches your sudo password ONCE so the rest of the block runs
-     without further prompts. Critical for paste-blocks with multiple
-     sudo calls — otherwise a delayed password prompt could swallow
-     subsequent lines as keyboard input.
-  2. installs Docker Engine (rootful) + starts it as a systemd service.
-  3. adds your user to the 'docker' group. The daemon socket is
-     root-owned; group membership is what lets you talk to it
-     without sudo. On a single-user dev VM you have sudo anyway,
-     so this is convenience, not a new privilege boundary.
-
-No 'newgrp docker' / no logout / no relog needed. Monoceros detects
-the "I'm in /etc/group but my current shell hasn't loaded that yet"
-state and self-recovers via 'sg docker' under the hood — every
-'monoceros …' call in any terminal just works.
-
-The trailing notes $(dim "get.docker.com") prints about "rootless mode"
-and "privileged service" are alternative install paths — ignore them.
-
-Other paths (distro packages, Docker Desktop, etc.):
-
-  $(dim "https://docs.docker.com/engine/install/")
+Other paths: $(dim "https://docs.docker.com/engine/install/")
 
 Then re-run this installer.
 EOF
@@ -209,18 +190,12 @@ EOF
     linux)
       cat >&2 <<EOF
 
-Most common case after a fresh Docker install: your user isn't in
-the 'docker' group yet. Paste:
+You're probably not in the 'docker' group yet:
 
   ${CYAN}sudo usermod -aG docker \$USER${RESET}
 
-Then re-run this installer. No 'newgrp', no logout, no relog —
-the installer + monoceros itself detect the "I'm in /etc/group but
-my current shell hasn't loaded it" state and self-recover via
-'sg docker' under the hood.
-
-If you're already in the 'docker' group and 'docker info' still
-fails, the daemon may not be running:
+If you already are and 'docker info' still fails, the daemon may
+be stopped:
 
   ${CYAN}sudo systemctl start docker${RESET}
 
