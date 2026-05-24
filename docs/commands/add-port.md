@@ -38,11 +38,12 @@ Das resultierende yml-Layout:
 ```yaml
 routing:
   ports:
-    - 3000 # erster Eintrag = <name>.localhost
+    # erster Eintrag = <name>.localhost
+    - 3000
     - 5173
-  vscodeAutoForward:
-    false # default false; manuell auf true setzen, um
-    # VS Code's eigene Forwards parallel zu haben
+  # default false; auf true setzen, um VS Code's eigene Forwards parallel
+  # zu Traefik zu aktivieren
+  vscodeAutoForward: false
 ```
 
 ## Argumente
