@@ -587,13 +587,14 @@ Zustände dokumentieren.
      Path + andere URL → Validierungsfehler beim Apply
 
 2. ✅ **`add-port` / Port-Management via Reverse-Proxy mit
-   Hostname-Routing** — erledigt 2026-05-24. Designentscheidung in
+   Hostname-Routing** — erledigt 2026-05-25, ausgeliefert in 1.7.x.
+   Designentscheidung in
    [ADR 0007](./adr/0007-port-management-traefik.md): Singleton-Traefik
    im Docker-Network `monoceros-proxy`, Hostname-Routing über
    `*.localhost` (RFC 6761), Hot-Reload via File-Provider unter
    `$MONOCEROS_HOME/traefik/dynamic/<name>.yml`.
 
-   **Was live ist**:
+   **Was live ist** (1.7.0):
    - Schema umgebaut zu einem `routing:`-Block (`routing.ports`,
      `routing.vscodeAutoForward`); `ide.vscodeAutoForwardPorts` aus
      früherem Zwischenstand verworfen zugunsten der konsolidierten
@@ -620,12 +621,43 @@ Zustände dokumentieren.
    - Beispiel-Skript `docs/examples/serve-ports.mjs` für manuelle
      Browser-Smoketests.
 
+   **Im Verlauf dazugekommen** (1.7.1 – 1.7.4):
+   - `--default`-Flag für `add-port` — promoted einen Port an
+     Position 0 in `routing.ports` (= `<name>.localhost`-Default),
+     ohne Liste neu aufzubauen. Move bei vorhandenem Port, insert
+     bei neuem; mehrere Ports + `--default` ist ein expliziter
+     Usage-Error.
+   - `--with-ports`-Flag für `init` — pre-seeded `routing.ports`
+     beim init (`monoceros init <name> --with-ports=3000,5173,6006`),
+     beide CLI-Formen (`=value` + two-token) plus
+     Shell-Tokenization mit Leerzeichen. Aktiver `routing:`-Block
+     in der generierten yml inkl. Container-Name-Substitution im
+     Default-Kommentar und sichtbarem `vscodeAutoForward`-Hint.
+   - **Pre-Flight Connect-statt-Bind** (1.7.3) — der Pre-Flight
+     versuchte ursprünglich selbst auf Host-Port 80 zu binden, was
+     unter Linux EACCES wirft (Port <1024 = privilegiert; Node-
+     Prozess ist unprivilegiert, anders als der Docker-Daemon).
+     Umgestellt auf TCP-Connect-Probe — connects brauchen keine
+     Privileg, und „belegt" wird sauber erkannt.
+   - **Builder-facing Output ohne `docs/`-/ADR-Refs** (1.7.4) —
+     sechs Stellen leakten interne Doku-Anker (`docs/konzept.md`,
+     `ADR 0007` etc.) in generierte yml's und Error-Messages.
+     Bereinigt; Regression-Guard
+     (`test/builder-facing-no-docs-refs.test.ts`) testet alle
+     Output-Pfade per Pattern-Match.
+   - **Test-Disziplin**: Live-Integration-Tests für `realPortProbe`
+     (echter TCP-Listener) und CLI-Parser-Tests für `--with-ports`
+     ergänzt, nachdem zwei Bugs durch stub-only-Tests gerutscht
+     waren (Linux-EACCES, OOM-Loop). Jetzt 373/373 grün.
+
    **Bewusst aufgeschoben** (nicht Teil von Task 2):
    - TLS / HTTPS — `entryPoints: [web]` ist so verdrahtet, dass ein
      `websecure`-Entrypoint später additiv reingeht.
    - Auto-Migration bestehender Container — pre-1.x-Brechung
      akzeptiert; `monoceros remove <name>` + `apply <name>` ist
-     der dokumentierte Pfad.
+     der dokumentierte Pfad. Alte yml-Header mit ADR-Verweisen
+     werden von `add-port` nicht angefasst (comment-preserving) —
+     Cleanup ist Hand-Edit oder remove+init.
    - TCP-Tunnel für DB-Services — separates Geschwister-Item
      (Task 3 unten).
    - Test-Plan-Update für die Port-Strecke — Teil von Task 4
