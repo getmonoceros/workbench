@@ -25,6 +25,7 @@ import {
   removeDynamicConfig,
   writeDynamicConfig,
 } from '../proxy/dynamic.js';
+import { preflightHostPort } from '../proxy/port-check.js';
 import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
@@ -538,6 +539,17 @@ async function syncPortsToProxy(
   } catch {
     // Bad monoceros-config.yml is the user's problem to fix; don't
     // strand the sync over it. Default 80 is the right fallback.
+  }
+
+  // Pre-flight outside the warn-only try/catch: a held host port is
+  // a hard-fail (the route would never come up otherwise), and the
+  // builder needs the actionable message verbatim. The yml is
+  // already updated at this point — that's fine, it's the source of
+  // truth and the next apply heals once the conflict is resolved.
+  if (allPorts.length > 0) {
+    await preflightHostPort(hostPort, {
+      ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
+    });
   }
 
   try {

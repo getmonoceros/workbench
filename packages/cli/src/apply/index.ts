@@ -55,6 +55,7 @@ import {
   type DockerExec as ProxyDockerExec,
 } from '../proxy/index.js';
 import { removeDynamicConfig, writeDynamicConfig } from '../proxy/dynamic.js';
+import { preflightHostPort } from '../proxy/port-check.js';
 import {
   collectGitIdentity,
   type IdentityPrompt,
@@ -321,6 +322,16 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // running proxy. See ADR 0007.
   const ports = createOpts.ports ?? [];
   const hasPorts = ports.length > 0;
+  if (hasPorts) {
+    // Pre-flight: bail with an actionable hint before `docker run`
+    // tries to bind a held port. Throws on conflict — the message
+    // names the routing.hostPort escape hatch and asks the builder
+    // to either free the port or set a different one.
+    await preflightHostPort(proxyHostPort(globalConfig), {
+      ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
+    });
+  }
+
   try {
     if (hasPorts) {
       await writeDynamicConfig(opts.name, ports, { monocerosHome: home });

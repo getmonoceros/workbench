@@ -5,6 +5,7 @@ import { readConfig } from '../config/io.js';
 import { containerConfigPath, containerDir } from '../config/paths.js';
 import { runStart } from '../devcontainer/compose.js';
 import { ensureProxy } from '../proxy/index.js';
+import { preflightHostPort } from '../proxy/port-check.js';
 import { dispatch } from './_dispatch.js';
 
 export const startCommand = defineCommand({
@@ -25,19 +26,28 @@ export const startCommand = defineCommand({
   run({ args }) {
     return dispatch(async () => {
       // Re-establish the Traefik singleton before bringing the
-      // container up when the yml declares ports. Safe to call when
-      // the proxy is already up (idempotent) and a no-op when no
-      // yml exists (start would have failed anyway). See ADR 0007.
+      // container up when the yml declares ports. The pre-flight
+      // host-port check fails hard with an actionable hint if port
+      // 80 (or the configured `routing.hostPort`) is held by
+      // somebody else; ensureProxy itself is idempotent and safe to
+      // call when the proxy is already up. See ADR 0007.
+      let needsProxy = false;
+      let hostPort = 80;
       try {
         const parsed = await readConfig(containerConfigPath(args.name));
         if ((parsed.config.routing?.ports ?? []).length > 0) {
+          needsProxy = true;
           const global = await readMonocerosConfig();
-          await ensureProxy({ hostPort: proxyHostPort(global) });
+          hostPort = proxyHostPort(global);
         }
       } catch (err) {
         consola.warn(
-          `Could not pre-flight Traefik proxy: ${err instanceof Error ? err.message : String(err)}. Continuing.`,
+          `Could not read container yml ahead of start: ${err instanceof Error ? err.message : String(err)}. Skipping Traefik pre-flight.`,
         );
+      }
+      if (needsProxy) {
+        await preflightHostPort(hostPort);
+        await ensureProxy({ hostPort });
       }
       return runStart({ root: containerDir(args.name) });
     });
