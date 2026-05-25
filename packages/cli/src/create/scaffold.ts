@@ -762,6 +762,74 @@ export function buildCodeWorkspaceJson(opts: CreateOptions): CodeWorkspaceFile {
 }
 
 /**
+ * Merge a generator-produced workspace into whatever the builder may
+ * have hand-edited into the on-disk file. The `.code-workspace` is
+ * conceptually a builder artifact — VS Code lets people add local
+ * folders to it, drop in `settings:` / `extensions:` blocks, reorder
+ * roots, etc. A blind overwrite on every `apply` would silently nuke
+ * all of that.
+ *
+ * Merge rules (favour-builder):
+ *
+ *   - Every folder the builder has in their `folders[]` stays, in
+ *     the same order. We don't touch labels or paths the user
+ *     already wrote.
+ *   - Any folder from the generator that ISN'T present in the
+ *     builder's `folders[]` (matched by `path`) is appended at the
+ *     end. That covers the typical case "I just added a new repo via
+ *     `monoceros add-repo` and want it to show up automatically".
+ *   - Folders that exist in the builder file but no longer come from
+ *     the generator (e.g. yml repo removed) are NOT dropped — the
+ *     builder may have kept the folder around on purpose. Cleanup
+ *     is a manual edit.
+ *   - Top-level fields other than `folders` (e.g. `settings`,
+ *     `extensions`, `launch`, `tasks`, `remoteAuthority`) carry
+ *     through verbatim.
+ *   - If `existing` is null / undefined / unparseable / missing
+ *     `folders`, the generator output is taken as-is.
+ *
+ * Pure function — no I/O. `writeScaffold` is the one site that
+ * reads + writes; this just transforms.
+ */
+export function mergeCodeWorkspace(
+  existing: unknown,
+  generated: CodeWorkspaceFile,
+): Record<string, unknown> {
+  // Bail out to the generator when the existing file isn't a sane
+  // workspace document. We could try to repair partial shapes but
+  // the simpler invariant is: a hand-edit that breaks JSON or drops
+  // `folders` is the builder's problem to fix.
+  if (
+    !existing ||
+    typeof existing !== 'object' ||
+    Array.isArray(existing) ||
+    !Array.isArray((existing as { folders?: unknown }).folders)
+  ) {
+    return { ...generated };
+  }
+  const existingObj = existing as Record<string, unknown>;
+  const existingFolders = existingObj.folders as CodeWorkspaceFolder[];
+  const existingPaths = new Set(
+    existingFolders
+      .map((f) => (f && typeof f === 'object' ? f.path : undefined))
+      .filter((p): p is string => typeof p === 'string'),
+  );
+
+  // Preserve builder-side folders verbatim; append generator-only ones.
+  const merged: CodeWorkspaceFolder[] = [...existingFolders];
+  for (const g of generated.folders) {
+    if (!existingPaths.has(g.path)) merged.push(g);
+  }
+
+  // Top-level pass-through: keep all builder-set keys, overwrite
+  // only `folders`. Order: builder's keys first (to keep their
+  // structure recognizable on round-trip), then folders.
+  const out: Record<string, unknown> = { ...existingObj };
+  out.folders = merged;
+  return out;
+}
+
+/**
  * Generate the `post-create.sh` content for a solution. Base sections
  * (git include + pnpm install) are fixed. The `installUrls` and
  * `repos` sections are appended only when those yml fields are
@@ -1027,8 +1095,23 @@ export async function writeScaffold(
     await fs.rm(composePath);
   }
 
-  await fs.writeFile(
-    path.join(targetDir, `${opts.name}.code-workspace`),
-    JSON.stringify(buildCodeWorkspaceJson(opts), null, 2) + '\n',
-  );
+  // `.code-workspace` is a builder artifact, not a pure generator
+  // output — VS Code lets people drop local folders, settings,
+  // extensions etc. into it. Read what's there, merge with what the
+  // generator produces, write back. See mergeCodeWorkspace for the
+  // exact rules.
+  const workspacePath = path.join(targetDir, `${opts.name}.code-workspace`);
+  let existingWorkspace: unknown;
+  try {
+    const raw = await fs.readFile(workspacePath, 'utf8');
+    existingWorkspace = JSON.parse(raw);
+  } catch {
+    // ENOENT (first apply) or parse error — fall through to the
+    // generator output. mergeCodeWorkspace handles both via the
+    // null-existing branch.
+    existingWorkspace = undefined;
+  }
+  const generated = buildCodeWorkspaceJson(opts);
+  const merged = mergeCodeWorkspace(existingWorkspace, generated);
+  await fs.writeFile(workspacePath, JSON.stringify(merged, null, 2) + '\n');
 }
