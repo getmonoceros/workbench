@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
-import { isMap, parseDocument, YAMLMap } from 'yaml';
+import { isMap, parseDocument } from 'yaml';
 import { FeatureOptionValueSchema, GitUserSchema, REGEX } from './schema.js';
 import { monocerosConfigPath, monocerosHome } from './paths.js';
 
@@ -206,8 +206,21 @@ export async function writeGlobalDefaultGitUser(
     return { filePath, created: true, alreadySet: false };
   }
 
-  // Existing file — comment-preserving AST edit. Walks the tree and
-  // either fills in / leaves alone the `defaults.git.user` block.
+  // Existing file. We DELIBERATELY do not use the yaml AST setter
+  // here even though the rest of the codebase prefers it: the yaml
+  // library's comment-attachment heuristic gets confused by the
+  // shipped sample's structure (section-divider comments between
+  // sub-blocks attach to the wrong node, so a `set('git', …)` lands
+  // mid-file with comments rearranged around it). Result on real
+  // user files was visible chaos.
+  //
+  // String-based insert is uglier as code but deterministic for
+  // text: we parse only to validate, then locate the `defaults:` /
+  // `git.user` regions textually and either insert a new block or
+  // bail because one's already there.
+
+  // First: validate via the real schema. A user-broken file should
+  // fail loudly here, before we try to splice into it.
   const doc = parseDocument(text, { prettyErrors: true });
   if (doc.errors.length > 0) {
     throw new Error(
@@ -215,49 +228,63 @@ export async function writeGlobalDefaultGitUser(
     );
   }
 
-  // Ensure `defaults` exists as a map. The shipped sample has
-  // `defaults:` uncommented with all sub-blocks commented, which
-  // parses as `defaults: null` — replace that with an empty map so
-  // we can set fields under it.
-  const defaultsNode = doc.get('defaults', true);
-  let defaultsMap: YAMLMap;
-  if (defaultsNode && isMap(defaultsNode)) {
-    defaultsMap = defaultsNode;
-  } else {
-    defaultsMap = new YAMLMap();
-    doc.set('defaults', defaultsMap);
-  }
-
-  const gitNode = defaultsMap.get('git', true);
-  let gitMap: YAMLMap;
-  if (gitNode && isMap(gitNode)) {
-    gitMap = gitNode;
-  } else {
-    gitMap = new YAMLMap();
-    defaultsMap.set('git', gitMap);
-  }
-
-  const userNode = gitMap.get('user', true);
-  if (userNode && isMap(userNode)) {
-    const existingName = userNode.get('name');
-    const existingEmail = userNode.get('email');
-    if (
-      typeof existingName === 'string' &&
-      existingName.length > 0 &&
-      typeof existingEmail === 'string' &&
-      existingEmail.length > 0
-    ) {
-      // Already set — don't clobber. Caller decides what to tell the
-      // builder.
-      return { filePath, created: false, alreadySet: true };
+  // alreadySet: walk the parsed structure (read-only) just to detect
+  // an existing defaults.git.user. We never write through the AST.
+  const parsedDefaults = doc.get('defaults', true);
+  if (parsedDefaults && isMap(parsedDefaults)) {
+    const gitNode = parsedDefaults.get('git', true);
+    if (gitNode && isMap(gitNode)) {
+      const userNode = gitNode.get('user', true);
+      if (userNode && isMap(userNode)) {
+        const existingName = userNode.get('name');
+        const existingEmail = userNode.get('email');
+        if (
+          typeof existingName === 'string' &&
+          existingName.length > 0 &&
+          typeof existingEmail === 'string' &&
+          existingEmail.length > 0
+        ) {
+          return { filePath, created: false, alreadySet: true };
+        }
+      }
     }
   }
 
-  const userMap = new YAMLMap();
-  userMap.set('name', user.name);
-  userMap.set('email', user.email);
-  gitMap.set('user', userMap);
+  // No active defaults.git.user. Splice an active block into the
+  // file's text. Two cases:
+  //
+  //   A) `defaults:` exists as a top-level line → insert the
+  //      git/user block right after it. 2-space indent puts it at
+  //      the same level as features/git/etc. The block goes BEFORE
+  //      any existing sub-keys, but that's harmless — yaml mapping
+  //      order is presentational, not semantic.
+  //
+  //   B) `defaults:` doesn't exist (rare — file with only routing,
+  //      say) → append a fresh `defaults:` block at the end.
+  //
+  // Either way, the surrounding comments stay byte-for-byte
+  // unchanged: we never touch them, just splice new lines in.
+  const block = [
+    '  git:',
+    '    user:',
+    `      name: ${user.name}`,
+    `      email: ${user.email}`,
+    '',
+  ].join('\n');
 
-  await fs.writeFile(filePath, String(doc), 'utf8');
+  const defaultsLineMatch = text.match(/^defaults:[ \t]*\r?\n/m);
+  let newText: string;
+  if (defaultsLineMatch && defaultsLineMatch.index !== undefined) {
+    const insertAt = defaultsLineMatch.index + defaultsLineMatch[0].length;
+    newText = text.slice(0, insertAt) + block + text.slice(insertAt);
+  } else {
+    // Make sure we end the existing content with a newline before
+    // appending the new section.
+    const trimmedEnd = text.replace(/\s*$/, '\n');
+    newText =
+      trimmedEnd + '\n' + ['defaults:', block].join('\n').replace(/\n$/, '\n');
+  }
+
+  await fs.writeFile(filePath, newText, 'utf8');
   return { filePath, created: false, alreadySet: false };
 }

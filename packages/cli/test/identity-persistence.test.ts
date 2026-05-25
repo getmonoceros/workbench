@@ -190,6 +190,73 @@ describe('writeGlobalDefaultGitUser', () => {
     });
   });
 
+  it('preserves the full shipped-sample structure when injecting git.user (no comment chaos)', async () => {
+    // Regression for the bug where the yaml-AST setter rearranged the
+    // shipped sample's comments (section dividers between sub-blocks
+    // attached to the wrong node, so the inserted git block landed
+    // mid-features with comments dangling around it). The new
+    // string-based insert must keep every comment byte-for-byte in
+    // its original position.
+    const sampleText = [
+      '# Monoceros — builder-global config.',
+      '',
+      'schemaVersion: 1',
+      '',
+      '# ── defaults section ─────────────────',
+      'defaults:',
+      '  # Git committer identity ...',
+      '  # git:',
+      '  #   user:',
+      '  #     name: Your Name',
+      '  #     email: you@example.com',
+      '',
+      '  # Per-feature option defaults ...',
+      '  features:',
+      '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
+      '      apiKey: sk-live-value',
+      '',
+      '# ── routing section ─────────────────',
+      'routing:',
+      '  hostPort: 80',
+      '',
+    ].join('\n');
+    await writeFile(path.join(home, 'monoceros-config.yml'), sampleText);
+    await writeGlobalDefaultGitUser(
+      { name: 'Alice', email: 'a@example.com' },
+      { monocerosHome: home },
+    );
+    const after = await readFile(
+      path.join(home, 'monoceros-config.yml'),
+      'utf8',
+    );
+    // Every line of the original sample (header, section dividers,
+    // commented git block, features block, routing block) must
+    // still be present, unchanged, in order.
+    for (const line of sampleText.split('\n')) {
+      if (line.length === 0) continue;
+      expect(after).toContain(line);
+    }
+    // The routing section divider must come AFTER the features
+    // section divider — i.e. the section ordering survives the
+    // insert.
+    const featuresDividerAt = after.indexOf('# ── defaults section');
+    const routingDividerAt = after.indexOf('# ── routing section');
+    expect(featuresDividerAt).toBeGreaterThanOrEqual(0);
+    expect(routingDividerAt).toBeGreaterThan(featuresDividerAt);
+    // And of course the active block parses into the right shape.
+    const parsed = await readMonocerosConfig({ monocerosHome: home });
+    expect(parsed?.defaults?.git?.user).toEqual({
+      name: 'Alice',
+      email: 'a@example.com',
+    });
+    expect(
+      parsed?.defaults?.features?.[
+        'ghcr.io/getmonoceros/monoceros-features/claude-code:1'
+      ]?.apiKey,
+    ).toBe('sk-live-value');
+    expect(parsed?.routing?.hostPort).toBe(80);
+  });
+
   it('handles the shipped-sample "defaults: null" shape', async () => {
     // The shipped sample has `defaults:` uncommented with every
     // sub-block commented out — that parses as `defaults: null`. The
