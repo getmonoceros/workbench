@@ -253,6 +253,71 @@ describe('resolveIdentityWithPrompt — scope prompt only when both keys come fr
     });
   });
 
+  it('triggers the scope prompt when both keys come from .monoceros/gitconfig and no defaults are set', async () => {
+    // Regression for the case the builder hit: monoceros-config
+    // identity removed, but `.monoceros/gitconfig` still carries the
+    // values from an earlier apply. Without this prompt, apply would
+    // silently use the persisted values and never re-offer to write
+    // them to monoceros-config.
+    let scopeCtx: { reason: string; name: string; email: string } | undefined;
+    const result = await resolveIdentityWithPrompt({
+      spawn: async () => ({ value: '', exitCode: 1 }),
+      prompt: async () => {
+        throw new Error('prompt should not be called — persisted has values');
+      },
+      persistedValues: {
+        name: 'Persisted Name',
+        email: 'persisted@example.com',
+      },
+      scopePrompt: async (ctx) => {
+        scopeCtx = ctx;
+        return 'g';
+      },
+      logger: { info: () => {}, warn: () => {} },
+    });
+    expect(scopeCtx?.reason).toBe('persisted');
+    expect(scopeCtx?.name).toBe('Persisted Name');
+    expect(result.prompted?.scope).toBe('g');
+  });
+
+  it('returns prompted=undefined when the builder picks `n` (keep as-is)', async () => {
+    // `n` is the "skip persistence" option — the values are valid
+    // for this apply (via .monoceros/gitconfig), but the builder
+    // explicitly chose not to write them anywhere new. Result.prompted
+    // stays undefined so the caller doesn't try to persist.
+    const result = await resolveIdentityWithPrompt({
+      spawn: async () => ({ value: '', exitCode: 1 }),
+      prompt: async () => undefined,
+      persistedValues: {
+        name: 'Persisted',
+        email: 'persisted@example.com',
+      },
+      scopePrompt: async () => 'n',
+      logger: { info: () => {}, warn: () => {} },
+    });
+    expect(result.name).toBe('Persisted');
+    expect(result.prompted).toBeUndefined();
+  });
+
+  it('skips the scope prompt when defaults already cover the identity', async () => {
+    let scopeCalled = 0;
+    const result = await resolveIdentityWithPrompt({
+      spawn: async () => ({ value: '', exitCode: 1 }),
+      prompt: async () => {
+        throw new Error('prompt should not be called');
+      },
+      defaults: { name: 'Default Name', email: 'default@example.com' },
+      scopePrompt: async () => {
+        scopeCalled++;
+        return 'g';
+      },
+      logger: { info: () => {}, warn: () => {} },
+    });
+    expect(scopeCalled).toBe(0);
+    expect(result.prompted).toBeUndefined();
+    expect(result.name).toBe('Default Name');
+  });
+
   it('skips the scope prompt when only one key came from the prompt', async () => {
     // Host has name but no email — the email comes from the prompt.
     // The scope prompt makes no sense in this half-prompted state

@@ -24,16 +24,34 @@ export type IdentityPrompt = (
 ) => Promise<string | undefined>;
 
 /**
- * Persistence target the builder chose for a freshly-prompted
- * identity. `'g'` writes to `~/.monoceros/monoceros-config.yml`
- * (global default for every container), `'c'` writes to the container
- * yml's `git.user`, `'b'` does both. The caller (apply / init) does
- * the actual yml writes — collectGitIdentity just surfaces what the
- * builder picked so the caller can act on it.
+ * Persistence target the builder chose for a freshly-prompted or
+ * previously-persisted identity. `'g'` writes to
+ * `~/.monoceros/monoceros-config.yml` (global default for every
+ * container), `'c'` writes to the container yml's `git.user`, `'b'`
+ * does both, `'n'` skips persistence (keep using whatever transient
+ * source we have — typically `.monoceros/gitconfig` from a prior
+ * apply). The caller (apply / init) does the actual yml writes —
+ * collectGitIdentity just surfaces what the builder picked so the
+ * caller can act on it.
  */
-export type IdentityScope = 'g' | 'c' | 'b';
+export type IdentityScope = 'g' | 'c' | 'b' | 'n';
 
-export type IdentityScopePrompt = () => Promise<IdentityScope | undefined>;
+export type IdentityScopePrompt = (
+  ctx: IdentityScopePromptContext,
+) => Promise<IdentityScope | undefined>;
+
+/**
+ * Context passed to the scope prompt so the implementation can show
+ * the builder what's going on — `'prompt'` after a fresh
+ * name/email entry vs. `'persisted'` after recovering values from
+ * `.monoceros/gitconfig`. The default consola prompt renders the
+ * actual name/email so the builder sees what they'd be persisting.
+ */
+export interface IdentityScopePromptContext {
+  reason: 'prompt' | 'persisted';
+  name: string;
+  email: string;
+}
 
 const realGitConfigGet: IdentitySpawn = (key) => {
   return new Promise((resolve, reject) => {
@@ -68,14 +86,20 @@ const realIdentityPrompt: IdentityPrompt = async (key) => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
-const realScopePrompt: IdentityScopePrompt = async () => {
+const realScopePrompt: IdentityScopePrompt = async (ctx) => {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    // Non-interactive: default to `g` (global). The Caller's apply
-    // log explains where the identity ended up; in scripts the
-    // global default is the sensible "remember for next time" pick.
-    return 'g';
+    // Non-interactive: default to `g` (global) on a fresh prompt
+    // entry (the values are new, we want them remembered); default
+    // to `n` on the persisted-recovery path (the values were
+    // already in .monoceros/gitconfig and a script that hits this
+    // path probably doesn't want a silent rewrite of monoceros-config).
+    return ctx.reason === 'prompt' ? 'g' : 'n';
   }
-  const choice = await consola.prompt('Save this identity where?', {
+  const heading =
+    ctx.reason === 'persisted'
+      ? `Found identity in .monoceros/gitconfig: ${ctx.name} <${ctx.email}>. Promote where?`
+      : 'Save this identity where?';
+  const choice = await consola.prompt(heading, {
     type: 'select',
     options: [
       {
@@ -90,10 +114,16 @@ const realScopePrompt: IdentityScopePrompt = async () => {
         label: 'Both — global default plus container-level entry',
         value: 'b',
       },
+      {
+        label: 'Keep as-is — do not write to monoceros-config or yml',
+        value: 'n',
+      },
     ],
     initial: 'g',
   });
-  if (choice === 'g' || choice === 'c' || choice === 'b') return choice;
+  if (choice === 'g' || choice === 'c' || choice === 'b' || choice === 'n') {
+    return choice;
+  }
   return undefined;
 };
 
@@ -135,19 +165,21 @@ export interface CollectIdentityResult {
   email?: string;
   gitconfigPath: string;
   /**
-   * Set ONLY when the identity came from an interactive prompt
-   * (neither container-override, monoceros-config defaults, host
-   * global, nor persisted gitconfig had anything). The caller uses
-   * this to decide whether and where to persist the values.
+   * Set ONLY when the identity should be persisted somewhere new —
+   * the builder picked one of the persistence scopes (`g`/`c`/`b`)
+   * either after a fresh prompt or after we offered to promote
+   * recovered persisted values to monoceros-config. The caller uses
+   * this to decide which yml(s) to write.
    *
-   * `name` / `email` carry the freshly-entered values so the caller
+   * `name` / `email` carry the values to persist so the caller
    * doesn't have to re-fish them out of the result fields above.
-   * Scope is the builder's pick from the follow-up prompt (`g`/`c`/`b`).
+   * `'n'` (skip) is filtered out before this surfaces — the field
+   * stays `undefined` in that case.
    */
   prompted?: {
     name: string;
     email: string;
-    scope: IdentityScope;
+    scope: 'g' | 'c' | 'b';
   };
 }
 
@@ -183,7 +215,7 @@ export async function resolveIdentityWithPrompt(
 ): Promise<{
   name?: string;
   email?: string;
-  prompted?: { name: string; email: string; scope: IdentityScope };
+  prompted?: { name: string; email: string; scope: 'g' | 'c' | 'b' };
 }> {
   const spawnFn = options.spawn ?? realGitConfigGet;
   const promptFn = options.prompt ?? realIdentityPrompt;
@@ -208,17 +240,51 @@ export async function resolveIdentityWithPrompt(
     logger,
   });
 
-  const bothFromPrompt =
-    name?.source === 'prompt' && email?.source === 'prompt';
+  // Scope-prompt triggers when both keys came from the same
+  // "promotable" source AND the identity hasn't already been
+  // canonicalised in the yml ladder (container override / global
+  // defaults).
+  //
+  //   - `prompt`: fresh entry → ask where to persist (default `g`)
+  //   - `persisted`: recovered from .monoceros/gitconfig of a prior
+  //     apply → ask whether to promote to monoceros-config now that
+  //     the global defaults are empty (default `n` on non-TTY)
+  //
+  // `host` source is treated as "the builder's machine-wide default,
+  // not ours to promote" and never triggers the prompt — host
+  // changes can drift while Monoceros sleeps.
+  const alreadyCanonical =
+    !!options.containerOverride?.name ||
+    !!options.containerOverride?.email ||
+    !!options.defaults?.name ||
+    !!options.defaults?.email;
+  const promptableSources: ReadonlyArray<IdentitySource> = [
+    'prompt',
+    'persisted',
+  ];
+  const bothPromotable =
+    name?.source !== undefined &&
+    email?.source !== undefined &&
+    promptableSources.includes(name.source) &&
+    promptableSources.includes(email.source) &&
+    name.source === email.source;
+
   let promptedScope: IdentityScope | undefined;
-  if (bothFromPrompt && name?.value && email?.value) {
-    promptedScope = await scopePromptFn();
+  if (!alreadyCanonical && bothPromotable && name?.value && email?.value) {
+    promptedScope = await scopePromptFn({
+      reason: name.source as 'prompt' | 'persisted',
+      name: name.value,
+      email: email.value,
+    });
   }
 
   return {
     ...(name?.value !== undefined ? { name: name.value } : {}),
     ...(email?.value !== undefined ? { email: email.value } : {}),
-    ...(promptedScope && name?.value && email?.value
+    // Only surface `prompted` when the scope is a persistence target
+    // (`g`/`c`/`b`). `'n'` means "do nothing" — no point passing it
+    // to the caller as a "go persist" signal.
+    ...(promptedScope && promptedScope !== 'n' && name?.value && email?.value
       ? {
           prompted: {
             name: name.value,
