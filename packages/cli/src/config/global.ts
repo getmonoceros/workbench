@@ -250,20 +250,48 @@ export async function writeGlobalDefaultGitUser(
     }
   }
 
-  // No active defaults.git.user. Splice an active block into the
-  // file's text. Two cases:
+  // No active defaults.git.user. Three cases, in priority order:
   //
-  //   A) `defaults:` exists as a top-level line → insert the
-  //      git/user block right after it. 2-space indent puts it at
-  //      the same level as features/git/etc. The block goes BEFORE
-  //      any existing sub-keys, but that's harmless — yaml mapping
-  //      order is presentational, not semantic.
+  //   A) An EXISTING commented-out `# git:` block already lives
+  //      under `defaults:` (shipped-sample pattern, or a builder
+  //      who once filled it then commented out for a re-prompt) —
+  //      uncomment-and-fill IN PLACE. Avoids producing two blocks
+  //      (one active, one commented "placeholder") in the same file.
   //
-  //   B) `defaults:` doesn't exist (rare — file with only routing,
-  //      say) → append a fresh `defaults:` block at the end.
+  //   B) No commented block, but `defaults:` exists → splice an
+  //      active block in right after the `defaults:` line.
   //
-  // Either way, the surrounding comments stay byte-for-byte
-  // unchanged: we never touch them, just splice new lines in.
+  //   C) `defaults:` doesn't exist (rare) → append a fresh
+  //      `defaults:` block at the end.
+  //
+  // All three paths leave surrounding comments byte-for-byte intact
+  // outside the `# git:`-block they replace / sit next to.
+
+  // (A) Uncomment an existing commented block in place. Pattern is
+  // tolerant on the inner indentation: shipped sample uses `#   user`
+  // (3 spaces after `#`) and `#     name` (5 spaces), but a builder
+  // hand-edit might use any whitespace as long as the four lines
+  // appear in order under the same outer indent. The replacement
+  // re-uses the captured outer indent (`\1`) and writes the canonical
+  // 2/4/6-space yaml shape regardless of what the original used.
+  const commentedBlockRe =
+    /^( +)# git:[ \t]*\r?\n\1#\s+user:[ \t]*\r?\n\1#\s+name:[^\r\n]*\r?\n\1#\s+email:[^\r\n]*\r?\n/m;
+  const commentedMatch = text.match(commentedBlockRe);
+  if (commentedMatch) {
+    const indent = commentedMatch[1]!;
+    const replacement = [
+      `${indent}git:`,
+      `${indent}  user:`,
+      `${indent}    name: ${user.name}`,
+      `${indent}    email: ${user.email}`,
+      '',
+    ].join('\n');
+    const newText = text.replace(commentedBlockRe, replacement);
+    await fs.writeFile(filePath, newText, 'utf8');
+    return { filePath, created: false, alreadySet: false };
+  }
+
+  // (B) / (C): no commented block. Insert / append.
   const block = [
     '  git:',
     '    user:',
@@ -278,8 +306,6 @@ export async function writeGlobalDefaultGitUser(
     const insertAt = defaultsLineMatch.index + defaultsLineMatch[0].length;
     newText = text.slice(0, insertAt) + block + text.slice(insertAt);
   } else {
-    // Make sure we end the existing content with a newline before
-    // appending the new section.
     const trimmedEnd = text.replace(/\s*$/, '\n');
     newText =
       trimmedEnd + '\n' + ['defaults:', block].join('\n').replace(/\n$/, '\n');

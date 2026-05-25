@@ -190,13 +190,68 @@ describe('writeGlobalDefaultGitUser', () => {
     });
   });
 
-  it('preserves the full shipped-sample structure when injecting git.user (no comment chaos)', async () => {
-    // Regression for the bug where the yaml-AST setter rearranged the
-    // shipped sample's comments (section dividers between sub-blocks
-    // attached to the wrong node, so the inserted git block landed
-    // mid-features with comments dangling around it). The new
-    // string-based insert must keep every comment byte-for-byte in
-    // its original position.
+  it('uncomments an existing `# git:` placeholder in place instead of adding a second block', async () => {
+    // Regression for the duplicate-block bug: the shipped sample has
+    // a commented `# git:` placeholder under `defaults:`. The first
+    // attempt at this writer inserted a NEW active block while
+    // leaving the commented one in place — the file then had
+    // active values followed by the same commented placeholder
+    // underneath, which is confusing and was the exact symptom the
+    // builder reported.
+    const sample = [
+      '# Monoceros — builder-global config.',
+      '',
+      'schemaVersion: 1',
+      '',
+      'defaults:',
+      '  # Git committer identity for any container ...',
+      '  # git:',
+      '  #   user:',
+      '  #     name: Your Name',
+      '  #     email: you@example.com',
+      '',
+      '  features:',
+      '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
+      '      apiKey: sk-live',
+      '',
+    ].join('\n');
+    await writeFile(path.join(home, 'monoceros-config.yml'), sample);
+    await writeGlobalDefaultGitUser(
+      { name: 'Alice', email: 'a@example.com' },
+      { monocerosHome: home },
+    );
+    const after = await readFile(
+      path.join(home, 'monoceros-config.yml'),
+      'utf8',
+    );
+    // Exactly ONE `git:` line at 2-space indent — the uncommented
+    // version. Zero `# git:` placeholder lines.
+    const activeGitLines = after.match(/^\s+git:\s*$/gm) ?? [];
+    expect(activeGitLines).toHaveLength(1);
+    expect(after).not.toMatch(/^\s+# git:\s*$/m);
+    // The placeholder values (`Your Name` / `you@example.com`) are
+    // gone — replaced, not appended.
+    expect(after).not.toContain('Your Name');
+    expect(after).not.toContain('you@example.com');
+    // The active block has the right values, and the surrounding
+    // prose comment + features block are untouched.
+    expect(after).toMatch(/^ {2}git:\s*\n\s+user:\s*\n\s+name: Alice/m);
+    expect(after).toContain('# Git committer identity for any container ...');
+    expect(after).toContain('apiKey: sk-live');
+    // Sanity round-trip through the real schema.
+    const parsed = await readMonocerosConfig({ monocerosHome: home });
+    expect(parsed?.defaults?.git?.user).toEqual({
+      name: 'Alice',
+      email: 'a@example.com',
+    });
+  });
+
+  it('preserves the full shipped-sample structure (everything outside the git block stays put)', async () => {
+    // Section dividers, prose comments, features and routing must
+    // survive the git-user uncomment-in-place. The commented git
+    // placeholder ITSELF is replaced (that's the whole point — no
+    // duplicate active+placeholder pair), but everything else keeps
+    // its original byte position relative to the surrounding text.
     const sampleText = [
       '# Monoceros — builder-global config.',
       '',
@@ -229,21 +284,34 @@ describe('writeGlobalDefaultGitUser', () => {
       path.join(home, 'monoceros-config.yml'),
       'utf8',
     );
-    // Every line of the original sample (header, section dividers,
-    // commented git block, features block, routing block) must
-    // still be present, unchanged, in order.
-    for (const line of sampleText.split('\n')) {
-      if (line.length === 0) continue;
+    // Surrounding context survives verbatim.
+    const survivors = [
+      '# Monoceros — builder-global config.',
+      '# ── defaults section ─────────────────',
+      '  # Git committer identity ...',
+      '  # Per-feature option defaults ...',
+      '  features:',
+      '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
+      '      apiKey: sk-live-value',
+      '# ── routing section ─────────────────',
+      'routing:',
+      '  hostPort: 80',
+    ];
+    for (const line of survivors) {
       expect(after).toContain(line);
     }
-    // The routing section divider must come AFTER the features
-    // section divider — i.e. the section ordering survives the
-    // insert.
-    const featuresDividerAt = after.indexOf('# ── defaults section');
+    // The commented placeholder is gone — replaced by the active
+    // block in place.
+    expect(after).not.toContain('# git:');
+    expect(after).not.toContain('Your Name');
+    expect(after).not.toContain('you@example.com');
+    // Routing divider still after defaults divider — section
+    // ordering preserved.
+    const defaultsDividerAt = after.indexOf('# ── defaults section');
     const routingDividerAt = after.indexOf('# ── routing section');
-    expect(featuresDividerAt).toBeGreaterThanOrEqual(0);
-    expect(routingDividerAt).toBeGreaterThan(featuresDividerAt);
-    // And of course the active block parses into the right shape.
+    expect(defaultsDividerAt).toBeGreaterThanOrEqual(0);
+    expect(routingDividerAt).toBeGreaterThan(defaultsDividerAt);
+    // Real-schema round-trip.
     const parsed = await readMonocerosConfig({ monocerosHome: home });
     expect(parsed?.defaults?.git?.user).toEqual({
       name: 'Alice',
