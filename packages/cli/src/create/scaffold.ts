@@ -193,13 +193,18 @@ interface DevcontainerImageMode {
   // claude-code feature) come from the feature's own manifest, not from
   // here.
   mounts?: string[];
-  // Override of the workspace bind-mount. Set only when the host
-  // runs rootless Docker — we append `idmap` so the kernel applies
-  // the user-namespace mapping to the mount, which makes files
-  // written by either side appear with sane UIDs on the other.
-  // Without this, host-pre-created `projects/` appears as root in
-  // the container and the non-root `node` user can't write into it.
+  // Bind mount that puts the host's container folder onto a known
+  // path inside the container. Pairs with `workspaceFolder` below.
+  // Always emitted; the host-side source uses devcontainer-cli's
+  // `${localWorkspaceFolder}` variable so the tooling expands it.
   workspaceMount?: string;
+  // Where the workspace lives inside the container. VS Code's Dev
+  // Containers extension uses this to translate host-side paths
+  // (from .code-workspace files, "Open Folder in Container", …) to
+  // their container counterpart. Without it, VS Code passes the raw
+  // host path through and aborts because that path doesn't exist
+  // inside the container.
+  workspaceFolder?: string;
   // Required so the runtime image's entrypoint can install iptables
   // rules if MONOCEROS_EGRESS=enforce is set. Default mode is `off`
   // (see ADR 0002) so the cap is harmless when unused.
@@ -574,10 +579,27 @@ export function buildDevcontainerJson(
   const mounts: string[] = [...homeMounts];
   const mountsField = mounts.length > 0 ? { mounts } : {};
 
-  // No workspaceMount override today — see the comment above about
-  // the reverted idmap attempt. Once we have a working rootless
-  // strategy, the override comes back here.
-  const workspaceMountField = {};
+  // Image-mode workspaces: pin both `workspaceMount` AND
+  // `workspaceFolder` explicitly so VS Code's Dev Containers
+  // extension knows how the host folder maps into the container.
+  //
+  // Without these two, "Open Folder in Container" / "Open Workspace
+  // in Container" on a `.code-workspace` falls back to passing the
+  // raw host path (e.g. `/Users/.../.local/container/sandbox`) as
+  // the container-side workspace path. The container of course has
+  // no such directory and VS Code aborts with "Arbeitsbereich nicht
+  // vorhanden" / "Workspace does not exist". Setting workspaceFolder
+  // tells VS Code where the workspace lives inside the container
+  // (matches what we already do for compose-mode); workspaceMount
+  // pins the bind that puts the host folder there.
+  //
+  // Source path uses `${localWorkspaceFolder}` — devcontainer-cli
+  // expands it to the host folder containing the .devcontainer/, no
+  // hand-substitution needed on our side.
+  const workspaceMountField = {
+    workspaceMount: `source=\${localWorkspaceFolder},target=/workspaces/${opts.name},type=bind,consistency=cached`,
+    workspaceFolder: `/workspaces/${opts.name}`,
+  };
 
   // Image-mode: when ports are declared, hook the container into the
   // `monoceros-proxy` network so the Traefik singleton can reach it

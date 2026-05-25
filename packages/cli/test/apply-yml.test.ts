@@ -983,12 +983,17 @@ describe('runApply', () => {
         'utf8',
       ),
     );
-    expect(devcontainer.workspaceMount).toBeUndefined();
-    expect(
-      (devcontainer.mounts as string[]).every(
-        (m: string) => !m.includes('idmap'),
-      ),
-    ).toBe(true);
+    // workspaceMount is always emitted now (so VS Code's Dev
+    // Containers extension can translate host → container paths),
+    // but it MUST NOT carry an `,idmap` mount option — that's what
+    // this guard is for. Match against the option-separator form
+    // (a comma plus `idmap`) so a container name like "no-idmap"
+    // landing in the target path doesn't false-positive.
+    const idmapOption = /,\s*idmap\b/;
+    expect(devcontainer.workspaceMount).toBeDefined();
+    expect(devcontainer.workspaceMount as string).not.toMatch(idmapOption);
+    const featureMounts = (devcontainer.mounts ?? []) as string[];
+    expect(featureMounts.every((m: string) => !idmapOption.test(m))).toBe(true);
   });
 
   it('compose mode never emits idmap either (same reason)', async () => {

@@ -24,6 +24,29 @@ describe('buildDevcontainerJson — ports & vscode autoForward', () => {
     }
   });
 
+  // Regression: VS Code's "Open Folder/Workspace in Container" passed
+  // the raw host path to the container side when workspaceMount /
+  // workspaceFolder were absent, and aborted with "Arbeitsbereich
+  // nicht vorhanden". Both fields must be present in image-mode so
+  // VS Code knows how the host folder maps into the container.
+  it('image-mode pins workspaceMount and workspaceFolder', () => {
+    const dc = buildDevcontainerJson({ ...base, ports: [3000] });
+    if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
+    expect(dc.workspaceFolder).toBe('/workspaces/sandbox');
+    expect(dc.workspaceMount).toBe(
+      'source=${localWorkspaceFolder},target=/workspaces/sandbox,type=bind,consistency=cached',
+    );
+  });
+
+  it('image-mode workspaceMount/Folder also present without ports', () => {
+    // The fix must NOT be conditional on ports — VS Code needs the
+    // mapping regardless of routing.
+    const dc = buildDevcontainerJson(base);
+    if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
+    expect(dc.workspaceFolder).toBe('/workspaces/sandbox');
+    expect(dc.workspaceMount).toContain('target=/workspaces/sandbox');
+  });
+
   it('wires runArgs network, alias, forwardPorts, and the autoForward override in image-mode', () => {
     const dc = buildDevcontainerJson({ ...base, ports: [3000, 5173, 6006] });
     if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
