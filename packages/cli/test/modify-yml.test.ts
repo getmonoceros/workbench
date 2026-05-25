@@ -478,8 +478,12 @@ describe('add-*/remove-* against the yml', () => {
       },
     });
     expect(execCommand).toBeDefined();
-    expect(execCommand!).toContain(
-      `git clone 'https://github.com/foo/bar.git' 'projects/bar'`,
+    // The clone is wrapped with an inline `git -c credential.helper=…`
+    // so it works regardless of what post-create.sh has set globally
+    // (post-create runs once at container-up; a container that
+    // started life without HTTPS repos wouldn't have the helper set).
+    expect(execCommand!).toMatch(
+      /git -c 'credential\.helper=store --file=\/workspaces\/demo\/\.monoceros\/git-credentials' clone 'https:\/\/github\.com\/foo\/bar\.git' 'projects\/bar'/,
     );
     expect(execCommand!).toContain(`cd /workspaces/demo`);
     expect(execCommand!).toContain(`[ -d 'projects/bar' ]`);

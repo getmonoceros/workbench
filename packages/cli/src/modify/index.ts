@@ -395,11 +395,22 @@ async function tryCloneInRunningContainer(
   // idempotency post-create.sh has — re-running add-repo against the
   // same URL is a yml no-op anyway, but if the folder somehow
   // exists without the yml entry we still don't overwrite.
+  //
+  // `git -c credential.helper=…` sets the helper INLINE just for
+  // this clone, instead of relying on `git config --global` having
+  // been set by post-create.sh. That matters because post-create
+  // runs once at container up, not on every add-repo — a container
+  // that started life without any HTTPS repo wouldn't have a
+  // credential.helper configured at all. Inline-setting keeps
+  // add-repo self-contained and doesn't mutate the container's
+  // global git config as a side effect.
   const containerName = input.name;
   const targetRel = `projects/${entry.path}`;
   const parentRel = entry.path.includes('/')
     ? `projects/${entry.path.split('/').slice(0, -1).join('/')}`
     : 'projects';
+  const credentialsFile = `/workspaces/${containerName}/.monoceros/git-credentials`;
+  const credentialHelper = `store --file=${credentialsFile}`;
   const script = [
     `set -eu`,
     `cd /workspaces/${containerName}`,
@@ -408,7 +419,7 @@ async function tryCloneInRunningContainer(
     `  exit 0`,
     `fi`,
     `mkdir -p ${shquote(parentRel)}`,
-    `git clone ${shquote(entry.url)} ${shquote(targetRel)}`,
+    `git -c ${shquote(`credential.helper=${credentialHelper}`)} clone ${shquote(entry.url)} ${shquote(targetRel)}`,
   ];
   if (entry.gitUser) {
     script.push(
