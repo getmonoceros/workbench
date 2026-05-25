@@ -23,6 +23,18 @@ export type IdentityPrompt = (
   key: 'user.name' | 'user.email',
 ) => Promise<string | undefined>;
 
+/**
+ * Persistence target the builder chose for a freshly-prompted
+ * identity. `'g'` writes to `~/.monoceros/monoceros-config.yml`
+ * (global default for every container), `'c'` writes to the container
+ * yml's `git.user`, `'b'` does both. The caller (apply / init) does
+ * the actual yml writes — collectGitIdentity just surfaces what the
+ * builder picked so the caller can act on it.
+ */
+export type IdentityScope = 'g' | 'c' | 'b';
+
+export type IdentityScopePrompt = () => Promise<IdentityScope | undefined>;
+
 const realGitConfigGet: IdentitySpawn = (key) => {
   return new Promise((resolve, reject) => {
     const child = spawn('git', ['config', '--global', '--get', key], {
@@ -56,6 +68,35 @@ const realIdentityPrompt: IdentityPrompt = async (key) => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const realScopePrompt: IdentityScopePrompt = async () => {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    // Non-interactive: default to `g` (global). The Caller's apply
+    // log explains where the identity ended up; in scripts the
+    // global default is the sensible "remember for next time" pick.
+    return 'g';
+  }
+  const choice = await consola.prompt('Save this identity where?', {
+    type: 'select',
+    options: [
+      {
+        label: 'Globally — every container uses it as default',
+        value: 'g',
+      },
+      {
+        label: 'In this container only',
+        value: 'c',
+      },
+      {
+        label: 'Both — global default plus container-level entry',
+        value: 'b',
+      },
+    ],
+    initial: 'g',
+  });
+  if (choice === 'g' || choice === 'c' || choice === 'b') return choice;
+  return undefined;
+};
+
 export interface CollectIdentityOptions {
   spawn?: IdentitySpawn;
   /**
@@ -65,6 +106,13 @@ export interface CollectIdentityOptions {
    * that auto-skips in non-interactive contexts.
    */
   prompt?: IdentityPrompt;
+  /**
+   * Asked AFTER an interactive identity prompt succeeded: where to
+   * persist (global monoceros-config, container yml, both). Result
+   * lands in `CollectIdentityResult.promptedScope` for the caller to
+   * act on (apply / init handle the actual yml writes).
+   */
+  scopePrompt?: IdentityScopePrompt;
   /**
    * Per-container override from the container's yml `git.user`. Wins
    * over everything else (host global, workbench-wide defaults,
@@ -86,6 +134,21 @@ export interface CollectIdentityResult {
   name?: string;
   email?: string;
   gitconfigPath: string;
+  /**
+   * Set ONLY when the identity came from an interactive prompt
+   * (neither container-override, monoceros-config defaults, host
+   * global, nor persisted gitconfig had anything). The caller uses
+   * this to decide whether and where to persist the values.
+   *
+   * `name` / `email` carry the freshly-entered values so the caller
+   * doesn't have to re-fish them out of the result fields above.
+   * Scope is the builder's pick from the follow-up prompt (`g`/`c`/`b`).
+   */
+  prompted?: {
+    name: string;
+    email: string;
+    scope: IdentityScope;
+  };
 }
 
 /**
@@ -102,29 +165,37 @@ export interface CollectIdentityResult {
  * Returns the captured values; the caller can use them for logging.
  * Missing values surface as `undefined`, plus a warn log line.
  */
-export async function collectGitIdentity(
-  devContainerRoot: string,
-  options: CollectIdentityOptions = {},
-): Promise<CollectIdentityResult> {
-  const gitconfigDir = path.join(devContainerRoot, '.monoceros');
-  const gitconfigPath = path.join(gitconfigDir, 'gitconfig');
+/**
+ * Resolve an identity by walking the precedence chain (override →
+ * defaults → host → persisted → prompt). Pure as far as Monoceros
+ * state goes: doesn't write the `.monoceros/gitconfig` file —
+ * `collectGitIdentity` is the wrapper that does.
+ *
+ * Used from `init` when a `--with-repo` flag means the builder needs
+ * an identity before any container exists yet (and so before
+ * `.monoceros/gitconfig` has a target path). Persistence to
+ * monoceros-config or container yml is the caller's job either way.
+ */
+export async function resolveIdentityWithPrompt(
+  options: CollectIdentityOptions & {
+    persistedValues?: { name?: string; email?: string };
+  } = {},
+): Promise<{
+  name?: string;
+  email?: string;
+  prompted?: { name: string; email: string; scope: IdentityScope };
+}> {
   const spawnFn = options.spawn ?? realGitConfigGet;
   const promptFn = options.prompt ?? realIdentityPrompt;
+  const scopePromptFn = options.scopePrompt ?? realScopePrompt;
   const logger = options.logger ?? { info: () => {}, warn: () => {} };
+  const persisted = options.persistedValues ?? {};
 
-  const existing = await readExistingGitconfig(gitconfigPath);
-
-  // Resolution order per key:
-  //   1. containerOverride (yml's `git.user`)
-  //   2. defaults (monoceros-config.yml's `defaults.git.user`)
-  //   3. host `git config --global --get <key>`
-  //   4. previously persisted value (.monoceros/gitconfig)
-  //   5. interactive prompt (skipped in non-TTY contexts)
   const name = await resolveKey('user.name', {
     override: options.containerOverride?.name,
     defaultValue: options.defaults?.name,
     spawnFn,
-    persistedValue: existing.name,
+    persistedValue: persisted.name,
     promptFn,
     logger,
   });
@@ -132,22 +203,61 @@ export async function collectGitIdentity(
     override: options.containerOverride?.email,
     defaultValue: options.defaults?.email,
     spawnFn,
-    persistedValue: existing.email,
+    persistedValue: persisted.email,
     promptFn,
     logger,
   });
 
+  const bothFromPrompt =
+    name?.source === 'prompt' && email?.source === 'prompt';
+  let promptedScope: IdentityScope | undefined;
+  if (bothFromPrompt && name?.value && email?.value) {
+    promptedScope = await scopePromptFn();
+  }
+
+  return {
+    ...(name?.value !== undefined ? { name: name.value } : {}),
+    ...(email?.value !== undefined ? { email: email.value } : {}),
+    ...(promptedScope && name?.value && email?.value
+      ? {
+          prompted: {
+            name: name.value,
+            email: email.value,
+            scope: promptedScope,
+          },
+        }
+      : {}),
+  };
+}
+
+export async function collectGitIdentity(
+  devContainerRoot: string,
+  options: CollectIdentityOptions = {},
+): Promise<CollectIdentityResult> {
+  const gitconfigDir = path.join(devContainerRoot, '.monoceros');
+  const gitconfigPath = path.join(gitconfigDir, 'gitconfig');
+  const logger = options.logger ?? { info: () => {}, warn: () => {} };
+
+  const existing = await readExistingGitconfig(gitconfigPath);
+
+  const resolved = await resolveIdentityWithPrompt({
+    ...options,
+    persistedValues: existing,
+    logger,
+  });
+
   const lines: string[] = ['[user]'];
-  if (name !== undefined) lines.push(`\tname = ${name}`);
-  if (email !== undefined) lines.push(`\temail = ${email}`);
+  if (resolved.name !== undefined) lines.push(`\tname = ${resolved.name}`);
+  if (resolved.email !== undefined) lines.push(`\temail = ${resolved.email}`);
 
   await fs.mkdir(gitconfigDir, { recursive: true });
   await fs.writeFile(gitconfigPath, lines.join('\n') + '\n');
 
   return {
-    ...(name !== undefined ? { name } : {}),
-    ...(email !== undefined ? { email } : {}),
+    ...(resolved.name !== undefined ? { name: resolved.name } : {}),
+    ...(resolved.email !== undefined ? { email: resolved.email } : {}),
     gitconfigPath,
+    ...(resolved.prompted ? { prompted: resolved.prompted } : {}),
   };
 }
 
@@ -160,23 +270,35 @@ interface ResolveKeyOpts {
   logger: { warn: (msg: string) => void };
 }
 
+type IdentitySource =
+  | 'container'
+  | 'defaults'
+  | 'host'
+  | 'persisted'
+  | 'prompt';
+
+interface ResolvedKey {
+  value: string;
+  source: IdentitySource;
+}
+
 async function resolveKey(
   key: 'user.name' | 'user.email',
   opts: ResolveKeyOpts,
-): Promise<string | undefined> {
+): Promise<ResolvedKey | undefined> {
   if (opts.override !== undefined && opts.override.length > 0) {
-    return opts.override;
+    return { value: opts.override, source: 'container' };
   }
   if (opts.defaultValue !== undefined && opts.defaultValue.length > 0) {
-    return opts.defaultValue;
+    return { value: opts.defaultValue, source: 'defaults' };
   }
   const hostValue = await readKeyFromHost(opts.spawnFn, key, opts.logger);
-  if (hostValue !== undefined) return hostValue;
+  if (hostValue !== undefined) return { value: hostValue, source: 'host' };
   if (opts.persistedValue !== undefined && opts.persistedValue.length > 0) {
-    return opts.persistedValue;
+    return { value: opts.persistedValue, source: 'persisted' };
   }
   const prompted = await opts.promptFn(key);
-  if (prompted !== undefined) return prompted;
+  if (prompted !== undefined) return { value: prompted, source: 'prompt' };
   opts.logger.warn(
     `No ${key} resolvable (yml override, monoceros-config.yml defaults, host \`git config --global\`, persisted .monoceros/gitconfig, prompt). Container git will have no ${key} until set explicitly.`,
   );

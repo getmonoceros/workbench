@@ -67,6 +67,22 @@ Container ermittelt:
 4. **Wert aus früherem Apply** in `.monoceros/gitconfig`
 5. **Interaktiver Prompt** (nur in TTY-Sessions; sonst undefined)
 
+Wenn der Prompt greift (Stufe 5 ist die einzige Quelle), fragt
+Monoceros zusätzlich, wo die eingegebenen Werte persistiert werden
+sollen:
+
+- **`g` (Global)** — `monoceros-config.yml` `defaults.git.user`. Wird
+  zum Default für jeden Container auf dieser Maschine. Default-Wahl,
+  weil sie meistens passt.
+- **`c` (Container)** — `<name>.yml` `git.user`. Nur dieser Container.
+- **`b` (Beide)** — globaler Default plus container-spezifischer
+  Override.
+
+In nicht-interaktiven Sessions (CI, Scripts) wird `g` automatisch
+gewählt — die Werte bleiben sonst nur in `.monoceros/gitconfig`
+dieses Containers und müssten beim nächsten neuen Container neu
+eingegeben werden.
+
 ## Beispiele
 
 Erst-Setup:

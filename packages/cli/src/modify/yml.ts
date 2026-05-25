@@ -70,6 +70,45 @@ export function addAptPackagesToDoc(
 }
 
 /**
+ * Set (or replace) the container-level `git.user` block. Used by the
+ * apply / init identity prompt when the builder chose "save in this
+ * container's yml" (scope `c` or `b`).
+ *
+ * Idempotent on identical input: same name + email → no doc change,
+ * return false. Different values → in-place overwrite, return true.
+ * Comment-preserving as usual for our AST mutators.
+ */
+export function setContainerGitUserInDoc(
+  doc: Document,
+  user: { name: string; email: string },
+): boolean {
+  const gitNode = doc.get('git', true);
+  let gitMap: YAMLMap;
+  if (gitNode && isMap(gitNode)) {
+    gitMap = gitNode;
+  } else {
+    gitMap = new YAMLMap();
+    doc.set('git', gitMap);
+  }
+  const userNode = gitMap.get('user', true);
+  let userMap: YAMLMap;
+  if (userNode && isMap(userNode)) {
+    userMap = userNode;
+  } else {
+    userMap = new YAMLMap();
+    gitMap.set('user', userMap);
+  }
+  const currentName = userMap.get('name');
+  const currentEmail = userMap.get('email');
+  if (currentName === user.name && currentEmail === user.email) {
+    return false;
+  }
+  userMap.set('name', user.name);
+  userMap.set('email', user.email);
+  return true;
+}
+
+/**
  * Read the port number from a `routing.ports:` entry — handles both
  * the short form (`- 3000`) and the long form (`- port: 3000`).
  * Returns `null` for malformed entries (the schema catches them, but

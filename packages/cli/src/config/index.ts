@@ -51,5 +51,9 @@ export {
   DEFAULT_PROXY_HOST_PORT,
   proxyHostPort,
   readMonocerosConfig,
+  writeGlobalDefaultGitUser,
 } from './global.js';
-export type { MonocerosConfig } from './global.js';
+export type {
+  MonocerosConfig,
+  WriteGlobalDefaultGitUserResult,
+} from './global.js';

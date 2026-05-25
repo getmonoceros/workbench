@@ -5,7 +5,7 @@ import {
   proxyHostPort,
   readMonocerosConfig,
 } from '../config/global.js';
-import { readConfig } from '../config/io.js';
+import { parseConfig, readConfig, stringifyConfig } from '../config/io.js';
 import {
   containerConfigPath,
   containerDir,
@@ -59,8 +59,11 @@ import { preflightHostPort } from '../proxy/port-check.js';
 import {
   collectGitIdentity,
   type IdentityPrompt,
+  type IdentityScopePrompt,
   type IdentitySpawn,
 } from '../devcontainer/identity.js';
+import { writeGlobalDefaultGitUser } from '../config/global.js';
+import { setContainerGitUserInDoc } from '../modify/yml.js';
 
 /**
  * `monoceros apply <name>` — read the yml at
@@ -108,6 +111,7 @@ export interface RunApplyOptions {
   dockerInfoSpawn?: DockerInfoSpawn;
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
+  identityScopePrompt?: IdentityScopePrompt;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
 }
@@ -200,9 +204,12 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     warn: logger.warn ?? logger.info,
   };
   if (hasRepos || hasContainerGitUser || hasDefaultGitUser) {
-    await collectGitIdentity(targetDir, {
+    const identity = await collectGitIdentity(targetDir, {
       ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
       ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),
+      ...(opts.identityScopePrompt
+        ? { scopePrompt: opts.identityScopePrompt }
+        : {}),
       ...(parsed.config.git?.user
         ? { containerOverride: parsed.config.git.user }
         : {}),
@@ -211,6 +218,18 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         : {}),
       logger: idLogger,
     });
+
+    // Persist a freshly-prompted identity to whichever scope the
+    // builder picked. Scope `g` writes monoceros-config.yml's
+    // `defaults.git.user`; `c` writes this container yml's
+    // `git.user`; `b` does both. The `.monoceros/gitconfig` file
+    // collectGitIdentity already wrote stays the in-container
+    // mechanism — these writes are about making the value
+    // recoverable on the next apply / next container without
+    // re-prompting.
+    if (identity.prompted) {
+      await persistPromptedIdentity(identity.prompted, ymlPath, home, logger);
+    }
   }
   // Pre-fetch HTTPS credentials for every unique host derived from
   // the declared repos. Pre-flight: if any host returns no credentials,
@@ -460,6 +479,77 @@ function warnOnDeprecatedFeatureRefs(
   if (globalDefaults) {
     for (const ref of Object.keys(globalDefaults)) {
       emit(ref, 'monoceros-config.yml');
+    }
+  }
+}
+
+/**
+ * Persist an identity that came from the interactive prompt. Called
+ * with the builder's scope pick (`g`/`c`/`b`); logs to the apply
+ * stream where the values landed (or why they couldn't, e.g. global
+ * default was already set and we left it alone).
+ *
+ * Pulled out of runApply for readability — runApply already carries
+ * a lot of pre-flight ceremony, and this is a self-contained
+ * persistence step.
+ */
+async function persistPromptedIdentity(
+  prompted: { name: string; email: string; scope: 'g' | 'c' | 'b' },
+  ymlPath: string,
+  home: string,
+  logger: {
+    info: (msg: string) => void;
+    warn?: (msg: string) => void;
+  },
+): Promise<void> {
+  const wantGlobal = prompted.scope === 'g' || prompted.scope === 'b';
+  const wantContainer = prompted.scope === 'c' || prompted.scope === 'b';
+
+  if (wantGlobal) {
+    try {
+      const result = await writeGlobalDefaultGitUser(
+        { name: prompted.name, email: prompted.email },
+        { monocerosHome: home },
+      );
+      if (result.alreadySet) {
+        logger.warn?.(
+          `monoceros-config.yml already has a defaults.git.user — left it alone. To replace, edit ${prettyPath(result.filePath)} by hand.`,
+        );
+      } else if (result.created) {
+        logger.info(
+          `Saved identity globally — created ${prettyPath(result.filePath)} with defaults.git.user.`,
+        );
+      } else {
+        logger.info(
+          `Saved identity globally — wrote defaults.git.user into ${prettyPath(result.filePath)}.`,
+        );
+      }
+    } catch (err) {
+      logger.warn?.(
+        `Could not persist identity to monoceros-config.yml: ${err instanceof Error ? err.message : String(err)}. The values are still active for this apply via .monoceros/gitconfig.`,
+      );
+    }
+  }
+
+  if (wantContainer) {
+    try {
+      const text = await fs.readFile(ymlPath, 'utf8');
+      const parsed = parseConfig(text, ymlPath);
+      const changed = setContainerGitUserInDoc(parsed.doc, {
+        name: prompted.name,
+        email: prompted.email,
+      });
+      if (changed) {
+        const out = stringifyConfig(parsed.doc);
+        await fs.writeFile(ymlPath, out, 'utf8');
+        logger.info(
+          `Saved identity in this container — wrote git.user into ${prettyPath(ymlPath)}.`,
+        );
+      }
+    } catch (err) {
+      logger.warn?.(
+        `Could not persist identity to ${prettyPath(ymlPath)}: ${err instanceof Error ? err.message : String(err)}. The values are still active for this apply via .monoceros/gitconfig.`,
+      );
     }
   }
 }
