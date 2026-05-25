@@ -47,6 +47,20 @@ const noopProxyDocker = async () => ({
 
 const portOpts = { ...baseOpts, proxyDocker: noopProxyDocker };
 
+// Stub for the runAddRepo on-the-fly-clone path. Reports "no running
+// container" so the yml-mutation tests don't spawn the real `docker`
+// binary (which would be a flaky external dependency, plus slow on
+// CI). Happy-path "container IS running" cases stub these per-test.
+const noopContainerLookup = async () => ({
+  stdout: '',
+  stderr: '',
+  exitCode: 0,
+});
+const repoOpts = {
+  ...baseOpts,
+  containerLookupDocker: noopContainerLookup,
+};
+
 describe('add-*/remove-* against the yml', () => {
   let home: string;
 
@@ -408,6 +422,132 @@ describe('add-*/remove-* against the yml', () => {
     const yml = await ymlOf('demo');
     expect(yml).toContain('provider: bitbucket');
     expect(yml).not.toContain('provider: gitlab');
+  });
+
+  it('runAddRepo on-the-fly: skips clone when the container is not running', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    let execCalls = 0;
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      monocerosHome: home,
+      // No running container — lookup returns empty stdout, exit 0.
+      containerLookupDocker: async () => ({
+        stdout: '',
+        stderr: '',
+        exitCode: 0,
+      }),
+      containerExec: async () => {
+        execCalls++;
+        return { exitCode: 0 };
+      },
+    });
+    expect(execCalls).toBe(0);
+  });
+
+  it('runAddRepo on-the-fly: clones inside the container when one is running', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    let execCommand: string | undefined;
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      monocerosHome: home,
+      containerLookupDocker: async () => ({
+        stdout: 'deadbeef0001\n',
+        stderr: '',
+        exitCode: 0,
+      }),
+      credentialsSpawn: async (input: string) => {
+        const host = /host=([^\n]+)/.exec(input)?.[1] ?? 'unknown';
+        return {
+          stdout: `protocol=https\nhost=${host}\nusername=ci\npassword=tok\n`,
+          exitCode: 0,
+        };
+      },
+      containerExec: async (containerId, argv) => {
+        // Capture the bash -c script body so we can assert what the
+        // clone command looks like (paths, quoting, idempotency
+        // guard).
+        if (argv[0] === 'bash' && argv[1] === '-c') {
+          execCommand = argv[2];
+        }
+        expect(containerId).toBe('deadbeef0001');
+        return { exitCode: 0 };
+      },
+    });
+    expect(execCommand).toBeDefined();
+    expect(execCommand!).toContain(
+      `git clone 'https://github.com/foo/bar.git' 'projects/bar'`,
+    );
+    expect(execCommand!).toContain(`cd /workspaces/demo`);
+    expect(execCommand!).toContain(`[ -d 'projects/bar' ]`);
+  });
+
+  it('runAddRepo on-the-fly: applies per-repo git.user via `git config` after clone', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    let execCommand: string | undefined;
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      gitName: 'Alice Example',
+      gitEmail: 'alice@example.com',
+      monocerosHome: home,
+      containerLookupDocker: async () => ({
+        stdout: 'deadbeef0002\n',
+        stderr: '',
+        exitCode: 0,
+      }),
+      credentialsSpawn: async () => ({
+        stdout: 'protocol=https\nhost=github.com\nusername=ci\npassword=tok\n',
+        exitCode: 0,
+      }),
+      containerExec: async (_id, argv) => {
+        if (argv[0] === 'bash' && argv[1] === '-c') execCommand = argv[2];
+        return { exitCode: 0 };
+      },
+    });
+    expect(execCommand!).toContain(
+      `git -C 'projects/bar' config user.name 'Alice Example'`,
+    );
+    expect(execCommand!).toContain(
+      `git -C 'projects/bar' config user.email 'alice@example.com'`,
+    );
+  });
+
+  it('runAddRepo on-the-fly: skips clone but keeps yml when credentials are unavailable', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    let execCalls = 0;
+    const warns: string[] = [];
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      monocerosHome: home,
+      logger: {
+        info: () => {},
+        success: () => {},
+        warn: (m) => warns.push(m),
+      },
+      containerLookupDocker: async () => ({
+        stdout: 'deadbeef0003\n',
+        stderr: '',
+        exitCode: 0,
+      }),
+      // host git credential helper returns no matching entry → exit 1
+      credentialsSpawn: async () => ({ stdout: '', exitCode: 1 }),
+      containerExec: async () => {
+        execCalls++;
+        return { exitCode: 0 };
+      },
+    });
+    // yml IS updated (we don't roll back); clone DID NOT run.
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('- url: https://github.com/foo/bar.git');
+    expect(execCalls).toBe(0);
+    expect(warns.some((m) => /credentials/i.test(m))).toBe(true);
   });
 
   it('aborts cleanly when the user declines the prompt', async () => {

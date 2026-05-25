@@ -1,12 +1,26 @@
 import { promises as fs } from 'node:fs';
 import { consola } from 'consola';
 import { createPatch } from 'diff';
+import path from 'node:path';
 import type { Document } from 'yaml';
 import { parseConfig, readConfig, stringifyConfig } from '../config/io.js';
 import {
   containerConfigPath,
+  containerDir,
   monocerosHome as defaultMonocerosHome,
 } from '../config/paths.js';
+import {
+  collectGitCredentials,
+  resolveProvider,
+  uniqueHttpsHosts,
+  type CredentialsSpawn,
+} from '../devcontainer/credentials.js';
+import {
+  findRunningContainerByLocalFolder,
+  realContainerExec,
+  type ContainerExec,
+  type DockerLookupExec,
+} from '../devcontainer/locate-running.js';
 import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
 import {
   KNOWN_PROVIDER_HOSTS,
@@ -121,6 +135,13 @@ export interface AddRepoInput extends ModifyOptions {
    * optional otherwise. Validated against `PROVIDER_VALUES`.
    */
   provider?: string;
+  /**
+   * Test injection points for the on-the-fly-clone path (the part
+   * that runs after the yml mutation when the container is up).
+   */
+  containerLookupDocker?: DockerLookupExec;
+  containerExec?: ContainerExec;
+  credentialsSpawn?: CredentialsSpawn;
 }
 
 export interface RemoveLanguageInput extends ModifyOptions {
@@ -269,7 +290,163 @@ export async function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
       : {}),
     ...(providerToWrite ? { provider: providerToWrite } : {}),
   };
-  return mutate(input, (doc) => addRepoToDoc(doc, entry));
+  const result = await mutate(input, (doc) => addRepoToDoc(doc, entry));
+  // On-the-fly clone path: if the yml change took AND the container
+  // is currently running, clone the repo directly into the
+  // container so the builder doesn't have to `monoceros apply`
+  // afterwards. Soft-fail with a warn — failures here never roll
+  // back the yml write. See ADR 0007's add-port symmetry.
+  if (result.status === 'updated') {
+    await tryCloneInRunningContainer(input, entry);
+  }
+  return result;
+}
+
+/**
+ * Best-effort: if the container is running, fetch HTTPS credentials
+ * for the repo host, then `docker exec git clone …` directly into
+ * `/workspaces/<name>/projects/<path>/`. Skips silently when:
+ *
+ *   - the container isn't running (typical case — yml-only is fine,
+ *     `monoceros apply` will clone on next bring-up)
+ *   - the destination folder already exists (idempotent — matches
+ *     post-create.sh's "skip clone if dir exists" rule)
+ *
+ * Soft-fails with a warn on any error in the clone path. The yml
+ * mutation is already persisted; the next `monoceros apply` will
+ * retry. Tests inject the docker / credentials spawns; production
+ * uses the real ones.
+ */
+async function tryCloneInRunningContainer(
+  input: AddRepoInput,
+  entry: RepoEntry,
+): Promise<void> {
+  const home = input.monocerosHome ?? defaultMonocerosHome();
+  const root = containerDir(input.name, home);
+  const logger = input.logger ?? defaultLogger();
+
+  let containerId: string | null;
+  try {
+    containerId = await findRunningContainerByLocalFolder(root, {
+      ...(input.containerLookupDocker
+        ? { docker: input.containerLookupDocker }
+        : {}),
+    });
+  } catch (err) {
+    logger.warn(
+      `Could not check whether the container is running: ${err instanceof Error ? err.message : String(err)}. The yml is updated — run \`monoceros apply ${input.name}\` to clone.`,
+    );
+    return;
+  }
+  if (!containerId) {
+    logger.info(
+      `Container not running — yml updated only. Clone happens on \`monoceros apply ${input.name}\`.`,
+    );
+    return;
+  }
+
+  // Credential fetch for the URL's host. Same mechanism apply uses
+  // (host-side `git credential fill`), writing into the bind-mounted
+  // `.monoceros/git-credentials` file so the in-container clone can
+  // pick it up via the credential.helper that post-create already
+  // wired.
+  let urlHost: string;
+  try {
+    urlHost = new URL(entry.url).hostname;
+  } catch {
+    logger.warn(
+      `Cannot parse URL host from ${entry.url}. The yml is updated — clone manually inside the container or rerun with a fixed URL.`,
+    );
+    return;
+  }
+  const provider = resolveProvider(urlHost, entry.provider);
+  if (provider === 'unknown') {
+    logger.warn(
+      `Could not resolve provider for host ${urlHost}. The yml is updated; clone happens at the next \`monoceros apply\` if you set the provider.`,
+    );
+    return;
+  }
+  try {
+    const credsResult = await collectGitCredentials(
+      root,
+      [{ host: urlHost, provider }],
+      {
+        ...(input.credentialsSpawn ? { spawn: input.credentialsSpawn } : {}),
+        logger: { info: () => {}, warn: (m) => logger.warn(m) },
+      },
+    );
+    const status = credsResult.perHost.find((h) => h.host === urlHost);
+    if (!status || status.status !== 'ok') {
+      const detail = status?.detail ? `: ${status.detail}` : '';
+      logger.warn(
+        `No HTTPS credentials available for ${urlHost}${detail}. The yml is updated; set up credentials (e.g. \`gh auth login\`) and re-run \`monoceros apply ${input.name}\` or rerun this add-repo.`,
+      );
+      return;
+    }
+  } catch (err) {
+    logger.warn(
+      `Credential fetch for ${urlHost} failed: ${err instanceof Error ? err.message : String(err)}. The yml is updated.`,
+    );
+    return;
+  }
+
+  // The clone itself. mkdir -p ensures nested parents exist. The
+  // outer `[ -d <target> ] && exit 0` short-circuit matches the
+  // idempotency post-create.sh has — re-running add-repo against the
+  // same URL is a yml no-op anyway, but if the folder somehow
+  // exists without the yml entry we still don't overwrite.
+  const containerName = input.name;
+  const targetRel = `projects/${entry.path}`;
+  const parentRel = entry.path.includes('/')
+    ? `projects/${entry.path.split('/').slice(0, -1).join('/')}`
+    : 'projects';
+  const script = [
+    `set -eu`,
+    `cd /workspaces/${containerName}`,
+    `if [ -d ${shquote(targetRel)} ]; then`,
+    `  echo "[add-repo] ${targetRel} already exists — skipping clone."`,
+    `  exit 0`,
+    `fi`,
+    `mkdir -p ${shquote(parentRel)}`,
+    `git clone ${shquote(entry.url)} ${shquote(targetRel)}`,
+  ];
+  if (entry.gitUser) {
+    script.push(
+      `git -C ${shquote(targetRel)} config user.name ${shquote(entry.gitUser.name)}`,
+      `git -C ${shquote(targetRel)} config user.email ${shquote(entry.gitUser.email)}`,
+    );
+  }
+  const execFn = input.containerExec ?? realContainerExec;
+  let exit;
+  try {
+    exit = await execFn(containerId, ['bash', '-c', script.join('\n')]);
+  } catch (err) {
+    logger.warn(
+      `In-container clone for ${entry.url} failed: ${err instanceof Error ? err.message : String(err)}. The yml is updated; \`monoceros apply ${input.name}\` retries.`,
+    );
+    return;
+  }
+  if (exit.exitCode !== 0) {
+    logger.warn(
+      `In-container clone for ${entry.url} exited ${exit.exitCode}. The yml is updated; \`monoceros apply ${input.name}\` retries.`,
+    );
+    return;
+  }
+  logger.info(
+    `Cloned ${entry.url} into /workspaces/${containerName}/${targetRel} inside the running container.`,
+  );
+  void path; // path import is reserved for future relative-path work
+}
+
+/**
+ * Minimal shell-quote — single-quotes the value, escaping any
+ * embedded single-quote via `'\\''`. The clone script runs inside a
+ * `bash -c` invocation, so input that came from the yml (URLs,
+ * paths, identity names) must be safely quoted to avoid trivial
+ * injection or accidental shell-meta interpretation.
+ */
+function shquote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function normalizeProvider(raw: string | undefined): RepoProvider | undefined {

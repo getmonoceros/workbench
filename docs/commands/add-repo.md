@@ -235,12 +235,36 @@ post-create.sh setzt `git -C projects/<path> config user.name/email`
 direkt nach dem Clone, sodass die Per-Repo-Identität ab dem ersten
 Commit greift.
 
+## On-the-fly-Clone bei laufendem Container
+
+Wenn der Container für den Namen gerade läuft, klont `add-repo` den
+Repo direkt nach `projects/<path>/` im Container — kein `monoceros
+apply` nötig. Mechanik:
+
+1. Container über Docker-Label `devcontainer.local_folder` finden.
+   Nicht laufend → Fall-back: nur yml aktualisieren, Hinweis zeigt
+   den `apply`-Befehl für später.
+2. Host-seitige HTTPS-Credentials für den Repo-Host abholen
+   (gleicher Mechanismus wie beim Apply-Pre-Flight). Keine
+   Credentials → yml bleibt aktualisiert, Hinweis zeigt was zu tun
+   ist (`gh auth login` etc.).
+3. `docker exec` im laufenden Container: `mkdir -p projects/<parent>`,
+   dann `git clone <url> projects/<path>`. Idempotent — wenn der
+   Folder schon existiert, wird übersprungen.
+4. Wenn `--git-name`/`--git-email` gesetzt war: `git -C projects/<path>
+config user.name/email` direkt nach dem Clone.
+
+Alle Fehler im on-the-fly-Pfad lassen die yml-Änderung **bestehen**
+— ein späterer `monoceros apply` holt nach. Die yml ist die Wahrheit;
+der Container-Klon ist Bequemlichkeit.
+
 ## Verwandte Befehle
 
 - `monoceros init <name> --with-repo=<url>` — Repo direkt beim Erstellen
-  der Container-yml mit reinziehen.
-- `monoceros apply <name>` — Container neu bauen, damit die Klone
-  wirklich passieren.
+  der Container-yml mit reinziehen. Löst auch den Identity-Prompt
+  aus wenn nötig.
+- `monoceros apply <name>` — Container neu bauen, falls der
+  on-the-fly-Clone nicht greift (Container war nicht da, etc.).
 - `monoceros run <name> -- git status` — Git-Operationen im Container.
 - `monoceros remove-repo <name> <url-or-path>` — Inverse.
 
