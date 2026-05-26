@@ -48,7 +48,7 @@ monoceros init <name> --with=node,postgres,github,claude  # Konfig komponieren
 vim $MONOCEROS_HOME/container-configs/<name>.yml          # anpassen (optional)
 monoceros apply <name>                                    # Dev-Container materialisieren + hochfahren
 monoceros shell <name>                                    # darin arbeiten
-monoceros add-feature <name> <ref>                        # Konfig editieren
+monoceros add-feature <name> <feature>                    # Konfig editieren
 monoceros apply <name>                                    # neu bauen, picks up the change
 ```
 
@@ -78,15 +78,15 @@ monoceros apply <name>                                    # neu bauen, picks up 
 
 ### Hinzufügen
 
-| Befehl                                      | Zweck                                                                 | Doku                                         |
-| ------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------- |
-| `monoceros add-language <name> <lang>`      | Sprach-Toolchain als Devcontainer-Feature ergänzen (kuratierte Liste) | [add-language.md](./add-language.md)         |
-| `monoceros add-service <name> <svc>`        | Compose-Service ergänzen (Postgres, Redis, MySQL — kuratierte Liste)  | [add-service.md](./add-service.md)           |
-| `monoceros add-apt-packages <name> -- …`    | Beliebige apt-Pakete ergänzen (kein Whitelist)                        | [add-apt-packages.md](./add-apt-packages.md) |
-| `monoceros add-feature <name> <ref> [-- …]` | Beliebiges Devcontainer-Feature ergänzen                              | [add-feature.md](./add-feature.md)           |
-| `monoceros add-from-url <name> <url>`       | HTTPS-Install-Script per `curl … \| sh` registrieren                  | [add-from-url.md](./add-from-url.md)         |
-| `monoceros add-repo <name> <url> [--as=…]`  | Git-Repo nach `projects/<folder>/` klonen (idempotent, post-create)   | [add-repo.md](./add-repo.md)                 |
-| `monoceros add-port <name> -- <port>…`      | Port(s) in die Container-yml eintragen (Traefik-Routing folgt in M5)  | [add-port.md](./add-port.md)                 |
+| Befehl                                          | Zweck                                                                   | Doku                                         |
+| ----------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------- |
+| `monoceros add-language <name> <lang>`          | Sprach-Toolchain als Devcontainer-Feature ergänzen (kuratierte Liste)   | [add-language.md](./add-language.md)         |
+| `monoceros add-service <name> <svc>`            | Compose-Service ergänzen (Postgres, Redis, MySQL — kuratierte Liste)    | [add-service.md](./add-service.md)           |
+| `monoceros add-apt-packages <name> -- …`        | Beliebige apt-Pakete ergänzen (kein Whitelist)                          | [add-apt-packages.md](./add-apt-packages.md) |
+| `monoceros add-feature <name> <feature> [-- …]` | Devcontainer-Feature ergänzen (Katalog-Kurzname oder OCI-Ref)           | [add-feature.md](./add-feature.md)           |
+| `monoceros add-from-url <name> <url>`           | HTTPS-Install-Script per `curl … \| sh` registrieren                    | [add-from-url.md](./add-from-url.md)         |
+| `monoceros add-repo <name> <url> [--path=…]`    | Git-Repo nach `projects/<folder>/` klonen (idempotent, post-create)     | [add-repo.md](./add-repo.md)                 |
+| `monoceros add-port <name> -- <port>…`          | Port(s) eintragen → Traefik-Routing via `<name>.localhost` (Hot-Reload) | [add-port.md](./add-port.md)                 |
 
 ### Entfernen
 
@@ -95,7 +95,7 @@ monoceros apply <name>                                    # neu bauen, picks up 
 | `monoceros remove-language <name> <lang>`    | Sprach-Toolchain entfernen                                             | [remove-language.md](./remove-language.md)         |
 | `monoceros remove-service <name> <svc>`      | Compose-Service entfernen (Volumes bleiben — manuelles Cleanup)        | [remove-service.md](./remove-service.md)           |
 | `monoceros remove-apt-packages <name> -- …`  | apt-Pakete entfernen                                                   | [remove-apt-packages.md](./remove-apt-packages.md) |
-| `monoceros remove-feature <name> <ref>`      | Devcontainer-Feature entfernen                                         | [remove-feature.md](./remove-feature.md)           |
+| `monoceros remove-feature <name> <feature>`  | Devcontainer-Feature entfernen (Katalog-Kurzname oder OCI-Ref)         | [remove-feature.md](./remove-feature.md)           |
 | `monoceros remove-from-url <name> <url>`     | Install-URL entfernen (Install-Resultat bleibt im aktuellen Container) | [remove-from-url.md](./remove-from-url.md)         |
 | `monoceros remove-repo <name> <url-or-name>` | Repo-Eintrag entfernen (lokaler `projects/<folder>/`-Folder bleibt)    | [remove-repo.md](./remove-repo.md)                 |
 | `monoceros remove-port <name> -- <port>…`    | Port(s) aus der Container-yml entfernen                                | [remove-port.md](./remove-port.md)                 |
@@ -110,9 +110,9 @@ monoceros apply <name>                                    # neu bauen, picks up 
 
 ## Tooling
 
-| Befehl                         | Zweck                                                         | Detail                           |
-| ------------------------------ | ------------------------------------------------------------- | -------------------------------- |
-| `monoceros completion <shell>` | Shell-Completion-Skript für bash oder zsh nach stdout drucken | [completion.md](./completion.md) |
+| Befehl                         | Zweck                                                               | Detail                           |
+| ------------------------------ | ------------------------------------------------------------------- | -------------------------------- |
+| `monoceros completion <shell>` | Shell-Completion-Skript für bash, zsh oder pwsh nach stdout drucken | [completion.md](./completion.md) |
 
 ## Konventionen für alle Konfig-Befehle
 

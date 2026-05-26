@@ -6,7 +6,13 @@ Erzeugt eine Container-Konfig unter
 ```sh
 monoceros init <name>                          # documented mode
 monoceros init <name> --with=<components>      # composed mode
+monoceros init <name> --with=<components> \
+  --with-repo=<url> --with-ports=<n,…>         # + Repos / Ports vorab
 ```
+
+Die Flags `--with-repo` und `--with-ports` ziehen Repos bzw.
+Container-Ports direkt in die erzeugte yml — Details in der
+[Argumente](#argumente)-Tabelle.
 
 ## Zweck
 

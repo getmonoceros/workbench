@@ -6,20 +6,28 @@ Devcontainer-Feature-Eintrag aus der Container-Konfig.
 ## Synopsis
 
 ```sh
-monoceros remove-feature <containername> <ref> [--yes]
+monoceros remove-feature <containername> <feature> [--yes]
 ```
 
-Der Ref muss exakt dem in der Konfig hinterlegten entsprechen (inkl.
-Tag), z. B. `ghcr.io/devcontainers/features/docker-in-docker:2`.
+`<feature>` ist — wie bei [`add-feature`](./add-feature.md) — entweder
+ein **Katalog-Kurzname** (`atlassian`, `atlassian/twg`, `claude`,
+`github` — siehe `monoceros list-components`) oder eine **vollständige
+OCI-Ref** (z. B. `ghcr.io/devcontainers/features/docker-in-docker:2`).
+Der Kurzname wird über denselben Resolver wie `add-feature` auf die
+OCI-Ref aufgelöst, sodass `monoceros remove-feature sandbox atlassian`
+den Eintrag findet, der per `add-feature sandbox atlassian` gesetzt
+wurde.
 
 ## Mechanik
 
 Der entsprechende Array-Eintrag in `features:` wird aus der yml
-entfernt. Wenn die Liste leer wird, fällt `features:` ganz raus.
+entfernt — inklusive des per-Feature-Doku-Kommentarblocks, den
+`add-feature` / `init` darüber gesetzt haben. Wenn die Liste leer
+wird, fällt `features:` ganz raus.
 
 ## Idempotenz
 
-Ref nicht in der Konfig → no-change.
+Feature nicht in der Konfig → no-change.
 
 ## Optionen ändern
 
