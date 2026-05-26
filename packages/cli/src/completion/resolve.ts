@@ -440,8 +440,14 @@ async function listFeatureOptionInnerArgs(ctx: Ctx): Promise<string[]> {
     return [];
   }
 
-  // Plain key fragment — suggest the still-unused option NAMES.
-  return summary.optionNames.filter((n) => !usedKeys.has(n));
+  // Plain key fragment — suggest the still-unused option keys WITH a
+  // trailing `=` so the shell wrappers' nospace logic kicks in (same
+  // shape as `--with=` etc. on the flag side). Without that, the
+  // user gets `instance =foo` instead of `instance=foo` after Tab +
+  // manual `=foo`.
+  return summary.optionNames
+    .filter((n) => !usedKeys.has(n))
+    .map((n) => `${n}=`);
 }
 
 /**

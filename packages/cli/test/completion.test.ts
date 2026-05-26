@@ -351,16 +351,18 @@ describe('resolveCompletions', () => {
       const r = await resolveCompletions(line, line.length, {
         monocerosHome: home,
       });
-      // The atlassian manifest declares: rovodev, twg, instance, email,
-      // apiToken, bitbucketToken. All six should be on offer.
+      // The atlassian manifest declares six options. Each comes back
+      // with a trailing `=` so the shell wrappers' nospace logic
+      // engages — otherwise `email<TAB>=foo@x.de` becomes
+      // `email =foo@x.de` (broken).
       expect(r).toEqual(
         expect.arrayContaining([
-          'rovodev',
-          'twg',
-          'instance',
-          'email',
-          'apiToken',
-          'bitbucketToken',
+          'rovodev=',
+          'twg=',
+          'instance=',
+          'email=',
+          'apiToken=',
+          'bitbucketToken=',
         ]),
       );
     });
@@ -370,10 +372,10 @@ describe('resolveCompletions', () => {
       const r = await resolveCompletions(line, line.length, {
         monocerosHome: home,
       });
-      expect(r).toContain('apiToken');
+      expect(r).toContain('apiToken=');
       // Doesn't leak unrelated keys.
-      expect(r).not.toContain('rovodev');
-      expect(r).not.toContain('twg');
+      expect(r).not.toContain('rovodev=');
+      expect(r).not.toContain('twg=');
     });
 
     it('drops options the builder has already set in earlier inner-args', async () => {
@@ -381,10 +383,11 @@ describe('resolveCompletions', () => {
       const r = await resolveCompletions(line, line.length, {
         monocerosHome: home,
       });
-      expect(r).not.toContain('twg');
+      // `twg` was already set, so no `twg=` suggestion this time.
+      expect(r).not.toContain('twg=');
       // But the remaining keys are still on offer.
-      expect(r).toContain('rovodev');
-      expect(r).toContain('apiToken');
+      expect(r).toContain('rovodev=');
+      expect(r).toContain('apiToken=');
     });
 
     it('suggests `true` / `false` for boolean options after `key=`', async () => {
@@ -417,8 +420,8 @@ describe('resolveCompletions', () => {
       const r = await resolveCompletions(line, line.length, {
         monocerosHome: home,
       });
-      expect(r).toContain('rovodev');
-      expect(r).toContain('twg');
+      expect(r).toContain('rovodev=');
+      expect(r).toContain('twg=');
     });
 
     it('unknown feature → no inner-arg suggestions (silent, never throws)', async () => {
@@ -434,7 +437,7 @@ describe('resolveCompletions', () => {
       const r = await resolveCompletions(line, line.length, {
         monocerosHome: home,
       });
-      expect(r).toContain('rovodev');
+      expect(r).toContain('rovodev=');
     });
   });
 });

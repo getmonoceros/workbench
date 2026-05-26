@@ -452,6 +452,14 @@ install_zsh_completion() {
   rc_file="$HOME/.zshrc"
   fpath_line="fpath=(~/.zsh/completions \$fpath)"
   autoload_line="autoload -Uz compinit && compinit"
+  # `menu select` enables arrow-key navigation in the candidate menu.
+  # `unsetopt LIST_AMBIGUOUS` makes the first Tab actually LIST the
+  # candidates instead of silently inserting their common prefix and
+  # waiting for a second Tab — the latter is hostile to discovery
+  # ("monoceros init demo --w<TAB>" should show the three `--with-*`
+  # variants, not just complete to `--with`).
+  menu_line="zstyle ':completion:*' menu select"
+  list_line="unsetopt LIST_AMBIGUOUS"
 
   if [[ -f "$rc_file" ]] && grep -qF "$marker" "$rc_file"; then
     ok "zsh $(dim "→") $(dim "$target") $(dim "(.zshrc already wired)")"
@@ -461,9 +469,11 @@ install_zsh_completion() {
       echo "$marker"
       echo "$fpath_line"
       echo "$autoload_line"
+      echo "$menu_line"
+      echo "$list_line"
     } >> "$rc_file"
     ok "zsh $(dim "→") $(dim "$target")"
-    ok "$(dim "appended fpath + compinit lines to $rc_file")"
+    ok "$(dim "appended fpath + compinit + menu-completion lines to $rc_file")"
   fi
 }
 
