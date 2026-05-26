@@ -404,13 +404,22 @@ export function addInstallUrlToDoc(doc: Document, url: string): boolean {
  * `add-feature` semantics: re-adding the same ref with different
  * options is an explicit error (the builder must remove + re-add to
  * change options); same ref + same options is a no-op.
+ *
+ * `displayName` is what the builder typed on the command line —
+ * either a short-name (`atlassian` / `atlassian/twg`) or the full
+ * OCI ref. Used in error messages so the suggestion to run
+ * `monoceros remove-feature <X>` echoes the form they're familiar
+ * with rather than the always-the-full-ref form. Defaults to `ref`
+ * when omitted.
  */
 export function addFeatureToDoc(
   doc: Document,
   ref: string,
   options: FeatureOptions = {},
+  displayName?: string,
 ): boolean {
   const seq = ensureSeq(doc, 'features');
+  const label = displayName ?? ref;
   for (const item of seq.items) {
     if (!isMap(item)) continue;
     const itemRef = item.get('ref');
@@ -424,7 +433,7 @@ export function addFeatureToDoc(
       return false;
     }
     throw new Error(
-      `Feature ${ref} is already configured with different options. Remove it first (\`monoceros remove-feature ${ref}\`) before re-adding.`,
+      `Feature ${label} is already configured with different options. Remove it first (\`monoceros remove-feature ${label}\`) before re-adding.`,
     );
   }
   const entry = new YAMLMap();

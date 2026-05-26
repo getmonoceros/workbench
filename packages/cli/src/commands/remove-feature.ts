@@ -7,7 +7,7 @@ export const removeFeatureCommand = defineCommand({
     name: 'remove-feature',
     group: 'edit',
     description:
-      'Remove a devcontainer feature from the container config (by its OCI ref). Idempotent, prints a diff before writing.',
+      'Remove a devcontainer feature from the container config. Accepts either a Monoceros catalog short-name (e.g. `atlassian`, `claude`) or a full OCI ref. Idempotent, prints a diff before writing.',
   },
   args: {
     name: {
@@ -19,7 +19,7 @@ export const removeFeatureCommand = defineCommand({
     ref: {
       type: 'positional',
       description:
-        'Feature ref (e.g. ghcr.io/devcontainers/features/docker-in-docker:2).',
+        'Feature to remove. Either a Monoceros catalog short-name (e.g. `atlassian`, `atlassian/twg`, `claude` — see `monoceros list-components`) or a full OCI feature ref (e.g. `ghcr.io/devcontainers/features/docker-in-docker:2`).',
       required: true,
     },
     yes: {

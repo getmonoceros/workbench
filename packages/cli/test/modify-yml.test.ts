@@ -258,6 +258,52 @@ describe('add-*/remove-* against the yml', () => {
     ).rejects.toThrow(/different options/);
   });
 
+  it('runAddFeature "different options" error echoes the user-typed short-name, not the ref', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      monocerosHome: home,
+    });
+    // Builder picked the short name `atlassian` first. The conflict
+    // error should echo that form — not the resolved OCI ref — so the
+    // suggested `monoceros remove-feature atlassian` matches what
+    // they're already typing and works in their muscle memory.
+    await expect(
+      runAddFeature({
+        ...baseOpts,
+        name: 'demo',
+        ref: 'atlassian',
+        options: { rovodev: false }, // different from catalog default
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(
+      /Feature atlassian is already configured[\s\S]*monoceros remove-feature atlassian/,
+    );
+  });
+
+  it('runRemoveFeature accepts a short-name (atlassian)', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      monocerosHome: home,
+    });
+    await runRemoveFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    // The feature block went away — only schemaVersion / name remain.
+    expect(yml).not.toContain(
+      'ghcr.io/getmonoceros/monoceros-features/atlassian:1',
+    );
+  });
+
   it('runAddRepo appends a repo entry, omitting redundant path', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddRepo({

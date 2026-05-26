@@ -556,7 +556,12 @@ export async function runAddFeature(
     ...resolved.defaultOptions,
     ...(input.options ?? {}),
   };
-  return mutate(input, (doc) => addFeatureToDoc(doc, resolved.ref, merged));
+  // Hand the user's typed form (short-name or full ref) to the AST
+  // mutator so any error message it produces echoes the form the
+  // builder is using rather than always the resolved OCI ref.
+  return mutate(input, (doc) =>
+    addFeatureToDoc(doc, resolved.ref, merged, raw),
+  );
 }
 
 /**
@@ -647,16 +652,20 @@ export function runRemoveAptPackages(
   return mutate(input, (doc) => removeAptPackagesFromDoc(doc, input.packages));
 }
 
-export function runRemoveFeature(
+export async function runRemoveFeature(
   input: RemoveFeatureInput,
 ): Promise<ModifyResult> {
-  const ref = input.ref.trim();
-  if (ref.length === 0) {
+  const raw = input.ref.trim();
+  if (raw.length === 0) {
     throw new Error(
-      'Missing feature ref. Usage: monoceros remove-feature <containername> <ref>.',
+      'Missing feature ref. Usage: monoceros remove-feature <containername> <feature>.',
     );
   }
-  return mutate(input, (doc) => removeFeatureFromDoc(doc, ref));
+  // Same short-name → ref resolution as `add-feature`. Without this
+  // the suggestion `monoceros remove-feature atlassian` we print
+  // elsewhere wouldn't actually work, only the full OCI form.
+  const resolved = await resolveFeatureRefOrShortname(raw);
+  return mutate(input, (doc) => removeFeatureFromDoc(doc, resolved.ref));
 }
 
 export function runRemoveFromUrl(
