@@ -57,6 +57,7 @@ import {
   addPortsToDoc,
   addRepoToDoc,
   addServiceToDoc,
+  relocateLeakedSectionComments,
   removeAptPackagesFromDoc,
   removeFeatureFromDoc,
   removeInstallUrlFromDoc,
@@ -742,6 +743,17 @@ async function mutate(
     logger.info('No changes — yml is already in the desired state.');
     return { status: 'no-change' };
   }
+
+  // Centralised post-mutation comment fixup. yaml-lib's parser
+  // sometimes attaches a column-0 comment block that visually belongs
+  // to the NEXT top-level pair (e.g. the `# Container ports exposed…`
+  // header above `routing:`) to the previous pair's deepest trailing
+  // node instead. On re-emit via the AST, the comment then drifts
+  // into the previous section. We run the relocator once here so
+  // every add-*/remove-* mutator gets the fix for free — without it,
+  // a sequence like `init` → `add-feature` rearranges the routing /
+  // repos section headers into the features block above.
+  relocateLeakedSectionComments(parsed.doc);
 
   // Re-validate via a round-trip so schema violations introduced by
   // the mutation surface here with the regular field-path error, not

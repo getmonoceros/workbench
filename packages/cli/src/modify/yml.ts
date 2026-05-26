@@ -145,7 +145,7 @@ export function setContainerGitUserInDoc(
  * Safe to call after any AST mutation; idempotent — already-correctly-
  * placed comments aren't touched.
  */
-function relocateLeakedSectionComments(doc: Document): void {
+export function relocateLeakedSectionComments(doc: Document): void {
   const root = doc.contents;
   if (!root || !isMap(root)) return;
   const items = root.items;
@@ -516,7 +516,8 @@ export function addRepoToDoc(doc: Document, repo: RepoEntry): boolean {
     } else {
       item.delete('provider');
     }
-    relocateLeakedSectionComments(doc);
+    // The `mutate()` wrapper relocates leaked section comments
+    // post-mutation — no per-call invocation needed here.
     return true;
   }
   const entry = new YAMLMap();
@@ -556,7 +557,7 @@ export function addRepoToDoc(doc: Document, repo: RepoEntry): boolean {
     (entry as { comment?: string }).comment = hintLines.join('\n');
   }
   seq.add(entry);
-  relocateLeakedSectionComments(doc);
+  // Section-comment relocation runs in `mutate()` post-apply.
   return true;
 }
 

@@ -283,6 +283,55 @@ describe('add-*/remove-* against the yml', () => {
     );
   });
 
+  it('runAddFeature on a fresh init yml keeps the routing section header at column 0', async () => {
+    // Regression for a user-visible bug where init-generated yml +
+    // subsequent add-feature scrambled the column-0 routing/repos
+    // section header comments into the features block. The fix is
+    // the centralised relocateLeakedSectionComments() pass in
+    // mutate() — without that, yaml-lib's parser attaches the
+    // `# Container ports exposed…` block to the previous top-level
+    // pair's deepest leaf, and re-emit indents it 4 spaces inside.
+    await writeYml(
+      'demo',
+      [
+        '# Solution-config — describes what should be inside your dev-container.',
+        '',
+        'schemaVersion: 1',
+        'name: demo',
+        '',
+        'features:',
+        '',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        '    # options:',
+        '    #   apiKey:',
+        '',
+        '# Container ports exposed to the host through Traefik. Reach them in your',
+        '# browser as demo-<port>.localhost (e.g. demo-3000.localhost). The first',
+        '# entry is the default route and is also reachable as the bare',
+        '# demo.localhost. Manage the list with `monoceros add-port`.',
+        'routing:',
+        '  ports:',
+        '    - 3000',
+        '',
+      ].join('\n'),
+    );
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      options: { apiToken: 'tok', email: 'me@example.com' },
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    // The routing section header MUST still sit at column 0 (no
+    // leading whitespace) directly above `routing:` — not indented
+    // inside the features block.
+    expect(yml).toMatch(/^# Container ports exposed to the host/m);
+    expect(yml).toMatch(/^routing:$/m);
+    // No version of that header line at deeper indent.
+    expect(yml).not.toMatch(/^[ \t]+# Container ports exposed/m);
+  });
+
   it('runRemoveFeature accepts a short-name (atlassian)', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({
