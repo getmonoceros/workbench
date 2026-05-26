@@ -147,9 +147,20 @@ interface CommandSpec {
   /**
    * Suggestion sources for positional args, indexed by position
    * (0 = arg right after the command name). Missing entries mean
-   * no completion for that position.
+   * the slot exists but has no completion source (e.g. `init`'s
+   * fresh-name positional — we don't suggest existing container
+   * names there, that would invite collisions).
    */
   positionals?: ValueSource[];
+  /**
+   * How many positionals the command expects. Defaults to
+   * `positionals.length`. Set this explicitly when the command has
+   * MORE positional slots than entries in `positionals` (= "this
+   * slot exists but has no suggestion source"). Once the cursor sits
+   * past `positionalCount`, completion falls back to flag names so
+   * the builder discovers `--with` / `--yes` etc. via Tab.
+   */
+  positionalCount?: number;
   /** Flag table. Keys include the leading `--`. */
   flags?: Record<string, FlagSpec>;
   /**
@@ -204,14 +215,7 @@ async function resolvePreDash(
 
   // Case B: current starts with `-` (incomplete flag name).
   if (current.startsWith('-')) {
-    const flags = spec.flags ?? {};
-    const names = Object.keys(flags);
-    const all: string[] = [];
-    for (const n of names) {
-      all.push(n);
-      for (const a of flags[n]!.aliases ?? []) all.push(a);
-    }
-    return filterPrefix(all, current);
+    return listFlagNames(spec.flags ?? {}, current);
   }
 
   // Case C: previous token was `--flag` (no `=`) expecting a value.
@@ -227,11 +231,40 @@ async function resolvePreDash(
   // already — that's any preDash token that isn't itself a flag or a
   // flag-value pair we passed through.
   const positionalIdx = countCompletedPositionals(preDash, spec.flags ?? {});
-  const positional = spec.positionals?.[positionalIdx];
-  if (positional) {
-    return resolveValues(positional, ctx, current);
+  const positionals = spec.positionals ?? [];
+  const expectedPositionalCount = spec.positionalCount ?? positionals.length;
+
+  // Still inside a defined positional slot → use its source.
+  if (positionalIdx < positionals.length) {
+    const positional = positionals[positionalIdx];
+    if (positional) return resolveValues(positional, ctx, current);
   }
+  // Past all expected positionals → surface available flags so Tab
+  // discovers them without the builder having to know they exist
+  // (and without having to start with a `-`).
+  if (positionalIdx >= expectedPositionalCount) {
+    return listFlagNames(spec.flags ?? {}, current);
+  }
+  // Slot is expected but has no completion source (e.g. `init`'s
+  // fresh-name positional, `restore`'s backup-path). Don't suggest
+  // anything — let the shell fall through to its built-in handling.
   return [];
+}
+
+/**
+ * Flag-name suggestion list filtered against the partial token under
+ * the cursor. Includes long names (`--with`) and short aliases (`-y`).
+ */
+function listFlagNames(
+  flags: Record<string, FlagSpec>,
+  fragment: string,
+): string[] {
+  const names: string[] = [];
+  for (const [name, spec] of Object.entries(flags)) {
+    names.push(name);
+    for (const alias of spec.aliases ?? []) names.push(alias);
+  }
+  return filterPrefix(names, fragment);
 }
 
 function countCompletedPositionals(
@@ -456,8 +489,11 @@ const containerName: ValueSource = (ctx) => listContainerNames(ctx);
 
 const COMMAND_SPECS: Record<string, CommandSpec> = {
   init: {
-    // First positional is a FRESH name → no suggestions from existing
-    // container-configs (would invite collisions).
+    // First positional is a FRESH name → no suggestion source, but
+    // the slot exists. Once the cursor is past it (after the name +
+    // space), `--with` / `--with-repo` / `--with-ports` surface as
+    // flag suggestions.
+    positionalCount: 1,
     flags: {
       '--with': { type: 'value', values: () => listAllCatalogComponents() },
       '--with-repo': { type: 'value' },
@@ -547,7 +583,9 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   'list-components': {},
   restore: {
     // First positional is a backup-path; no value suggestions today
-    // (could plug filesystem completion later).
+    // (could plug filesystem completion later). Slot still exists so
+    // Tab is silent inside it rather than offering flags prematurely.
+    positionalCount: 1,
   },
 };
 

@@ -269,16 +269,37 @@ describe('resolveCompletions', () => {
     expect(r).toEqual(['bash', 'zsh', 'pwsh']);
   });
 
-  it('returns [] when the cursor is past all known positionals and flags', async () => {
+  it('falls through to flag names once past all expected positionals', async () => {
     await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
     const r = await resolveCompletions(
       'monoceros apply sandbox ',
       'monoceros apply sandbox '.length,
       { monocerosHome: home },
     );
-    // No further positional defined; the only meaningful continuation
-    // would be `-y`/`--yes`, which the user has to start with `-`.
-    expect(r).toEqual([]);
+    // Past the container positional → flags surface without the
+    // builder having to start with a `-` first.
+    expect(r).toContain('--yes');
+    expect(r).toContain('-y');
+  });
+
+  it('init fresh-name slot suggests nothing, but past it suggests the --with flags', async () => {
+    // `monoceros init <TAB>` is inside the fresh-name positional —
+    // no completions (would invite collisions with existing configs).
+    const r1 = await resolveCompletions(
+      'monoceros init ',
+      'monoceros init '.length,
+    );
+    expect(r1).toEqual([]);
+    // `monoceros init hello <TAB>` is past the fresh-name positional
+    // → flags surface so Tab discovers `--with` / `--with-repo` /
+    // `--with-ports` without the builder having to know they exist.
+    const r2 = await resolveCompletions(
+      'monoceros init hello ',
+      'monoceros init hello '.length,
+    );
+    expect(r2).toEqual(
+      expect.arrayContaining(['--with', '--with-repo', '--with-ports']),
+    );
   });
 
   it('returns flag list when typing a leading dash after positionals', async () => {
