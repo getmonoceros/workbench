@@ -2,133 +2,47 @@ import { defineCommand } from 'citty';
 
 /**
  * `monoceros completion <shell>` — prints a shell-completion script
- * for bash or zsh to stdout. The user redirects it into a file their
- * shell loads at startup.
+ * for bash, zsh or PowerShell to stdout. The user pipes the output
+ * into a file their shell sources at startup.
  *
- * Both scripts complete:
- *   - subcommand names at position 1
- *   - container names (read from `<MONOCEROS_HOME>/container-configs/`)
- *     for the second positional of every command that takes a
- *     `<NAME>` argument referring to an existing container — i.e.
- *     everything *except* `init` (which expects a fresh name) and the
- *     verb-only commands like `list-components` / `completion`.
+ * Architecture: the printed script is a THIN wrapper. The actual
+ * completion logic lives in the CLI itself behind
+ * `monoceros __complete --line "<buffer>" --point <N>`, which reads
+ * the cursor's view of the line and returns one candidate per line
+ * on stdout. The shell script's only job is:
  *
- * MONOCEROS_HOME respects the same precedence as the CLI itself: env
- * var first, then `$HOME/.monoceros`. Container-name completion in
- * the workbench-checkout dev environment looks at the env var if set;
- * otherwise it falls back to `~/.monoceros/`, which matches the
- * global-install case. A contributor who wants dev-container names
- * completed sets `MONOCEROS_HOME=$PWD/.local` in their shell.
+ *   1. Capture the current line + cursor position from the shell's
+ *      completion variables (COMP_LINE/COMP_POINT, BUFFER/CURSOR,
+ *      $commandAst/$cursorPosition).
+ *   2. Pipe them to `monoceros __complete`.
+ *   3. Hand the resulting lines back to the shell's completion
+ *      mechanism.
  *
- * Install:
- *   bash:  monoceros completion bash > ~/.bash_completion.d/monoceros
- *          (or any path your shell sources; `source` it from .bashrc)
- *   zsh:   monoceros completion zsh > "${fpath[1]}/_monoceros"
- *          (after ensuring compinit is active)
+ * That keeps the SoT in citty's command definitions + the spec table
+ * in `completion/resolve.ts`. Adding a new command or flag means
+ * extending the resolver, not editing per-shell scripts.
  */
-
-// Keep these arrays in sync with main.ts. Single source of truth
-// would be nice but adds startup cost — citty's subCommands aren't
-// trivial to enumerate from a static context. Tests guard the
-// list in completion.test.ts.
-const ALL_COMMANDS = [
-  'init',
-  'list-components',
-  'shell',
-  'run',
-  'logs',
-  'start',
-  'stop',
-  'status',
-  'apply',
-  'remove',
-  'restore',
-  'add-service',
-  'add-language',
-  'add-apt-packages',
-  'add-feature',
-  'add-from-url',
-  'add-repo',
-  'add-port',
-  'remove-service',
-  'remove-language',
-  'remove-apt-packages',
-  'remove-feature',
-  'remove-from-url',
-  'remove-repo',
-  'remove-port',
-  'port',
-  'completion',
-] as const;
-
-// Commands whose first positional is an existing container name.
-// Everything else either takes no positional (`list-components`,
-// `completion`) or expects a fresh name (`init`, `restore`).
-const COMMANDS_WITH_CONTAINER_ARG = [
-  'shell',
-  'run',
-  'logs',
-  'start',
-  'stop',
-  'status',
-  'apply',
-  'remove',
-  'add-service',
-  'add-language',
-  'add-apt-packages',
-  'add-feature',
-  'add-from-url',
-  'add-repo',
-  'add-port',
-  'remove-service',
-  'remove-language',
-  'remove-apt-packages',
-  'remove-feature',
-  'remove-from-url',
-  'remove-repo',
-  'remove-port',
-  'port',
-] as const;
 
 const SHELLS = ['bash', 'zsh', 'pwsh'] as const;
 type Shell = (typeof SHELLS)[number];
 
 export function renderCompletionScript(shell: Shell): string {
-  const commands = ALL_COMMANDS.join(' ');
-  const containerCommandsRegex = COMMANDS_WITH_CONTAINER_ARG.join('|');
-
   if (shell === 'bash') {
     return [
       '# bash completion for monoceros',
       '# install: source this file from .bashrc, e.g.',
       '#   monoceros completion bash > ~/.bash_completion.d/monoceros',
       '#   echo "source ~/.bash_completion.d/monoceros" >> ~/.bashrc',
+      '#',
+      '# The work is done by `monoceros __complete --line --point`; this',
+      '# shell wrapper only forwards the cursor view.',
       '',
       '_monoceros() {',
-      '  local cur prev cmd home configs_dir names',
-      '  cur="${COMP_WORDS[COMP_CWORD]}"',
-      '',
-      '  if [[ $COMP_CWORD -eq 1 ]]; then',
-      `    COMPREPLY=( $(compgen -W "${commands}" -- "$cur") )`,
-      '    return',
-      '  fi',
-      '',
-      '  cmd="${COMP_WORDS[1]}"',
-      '  if [[ $COMP_CWORD -eq 2 ]]; then',
-      '    case "$cmd" in',
-      `      ${containerCommandsRegex})`,
-      '        home="${MONOCEROS_HOME:-$HOME/.monoceros}"',
-      '        configs_dir="$home/container-configs"',
-      '        if [[ -d "$configs_dir" ]]; then',
-      `          names=$(cd "$configs_dir" && ls *.yml 2>/dev/null | sed 's/\\.yml$//')`,
-      '          COMPREPLY=( $(compgen -W "$names" -- "$cur") )',
-      '        fi',
-      '        ;;',
-      '      completion)',
-      `        COMPREPLY=( $(compgen -W "${SHELLS.join(' ')}" -- "$cur") )`,
-      '        ;;',
-      '    esac',
-      '  fi',
+      "  local IFS=$'\\n'",
+      '  local candidates',
+      '  candidates=$(monoceros __complete --line "$COMP_LINE" --point "$COMP_POINT" 2>/dev/null)',
+      '  local cur="${COMP_WORDS[COMP_CWORD]}"',
+      '  COMPREPLY=( $(compgen -W "$candidates" -- "$cur") )',
       '}',
       'complete -F _monoceros monoceros',
       '',
@@ -141,44 +55,20 @@ export function renderCompletionScript(shell: Shell): string {
       '# install: dot-source this file from your $PROFILE, e.g.',
       '#   monoceros completion pwsh > $HOME/.config/monoceros/completion.ps1',
       "#   Add-Content $PROFILE '. $HOME/.config/monoceros/completion.ps1'",
+      '#',
+      '# The work is done by `monoceros __complete --line --point`; this',
+      '# shell wrapper only forwards the cursor view.',
       '',
       'Register-ArgumentCompleter -Native -CommandName monoceros -ScriptBlock {',
       '    param($wordToComplete, $commandAst, $cursorPosition)',
-      '',
-      '    $commands = @(',
-      ...ALL_COMMANDS.map((c) => `        '${c}'`),
-      '    )',
-      `    $shells = @('${SHELLS.join("', '")}')`,
-      '    $containerCommands = @(',
-      ...COMMANDS_WITH_CONTAINER_ARG.map((c) => `        '${c}'`),
-      '    )',
-      '',
-      '    $tokens = $commandAst.CommandElements',
-      '    $position = $tokens.Count',
-      '    if ($wordToComplete) { $position-- }',
-      '',
-      '    if ($position -eq 1) {',
-      '        $commands | Where-Object { $_ -like "$wordToComplete*" } |',
-      '            ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", $_) }',
-      '        return',
-      '    }',
-      '',
-      '    if ($position -eq 2) {',
-      '        $cmd = $tokens[1].Value',
-      '        if ($containerCommands -contains $cmd) {',
-      '            $home = if ($env:MONOCEROS_HOME) { $env:MONOCEROS_HOME } else { Join-Path $env:USERPROFILE ".monoceros" }',
-      '            $configsDir = Join-Path $home "container-configs"',
-      '            if (Test-Path $configsDir) {',
-      '                Get-ChildItem -Path $configsDir -Filter "*.yml" |',
-      '                    ForEach-Object { $_.BaseName } |',
-      '                    Where-Object { $_ -like "$wordToComplete*" } |',
-      '                    ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", $_) }',
-      '            }',
-      '        } elseif ($cmd -eq "completion") {',
-      '            $shells | Where-Object { $_ -like "$wordToComplete*" } |',
-      '                ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", $_) }',
-      '        }',
-      '    }',
+      '    $line = $commandAst.Extent.Text',
+      '    $point = $cursorPosition - $commandAst.Extent.StartOffset',
+      '    if ($point -lt 0) { $point = 0 }',
+      '    $raw = & monoceros __complete --line $line --point $point 2>$null',
+      '    if (-not $raw) { return }',
+      '    $raw -split "`n" |',
+      '        Where-Object { $_.Length -gt 0 -and $_ -like "$wordToComplete*" } |',
+      '        ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", $_) }',
       '}',
       '',
     ].join('\n');
@@ -191,36 +81,17 @@ export function renderCompletionScript(shell: Shell): string {
     '# install: drop this file somewhere on your $fpath as `_monoceros`,',
     '# then start a new shell (or run `compinit`). Example:',
     '#   monoceros completion zsh > "${fpath[1]}/_monoceros"',
+    '#',
+    '# The work is done by `monoceros __complete --line --point`; this',
+    '# shell wrapper only forwards the cursor view.',
     '',
     '_monoceros() {',
-    '  local -a commands shells',
-    '  commands=(',
-    ...ALL_COMMANDS.map((c) => `    '${c}'`),
-    '  )',
-    `  shells=(${SHELLS.map((s) => `'${s}'`).join(' ')})`,
-    '',
-    '  if (( CURRENT == 2 )); then',
-    "    _describe 'monoceros command' commands",
-    '    return',
-    '  fi',
-    '',
-    '  local cmd=${words[2]}',
-    '  if (( CURRENT == 3 )); then',
-    '    case $cmd in',
-    `      ${containerCommandsRegex})`,
-    '        local home="${MONOCEROS_HOME:-$HOME/.monoceros}"',
-    '        local configs_dir="$home/container-configs"',
-    '        if [[ -d $configs_dir ]]; then',
-    '          local -a names',
-    '          names=(${configs_dir}/*.yml(N:t:r))',
-    "          _describe 'container' names",
-    '        fi',
-    '        ;;',
-    '      completion)',
-    "        _describe 'shell' shells",
-    '        ;;',
-    '    esac',
-    '  fi',
+    '  local line="$BUFFER"',
+    '  local point="$CURSOR"',
+    '  local -a candidates',
+    '  candidates=("${(@f)$(monoceros __complete --line "$line" --point "$point" 2>/dev/null)}")',
+    '  candidates=("${(@)candidates:#}")',
+    "  _describe 'completion' candidates",
     '}',
     '',
     '_monoceros "$@"',
@@ -254,8 +125,4 @@ export const completionCommand = defineCommand({
   },
 });
 
-// Exposed for tests so the static command list stays in sync with
-// what main.ts wires up.
-export const COMPLETION_COMMANDS_FOR_TEST = ALL_COMMANDS;
-export const COMPLETION_CONTAINER_COMMANDS_FOR_TEST =
-  COMMANDS_WITH_CONTAINER_ARG;
+export const COMPLETION_SHELLS = SHELLS;

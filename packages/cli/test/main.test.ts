@@ -39,6 +39,9 @@ describe('monoceros main command', () => {
       'remove-port',
       'port',
       'completion',
+      // Internal helper used by the shell-completion wrappers; not
+      // user-facing but part of the registered subcommand surface.
+      '__complete',
     ];
 
     const subCommands = main.subCommands;

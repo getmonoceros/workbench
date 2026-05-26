@@ -8,6 +8,7 @@ import { addPortCommand } from './commands/add-port.js';
 import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
 import { completionCommand } from './commands/completion.js';
+import { __completeCommand } from './commands/__complete.js';
 import { initCommand } from './commands/init.js';
 import { listComponentsCommand } from './commands/list-components.js';
 import { logsCommand } from './commands/logs.js';
@@ -63,5 +64,6 @@ export const main = defineCommand({
     'remove-port': removePortCommand,
     port: portCommand,
     completion: completionCommand,
+    __complete: __completeCommand,
   },
 });
