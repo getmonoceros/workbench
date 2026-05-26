@@ -627,6 +627,26 @@ export function removeFeatureFromDoc(doc: Document, ref: string): boolean {
   if (!seq || !isSeq(seq)) return false;
   const idx = seq.items.findIndex((i) => isMap(i) && i.get('ref') === ref);
   if (idx < 0) return false;
+
+  // yaml-lib parks the header comment block that visually precedes
+  // entry[idx] as the trailing `.comment` of the PREVIOUS sequence
+  // item, separated from that item's own inline hints by a `\n\n`.
+  // Splicing the entry doesn't touch the previous sibling, so the
+  // header lines would survive in the previous entry's trailing
+  // comment and re-emit as orphaned column-2 prose under features.
+  // Strip the post-`\n\n` tail from the previous item's comment
+  // before we splice — symmetric to how relocateLeakedSectionComments
+  // moves the routing-section header forward.
+  if (idx > 0) {
+    const prev = seq.items[idx - 1] as { comment?: string | null } | null;
+    if (prev && typeof prev.comment === 'string' && prev.comment.length > 0) {
+      const blank = prev.comment.match(/\n[ \t]*\n/);
+      if (blank && blank.index !== undefined) {
+        prev.comment = prev.comment.slice(0, blank.index);
+      }
+    }
+  }
+
   seq.items.splice(idx, 1);
   pruneEmptySeq(doc, 'features');
   return true;

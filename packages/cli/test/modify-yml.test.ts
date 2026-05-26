@@ -357,6 +357,51 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).not.toMatch(/-\s+# Atlassian/);
   });
 
+  it('runRemoveFeature strips the per-feature header comment, not just the ref+options', async () => {
+    // Regression for a user-visible bug: yaml-lib parses the header
+    // comment block that visually precedes a sequence-item as the
+    // trailing `.comment` of the PREVIOUS sequence-item (separated
+    // by a `\n\n` from that previous item's own inline hints).
+    // splice() removes the target entry but doesn't touch the
+    // previous sibling — so the header lines used to survive in the
+    // previous entry's trailing comment and re-emit as orphaned
+    // column-2 prose under `features:`.
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        '',
+        'features:',
+        '',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        '    # options:',
+        '    #   apiKey:',
+        '',
+        '  # Atlassian — header that yaml-lib will park on the claude entry',
+        '  # second line of that header.',
+        '  # Options: …',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1',
+        '    options:',
+        '      twg: true',
+        '',
+      ].join('\n'),
+    );
+    await runRemoveFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).not.toContain('atlassian');
+    expect(yml).not.toContain('Atlassian — header');
+    expect(yml).not.toMatch(/^[ \t]*# Options: …/m);
+    // Claude entry + its own commented options-hint must still be there.
+    expect(yml).toContain('claude-code:1');
+    expect(yml).toMatch(/^\s+# options:\s*$/m);
+  });
+
   it('runRemoveFeature accepts a short-name (atlassian)', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({
