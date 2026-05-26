@@ -299,4 +299,103 @@ describe('resolveCompletions', () => {
     );
     expect(r).toEqual([]);
   });
+
+  // ─── add-feature inner-args (post-`--` option keys) ──────────────
+
+  describe('add-feature -- key=value inner args', () => {
+    beforeEach(async () => {
+      await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
+    });
+
+    it('suggests every option key the feature manifest declares (short-name)', async () => {
+      const line = 'monoceros add-feature sandbox atlassian -- ';
+      const r = await resolveCompletions(line, line.length, {
+        monocerosHome: home,
+      });
+      // The atlassian manifest declares: rovodev, twg, instance, email,
+      // apiToken, bitbucketToken. All six should be on offer.
+      expect(r).toEqual(
+        expect.arrayContaining([
+          'rovodev',
+          'twg',
+          'instance',
+          'email',
+          'apiToken',
+          'bitbucketToken',
+        ]),
+      );
+    });
+
+    it('prefix-filters option names against the partial token', async () => {
+      const line = 'monoceros add-feature sandbox atlassian -- api';
+      const r = await resolveCompletions(line, line.length, {
+        monocerosHome: home,
+      });
+      expect(r).toContain('apiToken');
+      // Doesn't leak unrelated keys.
+      expect(r).not.toContain('rovodev');
+      expect(r).not.toContain('twg');
+    });
+
+    it('drops options the builder has already set in earlier inner-args', async () => {
+      const line = 'monoceros add-feature sandbox atlassian -- twg=true ';
+      const r = await resolveCompletions(line, line.length, {
+        monocerosHome: home,
+      });
+      expect(r).not.toContain('twg');
+      // But the remaining keys are still on offer.
+      expect(r).toContain('rovodev');
+      expect(r).toContain('apiToken');
+    });
+
+    it('suggests `true` / `false` for boolean options after `key=`', async () => {
+      const line = 'monoceros add-feature sandbox atlassian -- rovodev=';
+      const r = await resolveCompletions(line, line.length, {
+        monocerosHome: home,
+      });
+      expect(r).toEqual(['rovodev=true', 'rovodev=false']);
+    });
+
+    it('prefix-filters boolean values against the post-`=` fragment', async () => {
+      const line = 'monoceros add-feature sandbox atlassian -- rovodev=t';
+      const r = await resolveCompletions(line, line.length, {
+        monocerosHome: home,
+      });
+      expect(r).toEqual(['rovodev=true']);
+    });
+
+    it('returns [] for string-typed values (no useful suggestion list)', async () => {
+      const line = 'monoceros add-feature sandbox atlassian -- instance=';
+      const r = await resolveCompletions(line, line.length, {
+        monocerosHome: home,
+      });
+      expect(r).toEqual([]);
+    });
+
+    it('resolves the feature ref from a full OCI ref (not just short names)', async () => {
+      const line =
+        'monoceros add-feature sandbox ghcr.io/getmonoceros/monoceros-features/atlassian:1 -- ';
+      const r = await resolveCompletions(line, line.length, {
+        monocerosHome: home,
+      });
+      expect(r).toContain('rovodev');
+      expect(r).toContain('twg');
+    });
+
+    it('unknown feature → no inner-arg suggestions (silent, never throws)', async () => {
+      const line = 'monoceros add-feature sandbox no-such-feature -- ';
+      const r = await resolveCompletions(line, line.length, {
+        monocerosHome: home,
+      });
+      expect(r).toEqual([]);
+    });
+
+    it('respects --yes flag between container name and feature (still resolves)', async () => {
+      const line = 'monoceros add-feature sandbox atlassian --yes -- ';
+      const r = await resolveCompletions(line, line.length, {
+        monocerosHome: home,
+      });
+      expect(r).toContain('rovodev');
+    });
+  });
 });

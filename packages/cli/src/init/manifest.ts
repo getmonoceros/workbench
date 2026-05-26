@@ -59,15 +59,34 @@ export interface FeatureManifestSummary {
   optionHints: string[];
   /** `description` from each option in the manifest, keyed by name. */
   optionDescriptions: Record<string, string>;
+  /**
+   * ALL option keys the manifest declares, in declaration order. Used
+   * by shell completion for `add-feature -- key=value`: the builder
+   * can set any option, not just the subset surfaced as hints in
+   * init's commented-out block.
+   */
+  optionNames: string[];
+  /**
+   * `type` from each option in the manifest, keyed by name. Limited
+   * to `'string'` / `'boolean'` today — what the devcontainer-feature
+   * spec supports. Used by completion to suggest `true`/`false` after
+   * `--<bool-key>=`.
+   */
+  optionTypes: Record<string, 'string' | 'boolean'>;
   /** Free-text per-feature notes rendered above the `- ref:` line. */
   usageNotes: string[];
+}
+
+interface RawManifestOption {
+  type?: unknown;
+  description?: unknown;
 }
 
 interface RawManifest {
   name?: string;
   description?: string;
   documentationURL?: string;
-  options?: Record<string, { description?: string }>;
+  options?: Record<string, RawManifestOption>;
   'x-monoceros'?: {
     optionHints?: unknown;
     usageNotes?: unknown;
@@ -124,15 +143,19 @@ export function loadFeatureManifestSummary(
       : [];
 
     const optionDescriptions: Record<string, string> = {};
+    const optionTypes: Record<string, 'string' | 'boolean'> = {};
+    const optionNames: string[] = [];
     if (parsed.options) {
       for (const [key, opt] of Object.entries(parsed.options)) {
-        if (
-          opt &&
-          typeof opt === 'object' &&
-          typeof opt.description === 'string' &&
-          opt.description.length > 0
-        ) {
+        if (!opt || typeof opt !== 'object') continue;
+        optionNames.push(key);
+        if (typeof opt.description === 'string' && opt.description.length > 0) {
           optionDescriptions[key] = opt.description;
+        }
+        if (opt.type === 'boolean') {
+          optionTypes[key] = 'boolean';
+        } else if (opt.type === 'string') {
+          optionTypes[key] = 'string';
         }
       }
     }
@@ -153,6 +176,8 @@ export function loadFeatureManifestSummary(
       documentationURL,
       optionHints,
       optionDescriptions,
+      optionNames,
+      optionTypes,
       usageNotes,
     };
   } catch {

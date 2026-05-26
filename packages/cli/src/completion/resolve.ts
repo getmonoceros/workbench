@@ -2,8 +2,9 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { monocerosHome } from '../config/paths.js';
 import { loadComponentCatalog } from '../init/components.js';
+import { loadFeatureManifestSummary } from '../init/manifest.js';
 import { knownLanguages, knownServices } from '../create/catalog.js';
-import { PROVIDER_VALUES } from '../config/schema.js';
+import { PROVIDER_VALUES, REGEX } from '../config/schema.js';
 
 /**
  * Shell-agnostic completion engine. Called by the `__complete`
@@ -329,6 +330,94 @@ function listShellNames(): string[] {
   return ['bash', 'zsh', 'pwsh'];
 }
 
+/**
+ * Inner-arg completion for `monoceros add-feature <name> <feature> --
+ * key=value …`. The `<feature>` token can be either a catalog short
+ * name (`atlassian`, `atlassian/twg`) or a full OCI ref; in both cases
+ * we resolve to the feature manifest and return the option keys.
+ *
+ * Behaviour with the current token:
+ *   - Token is empty or contains no `=` → suggest the option NAMES
+ *     (filtered against the partial token prefix).
+ *   - Token is `<key>=<fragment>` AND the key is a boolean → suggest
+ *     `<key>=true` / `<key>=false` matching `<fragment>`. For string
+ *     options we have no useful default suggestion list (it's
+ *     freeform credentials / URLs).
+ *   - Already-typed `key=value` pairs (before the current token) drop
+ *     the same `key=` from the suggestion list so the builder doesn't
+ *     get duplicates.
+ */
+async function listFeatureOptionInnerArgs(ctx: Ctx): Promise<string[]> {
+  // Locate the feature token. ctx.prev[0] is the program name, [1] is
+  // `add-feature`, [2] is the container name, [3] is the feature.
+  // The user could have added flags like `--yes` before the feature,
+  // but flag tokens always start with `-`. So the feature is the
+  // SECOND non-flag positional after the command.
+  const after = ctx.prev.slice(2); // drop "monoceros", "add-feature"
+  let positionalCount = 0;
+  let featureToken: string | undefined;
+  for (let i = 0; i < after.length; i++) {
+    const t = after[i]!;
+    if (t === '--') break; // stop at the inner-args separator
+    if (t.startsWith('-')) continue; // flag
+    positionalCount++;
+    if (positionalCount === 2) {
+      featureToken = t;
+      break;
+    }
+  }
+  if (!featureToken) return [];
+  const ref = await resolveFeatureRefForCompletion(featureToken);
+  if (!ref) return [];
+  const summary = loadFeatureManifestSummary(ref);
+  if (!summary) return [];
+
+  // Which keys has the builder already set in earlier inner-args?
+  const dashDash = ctx.prev.indexOf('--');
+  const innerSoFar = dashDash >= 0 ? ctx.prev.slice(dashDash + 1) : [];
+  const usedKeys = new Set<string>();
+  for (const t of innerSoFar) {
+    const eq = t.indexOf('=');
+    if (eq > 0) usedKeys.add(t.slice(0, eq));
+  }
+
+  // Current token: `key=value` or just `key`?
+  const eqIdx = ctx.current.indexOf('=');
+  if (eqIdx >= 0) {
+    const key = ctx.current.slice(0, eqIdx);
+    const valueFragment = ctx.current.slice(eqIdx + 1);
+    const type = summary.optionTypes[key];
+    if (type === 'boolean') {
+      return ['true', 'false']
+        .filter((v) => v.startsWith(valueFragment))
+        .map((v) => `${key}=${v}`);
+    }
+    // String options: no useful suggestion list. Return [] so the
+    // shell falls back to its own filename / nothing handling.
+    return [];
+  }
+
+  // Plain key fragment — suggest the still-unused option NAMES.
+  return summary.optionNames.filter((n) => !usedKeys.has(n));
+}
+
+/**
+ * Bridge between the short-name / full-ref formats the user types
+ * for `add-feature <feature>` and the OCI ref the manifest loader
+ * needs. A no-op for full OCI refs; a single catalog lookup for short
+ * names. Returns `undefined` for unknown short-names (no completions).
+ */
+async function resolveFeatureRefForCompletion(
+  token: string,
+): Promise<string | undefined> {
+  if (REGEX.featureRef.test(token)) return token;
+  const catalog = await loadComponentCatalog();
+  const c = catalog.get(token);
+  if (!c || c.file.category !== 'feature') return undefined;
+  const f = c.file.contributes.features?.[0];
+  return f?.ref;
+}
+
 // ─── Static command list (mirrors completion.ts) ──────────────────
 
 const ALL_COMMANDS = [
@@ -405,7 +494,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   'add-feature': {
     positionals: [containerName, () => listFeatureComponents()],
     flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
-    innerArgs: () => [], // Option keys come from manifest — Q3 fills this
+    innerArgs: (ctx) => listFeatureOptionInnerArgs(ctx),
   },
   'add-from-url': { positionals: [containerName] },
   'add-repo': {
