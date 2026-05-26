@@ -913,3 +913,13 @@ Alle live in den 1.6.x-Releases:
 - **Sprach-Toolchain-Katalog erweitern** — heute via Devcontainer-
   Features genug abgedeckt; nur falls häufig nachgefragte Tools
   außerhalb der offiziellen Sets auftauchen, eigene Wrapper anlegen.
+- **Docker-im-Container als opt-in Feature** — manche Projekte bauen
+  zur Dev-Zeit Docker-Images (`npm run dev` → `docker compose up
+--build`). Plan: ein Feature `ghcr.io/getmonoceros/monoceros-features/docker-in-docker:1`,
+  das einen Daemon im Monoceros-Container hochzieht. DinD bevorzugt
+  über DooD wegen sauberem Lifecycle (kein Zombie nach `remove`),
+  funktionierender `$(pwd)`-Bind-Mounts und natürlicher Traefik-
+  Integration über den Parent-Container — den Privileged-Cost und
+  die langsameren Builds akzeptieren wir. Doku-Strategie aktiv:
+  zuerst auf `services:` in der Monoceros-yml umlenken, dann erst die
+  Konsequenzen. Details: [ADR 0008](./adr/0008-docker-in-container.md).
