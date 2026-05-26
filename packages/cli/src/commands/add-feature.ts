@@ -21,7 +21,7 @@ export const addFeatureCommand = defineCommand({
     ref: {
       type: 'positional',
       description:
-        'Devcontainer feature ref (OCI image style, e.g. `ghcr.io/devcontainers/features/docker-in-docker:2`).',
+        'Feature to add. Either a Monoceros catalog short-name (e.g. `atlassian`, `atlassian/twg`, `claude` — see `monoceros list-components`) or a full OCI feature ref (e.g. `ghcr.io/devcontainers/features/docker-in-docker:2`). The short-name brings its catalog-defined default options; `-- key=value` overrides them.',
       required: true,
     },
     yes: {

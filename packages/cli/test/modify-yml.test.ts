@@ -172,6 +172,81 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toContain('version: latest');
   });
 
+  it('runAddFeature accepts a catalog short-name and pulls its default options', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain(
+      '- ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1',
+    );
+    expect(yml).toContain('rovodev: true');
+    expect(yml).toContain('twg: true');
+  });
+
+  it('runAddFeature resolves a sub-component short-name (atlassian/twg)', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian/twg',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain(
+      '- ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1',
+    );
+    // Sub-component's options-block opts out of rovodev, in to twg.
+    expect(yml).toContain('rovodev: false');
+    expect(yml).toContain('twg: true');
+  });
+
+  it('runAddFeature short-name + `--` options merges with overrides winning', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      options: { rovodev: false, instance: 'foo.atlassian.net' },
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    // User override wins over catalog default (rovodev: true).
+    expect(yml).toContain('rovodev: false');
+    // Catalog default that wasn't overridden survives.
+    expect(yml).toContain('twg: true');
+    // Extra key supplied only by the user lands as-is.
+    expect(yml).toContain('instance: foo.atlassian.net');
+  });
+
+  it('runAddFeature errors on an unknown short-name and lists available features', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      runAddFeature({
+        ...baseOpts,
+        name: 'demo',
+        ref: 'nonexistent-feature',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Unknown feature: "nonexistent-feature"/);
+  });
+
+  it('runAddFeature redirects to add-language when given a language short-name', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      runAddFeature({
+        ...baseOpts,
+        name: 'demo',
+        ref: 'node',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/'node' is a language, not a feature[\s\S]*add-language/);
+  });
+
   it('runAddFeature errors when re-adding with different options', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({

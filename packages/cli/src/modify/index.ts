@@ -29,6 +29,7 @@ import {
   portNumber,
   type RepoProvider,
 } from '../config/schema.js';
+import { loadComponentCatalog } from '../init/components.js';
 import {
   ensureProxy,
   maybeStopProxy,
@@ -539,14 +540,87 @@ function normalizePorts(raw: readonly (number | string)[]): number[] {
   return result;
 }
 
-export function runAddFeature(input: AddFeatureInput): Promise<ModifyResult> {
-  const ref = input.ref.trim();
-  if (ref.length === 0) {
+export async function runAddFeature(
+  input: AddFeatureInput,
+): Promise<ModifyResult> {
+  const raw = input.ref.trim();
+  if (raw.length === 0) {
     throw new Error(
-      'Missing feature ref. Usage: monoceros add-feature <containername> <ref>.',
+      'Missing feature ref. Usage: monoceros add-feature <containername> <feature>.',
     );
   }
-  return mutate(input, (doc) => addFeatureToDoc(doc, ref, input.options ?? {}));
+  const resolved = await resolveFeatureRefOrShortname(raw);
+  // User-supplied `-- key=value` options override the catalog-driven
+  // defaults that come with a short name. For a full OCI ref the
+  // resolver returns no defaults, so this is just `input.options`.
+  const merged: FeatureOptions = {
+    ...resolved.defaultOptions,
+    ...(input.options ?? {}),
+  };
+  return mutate(input, (doc) => addFeatureToDoc(doc, resolved.ref, merged));
+}
+
+/**
+ * Accept either a full OCI feature ref (`ghcr.io/.../foo:1`) or a
+ * catalog short-name (`atlassian`, `atlassian/twg`, `claude`, …).
+ *
+ * Short names map to the matching component's `contributes.features`
+ * entry; the entry's `options` (if any) become the default option
+ * values the caller's `--` overrides apply on top of. Unknown short
+ * names produce an error that lists the available features.
+ */
+async function resolveFeatureRefOrShortname(input: string): Promise<{
+  ref: string;
+  defaultOptions: FeatureOptions;
+}> {
+  if (REGEX.featureRef.test(input)) {
+    return { ref: input, defaultOptions: {} };
+  }
+  const catalog = await loadComponentCatalog();
+  const component = catalog.get(input);
+  if (!component) {
+    const featureShorts = [...catalog.values()]
+      .filter((c) => c.file.category === 'feature')
+      .map((c) => c.name)
+      .sort();
+    const knownList =
+      featureShorts.length > 0 ? featureShorts.join(', ') : '(none)';
+    throw new Error(
+      `Unknown feature: ${JSON.stringify(input)}. ` +
+        `Pass either a catalog short-name (one of: ${knownList}) ` +
+        `or a full OCI ref like ` +
+        `'ghcr.io/getmonoceros/monoceros-features/<name>:<tag>'.`,
+    );
+  }
+  if (component.file.category !== 'feature') {
+    throw new Error(
+      `'${input}' is a ${component.file.category}, not a feature. ` +
+        `Use 'monoceros add-${component.file.category} <name> ${input}' instead.`,
+    );
+  }
+  const features = component.file.contributes.features ?? [];
+  if (features.length === 0) {
+    throw new Error(
+      `Catalog entry '${input}' contributes no feature ref — bug or stale catalog.`,
+    );
+  }
+  if (features.length > 1) {
+    // Practically: Monoceros's own catalog has one ref per feature
+    // component. A multi-ref short-name would be ambiguous because
+    // `add-feature` only adds one ref at a time.
+    throw new Error(
+      `'${input}' bundles multiple feature refs (${features
+        .map((f) => f.ref)
+        .join(
+          ', ',
+        )}). add-feature handles one at a time — pass the OCI ref directly.`,
+    );
+  }
+  const [first] = features;
+  return {
+    ref: first!.ref,
+    defaultOptions: { ...(first!.options ?? {}) },
+  };
 }
 
 // ─── remove-* ─────────────────────────────────────────────────────

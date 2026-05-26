@@ -17,13 +17,17 @@ eigenes Devcontainer-Feature haben und damit mehr machen als nur
 ## Synopsis
 
 ```sh
-monoceros add-feature <containername> <ref> [--yes] [-- <key>=<value> …]
+monoceros add-feature <containername> <feature> [--yes] [-- <key>=<value> …]
 ```
 
 - `<containername>` — Konfig-Name unter
   `$MONOCEROS_HOME/container-configs/<name>.yml`
-- `<ref>` — OCI-Image-Ref des Features (z. B.
-  `ghcr.io/devcontainers/features/docker-in-docker:2`)
+- `<feature>` — entweder ein **Katalog-Kurzname** aus
+  `monoceros list-components` (z. B. `atlassian`, `atlassian/twg`,
+  `claude`, `github`) oder eine **vollständige OCI-Ref** (z. B.
+  `ghcr.io/devcontainers/features/docker-in-docker:2`).
+  Beim Kurznamen bringt das Feature seine Katalog-Default-Optionen mit;
+  die werden durch `-- key=value`-Paare überschrieben.
 - Optionen nach `--` als `key=value`-Paare
 
 ## Optionen
