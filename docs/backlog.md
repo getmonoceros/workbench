@@ -892,6 +892,68 @@ Alle live in den 1.6.x-Releases:
   gitignored Sammlung für Premium-Feature-Kandidaten angelegt;
   erster Eintrag: Commit-Signing im Container.
 
+#### yml-UX + Shell-Completion-Welle (1.8.0 – 1.9.7)
+
+Nicht im Original-M5-Plan. Entstanden aus Builder-Tests an den
+generierten yml's und der Tab-Completion; iterativ über viele
+kleine Releases ausgeliefert. Keine Schema-Brüche — `schemaVersion`
+bleibt 1, alle Änderungen sind additiv oder rein kosmetisch am
+Output.
+
+- **yml-Format-Overhaul** (1.8.0) — `monoceros-config.sample.yml` und
+  der container-config-Generator (`init/generator.ts`) auf einen
+  konsistenten Stil umgestellt: eine `#`-Ebene durchgängig (kein
+  `# # foo`-Nesting), Builder-Sprache in den Section-Headern (wozu,
+  nicht wie), Container-Name in routing/repos-Prosa substituiert.
+  Per-Feature-Doku (Tagline + Beschreibung, Options-Summary,
+  `See <documentationURL>`) kommt ausschließlich aus dem
+  Feature-Manifest — keine Fallback-Prosa mehr im Generator. Feature-
+  Manifeste (`images/features/*/devcontainer-feature.json`) auf kurze
+  Taglines + Ein-Satz-Option-Beschreibungen getrimmt.
+
+- **Robuste Comment-Round-Trips** — yaml-lib parkt column-0-
+  Section-Header (`# Container ports…`, `# Repos cloned…`) gerne am
+  vorigen Leaf statt am nächsten Pair. `relocateLeakedSectionComments`
+  (in `mutate()` zentral, läuft nach JEDER add-_/remove-_-Mutation)
+  splittet am `\n\n`-Trenner und schiebt den Header zur richtigen
+  Section zurück. Symmetrisch: `setContainerGitUserInDoc` setzt neues
+  `git:` an die Spitze (nach `name:`) mit Header; `writeGlobalDefaultGitUser`
+  setzt `defaults.git` an den Anfang von `defaults` und strippt alte
+  commented-out `# git:`-Skelette; `removeFeatureFromDoc` schneidet
+  den am Vor-Sibling geparkten Feature-Header mit weg.
+
+- **Feature-Kurznamen** (1.8.x/1.9.4) — `add-feature` und
+  `remove-feature` akzeptieren Katalog-Kurznamen (`atlassian`,
+  `atlassian/twg`, `claude`) zusätzlich zur vollen OCI-Ref; Kurzname
+  bringt die Katalog-Default-Optionen mit, `-- key=value` überschreibt.
+  Fehlermeldungen echoen die getippte Form. `add-feature` injiziert
+  denselben Manifest-Header-Block den `init` erzeugt (geteiltes
+  `init/feature-doc.ts`).
+
+- **Schema/Transform-Anpassungen** — `FeatureOptionValueSchema`
+  akzeptiert `null` → `""` (bare `apiKey:` parst sauber);
+  `transform.ts` behandelt leere Option-Werte als „nicht gesetzt",
+  damit der globale `defaults.features`-Wert greift statt mit `""`
+  überschrieben zu werden.
+
+- **Shell-Completion neu** (1.9.0 – 1.9.3) — internes
+  `monoceros __complete --line --point` als Engine
+  (`completion/resolve.ts`, kontextsensitiv aus einer COMMAND_SPECS-
+  Tabelle); bash/zsh/pwsh-Wrapper sind jetzt dünne Forwarder.
+  Vervollständigt Befehle, Container-Namen, Flags, Flag-Werte
+  (`--with=<katalog>`, `--provider=<enum>`), komma-getrennte Listen
+  und Feature-Option-Keys nach `--` (inkl. `true`/`false` für
+  Boolean-Optionen). Value-Flags kommen mit Trailing-`=` damit der
+  Shell-Wrapper das Auto-Space unterdrückt (kein `--with-ports =3000`
+  mehr). `install.sh` schreibt für zsh `menu select` +
+  `unsetopt LIST_AMBIGUOUS`, damit das erste Tab direkt die Liste
+  zeigt.
+
+- **Identity-Persistenz** (aus dem 1.6/1.7-Strang fortgeführt) —
+  apply/init-Prompt schreibt nach Scope `g`/`c`/`b`/`n` in
+  monoceros-config und/oder container-yml; Re-Prompt wenn nur
+  `.monoceros/gitconfig` Werte trägt und keine Defaults gesetzt sind.
+
 ---
 
 ## Vorgemerkt für später (jenseits M5)
