@@ -47,19 +47,10 @@ const noopProxyDocker = async () => ({
 
 const portOpts = { ...baseOpts, proxyDocker: noopProxyDocker };
 
-// Stub for the runAddRepo on-the-fly-clone path. Reports "no running
-// container" so the yml-mutation tests don't spawn the real `docker`
-// binary (which would be a flaky external dependency, plus slow on
-// CI). Happy-path "container IS running" cases stub these per-test.
-const noopContainerLookup = async () => ({
-  stdout: '',
-  stderr: '',
-  exitCode: 0,
-});
-const repoOpts = {
-  ...baseOpts,
-  containerLookupDocker: noopContainerLookup,
-};
+// (An earlier `noopContainerLookup` stub for the runAddRepo
+// on-the-fly-clone path was removed along with the unused `repoOpts`
+// abstraction. Tests that exercise the on-the-fly flow stub
+// containerLookupDocker per-case via baseOpts overrides.)
 
 describe('add-*/remove-* against the yml', () => {
   let home: string;

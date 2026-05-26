@@ -12,7 +12,6 @@ import {
 import {
   collectGitCredentials,
   resolveProvider,
-  uniqueHttpsHosts,
   type CredentialsSpawn,
 } from '../devcontainer/credentials.js';
 import {

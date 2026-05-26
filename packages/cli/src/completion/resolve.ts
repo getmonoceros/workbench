@@ -164,13 +164,13 @@ function dispatchCommand(
   argTokens: string[],
   ctx: Ctx,
 ): Promise<string[]> | string[] {
-  // Split argTokens into pre-`--` and post-`--` parts.
+  // Split argTokens at the `--` separator: tokens after it are inner
+  // args (consumed by `innerArgs`); tokens before it are positionals
+  // and flags consumed by `resolvePreDash`. We only need preDash —
+  // the post-dash tokens are read directly off ctx.prev by per-command
+  // innerArgs sources that care (see listFeatureOptionInnerArgs).
   const dashDashIdx = argTokens.indexOf('--');
   const preDash = dashDashIdx < 0 ? argTokens : argTokens.slice(0, dashDashIdx);
-  const postDash = dashDashIdx < 0 ? [] : argTokens.slice(dashDashIdx + 1);
-
-  // The user's current token: are we currently typing in pre- or post-
-  // dash position? If we've passed `--`, the current token is post-dash.
   const inPostDash = dashDashIdx >= 0;
 
   if (inPostDash && spec.innerArgs) {

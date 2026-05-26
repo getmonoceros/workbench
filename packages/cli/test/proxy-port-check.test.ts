@@ -1,3 +1,4 @@
+import type { Server } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import {
   formatHostPortHeldError,
@@ -198,4 +199,4 @@ describe('realPortProbe (live integration)', () => {
 
 // Hoisted so the rejects-toThrow case can clean up its listener even
 // when the assertion path bails early.
-let heldServer: import('node:net').Server | undefined;
+let heldServer: Server | undefined;
