@@ -1,4 +1,13 @@
-import { type Document, isMap, isScalar, isSeq, YAMLMap, YAMLSeq } from 'yaml';
+import {
+  type Document,
+  isMap,
+  isScalar,
+  isSeq,
+  Pair,
+  Scalar,
+  YAMLMap,
+  YAMLSeq,
+} from 'yaml';
 import type { FeatureOptions, RepoEntry } from '../create/types.js';
 import { deriveRepoName } from '../create/scaffold.js';
 
@@ -76,6 +85,14 @@ export function addAptPackagesToDoc(
  *
  * Idempotent on identical input: same name + email → no doc change,
  * return false. Different values → in-place overwrite, return true.
+ *
+ * When `git` is newly created (didn't exist before this call) the
+ * block lands right after `name:` at the top of the document — same
+ * "identity is the first thing under the container's own intro"
+ * layout used by monoceros-config's `defaults.git`. A pre-existing
+ * `git:` key keeps its position; the builder's manual reorderings
+ * are respected.
+ *
  * Comment-preserving as usual for our AST mutators.
  */
 export function setContainerGitUserInDoc(
@@ -84,11 +101,13 @@ export function setContainerGitUserInDoc(
 ): boolean {
   const gitNode = doc.get('git', true);
   let gitMap: YAMLMap;
+  let createdNew = false;
   if (gitNode && isMap(gitNode)) {
     gitMap = gitNode;
   } else {
     gitMap = new YAMLMap();
-    doc.set('git', gitMap);
+    insertTopLevelAfterName(doc, 'git', gitMap, GIT_USER_HEADER_COMMENT);
+    createdNew = true;
   }
   const userNode = gitMap.get('user', true);
   let userMap: YAMLMap;
@@ -100,13 +119,152 @@ export function setContainerGitUserInDoc(
   }
   const currentName = userMap.get('name');
   const currentEmail = userMap.get('email');
-  if (currentName === user.name && currentEmail === user.email) {
+  if (!createdNew && currentName === user.name && currentEmail === user.email) {
     return false;
   }
   userMap.set('name', user.name);
   userMap.set('email', user.email);
+  relocateLeakedSectionComments(doc);
   return true;
 }
+
+/**
+ * yaml-lib's parser will sometimes attach a column-0 comment block
+ * sitting between two top-level keys (e.g. the `# Repos cloned…`
+ * header above `repos:`) to the previous top-level pair's deepest
+ * trailing node rather than to the next pair's `commentBefore`. On
+ * re-emit via the AST writers (setContainerGitUserInDoc et al.) the
+ * comment then comes out indented under the previous section instead
+ * of standing at column 0 above the next section — visually broken.
+ *
+ * This walks the document, finds such leaked comments on the LAST
+ * leaf of each top-level section, and moves them to the
+ * `commentBefore` of the NEXT top-level pair (where they visually
+ * belong).
+ *
+ * Safe to call after any AST mutation; idempotent — already-correctly-
+ * placed comments aren't touched.
+ */
+function relocateLeakedSectionComments(doc: Document): void {
+  const root = doc.contents;
+  if (!root || !isMap(root)) return;
+  const items = root.items;
+  for (let i = 0; i < items.length - 1; i++) {
+    const here = items[i]!;
+    const next = items[i + 1]!;
+    const leak = takeTrailingLeafComment(here.value);
+    if (!leak) continue;
+    const nextKey = next.key as {
+      commentBefore?: string | null;
+      spaceBefore?: boolean;
+    } | null;
+    if (!nextKey || typeof nextKey !== 'object') continue;
+    const existing = nextKey.commentBefore ?? '';
+    nextKey.commentBefore = existing ? `${leak}\n${existing}` : leak;
+    nextKey.spaceBefore = true;
+  }
+}
+
+/**
+ * If `node` is a container whose deepest trailing element carries a
+ * comment block that includes a yaml-lib "blank line separator" (a
+ * `\n\n` inside the `comment` string — that's how yaml stores a
+ * source-level blank line between two trailing comment runs), strip
+ * the post-separator portion and return it. Everything before the
+ * blank line is a legitimate inline hint that belongs to the leaf;
+ * everything after is the next section's leaked header.
+ *
+ * Returns `null` when there's no blank-line separator — in that case
+ * the trailing comment is all legitimate inline content, leave it.
+ */
+function takeTrailingLeafComment(node: unknown): string | null {
+  if (!node) return null;
+  type CommentNode = {
+    comment?: string | null;
+    spaceBefore?: boolean;
+  };
+  // First, check this node's own trailing comment for a leak.
+  const c = node as CommentNode;
+  if (typeof c.comment === 'string' && c.comment.length > 0) {
+    const blankMatch = c.comment.match(/\n[ \t]*\n/);
+    if (blankMatch && blankMatch.index !== undefined) {
+      // Strip ONLY the blank-line separator. The character that
+      // follows is the leading single space yaml-lib uses between
+      // `#` and the comment text — preserve it, otherwise the
+      // relocated block emits as `#Foo` instead of `# Foo`.
+      const tail = c.comment.slice(blankMatch.index + blankMatch[0].length);
+      c.comment = c.comment.slice(0, blankMatch.index);
+      if (tail.length > 0) return tail;
+    }
+  }
+  // Recurse into children — last-first across both maps and seqs, so
+  // we find the DEEPEST leak first (yaml-lib's parser pushes leaked
+  // comments as deep as it can). When a seq has multiple items and
+  // the leak sits on an EARLIER one (because subsequent items were
+  // added by a later mutation), we walk back through the siblings
+  // until we find it.
+  if (isMap(node) && node.items.length > 0) {
+    for (let i = node.items.length - 1; i >= 0; i--) {
+      const value = (node.items[i] as { value?: unknown }).value;
+      const found = takeTrailingLeafComment(value);
+      if (found) return found;
+    }
+  }
+  if (isSeq(node) && node.items.length > 0) {
+    for (let i = node.items.length - 1; i >= 0; i--) {
+      const found = takeTrailingLeafComment(node.items[i]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * Insert a new top-level key into the document, positioned right
+ * after `name:` (or at index 1 if `name:` isn't there). Used so newly-
+ * persisted `git:` lands at the top of the yml where the builder
+ * expects to find it — mirrors the `defaults.git.user` placement in
+ * monoceros-config.sample.yml.
+ *
+ * If `comment` is given, it's attached as the new pair's
+ * `commentBefore` so the section gets the same explanatory line the
+ * other sections carry.
+ */
+function insertTopLevelAfterName(
+  doc: Document,
+  key: string,
+  value: YAMLMap,
+  comment: string | undefined,
+): void {
+  const root = doc.contents;
+  if (!root || !isMap(root)) {
+    // Document with no top-level map (shouldn't happen for a real
+    // solution-config) — fall back to plain set, which appends.
+    doc.set(key, value);
+    return;
+  }
+  // Wrap the key in a Scalar so we can attach commentBefore + spaceBefore
+  // to it. A plain string key (which is what Pair accepts as a shorthand)
+  // doesn't have those fields.
+  const keyScalar = new Scalar(key);
+  if (comment) {
+    keyScalar.commentBefore = comment;
+    keyScalar.spaceBefore = true;
+  }
+  const pair = new Pair(keyScalar, value);
+  const nameIdx = root.items.findIndex((p) => {
+    const k = p.key as { value?: unknown } | string | null;
+    return (typeof k === 'string' ? k : (k?.value ?? null)) === 'name';
+  });
+  const insertAt = nameIdx >= 0 ? nameIdx + 1 : Math.min(1, root.items.length);
+  root.items.splice(insertAt, 0, pair);
+}
+
+const GIT_USER_HEADER_COMMENT = [
+  ' Git committer identity for this container. Overrides',
+  " monoceros-config.yml's defaults.git.user. Applies to every repo",
+  ' below unless that repo declares its own `git.user` override.',
+].join('\n');
 
 /**
  * Read the port number from a `routing.ports:` entry — handles both
@@ -349,13 +507,15 @@ export function addRepoToDoc(doc: Document, repo: RepoEntry): boolean {
     } else {
       item.delete('provider');
     }
+    relocateLeakedSectionComments(doc);
     return true;
   }
   const entry = new YAMLMap();
   entry.set('url', repo.url);
   // Only persist `path` when it differs from the URL-derived default.
   // Keeps the yml minimal — the apply pipeline re-derives at runtime.
-  if (repo.path !== deriveRepoName(repo.url)) {
+  const persistPath = repo.path !== deriveRepoName(repo.url);
+  if (persistPath) {
     entry.set('path', repo.path);
   }
   if (repo.gitUser) {
@@ -369,7 +529,25 @@ export function addRepoToDoc(doc: Document, repo: RepoEntry): boolean {
   if (repo.provider) {
     entry.set('provider', repo.provider);
   }
+  // Surface the optional fields the caller did NOT pass as commented
+  // hints right under the entry — same single-`#`-depth shape the
+  // generator emits in composed mode (`# path: / # provider: / …`).
+  // Without these the builder can't see at a glance what else they
+  // could set without re-reading the docs.
+  const hintLines: string[] = [];
+  if (!persistPath) hintLines.push(' path:');
+  if (!repo.provider) hintLines.push(' provider:');
+  if (!repo.gitUser) {
+    hintLines.push(' git:');
+    hintLines.push('   user:');
+    hintLines.push('     name:');
+    hintLines.push('     email:');
+  }
+  if (hintLines.length > 0) {
+    (entry as { comment?: string }).comment = hintLines.join('\n');
+  }
   seq.add(entry);
+  relocateLeakedSectionComments(doc);
   return true;
 }
 

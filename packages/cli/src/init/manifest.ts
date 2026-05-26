@@ -7,20 +7,22 @@ import { matchMonocerosFeature } from '../util/ref.js';
  * Loader for the parts of a Monoceros devcontainer-feature manifest
  * that init's yml-generator wants to surface as inline guidance:
  *
- *   - `optionHints` — names of feature options to render as
- *     commented-out lines below the active options block, so a
- *     builder reading the yml sees at a glance which keys exist
- *     without going to the feature's docs.
- *   - `optionDescriptions` — the `description` string from each
- *     option in the manifest, keyed by option name. Init prints
- *     these as a wrapped comment block above the matching hint
- *     line so the builder knows what the option does without
- *     opening the feature docs.
+ *   - `name` / `description` — the feature's tagline / prose, copied
+ *     verbatim from the standard devcontainer-feature.json top-level
+ *     fields. The generator builds the header comment block from
+ *     these — no fallback prose lives in the generator itself.
+ *   - `documentationURL` — copied verbatim. The generator emits a
+ *     "See <url> for further information." line when this is a real
+ *     URL. Empty / missing / literal "tbd" → line omitted.
+ *   - `optionHints` — names of feature options the generator emits
+ *     as commented lines under the rendered `options:` block, so the
+ *     builder sees what's settable without opening the docs.
+ *   - `optionDescriptions` — per-option `description` from the
+ *     manifest. The generator weaves these into the per-feature
+ *     "Options: …" summary comment.
  *   - `usageNotes` — free-text per-feature paragraphs from
- *     `x-monoceros.usageNotes`. Init renders them as a comment
- *     block right above the `- ref:` line. Use for things that
- *     aren't tied to one option — e.g. "alternative auth flow X
- *     works inside the running container".
+ *     `x-monoceros.usageNotes`. Concatenated into the header prose
+ *     after `description`.
  *
  * Only Monoceros-owned refs
  * (`ghcr.io/getmonoceros/monoceros-features/<name>:<tag>`) are
@@ -42,6 +44,17 @@ import { matchMonocerosFeature } from '../util/ref.js';
  */
 
 export interface FeatureManifestSummary {
+  /** `name` field — short product/tagline. Empty string when unset. */
+  name: string;
+  /** `description` field — multi-sentence prose. Empty string when unset. */
+  description: string;
+  /**
+   * `documentationURL` — only set when it's a real URL.
+   * `tbd` / `TBD` / empty / unset → undefined. The generator uses
+   * this to suppress the "See <url>…" line when no real docs exist
+   * yet, so the file doesn't fill with placeholders.
+   */
+  documentationURL: string | undefined;
   /** Names of options to render as commented hints in the init output. */
   optionHints: string[];
   /** `description` from each option in the manifest, keyed by name. */
@@ -51,6 +64,9 @@ export interface FeatureManifestSummary {
 }
 
 interface RawManifest {
+  name?: string;
+  description?: string;
+  documentationURL?: string;
   options?: Record<string, { description?: string }>;
   'x-monoceros'?: {
     optionHints?: unknown;
@@ -121,7 +137,24 @@ export function loadFeatureManifestSummary(
       }
     }
 
-    return { optionHints, optionDescriptions, usageNotes };
+    const name = typeof parsed.name === 'string' ? parsed.name : '';
+    const description =
+      typeof parsed.description === 'string' ? parsed.description : '';
+    const rawUrl =
+      typeof parsed.documentationURL === 'string'
+        ? parsed.documentationURL.trim()
+        : '';
+    const documentationURL =
+      rawUrl.length > 0 && rawUrl.toLowerCase() !== 'tbd' ? rawUrl : undefined;
+
+    return {
+      name,
+      description,
+      documentationURL,
+      optionHints,
+      optionDescriptions,
+      usageNotes,
+    };
   } catch {
     return undefined;
   }

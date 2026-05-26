@@ -1,15 +1,15 @@
 {
   "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainerFeature.schema.json",
   "id": "github-cli",
-  "name": "GitHub CLI (gh)",
+  "name": "GitHub CLI",
   "version": "1.0.0",
-  "description": "Installs the official GitHub CLI (`gh`) from the upstream apt repository. When an `apiToken` option is provided, its value is exported as GH_TOKEN via /etc/profile.d/ so `gh` works non-interactively in any login shell. Without a token, `gh` is installed but unauthenticated and the builder runs `gh auth login` once interactively; the resulting credentials persist under /home/node/.config/gh via Monoceros' bind-mount.",
+  "description": "The official `gh` CLI. Login persists across container rebuilds.",
   "documentationURL": "https://cli.github.com/",
   "options": {
     "apiToken": {
       "type": "string",
       "default": "",
-      "description": "GitHub Personal Access Token (github.com → Settings → Developer settings → Personal access tokens → classic). Minimum scopes: repo, read:org, gist. When set, exported as GH_TOKEN in every login shell. Named `apiToken` to match the same option on the atlassian feature."
+      "description": "GitHub PAT (scopes: repo, read:org, gist); empty for `gh auth login` on first run."
     }
   },
   "customizations": {
@@ -20,8 +20,6 @@
   "x-monoceros": {
     "persistentHomePaths": [".config/gh"],
     "optionHints": ["apiToken"],
-    "usageNotes": [
-      "Two auth modes: (1) set apiToken below for non-interactive auth via GH_TOKEN (PAT scopes: repo, read:org, gist), or (2) leave apiToken empty and run `gh auth login` once inside the container for the browser-based OAuth flow with optional SSH-key upload. State persists under home/.config/gh so the login survives `monoceros apply` rebuilds."
-    ]
+    "usageNotes": []
   }
 }

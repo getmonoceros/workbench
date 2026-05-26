@@ -32,7 +32,17 @@ export function solutionConfigToCreateOptions(
   const featureRecord: Record<string, FeatureOptions> = {};
   for (const entry of config.features) {
     const defaults = featureDefaults[entry.ref] ?? {};
-    featureRecord[entry.ref] = { ...defaults, ...(entry.options ?? {}) };
+    // Per-container options override defaults, EXCEPT when the
+    // container value is the empty string. A bare `apiKey:` in the
+    // yml parses to null and the schema relaxes that to `""`; the
+    // init-generator also writes hint keys without a value. In both
+    // cases the builder's intent is "leave this unset, fall through
+    // to the global default" — not "explicitly clear the default".
+    // Skip empty strings so the merge respects that.
+    const containerOpts = Object.fromEntries(
+      Object.entries(entry.options ?? {}).filter(([, v]) => v !== ''),
+    );
+    featureRecord[entry.ref] = { ...defaults, ...containerOpts };
   }
 
   const result: CreateOptions = {
@@ -61,7 +71,12 @@ export function solutionConfigToCreateOptions(
       // single-segment default (`https://.../foo.git` → `foo`),
       // which lands the clone at `projects/foo/`.
       path: r.path ?? deriveRepoName(r.url),
-      ...(r.git?.user
+      // gitUser is forwarded only when BOTH name + email are set.
+      // The relaxed GitUserSchema accepts nullable / empty strings
+      // (so a yml placeholder `name:` parses without error), so we
+      // re-check here before downstream code, which expects both
+      // values to be non-empty.
+      ...(r.git?.user?.name && r.git.user.email
         ? { gitUser: { name: r.git.user.name, email: r.git.user.email } }
         : {}),
       ...(r.provider ? { provider: r.provider } : {}),

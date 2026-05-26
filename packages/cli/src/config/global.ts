@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
-import { isMap, parseDocument } from 'yaml';
+import { isMap, Pair, parseDocument, Scalar, YAMLMap } from 'yaml';
+import type { Document } from 'yaml';
 import { FeatureOptionValueSchema, GitUserSchema, REGEX } from './schema.js';
 import { monocerosConfigPath, monocerosHome } from './paths.js';
 
@@ -180,17 +181,12 @@ export async function writeGlobalDefaultGitUser(
     text = undefined;
   }
 
+  // Brand-new file → write the minimal shape that mirrors the
+  // shipped sample's structure (so a later auto-write can navigate
+  // the same paths).
   if (text === undefined) {
-    // Brand-new file — minimal shape. We don't try to mirror the
-    // sample yml's comments here; the install path drops the sample
-    // alongside, and a builder who wants the full reference reads
-    // monoceros-config.sample.yml.
     const fresh = [
-      '# Monoceros — builder-global defaults.',
-      '#',
-      '# Created on first apply when the identity prompt chose "save',
-      '# globally". See monoceros-config.sample.yml in the same',
-      '# directory for the full set of fields.',
+      '# Optional — global defaults for monoceros containers.',
       '',
       'schemaVersion: 1',
       '',
@@ -206,21 +202,16 @@ export async function writeGlobalDefaultGitUser(
     return { filePath, created: true, alreadySet: false };
   }
 
-  // Existing file. We DELIBERATELY do not use the yaml AST setter
-  // here even though the rest of the codebase prefers it: the yaml
-  // library's comment-attachment heuristic gets confused by the
-  // shipped sample's structure (section-divider comments between
-  // sub-blocks attach to the wrong node, so a `set('git', …)` lands
-  // mid-file with comments rearranged around it). Result on real
-  // user files was visible chaos.
+  // Existing file: operate via the yaml AST. With the simplified
+  // sample (no nested commented sub-blocks under the active keys),
+  // AST set-at-path is the right tool — the library can no longer
+  // attach unrelated comments to the wrong node because there are
+  // no fragmented comment runs between sibling maps.
   //
-  // String-based insert is uglier as code but deterministic for
-  // text: we parse only to validate, then locate the `defaults:` /
-  // `git.user` regions textually and either insert a new block or
-  // bail because one's already there.
-
-  // First: validate via the real schema. A user-broken file should
-  // fail loudly here, before we try to splice into it.
+  // We ensure each level of the path (`defaults` → `git` → `user`)
+  // exists as a YAMLMap, then set the two scalar fields. Pre-existing
+  // values that are non-empty mean "already set" and we leave them
+  // alone.
   const doc = parseDocument(text, { prettyErrors: true });
   if (doc.errors.length > 0) {
     throw new Error(
@@ -228,89 +219,239 @@ export async function writeGlobalDefaultGitUser(
     );
   }
 
-  // alreadySet: walk the parsed structure (read-only) just to detect
-  // an existing defaults.git.user. We never write through the AST.
-  const parsedDefaults = doc.get('defaults', true);
-  if (parsedDefaults && isMap(parsedDefaults)) {
-    const gitNode = parsedDefaults.get('git', true);
-    if (gitNode && isMap(gitNode)) {
-      const userNode = gitNode.get('user', true);
-      if (userNode && isMap(userNode)) {
-        const existingName = userNode.get('name');
-        const existingEmail = userNode.get('email');
-        if (
-          typeof existingName === 'string' &&
-          existingName.length > 0 &&
-          typeof existingEmail === 'string' &&
-          existingEmail.length > 0
-        ) {
-          return { filePath, created: false, alreadySet: true };
-        }
-      }
-    }
+  const defaultsMap = ensureMap(doc, 'defaults');
+  // `git` is placed at the FRONT of `defaults` when newly created —
+  // mirrors the shipped-sample layout (`defaults.git` before
+  // `defaults.features`). A pre-existing `git:` keeps its position.
+  const gitMap = ensureSubMapAtTop(defaultsMap, 'git');
+  const userMap = ensureSubMap(gitMap, 'user');
+
+  const existingName = userMap.get('name');
+  const existingEmail = userMap.get('email');
+  if (
+    typeof existingName === 'string' &&
+    existingName.length > 0 &&
+    typeof existingEmail === 'string' &&
+    existingEmail.length > 0
+  ) {
+    return { filePath, created: false, alreadySet: true };
   }
 
-  // No active defaults.git.user. Three cases, in priority order:
+  // yaml's parser sometimes attaches a comment that visually belongs to
+  // the NEXT outer-level sibling (e.g. `# Feature credentials & options.`
+  // sitting above `features:`) to the trailing leaf scalar instead
+  // (here: `email:`'s value). If we just `.set()`, that orphaned
+  // comment renders right after our new value, producing chaos like:
+  //   email:
   //
-  //   A) An EXISTING commented-out `# git:` block already lives
-  //      under `defaults:` (shipped-sample pattern, or a builder
-  //      who once filled it then commented out for a re-prompt) —
-  //      uncomment-and-fill IN PLACE. Avoids producing two blocks
-  //      (one active, one commented "placeholder") in the same file.
+  //       a@example.com # Feature credentials & options.
   //
-  //   B) No commented block, but `defaults:` exists → splice an
-  //      active block in right after the `defaults:` line.
-  //
-  //   C) `defaults:` doesn't exist (rare) → append a fresh
-  //      `defaults:` block at the end.
-  //
-  // All three paths leave surrounding comments byte-for-byte intact
-  // outside the `# git:`-block they replace / sit next to.
+  // Relocate any such leaked comment to the next sibling of `git` under
+  // `defaults` (the position it visually belongs to) before writing.
+  relocateLeakedLeafComments(userMap, defaultsMap, 'git');
 
-  // (A) Uncomment an existing commented block in place. Pattern is
-  // tolerant on the inner indentation: shipped sample uses `#   user`
-  // (3 spaces after `#`) and `#     name` (5 spaces), but a builder
-  // hand-edit might use any whitespace as long as the four lines
-  // appear in order under the same outer indent. The replacement
-  // re-uses the captured outer indent (`\1`) and writes the canonical
-  // 2/4/6-space yaml shape regardless of what the original used.
-  const commentedBlockRe =
-    /^( +)# git:[ \t]*\r?\n\1#\s+user:[ \t]*\r?\n\1#\s+name:[^\r\n]*\r?\n\1#\s+email:[^\r\n]*\r?\n/m;
-  const commentedMatch = text.match(commentedBlockRe);
-  if (commentedMatch) {
-    const indent = commentedMatch[1]!;
-    const replacement = [
-      `${indent}git:`,
-      `${indent}  user:`,
-      `${indent}    name: ${user.name}`,
-      `${indent}    email: ${user.email}`,
-      '',
-    ].join('\n');
-    const newText = text.replace(commentedBlockRe, replacement);
-    await fs.writeFile(filePath, newText, 'utf8');
-    return { filePath, created: false, alreadySet: false };
-  }
-
-  // (B) / (C): no commented block. Insert / append.
-  const block = [
-    '  git:',
-    '    user:',
-    `      name: ${user.name}`,
-    `      email: ${user.email}`,
-    '',
-  ].join('\n');
-
-  const defaultsLineMatch = text.match(/^defaults:[ \t]*\r?\n/m);
-  let newText: string;
-  if (defaultsLineMatch && defaultsLineMatch.index !== undefined) {
-    const insertAt = defaultsLineMatch.index + defaultsLineMatch[0].length;
-    newText = text.slice(0, insertAt) + block + text.slice(insertAt);
-  } else {
-    const trimmedEnd = text.replace(/\s*$/, '\n');
-    newText =
-      trimmedEnd + '\n' + ['defaults:', block].join('\n').replace(/\n$/, '\n');
-  }
+  userMap.set('name', user.name);
+  userMap.set('email', user.email);
+  const newText = String(doc);
 
   await fs.writeFile(filePath, newText, 'utf8');
   return { filePath, created: false, alreadySet: false };
+}
+
+/**
+ * Get the document's top-level `<key>` as a YAMLMap, creating it
+ * (and replacing a null/scalar value with a fresh map) if needed.
+ * Used by writeGlobalDefaultGitUser to navigate to the persistence
+ * point without crashing on yml shapes like `defaults:` (parsed as
+ * null) or a missing top-level key.
+ */
+function ensureMap(doc: Document, key: string): YAMLMap {
+  const node = doc.get(key, true);
+  if (node && isMap(node)) return node;
+  const m = new YAMLMap();
+  doc.set(key, m);
+  return m;
+}
+
+/** Same as ensureMap but for a sub-key under an existing YAMLMap. */
+function ensureSubMap(parent: YAMLMap, key: string): YAMLMap {
+  const node = parent.get(key, true);
+  if (node && isMap(node)) return node;
+  const m = new YAMLMap();
+  parent.set(key, m);
+  return m;
+}
+
+/**
+ * Variant of `ensureSubMap` that inserts a *new* key at the FRONT of
+ * `parent.items` rather than appending. Used for `defaults.git` so the
+ * new block lands where the shipped sample places it (above
+ * `features`) and not at the end after every other entry. A
+ * pre-existing key keeps its position untouched.
+ *
+ * Before inserting, transfers any `commentBefore` that yaml-lib
+ * attached to `parent` itself (this happens when the source's
+ * leading comment-block ABOVE parent's first child was associated
+ * with the map node rather than the first Pair) over to that first
+ * child's key — otherwise the comment would visually re-attach to
+ * our newly-front-inserted pair and mislabel it.
+ */
+function ensureSubMapAtTop(parent: YAMLMap, key: string): YAMLMap {
+  const node = parent.get(key, true);
+  if (node && isMap(node)) return node;
+
+  type CommentNode = {
+    commentBefore?: string | null;
+    spaceBefore?: boolean;
+  };
+  const parentMaybe = parent as CommentNode;
+  const newKey = new Scalar(key);
+
+  // yaml-lib often parks the comment-block above parent's first
+  // child on the map node itself, not on the Pair. When we unshift
+  // a new front Pair we have to redistribute that block: the first
+  // paragraph (everything up to a blank-line separator) describes
+  // what we're inserting, so it travels with the new key; the rest
+  // continues to describe the old first child.
+  //
+  // Before redistributing we strip any commented-out skeleton of the
+  // same key (`# git: / #   user: / #     name: …`) — that's the
+  // placeholder a builder leaves behind when they un-commented prose
+  // but not the structural keys. We're about to write a real active
+  // block; the placeholder would otherwise sit right next to it as
+  // dead text.
+  if (
+    parent.items.length > 0 &&
+    typeof parentMaybe.commentBefore === 'string' &&
+    parentMaybe.commentBefore.length > 0
+  ) {
+    const cleaned = stripCommentedKeySkeleton(parentMaybe.commentBefore, key);
+    const blankMatch = cleaned.match(/\n[ \t]*\n/);
+    let head: string;
+    let tail: string;
+    if (blankMatch && blankMatch.index !== undefined) {
+      head = cleaned.slice(0, blankMatch.index);
+      tail = cleaned.slice(blankMatch.index + blankMatch[0].length);
+    } else {
+      head = cleaned;
+      tail = '';
+    }
+    if (head.length > 0) {
+      newKey.commentBefore = head;
+      if (parentMaybe.spaceBefore) newKey.spaceBefore = true;
+    }
+    if (tail.length > 0) {
+      const firstKey = parent.items[0]!.key as CommentNode | null;
+      if (firstKey && typeof firstKey === 'object') {
+        const existing = firstKey.commentBefore ?? '';
+        firstKey.commentBefore = existing ? `${tail}\n${existing}` : tail;
+        firstKey.spaceBefore = true;
+      }
+    }
+    parentMaybe.commentBefore = null;
+    parentMaybe.spaceBefore = false;
+  }
+
+  const m = new YAMLMap();
+  const pair = new Pair(newKey, m);
+  parent.items.unshift(pair);
+  return m;
+}
+
+/**
+ * Remove a commented-out skeleton of `key` (and its indented children)
+ * from a yaml-lib `commentBefore` body.
+ *
+ * yaml-lib stores comment bodies stripped of the leading `#`: the
+ * source `#   user:` becomes `   user:` in the comment string. So a
+ * placeholder like
+ *
+ *     # git:
+ *     #   user:
+ *     #     name: "T"
+ *     #     email: "h@k.de"
+ *
+ * lives in the comment body as four lines, the first ` git:` (single
+ * leading space, the post-`#` convention) and the next three with
+ * more leading spaces (the children of the commented map).
+ *
+ * Detection: a line matching ` <key>:` exactly, followed by zero or
+ * more lines whose leading whitespace is strictly deeper than that
+ * line's. Splice all of those out. Multiple skeletons (rare but
+ * possible) get stripped in sequence.
+ */
+function stripCommentedKeySkeleton(commentBody: string, key: string): string {
+  const lines = commentBody.split('\n');
+  const headRe = new RegExp(`^ ${escapeRegExp(key)}:\\s*$`);
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (headRe.test(line)) {
+      // Skip the header and all following indented (deeper than
+      // one space) lines — those are the commented map's children.
+      i++;
+      while (i < lines.length && /^ {2,}\S/.test(lines[i]!)) {
+        i++;
+      }
+      continue;
+    }
+    out.push(line);
+    i++;
+  }
+  return out.join('\n');
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Walk `leafMap`'s pair values. For any value scalar carrying a comment
+ * (yaml's parser attaches the next outer-level pair's leading comment
+ * to the previous level's trailing scalar when the indent drops by
+ * more than one), move that comment to the `commentBefore` of the next
+ * sibling of `ancestorKey` in `parent`. Also clear `spaceBefore` on
+ * the leaf and set it on the relocation target so the blank line
+ * re-appears in the right place.
+ *
+ * No-op when there's no leaked comment or no next sibling to host it.
+ */
+function relocateLeakedLeafComments(
+  leafMap: YAMLMap,
+  parent: YAMLMap,
+  ancestorKey: string,
+): void {
+  const items = parent.items;
+  const ancestorIdx = items.findIndex((p) => {
+    const k = p.key as { value?: unknown } | string | null;
+    const v = typeof k === 'string' ? k : (k?.value ?? null);
+    return v === ancestorKey;
+  });
+  if (ancestorIdx < 0 || ancestorIdx + 1 >= items.length) return;
+  const target = items[ancestorIdx + 1]!;
+  type CommentNode = {
+    comment?: string | null;
+    commentBefore?: string | null;
+    spaceBefore?: boolean;
+  };
+  for (const pair of leafMap.items) {
+    const value = pair.value as CommentNode | null;
+    if (!value || typeof value !== 'object') continue;
+    const leakedComment = value.comment;
+    const leakedSpace = value.spaceBefore;
+    if (!leakedComment && !leakedSpace) continue;
+    if (leakedComment) {
+      const targetKey = target.key as CommentNode | null;
+      if (targetKey && typeof targetKey === 'object') {
+        const existing = targetKey.commentBefore ?? '';
+        targetKey.commentBefore = existing
+          ? `${leakedComment}\n${existing}`
+          : leakedComment;
+        if (leakedSpace) targetKey.spaceBefore = true;
+      }
+      value.comment = null;
+    }
+    if (leakedSpace) value.spaceBefore = false;
+  }
 }

@@ -203,8 +203,12 @@ describe('add-*/remove-* against the yml', () => {
     const yml = await ymlOf('demo');
     expect(yml).toContain('repos:');
     expect(yml).toContain('- url: https://github.com/foo/bar.git');
-    // path matches the URL-derived default ("bar") so it's omitted
-    expect(yml).not.toMatch(/path:/);
+    // path matches the URL-derived default ("bar") so it's omitted as
+    // an active key — but appears as a single-`#` commented hint under
+    // the entry so the builder can set it later without re-reading the
+    // docs. Same shape `init --with-repo=…` emits.
+    expect(yml).not.toMatch(/^ {4}path:/m);
+    expect(yml).toMatch(/^ {4}# path:\s*$/m);
   });
 
   it('runAddRepo persists a non-default path via path option', async () => {
@@ -373,7 +377,10 @@ describe('add-*/remove-* against the yml', () => {
     });
     const yml = await ymlOf('demo');
     expect(yml).toContain('- url: https://github.com/foo/bar.git');
-    expect(yml).not.toContain('provider:');
+    // No ACTIVE `provider:` key — github.com auto-detects.
+    expect(yml).not.toMatch(/^ {4}provider:/m);
+    // But the commented hint still shows so the builder can override.
+    expect(yml).toMatch(/^ {4}# provider:\s*$/m);
   });
 
   it('runAddRepo rejects --provider that contradicts the canonical host', async () => {

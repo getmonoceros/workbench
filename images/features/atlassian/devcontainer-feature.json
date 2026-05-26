@@ -1,40 +1,40 @@
 {
   "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainerFeature.schema.json",
   "id": "atlassian",
-  "name": "Atlassian CLIs (Rovo Dev + Teamwork Graph)",
+  "name": "Atlassian",
   "version": "1.0.0",
-  "description": "Bundles two Atlassian CLIs that share a single account: Rovo Dev (the `acli rovodev` AI agent) and Teamwork Graph (`twg`). Each tool can be toggled independently via the `rovodev` and `twg` options; both share `instance` / `email` / `apiToken` so credentials only live once in the yml. Auth state for both persists under /home/node/.{config/acli,rovodev,config/twg}, which Monoceros bind-mounts so logins survive `monoceros apply` rebuilds.",
+  "description": "Rovo Dev (`acli rovodev`) and Teamwork Graph (`twg`) CLIs sharing one Atlassian account. Auth persists across rebuilds.",
   "documentationURL": "https://developer.atlassian.com/cloud/",
   "options": {
     "rovodev": {
       "type": "boolean",
       "default": true,
-      "description": "Install the Atlassian Command Line Interface (acli) which includes the Rovo Dev agent (`acli rovodev`). Default true. Set to false to skip when you only want twg."
+      "description": "Install acli (with the Rovo Dev agent)."
     },
     "twg": {
       "type": "boolean",
       "default": true,
-      "description": "Install the Teamwork Graph CLI (twg). Default true. Set to false to skip when you only want rovodev."
+      "description": "Install twg (Teamwork Graph CLI)."
     },
     "instance": {
       "type": "string",
       "default": "",
-      "description": "Atlassian site host, e.g. yoursite.atlassian.net. Required for twg's non-interactive login. Rovo Dev asks for the site itself on first `acli rovodev run` so this option isn't used by it."
+      "description": "Atlassian site host (`yoursite.atlassian.net`); required by twg."
     },
     "email": {
       "type": "string",
       "default": "",
-      "description": "Email tied to your Atlassian account. Used for both Rovo Dev and twg non-interactive login when set together with apiToken."
+      "description": "Atlassian account email; used with `apiToken` for non-interactive login."
     },
     "apiToken": {
       "type": "string",
       "default": "",
-      "description": "Atlassian API token from id.atlassian.com → Security → API tokens. Used for both Rovo Dev and twg non-interactive login when set together with email."
+      "description": "Atlassian API token (id.atlassian.com → Security → API tokens)."
     },
     "bitbucketToken": {
       "type": "string",
       "default": "",
-      "description": "Optional Bitbucket API token (Bitbucket Cloud → Personal settings → App passwords). Only used by twg, for Bitbucket-specific commands. When set, twg's optional Bitbucket prompt is skipped; when empty, twg's prompt is skipped via an empty Enter — Bitbucket-specific twg commands will then ask the builder to run `twg login --force` interactively."
+      "description": "Optional Bitbucket app password; only needed for twg's Bitbucket commands."
     }
   },
   "customizations": {
@@ -50,9 +50,6 @@
       ".agents"
     ],
     "optionHints": ["instance", "email", "apiToken", "bitbucketToken"],
-    "usageNotes": [
-      "Bundles two CLIs that share one Atlassian account: `acli rovodev` (Rovo Dev agent) and `twg` (Teamwork Graph). Both default to on — set `rovodev: false` or `twg: false` to skip either install.",
-      "Auth: email + apiToken below cover both tools. `instance` is required upfront for twg's auto-login; acli rovodev prompts for the site at first `acli rovodev run`. `bitbucketToken` is only needed if you use twg's Bitbucket commands. Skip the credentials entirely to log in interactively inside the container — state persists under home/.config/{acli,twg} and home/.rovodev."
-    ]
+    "usageNotes": []
   }
 }

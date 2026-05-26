@@ -1,84 +1,66 @@
-# Monoceros — builder-global config for `monoceros apply`.
-#
-# This file is optional. Everything below is commented out by default;
-# a fresh-installed Monoceros behaves as if it didn't exist. To enable
-# a setting: remove the leading "# " from each line of that block.
-#
-# Two top-level sections:
-#   - `defaults`  — fall-throughs for container-yml fields (git
-#                   identity, per-feature options).
-#   - `routing`   — machine-global settings for the shared Traefik
-#                   singleton (only `hostPort` today).
-#
-# Per-container yml ALWAYS wins over these defaults. Setting a value
-# here just spares you from repeating it across every container.
+# Global defaults for Monoceros containers. Values here fall through
+# into any container yml that doesn't set them itself. Optional —
+# Monoceros runs fine without this file.
 
 schemaVersion: 1
 
-# ──────────────────────────────────────────────────────────────────
-# defaults — fall-throughs for container-yml fields.
-# ──────────────────────────────────────────────────────────────────
-
 defaults:
-  # Git committer identity for any container whose yml omits
-  # `git.user`. Resolution order at apply time:
-  #   1. container yml's `git.user`
-  #   2. this `defaults.git.user`
-  #   3. host's `git config --global user.{name,email}`
-  #   4. `.monoceros/gitconfig` left by a previous apply
-  #   5. interactive prompt (skipped in non-TTY)
+  # Git committer identity used for any container whose yml doesn't
+  # set its own `git.user`. apply prompts once when both fields are
+  # empty here AND on the host, then offers to persist the answer
+  # here so you don't get asked again on future containers.
   git:
-    # user:
-    #   name: Your Name
-    #   email: you@example.com
+    user:
+      name: ''
+      email: ''
 
-  # Per-feature option defaults, keyed by the feature's OCI ref.
-  # A container yml that activates the same feature without setting a
-  # given option falls back to whatever's here. The list below shows
-  # EVERY option each Monoceros-curated feature accepts, with its
-  # default value. Refs without an entry here behave as if every
-  # option were unset.
+  # Shared per-feature options. Credentials and tokens that you'd
+  # otherwise repeat across every container yml live here, keyed by
+  # the feature's OCI ref. Setting a value here does NOT activate the
+  # feature in any container — you still pick which containers use it
+  # via `monoceros init <name> --with=<feature>` or
+  # `monoceros add-feature <name> <feature>`. The defaults only kick
+  # in once a container has the feature on its list and leaves the
+  # option unset. Per-container values always win.
   features:
-    # ── Anthropic Claude Code CLI ───────────────────────────────
-    # ghcr.io/getmonoceros/monoceros-features/claude-code:1:
-    #   version: latest               # npm-style spec ('latest', '0.4.2', '^0.4')
-    #   apiKey: ''                    # Anthropic API key (`sk-ant-…`). Set →
-    #                                 # ANTHROPIC_API_KEY is exported and Claude
-    #                                 # Code uses API auth; empty → OAuth /
-    #                                 # subscription login inside the container.
-    #
-    # ── GitHub CLI ──────────────────────────────────────────────
-    # ghcr.io/getmonoceros/monoceros-features/github-cli:1:
-    #   apiToken: ''                  # GitHub PAT (github.com → Settings →
-    #                                 # Developer settings → PAT, scopes
-    #                                 # repo + read:org + gist). Set → exported
-    #                                 # as GH_TOKEN; empty → no auto-login,
-    #                                 # `gh auth login` interactively in shell.
-    #
-    # ── Atlassian (Rovo Dev acli + Teamwork Graph twg) ──────────
-    # ghcr.io/getmonoceros/monoceros-features/atlassian:1:
-    #   rovodev: true                 # install acli + Rovo Dev agent
-    #   twg: true                     # install twg (Teamwork Graph CLI)
-    #   instance: ''                  # site host like 'yoursite.atlassian.net',
-    #                                 # required for twg auto-login (Rovo Dev
-    #                                 # asks for it on first `acli rovodev run`)
-    #   email: ''                     # Atlassian-account email — paired with
-    #                                 # apiToken for both CLIs' non-interactive
-    #                                 # login
-    #   apiToken: ''                  # Atlassian API token from
-    #                                 # id.atlassian.com → Security → API tokens
-    #   bitbucketToken: ''            # optional, Bitbucket Cloud app-password.
-    #                                 # Used by twg's Bitbucket commands only.
 
-# ──────────────────────────────────────────────────────────────────
-# routing — machine-global Traefik singleton settings.
-# ──────────────────────────────────────────────────────────────────
+    # Claude Code — Anthropic's CLI coding assistant. OAuth/subscription
+    # login persists across container rebuilds.
+    # Options: version (npm spec), apiKey (`sk-ant-…` for API auth;
+    # empty for OAuth login on first run).
+    # See https://docs.anthropic.com/en/docs/claude-code for further information.
+    # ghcr.io/getmonoceros/monoceros-features/claude-code:1:
+    #   version:
+    #   apiKey:
+
+    # GitHub CLI — The official `gh` CLI. Login persists across
+    # container rebuilds.
+    # Options: apiToken (GitHub PAT, scopes repo / read:org / gist;
+    # empty for `gh auth login` on first run).
+    # See https://cli.github.com/ for further information.
+    # ghcr.io/getmonoceros/monoceros-features/github-cli:1:
+    #   apiToken:
+
+    # Atlassian — Rovo Dev (`acli rovodev`) and Teamwork Graph (`twg`)
+    # CLIs sharing one Atlassian account. Auth persists across rebuilds.
+    # Options: rovodev / twg (install toggles), instance
+    # (`yoursite.atlassian.net`), email + apiToken (Atlassian account),
+    # bitbucketToken (only for twg's Bitbucket commands).
+    # See https://developer.atlassian.com/cloud/ for further information.
+    # ghcr.io/getmonoceros/monoceros-features/atlassian:1:
+    #   rovodev: true
+    #   twg: true
+    #   instance:
+    #   email:
+    #   apiToken:
+    #   bitbucketToken:
 
 routing:
-  # Host port the Traefik singleton binds. Default 80 → URLs are
-  # http://<name>.localhost/. If port 80 is permanently held on this
-  # machine (system nginx, Pi-hole, …) set any free port here, e.g.
-  # 8080. URLs then become http://<name>.localhost:8080/. The
-  # pre-flight check before apply / start / add-port reads this value
-  # and asks you to free the port or change this setting on conflict.
-  # hostPort: 80
+  # Host port the shared Traefik singleton binds. Default 80 →
+  # container URLs are http://<name>.localhost/. If port 80 is held by
+  # something else on your machine (system nginx, Pi-hole, …) set a
+  # free port here (e.g. 8080); URLs then become
+  # http://<name>.localhost:8080/. The pre-flight check before apply /
+  # start / add-port reads this and asks you to free the port or
+  # change this setting on conflict.
+  hostPort: 80

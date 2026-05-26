@@ -1,20 +1,20 @@
 {
   "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainerFeature.schema.json",
   "id": "claude-code",
-  "name": "Claude Code CLI",
+  "name": "Claude Code",
   "version": "1.1.0",
-  "description": "Installs the Anthropic Claude Code CLI globally via npm. Login (subscription / OAuth) lives inside the container under /home/node/.claude, which Monoceros bind-mounts from <container-dir>/home/.claude — so the login survives `monoceros apply` rebuilds and stays per-container. If an `apiKey` option is provided, ANTHROPIC_API_KEY is exported instead and the OAuth flow is bypassed.",
+  "description": "Anthropic's CLI coding assistant. OAuth/subscription login persists across container rebuilds.",
   "documentationURL": "https://docs.anthropic.com/en/docs/claude-code",
   "options": {
     "version": {
       "type": "string",
       "default": "latest",
-      "description": "npm-style version spec for @anthropic-ai/claude-code (e.g. 'latest', '0.4.2', '^0.4')."
+      "description": "npm-style version spec (`latest`, `^0.4`, `0.4.2`)."
     },
     "apiKey": {
       "type": "string",
       "default": "",
-      "description": "Optional Anthropic API key. When set, exported as ANTHROPIC_API_KEY for all shells in the container, which makes Claude Code use API auth instead of the subscription/OAuth flow."
+      "description": "`sk-ant-…` for API auth; empty for OAuth login on first run."
     }
   },
   "customizations": {
@@ -31,8 +31,6 @@
       }
     ],
     "optionHints": ["apiKey"],
-    "usageNotes": [
-      "Two auth modes: (1) set apiKey below for non-interactive API auth via ANTHROPIC_API_KEY, or (2) leave apiKey empty and run `claude login` once inside the container for the subscription/OAuth flow. Either way the resulting login state lives under home/.claude on the host and survives `monoceros apply` rebuilds."
-    ]
+    "usageNotes": []
   }
 }

@@ -127,15 +127,21 @@ describe('runInit', () => {
     expect(text).toContain(
       '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
     );
-    // optionHints rendered as commented hints next to options:
-    expect(text).toMatch(/#\s+apiKey:/);
-    // x-monoceros.usageNotes is rendered as a comment block right
-    // above the matching `- ref:` line.
-    expect(text).toMatch(
-      /#\s+Persistent OAuth login[\s\S]*\n\s+- ref: ghcr\.io\/getmonoceros\/monoceros-features\/claude-code:1/,
-    );
-    // The option's description shows up just above the hint line.
-    expect(text).toMatch(/#\s+Optional Anthropic API key[\s\S]*#\s+apiKey:/);
+    // In composed mode the option hints from the manifest land as a
+    // single-`#` commented block under the active `- ref:` line —
+    // builder strips one `#` per line to set a value. Never emitted
+    // as active-empty: bare-null option values would (a) override
+    // the global default in monoceros-config with `""`, and (b)
+    // attract yaml-lib's trailing-comment-stealing on round-trip.
+    expect(text).toMatch(/^\s+#\s+options:\s*$/m);
+    expect(text).toMatch(/^\s+#\s+apiKey:\s*$/m);
+    expect(text).not.toMatch(/^[# \t]*#[ \t]+#/m); // no two-`#` per line anywhere
+    // Header comment block above the `- ref:` line carries the
+    // feature's manifest description verbatim and lists its options
+    // synthesized from `optionDescriptions`.
+    expect(text).toMatch(/^# Options: apiKey \(/m);
+    // No trailing inline comments leak in alongside the value.
+    expect(text).not.toMatch(/apiKey:[^\n]+#/);
     const parsed = parseConfig(text);
     expect(parsed.config.name).toBe('sandbox');
     expect(parsed.config.languages).toEqual(['node']);
@@ -158,14 +164,17 @@ describe('runInit', () => {
     expect(text).toContain('# languages:');
     expect(text).toContain('# services:');
     expect(text).toContain('# features:');
-    // Repos section appears as a documented hint block too — same
-    // "all available options visible" rule that drives the features
-    // block above.
+    // Repos section appears as a documented hint block, fully
+    // single-`#` commented. Optional fields show as plain `#` lines
+    // — NO nested `# # ...` and no trailing `# default:` chatter.
     expect(text).toContain('# repos:');
-    expect(text).toContain('#     # path:');
-    expect(text).toContain('#     # provider: github');
-    expect(text).toContain('#     # git:');
-    expect(text).toMatch(/#\s+- node\s+# Node 22/);
+    expect(text).toMatch(/^#\s+path: <folder>\s*$/m);
+    expect(text).toMatch(/^#\s+provider: github\s*$/m);
+    expect(text).toMatch(/^#\s+git:\s*$/m);
+    // No two-`#` per line anywhere — builder must strip exactly one
+    // `#` per line to activate any commented block.
+    expect(text).not.toMatch(/^#[ \t]+#[ \t]/m);
+    expect(text).toMatch(/^#\s+- node\s*$/m);
     expect(text).toContain(
       '#   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
     );
@@ -188,41 +197,23 @@ describe('runInit', () => {
     const text = await readFile(result.configPath, 'utf8');
     expect(text).toContain('repos:');
     expect(text).toContain('- url: https://github.com/foo/bar.git');
-    // The per-entry hint block surfaces the optional fields as
-    // commented lines so the builder sees what's available without
-    // leaving the file. `path:` MUST appear as a commented hint
-    // (with the URL-derived default echoed in the trailing comment)
-    // and MUST NOT appear as an active key.
-    expect(text).toMatch(/# path: bar/);
+    // Optional per-entry fields surface as single-`#` commented hints
+    // under each active repo URL — builder strips one `#` per line
+    // to set a value. Discoverability from inside the file.
+    expect(text).toMatch(/^ {4}# path:\s*$/m);
+    expect(text).toMatch(/^ {4}# provider:\s*$/m);
+    expect(text).toMatch(/^ {4}# git:\s*$/m);
+    expect(text).toMatch(/^ {4}#\s+user:\s*$/m);
+    expect(text).toMatch(/^ {4}#\s+name:\s*$/m);
+    expect(text).toMatch(/^ {4}#\s+email:\s*$/m);
+    // Hints must NOT leak into the parsed model.
     expect(text).not.toMatch(/^ {4}path:/m);
     const parsed = parseConfig(text);
     expect(parsed.config.repos).toHaveLength(1);
     expect(parsed.config.repos[0]!.url).toBe('https://github.com/foo/bar.git');
-    // The commented hints must not leak into the parsed model.
     expect(parsed.config.repos[0]!.path).toBeUndefined();
     expect(parsed.config.repos[0]!.provider).toBeUndefined();
     expect(parsed.config.repos[0]!.git).toBeUndefined();
-  });
-
-  it('--with-repo: renders commented hint lines for the optional fields on each entry', async () => {
-    const result = await runInit({
-      name: 'sandbox',
-      with: ['node'],
-      withRepo: ['https://github.com/foo/bar.git'],
-      workbenchRoot: root,
-      monocerosHome,
-      logger: silentLogger,
-    });
-    const text = await readFile(result.configPath, 'utf8');
-    // The per-entry block must surface all optional fields the
-    // schema accepts (path, provider, git.user) as commented hints
-    // so the builder discovers them without leaving the file.
-    expect(text).toMatch(/^ {4}# path: bar\b/m);
-    expect(text).toMatch(/^ {4}# provider: github\b/m);
-    expect(text).toMatch(/^ {4}# git:\s*#/m);
-    expect(text).toMatch(/^ {4}#\s+user:/m);
-    expect(text).toMatch(/^ {4}#\s+name: Your Name/m);
-    expect(text).toMatch(/^ {4}#\s+email: you@example\.com/m);
   });
 
   it('--with-repo: multiple URLs all land in repos, in order', async () => {
@@ -289,34 +280,17 @@ describe('runInit', () => {
     });
     const text = await readFile(result.configPath, 'utf8');
     expect(text).toContain('routing:');
-    // First entry annotated as the default route — and the
-    // container name is substituted into the comment (no literal
-    // `<name>` placeholder left in the active block).
-    expect(text).toMatch(/- 3000 # default → http:\/\/sandbox\.localhost/);
-    // Slice the active block (header + body, up to the blank line
-    // that terminates it) and assert no `<name>` placeholder slips
-    // through. The documented-mode hint block elsewhere in the
-    // generator is allowed to keep `<name>` as a generic example;
-    // we narrow the check to the actually-substituted active block.
-    // The active block runs from its header to either the next
-    // blank-line section break OR end-of-file (the routing block
-    // can be the last thing in the yml).
-    const activeBlockMatch = text.match(
-      /# Routing — expose these container ports[\s\S]*?(?=\n\n|$)/,
-    );
-    expect(activeBlockMatch).not.toBeNull();
-    expect(activeBlockMatch![0]).not.toContain('<name>');
-    expect(activeBlockMatch![0]).toContain('http://sandbox.localhost');
+    // Each port on its own line, no trailing inline comments.
+    expect(text).toMatch(/^\s+- 3000\s*$/m);
     expect(text).toMatch(/^\s+- 5173\s*$/m);
     expect(text).toMatch(/^\s+- 6006\s*$/m);
-    // vscodeAutoForward must appear as a commented hint so the full
-    // routing surface is discoverable from inside the yml.
-    expect(text).toMatch(/^\s+# vscodeAutoForward: false\b/m);
+    expect(text).not.toMatch(/^\s+-\s+\d+[ \t]+#/m); // no trailing-comment on a port line
+    // vscodeAutoForward appears as a commented hint so the surface is
+    // discoverable with one keystroke — single `#` depth, no trailing
+    // explanation.
+    expect(text).toMatch(/^\s+#\s+vscodeAutoForward: false\s*$/m);
     const parsed = parseConfig(text);
-    // Verify the routing block round-trips through the real schema —
-    // typo in the active-routing renderer would catch here.
     expect(parsed.config.routing?.ports).toEqual([3000, 5173, 6006]);
-    // The commented hint must not leak into the parsed model.
     expect(parsed.config.routing?.vscodeAutoForward).toBeUndefined();
   });
 
@@ -331,7 +305,7 @@ describe('runInit', () => {
     const text = await readFile(result.configPath, 'utf8');
     // Active routing block is present...
     expect(text).toMatch(/^routing:\s*$/m);
-    expect(text).toMatch(/- 3000.*default/);
+    expect(text).toMatch(/^\s+- 3000\s*$/m);
     // ...and the documented-mode hint comments are NOT (otherwise
     // we'd be writing both).
     expect(text).not.toMatch(/^#\s+routing:\s*$/m);

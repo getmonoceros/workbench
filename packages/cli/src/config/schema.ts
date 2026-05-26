@@ -95,11 +95,14 @@ export const KNOWN_PROVIDER_HOSTS: Readonly<Record<string, RepoProvider>> = {
 /** Current schema version. Bumped only on breaking yml changes. */
 export const CONFIG_SCHEMA_VERSION = 1 as const;
 
-export const FeatureOptionValueSchema = z.union([
-  z.string(),
-  z.number(),
-  z.boolean(),
-]);
+// Feature option values are string | number | boolean. We also
+// accept `null` (yaml's parse result for a bare `key:`) and transform
+// it to the empty string — that way an init-rendered options block
+// like `apiKey:` parses cleanly and ends up equivalent to the feature
+// option's documented default (which for string fields is `""`).
+export const FeatureOptionValueSchema = z
+  .union([z.string(), z.number(), z.boolean(), z.null()])
+  .transform((v) => (v === null ? '' : v));
 
 export const FeatureEntrySchema = z.object({
   ref: z
@@ -111,12 +114,31 @@ export const FeatureEntrySchema = z.object({
   options: z.record(z.string(), FeatureOptionValueSchema).optional(),
 });
 
+/**
+ * Git identity block.
+ *
+ * Both fields are nullable + accept the empty string. yaml allows
+ * a bare `name:` (parsed as null) as a placeholder for "not set
+ * yet — apply, please ask me". The resolution logic treats null /
+ * empty as "unset" and walks the precedence chain further. Filled-in
+ * values must still satisfy the basic shape (non-empty name, email
+ * matches the local-part@domain regex).
+ */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export const GitUserSchema = z.object({
-  name: z.string().min(1),
+  name: z
+    .union([z.literal(''), z.null(), z.string().min(1)])
+    .nullish()
+    .transform((v) => (typeof v === 'string' && v.length > 0 ? v : undefined)),
   email: z
-    .string()
-    .min(3)
-    .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Invalid email'),
+    .union([
+      z.literal(''),
+      z.null(),
+      z.string().regex(EMAIL_RE, 'Invalid email'),
+    ])
+    .nullish()
+    .transform((v) => (typeof v === 'string' && v.length > 0 ? v : undefined)),
 });
 
 export const RepoEntrySchema = z.object({
