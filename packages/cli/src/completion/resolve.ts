@@ -254,6 +254,16 @@ async function resolvePreDash(
 /**
  * Flag-name suggestion list filtered against the partial token under
  * the cursor. Includes long names (`--with`) and short aliases (`-y`).
+ *
+ * Value-flags are emitted WITH a trailing `=` (`--with=`) so the shell
+ * wrappers can use `compopt -o nospace` (bash) / `compadd -S ''` (zsh)
+ * to suppress the auto-added trailing space — without that, picking
+ * `--with-ports` via Tab and typing `=3000` afterwards produces the
+ * broken `--with-ports =3000` (space between flag and value).
+ *
+ * Boolean flags (no value expected) stay as bare names so the shell's
+ * normal trailing-space behaviour applies — after `--yes` you really
+ * do want a space.
  */
 function listFlagNames(
   flags: Record<string, FlagSpec>,
@@ -261,7 +271,7 @@ function listFlagNames(
 ): string[] {
   const names: string[] = [];
   for (const [name, spec] of Object.entries(flags)) {
-    names.push(name);
+    names.push(spec.type === 'value' ? `${name}=` : name);
     for (const alias of spec.aliases ?? []) names.push(alias);
   }
   return filterPrefix(names, fragment);

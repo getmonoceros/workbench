@@ -28,6 +28,21 @@ describe('renderCompletionScript', () => {
     expect(bash).toMatch(/complete -F _monoceros monoceros/);
   });
 
+  it('bash wrapper suppresses trailing space when the candidate ends in `=`', () => {
+    const bash = renderCompletionScript('bash');
+    // The single-candidate-ends-with-`=` branch must be present; that's
+    // the fix that keeps `--with-ports=3000` from becoming
+    // `--with-ports =3000` after Tab + manual `=3000`.
+    expect(bash).toContain('compopt -o nospace');
+    expect(bash).toContain('"${COMPREPLY[0]}" == *=');
+  });
+
+  it("zsh wrapper applies `-S ''` (no suffix) to candidates ending in `=`", () => {
+    const zsh = renderCompletionScript('zsh');
+    expect(zsh).toContain("compadd -S '' --");
+    expect(zsh).toContain('*= ');
+  });
+
   it('zsh wrapper calls `monoceros __complete` with BUFFER+CURSOR', () => {
     const zsh = renderCompletionScript('zsh');
     expect(zsh).toContain(
@@ -181,14 +196,17 @@ describe('resolveCompletions', () => {
     expect(r).toEqual([]);
   });
 
-  it('init --w suggests --with, --with-repo, --with-ports', async () => {
+  it('init --w suggests value-flag candidates with trailing `=`', async () => {
     const r = await resolveCompletions(
       'monoceros init demo --w',
       'monoceros init demo --w'.length,
     );
-    expect(r).toContain('--with');
-    expect(r).toContain('--with-repo');
-    expect(r).toContain('--with-ports');
+    // Trailing `=` is part of the candidate so the shell wrappers can
+    // suppress the auto-added trailing space — without that the
+    // builder ends up with `--with-ports =3000` after typing `=3000`.
+    expect(r).toContain('--with=');
+    expect(r).toContain('--with-repo=');
+    expect(r).toContain('--with-ports=');
   });
 
   it('init --with= suggests catalog component short names', async () => {
@@ -298,7 +316,7 @@ describe('resolveCompletions', () => {
       'monoceros init hello '.length,
     );
     expect(r2).toEqual(
-      expect.arrayContaining(['--with', '--with-repo', '--with-ports']),
+      expect.arrayContaining(['--with=', '--with-repo=', '--with-ports=']),
     );
   });
 
