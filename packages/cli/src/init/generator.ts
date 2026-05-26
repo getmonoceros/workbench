@@ -1,6 +1,10 @@
 import type { Component, ResolvedComponent } from './components.js';
 import { mergeComponents } from './components.js';
 import type { FeatureManifestSummary } from './manifest.js';
+import {
+  buildFeatureHeaderLines,
+  wrapToComment as sharedWrapToComment,
+} from './feature-doc.js';
 
 /**
  * Renderer for the container yml that `monoceros init` produces.
@@ -289,12 +293,10 @@ function renderFeatureBlock(
   // the file forever.
   const yamlPrefix = commented ? '# ' : '';
 
-  const headerLines = buildHeaderLines(summary);
-  for (const line of headerLines) {
-    const wrapped = wrapToComment(line, COMMENT_WIDTH - 2);
-    for (const wl of wrapped) {
-      out.push(`# ${wl}`.trimEnd());
-    }
+  // Header lines come from the shared feature-doc builder so
+  // `add-feature`'s AST writer can emit the exact same prose block.
+  for (const wl of buildFeatureHeaderLines(summary, COMMENT_WIDTH - 2)) {
+    out.push(`# ${wl}`.trimEnd());
   }
 
   // The `- ref:` block. Indented two spaces under `features:`.
@@ -346,64 +348,6 @@ function renderFeatureBlock(
   }
 }
 
-/**
- * Assemble the header comment text from a manifest summary. Returns
- * one string per paragraph; the caller wraps each.
- *
- * Format:
- *   <Name> — <description>. <usageNotes joined>.
- *   Options: <opt> (<desc>), <opt> (<desc>), …
- *   See <documentationURL> for further information.
- */
-function buildHeaderLines(
-  summary: FeatureManifestSummary | undefined,
-): string[] {
-  const out: string[] = [];
-  if (!summary) {
-    // Third-party / unknown ref — nothing to say. Caller still emits
-    // the `- ref:` line below.
-    return out;
-  }
-  const tagline = summary.name?.trim();
-  const description = summary.description?.trim();
-  if (tagline && description) {
-    out.push(`${tagline} — ${description}`);
-  } else if (tagline) {
-    out.push(tagline);
-  } else if (description) {
-    out.push(description);
-  }
-  for (const note of summary.usageNotes) {
-    const trimmed = note.trim();
-    if (trimmed.length > 0) out.push(trimmed);
-  }
-  if (summary.optionHints.length > 0) {
-    const parts = summary.optionHints.map((key) => {
-      const desc = summary.optionDescriptions[key];
-      const short = desc ? shortenOptionDescription(desc) : undefined;
-      return short ? `${key} (${short})` : key;
-    });
-    out.push(`Options: ${parts.join(', ')}.`);
-  }
-  if (summary.documentationURL) {
-    out.push(`See ${summary.documentationURL} for further information.`);
-  }
-  return out;
-}
-
-/**
- * Trim a per-option `description` to a parenthetical hint — first
- * sentence, trailing punctuation stripped. Length cap is intentionally
- * absent: feature manifests are expected to keep descriptions terse;
- * the wrap function downstream handles line breaks naturally. If a
- * description gets unwieldy that's a signal to edit the manifest, not
- * to silently truncate.
- */
-function shortenOptionDescription(desc: string): string {
-  const firstSentence = desc.split(/(?<=[.!?])\s+/)[0]?.trim() ?? desc.trim();
-  return firstSentence.replace(/[.!?]+$/, '').trim();
-}
-
 // ───── Misc helpers ───────────────────────────────────────────────
 
 function pushHeader(out: string[], header: string, name: string): void {
@@ -423,39 +367,10 @@ function pushSectionHeader(
   // unused today — the body's commented-ness is encoded in the body
   // lines, not in the header.
   void _commented;
-  const wrapped = wrapToComment(text, COMMENT_WIDTH - 2);
+  const wrapped = sharedWrapToComment(text, COMMENT_WIDTH - 2);
   for (const wl of wrapped) {
     out.push(`# ${wl}`.trimEnd());
   }
-}
-
-/**
- * Word-wrap a single paragraph of plain text to `width` columns. The
- * returned strings do NOT include any prefix — the caller is expected
- * to prepend a comment marker (`# `) and indent. Long words that
- * exceed `width` are emitted on their own line rather than split
- * mid-word.
- */
-function wrapToComment(text: string, width: number): string[] {
-  const words = text.split(/\s+/).filter((w) => w.length > 0);
-  if (words.length === 0) return [''];
-  const usable = Math.max(width, 20);
-  const lines: string[] = [];
-  let current = '';
-  for (const w of words) {
-    if (current.length === 0) {
-      current = w;
-      continue;
-    }
-    if (current.length + 1 + w.length <= usable) {
-      current += ' ' + w;
-    } else {
-      lines.push(current);
-      current = w;
-    }
-  }
-  if (current.length > 0) lines.push(current);
-  return lines;
 }
 
 function renderScalarValue(value: string | number | boolean): string {

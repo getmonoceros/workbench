@@ -10,6 +10,11 @@ import {
 } from 'yaml';
 import type { FeatureOptions, RepoEntry } from '../create/types.js';
 import { deriveRepoName } from '../create/scaffold.js';
+import { loadFeatureManifestSummary } from '../init/manifest.js';
+import {
+  buildFeatureHeaderCommentBefore,
+  FEATURE_HEADER_WIDTH,
+} from '../init/feature-doc.js';
 
 /**
  * AST-level mutators for solution-config yml. Each function:
@@ -440,6 +445,29 @@ export function addFeatureToDoc(
   entry.set('ref', ref);
   if (Object.keys(options).length > 0) {
     entry.set('options', options);
+  }
+  // Manifest-driven per-feature header block (tagline + description,
+  // options summary, documentationURL) — the same prose the init
+  // generator emits. Attached as commentBefore on the sequence ITEM
+  // (the entry map itself) so yaml-lib renders it as a block ABOVE
+  // the dash:
+  //
+  //     # Atlassian — …
+  //     # Options: …
+  //       - ref: ghcr.io/…/atlassian:1
+  //
+  // Attaching to the inner `ref` key instead would land the comment
+  // INSIDE the dash block (`- # Atlassian` on one line) — valid yaml
+  // but visually inconsistent with what `init` produces. Unknown /
+  // third-party refs produce no summary → no header → bare `- ref:`.
+  const summary = loadFeatureManifestSummary(ref);
+  const headerBefore = buildFeatureHeaderCommentBefore(
+    summary,
+    FEATURE_HEADER_WIDTH,
+  );
+  if (headerBefore.length > 0) {
+    (entry as { commentBefore?: string }).commentBefore = headerBefore;
+    (entry as { spaceBefore?: boolean }).spaceBefore = true;
   }
   seq.add(entry);
   return true;

@@ -332,6 +332,31 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).not.toMatch(/^[ \t]+# Container ports exposed/m);
   });
 
+  it('runAddFeature attaches the manifest-driven header block above the new entry', async () => {
+    // Same per-feature header (`<Name> — <description>`, options
+    // summary, documentationURL) the init generator emits, so a
+    // feature added via add-feature reads the same as one added via
+    // `init --with=…`. Builders shouldn't lose context just because
+    // they came in through a different entry point.
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    // Tagline + first description sentence land as commentBefore.
+    expect(yml).toMatch(/^\s*# Atlassian — /m);
+    // Synthesized "Options: …" summary line.
+    expect(yml).toMatch(/^\s*# Options: instance \(/m);
+    // documentationURL line.
+    expect(yml).toMatch(/^\s*# See https:\/\/developer\.atlassian\.com/m);
+    // The header sits ABOVE the dash, not interleaved with it
+    // (yaml-lib's other emission mode would produce `- # Atlassian`).
+    expect(yml).not.toMatch(/-\s+# Atlassian/);
+  });
+
   it('runRemoveFeature accepts a short-name (atlassian)', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({
