@@ -618,8 +618,10 @@ Zustände dokumentieren.
      Container-Up; `stop` und `remove` rufen `maybeStopProxy()` —
      letzteres ist no-op wenn noch ein anderer Container am
      Proxy-Network hängt (Variante A aus der Designdiskussion).
-   - Beispiel-Skript `docs/examples/serve-ports.mjs` für manuelle
-     Browser-Smoketests.
+   - Beispiel-Skript `serve-ports.mjs` für manuelle Browser-Smoketests
+     (inzwischen ausgelagert ins eigene Fixture-Repo
+     [getmonoceros/monoceros-e2e-fixture](https://github.com/getmonoceros/monoceros-e2e-fixture),
+     damit es als `--with-repo`-Ziel + E2E-Fixture taugt).
 
    **Im Verlauf dazugekommen** (1.7.1 – 1.7.4):
    - `--default`-Flag für `add-port` — promoted einen Port an
