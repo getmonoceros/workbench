@@ -112,6 +112,25 @@ anfassen willst, siehe
 beschreiben den lokalen Build und wie er via Env-Vars in `apply`
 hochpriorisiert wird.
 
+> **⚠️ Bekanntes Problem — Traefik-Proxy bei zwei Homes.** Sobald du
+> sowohl mit `pnpm cli` (Dev-Home `<checkout>/.local`) als auch mit
+> einer global installierten `monoceros` (Prod-Home `~/.monoceros`)
+> testest, kollidieren beide am maschinenweiten Traefik-Singleton
+> `monoceros-proxy`. Der wird **per Container-Name** wiederverwendet —
+> nicht pro Home und nicht pro Port. Wer ihn zuerst startet, gewinnt;
+> der andere Kontext reused denselben Container, der dann das falsche
+> `traefik/dynamic`-Verzeichnis watcht → Port-Routen liefern `404`
+> (Traefik läuft, kennt aber die Route nicht). Ein
+> `routing.hostPort`-Wechsel hilft **nicht**, solange der Container-Name
+> geteilt ist. Mitigation beim Kontext-Wechsel:
+>
+> ```sh
+> docker rm -f monoceros-proxy   # dann im neuen Kontext apply/add-port erneut
+> ```
+>
+> Trifft nur Entwickler-Maschinen mit zwei Homes; ein normaler Builder
+> hat nur `~/.monoceros` und sieht das nie.
+
 ### 3 — „Ich nutze eine bestehende Monoceros-Solution"
 
 Ein Builder hat dir ein `<name>.yml` geschickt? Lege es unter

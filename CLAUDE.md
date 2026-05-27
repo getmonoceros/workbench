@@ -136,6 +136,17 @@ Was **nicht** mit ging (und nicht zurückkommen wird):
   hinaus
 - **ADRs** unter `docs/adr/` ablegen (Markdown, nummeriert, kurz).
   Konzept-Dokumente in `docs/`, ADRs sind spezifischer
+- **Traefik-Proxy nach Dev-Smoke-Tests aufräumen.** Der
+  `monoceros-proxy`-Singleton ist maschinenweit und wird von
+  `ensureProxy()` **per Name** wiederverwendet (nicht pro Home, nicht
+  pro Port). Wenn du in `.local` (Dev) Port-Tests gemacht hast und der
+  Proxy läuft noch, reused ein anschließender Test gegen
+  `~/.monoceros` (Prod) genau diesen Container — er watcht dann das
+  `.local`-`traefik/dynamic` und Prod-Routen liefern stumm `404`.
+  Daher: nach `.local`-Smoke-Tests mit Ports `docker rm -f
+monoceros-proxy`, bevor du in einem anderen Home testest (und dem
+  Builder keine Proxy-Leiche hinterlässt). Details im README unter
+  „Ich entwickle am Workbench".
 
 ## Stack der Workbench selbst (nicht der Container, die damit gebaut werden)
 
