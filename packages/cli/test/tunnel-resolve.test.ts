@@ -1,0 +1,252 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resolveTunnelTarget } from '../src/tunnel/resolve.js';
+import { composeProjectName } from '../src/devcontainer/compose.js';
+import type { DockerExec } from '../src/proxy/index.js';
+
+describe('resolveTunnelTarget', () => {
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(path.join(tmpdir(), 'monoceros-tunnel-'));
+    await mkdir(path.join(home, 'container-configs'), { recursive: true });
+    await mkdir(path.join(home, 'container'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  async function writeYml(name: string, body: string): Promise<void> {
+    await writeFile(path.join(home, 'container-configs', `${name}.yml`), body);
+  }
+
+  async function materializeContainer(
+    name: string,
+    opts: { compose?: boolean } = {},
+  ): Promise<string> {
+    const root = path.join(home, 'container', name);
+    await mkdir(path.join(root, '.devcontainer'), { recursive: true });
+    if (opts.compose) {
+      await writeFile(
+        path.join(root, '.devcontainer', 'compose.yaml'),
+        'services:\n  workspace:\n    image: stub\n',
+      );
+    }
+    return root;
+  }
+
+  it('refuses without an yml profile', async () => {
+    await expect(
+      resolveTunnelTarget({
+        name: 'missing',
+        target: 'postgres',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/No yml profile/);
+  });
+
+  it('refuses without a materialised container directory', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      resolveTunnelTarget({
+        name: 'demo',
+        target: '8080',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/not materialised/);
+  });
+
+  it('refuses an unknown service with the catalog list in the message', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await materializeContainer('demo', { compose: true });
+    await expect(
+      resolveTunnelTarget({
+        name: 'demo',
+        target: 'mongo',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Unknown service 'mongo'.*mysql.*postgres.*redis/s);
+  });
+
+  it('refuses a service that is in the catalog but not declared in the yml', async () => {
+    await writeYml(
+      'demo',
+      ['schemaVersion: 1', 'name: demo', 'services:', '  - redis', ''].join(
+        '\n',
+      ),
+    );
+    await materializeContainer('demo', { compose: true });
+    await expect(
+      resolveTunnelTarget({
+        name: 'demo',
+        target: 'postgres',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/not declared in this container's yml/);
+  });
+
+  it('compose + service → compose network and service-name DNS', async () => {
+    await writeYml(
+      'demo',
+      ['schemaVersion: 1', 'name: demo', 'services:', '  - postgres', ''].join(
+        '\n',
+      ),
+    );
+    const root = await materializeContainer('demo', { compose: true });
+    const resolved = await resolveTunnelTarget({
+      name: 'demo',
+      target: 'postgres',
+      monocerosHome: home,
+    });
+    expect(resolved).toEqual({
+      network: `${composeProjectName(root)}_default`,
+      targetHost: 'postgres',
+      internalPort: 5432,
+      display: 'demo/postgres',
+    });
+  });
+
+  it('compose + port → compose network targeting the workspace service', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const root = await materializeContainer('demo', { compose: true });
+    const resolved = await resolveTunnelTarget({
+      name: 'demo',
+      target: '8080',
+      monocerosHome: home,
+    });
+    expect(resolved).toEqual({
+      network: `${composeProjectName(root)}_default`,
+      targetHost: 'workspace',
+      internalPort: 8080,
+      display: 'demo:8080',
+    });
+  });
+
+  it('image-mode + service → refuses (services need compose mode)', async () => {
+    await writeYml(
+      'demo',
+      ['schemaVersion: 1', 'name: demo', 'services:', '  - postgres', ''].join(
+        '\n',
+      ),
+    );
+    await materializeContainer('demo'); // no compose.yaml
+    await expect(
+      resolveTunnelTarget({
+        name: 'demo',
+        target: 'postgres',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/image-mode \(no compose.yaml\)/);
+  });
+
+  it('image-mode + port + routing.ports → monoceros-proxy network with name alias', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'routing:',
+        '  ports:',
+        '    - 3000',
+        '',
+      ].join('\n'),
+    );
+    await materializeContainer('demo'); // image-mode
+    const resolved = await resolveTunnelTarget({
+      name: 'demo',
+      target: '8080',
+      monocerosHome: home,
+    });
+    expect(resolved).toEqual({
+      network: 'monoceros-proxy',
+      targetHost: 'demo',
+      internalPort: 8080,
+      display: 'demo:8080',
+    });
+  });
+
+  it('image-mode + port without routing.ports → inspects container, uses bridge IP', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const root = await materializeContainer('demo'); // image-mode, no ports
+
+    const dockerCalls: string[][] = [];
+    const docker: DockerExec = async (args) => {
+      dockerCalls.push(args);
+      if (args[0] === 'ps') {
+        expect(args).toContain(`label=devcontainer.local_folder=${root}`);
+        return { stdout: 'deadbeef1234\n', stderr: '', exitCode: 0 };
+      }
+      if (args[0] === 'inspect') {
+        expect(args[args.length - 1]).toBe('deadbeef1234');
+        return {
+          stdout: JSON.stringify({
+            bridge: { IPAddress: '172.17.0.5' },
+          }),
+          stderr: '',
+          exitCode: 0,
+        };
+      }
+      throw new Error(`unexpected docker call: ${args.join(' ')}`);
+    };
+
+    const resolved = await resolveTunnelTarget({
+      name: 'demo',
+      target: '8080',
+      monocerosHome: home,
+      docker,
+    });
+
+    expect(resolved).toEqual({
+      network: 'bridge',
+      targetHost: '172.17.0.5',
+      internalPort: 8080,
+      display: 'demo:8080',
+    });
+    expect(dockerCalls).toHaveLength(2);
+  });
+
+  it('image-mode + no running container → actionable error', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await materializeContainer('demo');
+    const docker: DockerExec = async () => ({
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
+    });
+    await expect(
+      resolveTunnelTarget({
+        name: 'demo',
+        target: '8080',
+        monocerosHome: home,
+        docker,
+      }),
+    ).rejects.toThrow(/No running container/);
+  });
+
+  it('image-mode + container with no usable network → clear error', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await materializeContainer('demo');
+    const docker: DockerExec = async (args) => {
+      if (args[0] === 'ps') {
+        return { stdout: 'abc123\n', stderr: '', exitCode: 0 };
+      }
+      // No IP in any network.
+      return {
+        stdout: JSON.stringify({ bridge: { IPAddress: '' } }),
+        stderr: '',
+        exitCode: 0,
+      };
+    };
+    await expect(
+      resolveTunnelTarget({
+        name: 'demo',
+        target: '8080',
+        monocerosHome: home,
+        docker,
+      }),
+    ).rejects.toThrow(/no network with a reachable IP/);
+  });
+});

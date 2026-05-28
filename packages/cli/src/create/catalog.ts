@@ -78,6 +78,12 @@ export interface ServiceEntry {
    * state-model the data dir slots into.
    */
   dataMount?: string;
+  /**
+   * Default in-container port the service listens on. Used by
+   * `monoceros tunnel <name> <service>` to resolve the service-name
+   * to a port without an extra CLI argument. See ADR 0009.
+   */
+  defaultPort: number;
 }
 
 // The literal `monoceros` user/password/db on the service entries
@@ -112,6 +118,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
     // /var/lib/postgresql/data directly. See
     // https://github.com/docker-library/postgres/pull/1259.
     dataMount: '/var/lib/postgresql',
+    defaultPort: 5432,
   },
   mysql: {
     id: 'mysql',
@@ -121,11 +128,13 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
       MYSQL_DATABASE: 'monoceros',
     },
     dataMount: '/var/lib/mysql',
+    defaultPort: 3306,
   },
   redis: {
     id: 'redis',
     image: 'redis:8',
     dataMount: '/data',
+    defaultPort: 6379,
   },
 };
 

@@ -665,70 +665,36 @@ dokumentieren.
    - Automatisierte E2E-Abdeckung für die Port-Strecke — Teil von
      Task 4 (E2E-Testmodul).
 
-3. **`monoceros tunnel <name>` — TCP-Tunnel zu Container-Services** —
-   Geschwister-Lösung zu Task 2 (HTTP via Traefik). Für TCP-Services
-   (PostgreSQL, MySQL, Redis, …), die der Builder vom Host aus
-   erreichen will, ohne `-p`-Mappings in die yml zu schreiben oder
-   einen `apply`-Rebuild auszulösen.
+3. ✅ **`monoceros tunnel <name> <service-or-port>` — TCP-Tunnel zu
+   Container-Services** — erledigt 2026-05-28, ausgeliefert in 1.10.0.
+   Im Verlauf des Designs deutlich vereinfacht gegenüber dem
+   Original-Entwurf: aus dem persistenten Sidecar-Lifecycle wurde
+   ein Foreground-Prozess (Ctrl+C beendet) nach Vorbild von
+   `kubectl port-forward` / `ssh -L`. Ein Tunnel pro Aufruf, kein
+   yml-Mitschrieb, kein Listing, kein `--stop`.
 
-   **Default-Verhalten**: `monoceros tunnel hello` ohne weitere Args
-   öffnet Tunnel für **alle** Services, die in der Container-yml
-   deklariert sind, auf deren jeweils default-Host-Port (postgres →
-   5432, mysql → 3306, redis → 6379, …). Eine Zeile, und alles was
-   compose-seitig konfiguriert ist, ist vom Host aus reachable.
+   **Was live ist**:
+   - `monoceros tunnel <name> <service-or-port> [--local-port=<n>]
+[--local-address=<addr>]`
+   - Service-Name aus dem `services:`-Block (postgres/mysql/redis;
+     Default-Ports aus dem `SERVICE_CATALOG`) ODER bare interne
+     Port-Nummer
+   - `--local-port` default = interner Port, mit `<port>+1`-Hint
+     bei Kollision; Pre-Flight via TCP-Connect-Probe
+   - `--local-address` default `127.0.0.1` (nur Loopback), opt-in
+     `0.0.0.0` für LAN-Exposition
+   - socat-Sidecar gepinnt auf `alpine/socat:1.8.0.3`
+   - Topologie pro Mode dokumentiert (Compose-Default-Network,
+     `monoceros-proxy`-Alias, Bridge-IP-Fallback) — siehe
+     [ADR 0009](./adr/0009-tcp-tunnels-foreground-sidecar.md)
+   - 464/464 Tests grün (Resolver + Run + Port-Check)
 
-   **Refinements**:
-   - `--for-services=postgres,mysql` — nur die genannten Services
-     aus der yml-Service-Liste tunneln
-   - `--for-ports=8080,3000` — beliebige _interne_ Container-Ports
-     forwarden, nicht nur deklarierte Services. Das ist gleichzeitig
-     der **Escape-Hatch für HTTP-Tunneling**: wenn der Builder einen
-     spezifischen Host-Port für eine HTTP-App braucht (statt der
-     Traefik-Subdomain aus Task 2), funktioniert das auch hierüber.
-   - Beide Flags kombinierbar.
-
-   **Implementierung — α (socat-Sidecar-Container)**: pro Tunnel ein
-   winziger `alpine/socat`-Container im Docker-Network des Ziel-
-   Containers, mit `-p`-Mapping vom Host-Port auf den internen
-   Service-Port. SSH-Variante (sshd im Dev-Container, key-basierte
-   Auth, ein Tunnel mit `-L` für alles) ist verworfen für lokales
-   Dev-Setup — Over-Engineering für den Use-Case. Re-aufrufbar wenn
-   Remote-Dev-Container später Thema werden sollten.
-
-   **Kollisions-Behandlung**: zwei Container wollen beide Host-Port
-   5432 für ihre postgres-Tunnel. Default: klarer Fehler ("port 5432
-   already in use by tunnel `<other>`"), Builder löst explizit via
-   `--host-port=5433`. Vorhersagbar, keine implizite Port-Schiebung.
-
-   **Lifecycle**:
-   - `monoceros tunnel hello` startet die Sidecars
-   - `monoceros tunnel hello --stop` (oder `monoceros tunnel-stop`)
-     räumt sie weg
-   - `monoceros stop hello` räumt sie implizit mit weg (Sidecars
-     zeigen sonst ins Leere)
-   - `monoceros start hello` startet sie **nicht** automatisch —
-     Tunnels sind explizit ad-hoc, nicht persistent. HTTP via
-     Traefik aus Task 2 ist die persistente Lösung, Tunnels sind
-     situative TCP-Bridges.
-   - `monoceros remove hello` räumt sie mit weg.
-
-   **Scope**: primär Compose-Mode-Container mit deklarierten
-   Services (für `--for-services`). `--for-ports` greift auch auf
-   Image-Mode-Container — alles was im Container lauscht.
-
-   **Offene Detail-Fragen**:
-   - **Tunnel-Persistenz**: doch in der Container-yml mitschreiben,
-     damit `monoceros start hello` automatisch re-establishes?
-     Lean: nein, ad-hoc bleibt die ehrlichere Semantik. Builder ruft
-     `monoceros tunnel hello` bewusst auf wenn er das braucht.
-   - **Tunnel-Listing**: separates `monoceros tunnel hello --list`
-     oder in `monoceros status hello` integrieren? Lean: Letzteres,
-     dann sieht der Builder Tunnels neben Container-State.
-   - **Host-Port-Default**: 1:1 (5432 für postgres). Bei Kollision
-     forderbar via `--host-port=<other>`. Akzeptabel? Alternative
-     wäre Ephemeral-Default ("Docker, such einen freien"), Builder
-     hätte dann nie Kollisionen aber müsste den Port immer
-     nachschlagen. Lean: 1:1 mit expliziter Override.
+   **Bewusst verworfen** (gegenüber dem Original-Backlog-Entwurf):
+   - Persistente Sidecars mit yml-Mitschrieb
+   - „alle Services in einem Aufruf"-Variante (Logs würden
+     multiplexen, `--local-port`-Kollisionen unauflösbar)
+   - `--stop` / Listing / Integration in `monoceros stop`/`remove`
+   - SSH-basierter Tunnel-Pfad
 
 4. **E2E-Testmodul aufbauen** — der heutige `docs/test-plan.md` ist
    eine reine Hand-Test-Anleitung gegen ein längst überholtes

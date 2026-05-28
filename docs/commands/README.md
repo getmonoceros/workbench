@@ -102,9 +102,10 @@ monoceros apply <name>                                    # neu bauen, picks up 
 
 ## Discovery
 
-| Befehl                  | Zweck                                                       | Detail               |
-| ----------------------- | ----------------------------------------------------------- | -------------------- |
-| `monoceros port <name>` | Traefik-URLs eines Containers anzeigen (Default + per Port) | [port.md](./port.md) |
+| Befehl                                            | Zweck                                                             | Detail                   |
+| ------------------------------------------------- | ----------------------------------------------------------------- | ------------------------ |
+| `monoceros port <name>`                           | Traefik-URLs eines Containers anzeigen (Default + per Port)       | [port.md](./port.md)     |
+| `monoceros tunnel <name> <service-or-port> [...]` | TCP-Tunnel vom Host in den Container (Foreground, Ctrl+C beendet) | [tunnel.md](./tunnel.md) |
 
 (`monoceros list-components` ist oben unter „Solution anlegen + Lifecycle" aufgeführt — gehört konzeptuell auch zu Discovery.)
 

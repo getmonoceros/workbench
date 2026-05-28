@@ -496,6 +496,7 @@ const ALL_COMMANDS = [
   'remove-repo',
   'remove-port',
   'port',
+  'tunnel',
   'completion',
 ] as const;
 
@@ -592,6 +593,13 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     positionals: [containerName],
     flags: { '--default': { type: 'boolean' } },
     innerArgs: () => [],
+  },
+  tunnel: {
+    positionals: [containerName, () => listServiceNames()],
+    flags: {
+      '--local-port': { type: 'value' },
+      '--local-address': { type: 'value' },
+    },
   },
   completion: {
     positionals: [() => listShellNames()],

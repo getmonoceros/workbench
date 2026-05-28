@@ -38,6 +38,7 @@ describe('monoceros main command', () => {
       'remove-repo',
       'remove-port',
       'port',
+      'tunnel',
       'completion',
       // Internal helper used by the shell-completion wrappers; not
       // user-facing but part of the registered subcommand surface.
