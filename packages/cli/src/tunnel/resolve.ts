@@ -10,7 +10,6 @@ import {
   type DockerExec,
 } from '../proxy/index.js';
 import type { SolutionConfig } from '../config/schema.js';
-import { portNumber } from '../config/schema.js';
 
 /**
  * Resolved tunnel target — exactly what `docker run --network=… …
