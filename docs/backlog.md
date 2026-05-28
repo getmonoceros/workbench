@@ -558,11 +558,11 @@ beschrieben.
 
 ### Tasks (Skizze)
 
-Reihenfolge ist absichtlich Features-zuerst-Doku-danach: Test-Plan,
-AI-Library und Command-Doku kommen NACH den drei neuen CLI-
-Oberflächen (init --with-repo, add-port, tunnel), damit Doku und
-Tests die finale Surface abdecken und nicht zwischenzeitliche
-Zustände dokumentieren.
+Reihenfolge ist absichtlich Features-zuerst-Doku-danach: E2E-Tests
+und Command-Doku kommen NACH den drei neuen CLI-Oberflächen
+(`init --with-repo`, `add-port`, `tunnel`), damit Doku und Tests die
+finale Surface abdecken und nicht zwischenzeitliche Zustände
+dokumentieren.
 
 1. ✅ **`init --with-repo` — Repo direkt in init reinziehen** —
    erledigt 2026-05-23, ausgeliefert in 1.6.x. Im Verlauf deutlich
@@ -662,8 +662,8 @@ Zustände dokumentieren.
      Cleanup ist Hand-Edit oder remove+init.
    - TCP-Tunnel für DB-Services — separates Geschwister-Item
      (Task 3 unten).
-   - Test-Plan-Update für die Port-Strecke — Teil von Task 4
-     (Test-Plan-Rewrite).
+   - Automatisierte E2E-Abdeckung für die Port-Strecke — Teil von
+     Task 4 (E2E-Testmodul).
 
 3. **`monoceros tunnel <name>` — TCP-Tunnel zu Container-Services** —
    Geschwister-Lösung zu Task 2 (HTTP via Traefik). Für TCP-Services
@@ -730,72 +730,37 @@ Zustände dokumentieren.
      hätte dann nie Kollisionen aber müsste den Port immer
      nachschlagen. Lean: 1:1 mit expliziter Override.
 
-4. **Test-Plan neu schreiben** — der heutige `docs/test-plan.md` ist
-   noch komplett auf das Pre-M4-Modell verdrahtet (`monoceros create`,
-   keine yml-Profile, keine Init-Komponenten) und ist damit so weit
-   weg vom aktuellen Stand, dass eine Aktualisierung Zeile-für-Zeile
-   sich nicht lohnt — kompletter Rewrite ist sinnvoller. Setzt
-   Tasks 1–3 voraus, damit die Neufassung die finale Surface testet.
-   Mindest-Anforderungen an die Neufassung:
-   - **CLI-Surface (Stage A)** auf das aktuelle Subcommand-Set
-     ausrichten (`init`, `apply`, `add-feature`, `remove`, `restore`,
-     `list-components`, `completion`, neu: `add-port`, `port`,
-     `tunnel`, …); Subcommands nach Kategorien strukturieren wie im
-     Help-Renderer.
-   - **Scaffolding (Stage B)** auf `monoceros init <name> --with=…
---with-repo=…` plus `monoceros list-components` umstellen.
-     Idempotenz + `add-*`-Mutator-Tests bleiben relevant, aber gegen
-     das neue yml-Modell formuliert. Duplikat-Behandlung bei
-     `--with-repo` + späterem `add-repo` (Lean C aus Task 1)
-     explizit als Test-Fall mit drin.
-   - **End-to-End-Strecke pro Komponenten-Bündel** als neue Stage C —
-     ein realistischer Bündel-Mix (z. B. `node,postgres,claude`,
-     `python,redis`, `node,github,atlassian/twg`) jeweils komplett
-     durch `init → apply → run → remove`. Plus Port-Strecke:
-     `add-port` + Browser-Test via `<container>.localhost`,
-     `tunnel` + DB-Connection vom Host.
-   - **Image-Mode-Pfad explizit testen** — bei M4 Task 9 ist ein
-     Image-Mode-Container nach `remove` als Zombie übrig geblieben,
-     weil die Test-Coverage bis dahin fast immer Compose-Mode war.
-     Mindestens ein dezidierter Fall „`--with=node,claude` (ohne
-     Services) → apply → remove → `docker ps -a` muss leer sein".
-   - **SSH-Repo-Strecke explizit testen** — `init --with-repo` plus
-     ein nachträgliches `add-repo git@github.com:<user>/<repo>.git`
-     auf einen Repo bei dem der Builder Push-Rechte hat. Im
-     Container: `git clone` (durch post-create.sh), Änderung machen,
-     `git commit`, `git push`. Beweist dass das SSH-Agent-Forwarding
-     funktioniert (Docker-Desktop-Proxy auf macOS, direkter
-     Socket-Mount auf Linux). HTTPS-Repos via M3-Auth-Pfad sind
-     separat abgedeckt — der SSH-Pfad braucht eine eigene
-     Test-Strecke weil er andere Failure-Modes hat (siehe M4-Task-9-
-     Fund: macOS Docker Desktop launchd-Socket-Sandboxing).
-   - **Cross-OS-Sweep (Stage E)** als systematischer Pfad: install.sh
-     auf macOS + Linux, install.ps1 auf Windows, jeweils mit dem
-     M4-DoD-Walkthrough (init/apply/shell/Claude). Findet die
-     plattform-spezifischen Bugs die heute durchschlüpfen (UTF-8
-     in PowerShell, exit-in-iex, dash-vs-bash, npm-prefix-EACCES,
-     curl-fehlt-auf-Ubuntu, …).
+4. **E2E-Testmodul aufbauen** — der heutige `docs/test-plan.md` ist
+   eine reine Hand-Test-Anleitung gegen ein längst überholtes
+   CLI-Modell (`monoceros create`, keine yml-Profile). Statt das
+   Dokument neu zu schreiben, soll an seine Stelle ein automatisiertes
+   **E2E-Testmodul** treten, das die Workbench gegen die unterschied­
+   lichen Builder-Umgebungen (macOS / Linux / Windows, Docker Desktop /
+   rootful Docker) automatisch durchspielt. Details werden ausge­
+   arbeitet, sobald Task 3 durch ist — die finale CLI-Surface inkl.
+   `tunnel` soll mitgetestet werden. Lean-Vorgaben für die Ausarbei­
+   tung später:
+   - automatisierter `init → apply → shell/run → remove`-Durchlauf für
+     repräsentative Komponenten-Bündel
+   - Port-Strecke (`add-port` + HTTP-Probe via `<name>.localhost`) und
+     Tunnel-Strecke (`tunnel` + TCP-Probe vom Host) automatisiert
+   - Image-Mode-Pfad explizit (kein Zombie nach `remove`)
+   - Cross-OS-Sweep für `install.sh` / `install.ps1`
 
-5. **AI-Tool-Library erweitern** — OpenCode, Codex, GitHub Copilot,
-   Aider als Features dazu, jeweils nach dem Cookbook in
-   [`docs/ai-tools.md`](./ai-tools.md). Unabhängig von Tasks 1–3,
-   kann auch parallel laufen.
+5. **`docs/commands/`-Lücken füllen** — neue Detail-Seiten für die
+   Befehle aus Task 3 (`tunnel`, ggf. `tunnel-stop`). CLAUDE.md-
+   Konvention: pro neuem CLI-Befehl eine MD-Datei im selben Commit
+   wie der Code.
 
-6. **`docs/commands/`-Lücken füllen** — neue Detail-Seiten für die
-   Befehle aus Tasks 1–3 (`add-port`, `port`, `tunnel`, ggf.
-   `tunnel-stop`). Plus den `--with-repo`-Flag in der `init.md`
-   ergänzen. CLAUDE.md-Konvention: pro neuem CLI-Befehl eine
-   MD-Datei im selben Commit wie der Code.
-
-7. **Beispiel-Workflows** — kurze how-to-Dokumente für die häufigsten
+6. **Beispiel-Workflows** — kurze how-to-Dokumente für die häufigsten
    Stacks (Node-API mit DB-Tunnel, Python-Pipeline, Atlassian-Forge-
-   Setup). Setzt Tasks 1–3 voraus, damit die Workflows die finalen
+   Setup). Setzt Task 3 voraus, damit die Workflows die finalen
    Befehle nutzen können.
 
-8. **Image-Aufräumen** — entscheiden, ob die dormant Egress-iptables-
+7. **Image-Aufräumen** — entscheiden, ob die dormant Egress-iptables-
    Mechanik im Image bleibt (opt-in für CI/headless) oder ganz raus
    kann. Heute beides möglich, kein akuter Druck. Unabhängig von
-   Tasks 1–3.
+   Task 3.
 
 ### Zusätzliche Arbeiten die während M5 dazukamen
 
@@ -960,6 +925,12 @@ Output.
 
 ## Vorgemerkt für später (jenseits M5)
 
+- **AI-Tool-Library erweitern** — OpenCode, Codex, GitHub Copilot,
+  Aider als Features dazu, jeweils nach dem Cookbook in
+  [`docs/ai-tools.md`](./ai-tools.md). Im Original-M5-Plan, aber
+  aus dem aktuellen Block rausgenommen — die heute vorhandenen
+  Features (Claude Code, Rovo Dev) decken den Bedarf, weitere
+  Tools kommen on demand.
 - **VS-Code-Server als Feature** — `code-server` als optionales
   Feature, sodass Builder den Container per Browser erreicht. Erst
   wenn echtes Nutzerinteresse sichtbar wird (siehe konzept.md →
