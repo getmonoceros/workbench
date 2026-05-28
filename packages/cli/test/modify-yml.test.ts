@@ -26,13 +26,6 @@ const silentLogger = {
   warn: () => {},
 };
 
-const baseOpts = {
-  yes: true,
-  logger: silentLogger,
-  confirm: async () => true,
-  output: () => {},
-};
-
 // Stub the docker exec the proxy module reaches for in runAddPort /
 // runRemovePort. Reports "everything exists and is running" so the
 // happy paths don't actually spawn a docker process during yml-only
@@ -45,12 +38,28 @@ const noopProxyDocker = async () => ({
   exitCode: 0,
 });
 
-const portOpts = { ...baseOpts, proxyDocker: noopProxyDocker };
+// Stub the docker exec runAddRepo uses to look up a running container
+// for the on-the-fly-clone path. Empty stdout makes
+// `findRunningContainerByLocalFolder` see no match, so the flow exits
+// through the "container not running" branch without spawning a real
+// `docker ps`. Default-applied on `baseOpts` so every test (notably
+// the runAddRepo cases that don't exercise the on-the-fly flow) stays
+// off the host docker daemon and out of the CI timeout window.
+const noopContainerLookupDocker = async () => ({
+  stdout: '',
+  stderr: '',
+  exitCode: 0,
+});
 
-// (An earlier `noopContainerLookup` stub for the runAddRepo
-// on-the-fly-clone path was removed along with the unused `repoOpts`
-// abstraction. Tests that exercise the on-the-fly flow stub
-// containerLookupDocker per-case via baseOpts overrides.)
+const baseOpts = {
+  yes: true,
+  logger: silentLogger,
+  confirm: async () => true,
+  output: () => {},
+  containerLookupDocker: noopContainerLookupDocker,
+};
+
+const portOpts = { ...baseOpts, proxyDocker: noopProxyDocker };
 
 describe('add-*/remove-* against the yml', () => {
   let home: string;
