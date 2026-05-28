@@ -104,9 +104,16 @@ würde die Infrastruktur verdoppeln (jeder Workflow zweimal, jede
 Visibility-Einstellung zweimal, jede Doku doppelt) für einen
 Mehrwert, den drei kleinere Mechanismen sauberer abdecken:
 
-- **Precheck** (`precheck.yml`) — lint, typecheck, vitest auf
-  jedem PR und Push nach `main`. Source-Hygiene, kein Build oder
-  Integration. Code muss grün sein, um auf `main` zu landen.
+- **Precheck** (`precheck.yml`) — lint, typecheck, vitest, format-
+  check auf jedem PR und Push nach `main`. Source-Hygiene, kein Build
+  oder Integration. Code muss grün sein, um auf `main` zu landen.
+  Die drei Release-Workflows (`release-cli.yml`, `release-features.yml`,
+  `release-runtime.yml`) rufen Precheck per `workflow_call` als
+  vorgeschalteten Job auf und gaten ihren Publish über
+  `needs: precheck` — damit kann ein roter Precheck keinen Release
+  durchwinken. Direkter `push:`-Trigger auf Precheck bleibt, damit
+  jeder main-Commit eine sichtbare Quality-Gate-Anzeige bekommt,
+  auch wenn keine Release-Pfadfilter greifen.
 - **Lokale Smoke-Strecke** — `pnpm sandbox:reset` baut Runtime-Image
   lokal, scaffolded Sandbox, fährt Container hoch. Wer ein Feature
   oder das Image ändert, fährt das vor dem Merge einmal durch.

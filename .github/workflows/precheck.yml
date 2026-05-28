@@ -4,6 +4,13 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Reusable from the release-*.yml pipelines so a release cannot
+  # bypass lint / typecheck / test / format. The called instance
+  # runs under the CALLER's `github.workflow` value, which keeps the
+  # concurrency group below distinct from the direct-trigger run
+  # (no cross-cancellation between "Precheck" and "Release CLI →
+  # precheck", they share repo state but not the queue lane).
+  workflow_call:
 
 # Cancel an in-flight run when a new commit lands on the same ref —
 # pushing a fix to a PR shouldn't keep the previous run alive.

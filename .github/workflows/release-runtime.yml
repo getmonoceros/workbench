@@ -28,8 +28,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  precheck:
+    uses: ./.github/workflows/precheck.yml
+
   publish:
     name: build + push runtime image
+    needs: precheck
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

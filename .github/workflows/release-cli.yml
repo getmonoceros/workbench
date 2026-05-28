@@ -38,8 +38,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Gate: full lint / typecheck / test / format-check must pass before
+  # anything publishes. Without this, a green publish coexists with a
+  # red Precheck (they used to run in parallel on the same push).
+  precheck:
+    uses: ./.github/workflows/precheck.yml
+
   publish:
     name: publish @getmonoceros/workbench
+    needs: precheck
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
