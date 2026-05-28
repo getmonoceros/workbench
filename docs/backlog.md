@@ -696,22 +696,53 @@ dokumentieren.
    - `--stop` / Listing / Integration in `monoceros stop`/`remove`
    - SSH-basierter Tunnel-Pfad
 
-4. **E2E-Testmodul aufbauen** — der heutige `docs/test-plan.md` ist
-   eine reine Hand-Test-Anleitung gegen ein längst überholtes
-   CLI-Modell (`monoceros create`, keine yml-Profile). Statt das
-   Dokument neu zu schreiben, soll an seine Stelle ein automatisiertes
-   **E2E-Testmodul** treten, das die Workbench gegen die unterschied­
-   lichen Builder-Umgebungen (macOS / Linux / Windows, Docker Desktop /
-   rootful Docker) automatisch durchspielt. Details werden ausge­
-   arbeitet, sobald Task 3 durch ist — die finale CLI-Surface inkl.
-   `tunnel` soll mitgetestet werden. Lean-Vorgaben für die Ausarbei­
-   tung später:
-   - automatisierter `init → apply → shell/run → remove`-Durchlauf für
-     repräsentative Komponenten-Bündel
-   - Port-Strecke (`add-port` + HTTP-Probe via `<name>.localhost`) und
-     Tunnel-Strecke (`tunnel` + TCP-Probe vom Host) automatisiert
-   - Image-Mode-Pfad explizit (kein Zombie nach `remove`)
-   - Cross-OS-Sweep für `install.sh` / `install.ps1`
+4. **E2E-Testmodul aufbauen** — siehe
+   [ADR 0010](./adr/0010-e2e-tooling-eigenes-repo.md) für die
+   Architektur-Entscheidung. Kurzform: kein CI-Matrix-Sweep, sondern
+   ein **maintainer-facing Tool** in einem eigenen Repo
+   (`getmonoceros/monoceros-e2e`), das auf der echten Builder-Maschine
+   läuft und Monoceros ausschließlich über die CLI-Schnittstelle
+   ansteuert. Per `curl … | bash` / `iwr … | iex` installierbar,
+   dispatcht über `monoceros e2e <…>` (git-style Plugin-Discovery).
+   Pro Szenario `--keep` / `--interactive`-Flags zum Stehenlassen
+   für manuelle Inspektion; Container-Namenskonvention
+   `e2e-<scenario>-<timestamp>`, Pre-Flight-Cleanup beim nächsten
+   Start. Output Pretty-Print für Auge, GH-Annotations bei
+   `GITHUB_ACTIONS=true` für den Linux-only CI-Smoketest (nur
+   `minimal`-Szenario, ~1 min).
+
+   **Sub-Tasks in diesem Repo** (klein):
+   - **4.1** Git-style Plugin-Dispatch in `monoceros` einbauen:
+     `monoceros e2e …` schaut nach `monoceros-e2e`-Binary im PATH,
+     dispatcht restliche Args dahin. Mit klarer Install-Hint-Message
+     im Nicht-vorhanden-Fall.
+   - **4.2** `monoceros-e2e` in der ALL_COMMANDS-Completion-Liste
+     als externer Subcommand markieren (Tab-Completion soll's
+     trotzdem listen, wenn das Binary installiert ist).
+   - **4.3** Backlog-Verweis auf das externe Repo, sobald es lebt.
+
+   **Sub-Tasks im externen Repo** (Hauptarbeit, siehe
+   `getmonoceros/monoceros-e2e/docs/konzept.md` wenn das Repo
+   angelegt ist):
+   - Szenarien-Framework (TypeScript, Funktions-Shape), Helper für
+     Pre-Flight-Cleanup, Pretty + GH-Annotations-Output, Timestamp-
+     Naming.
+   - Fünf Initial-Szenarien:
+     1. `minimal` — `init --with=node → apply → run → remove`
+     2. `with-services` — Compose + Service-TCP-Probe (Bash-builtin
+        `/dev/tcp/postgres/5432` aus dem Workspace)
+     3. `with-port` — `init --with-repo=getmonoceros/monoceros-e2e-fixture`
+        - `serve-ports.mjs` + HTTP-Probe vom Host gegen
+          `<name>.localhost`
+     4. `with-tunnel` — `monoceros tunnel <name> postgres` im
+        Hintergrund + Node-TCP-Probe vom Host (keine `psql`-
+        Host-Dep)
+     5. `image-mode-zombie` — `--with=node,claude` ohne Services
+        → apply → remove → `docker ps -a` muss leer sein
+        (M4-Task-9-Fund)
+   - `install.sh` / `install.ps1` analog zur Workbench, npm-Publish
+     `@getmonoceros/e2e` (genaues Naming offen), GH-Actions-Workflow
+     für CI-Smoketest gegen das aktuell installierte Monoceros.
 
 5. **`docs/commands/`-Lücken füllen** — neue Detail-Seiten für die
    Befehle aus Task 3 (`tunnel`, ggf. `tunnel-stop`). CLAUDE.md-
