@@ -152,7 +152,42 @@ export async function runRemove(
     await fs.rm(ymlPath, { force: true });
   }
   if (hasContainer) {
-    await fs.rm(containerPath, { recursive: true, force: true });
+    try {
+      await fs.rm(containerPath, { recursive: true, force: true });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EACCES' && code !== 'EPERM') {
+        throw err;
+      }
+      // Linux + rootful Docker quirk: bind-mounted service data
+      // dirs (postgres, mysql, …) end up owned by the container
+      // process's UID — root for the official postgres image. The
+      // unprivileged monoceros process can't unlink them.
+      //
+      // Fall back to docker as the cleanup actor: alpine runs as
+      // root, mounts the target dir, deletes everything inside.
+      // After that the host-side rm clears the now-empty parent.
+      //
+      // macOS / Docker Desktop / rootless Docker never hit this
+      // branch — the happy fs.rm above succeeds because files are
+      // user-owned through the VM / userns layer.
+      logger.info(
+        `[remove] host-side rm hit ${code} on ${prettyPath(containerPath)}; using a throw-away alpine container to clean root-owned files…`,
+      );
+      const exit = await dockerSpawn(
+        [
+          '-c',
+          `docker run --rm -v "${containerPath}":/target alpine:3.21 find /target -mindepth 1 -delete`,
+        ],
+        home,
+      );
+      if (exit !== 0) {
+        throw new Error(
+          `docker-based cleanup of ${containerPath} exited ${exit}. Inspect with \`sudo ls -la ${containerPath}\` and clean manually.`,
+        );
+      }
+      await fs.rm(containerPath, { recursive: true, force: true });
+    }
   }
 
   logger.success(
