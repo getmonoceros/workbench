@@ -30,11 +30,26 @@ export const spawnDockerCompose: ComposeSpawn = (args, cwd) => {
 // can inject a fake; `args[0]` is `-c`, `args[1]` is the shell
 // command string. Output goes through the secret masker for the
 // same reasons spawnDockerCompose does.
+//
+// MSYS_NO_PATHCONV + MSYS2_ARG_CONV_EXCL on Windows: bash on
+// Windows is usually Git Bash (MSYS2-based), which by default
+// rewrites Windows-style paths in args to POSIX form on the way
+// to native executables -- so a literal
+//   docker ps --filter label=devcontainer.local_folder=c:\Users\foo
+// becomes
+//   docker ps --filter label=...=/c/Users/foo
+// and the docker label match silently misses. Both env vars are
+// no-ops on a real Linux bash, so safe to set unconditionally.
 export const spawnBash: ComposeSpawn = (args, cwd) => {
   return new Promise((resolve, reject) => {
     const child = spawn('bash', args, {
       cwd,
       stdio: ['inherit', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        MSYS_NO_PATHCONV: '1',
+        MSYS2_ARG_CONV_EXCL: '*',
+      },
     });
     child.stdout?.pipe(createSecretMaskStream()).pipe(process.stdout);
     child.stderr?.pipe(createSecretMaskStream()).pipe(process.stderr);
@@ -42,6 +57,28 @@ export const spawnBash: ComposeSpawn = (args, cwd) => {
     child.on('exit', (code) => resolve(code ?? 0));
   });
 };
+
+/**
+ * Normalize a host filesystem path into the form devcontainer-cli
+ * stores in the `devcontainer.local_folder` Docker label.
+ *
+ * On Windows, @devcontainers/cli lowercases the drive letter (e.g.
+ * `C:\Users\...` → `c:\Users\...`) before stamping it onto every
+ * container it creates. Docker's `--filter label=…=<value>` does an
+ * exact byte-for-byte match, so feeding it our untouched
+ * `path.join(USERPROFILE, ...)` (which preserves the uppercase
+ * drive) silently misses and leaves the container behind on
+ * `monoceros remove`.
+ *
+ * No-op on macOS / Linux: there is no drive letter to lowercase.
+ */
+export function dockerLocalFolderLabel(p: string): string {
+  if (process.platform !== 'win32') return p;
+  return p.replace(
+    /^([A-Z]):/,
+    (_, drive: string) => `${drive.toLowerCase()}:`,
+  );
+}
 
 interface ResolvedCompose {
   composeFile: string;
@@ -163,7 +200,11 @@ export async function runContainerCycle(
       `by_label=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}" 2>/dev/null || true)`,
       `by_name=$(docker ps -aq --filter "name=^${projectName}-" 2>/dev/null || true)`,
       `to_remove=$(printf "%s\\n%s\\n" "$by_label" "$by_name" | sort -u | grep -v "^$" || true)`,
-      `if [ -n "$to_remove" ]; then echo "[cleanup] removing: $(echo $to_remove | tr "\\n" " ")"; docker rm -f $to_remove >/dev/null || true; else echo "[cleanup] no containers to remove"; fi`,
+      // Unquoted `$to_remove` so bash word-splitting joins the
+      // newline-separated IDs with single spaces on echo. A `tr "\n" " "`
+      // pipe here used to do the same job but tripped MSYS2's arg
+      // translation on Git Bash for Windows ("tr: extra operand").
+      `if [ -n "$to_remove" ]; then echo "[cleanup] removing:" $to_remove; docker rm -f $to_remove >/dev/null || true; else echo "[cleanup] no containers to remove"; fi`,
       `docker network rm ${projectName}_default 2>/dev/null && echo "[cleanup] network ${projectName}_default removed" || echo "[cleanup] network ${projectName}_default not present"`,
       `remaining_label=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}" 2>/dev/null || true)`,
       `remaining_name=$(docker ps -aq --filter "name=^${projectName}-" 2>/dev/null || true)`,

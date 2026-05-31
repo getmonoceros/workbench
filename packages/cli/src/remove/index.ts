@@ -10,6 +10,7 @@ import {
 import { REGEX } from '../config/schema.js';
 import {
   composeProjectName,
+  dockerLocalFolderLabel,
   spawnBash,
   type ComposeSpawn,
 } from '../devcontainer/compose.js';
@@ -117,14 +118,23 @@ export async function runRemove(
     // @devcontainers/cli lets Docker assign random names like
     // 'kind_cerf' — neither the project-name nor the vsc-<name>-
     // prefix filters below catch those.
-    `by_dc_label=$(docker ps -aq --filter "label=devcontainer.local_folder=${containerPath}" 2>/dev/null || true)`,
+    // dockerLocalFolderLabel() lowercases the drive letter on Windows
+    // to match exactly what @devcontainers/cli stamps (`c:\…` vs our
+    // `path.join`-built `C:\…`). Docker label filters are strict
+    // byte-equality, so the case difference was leaving containers
+    // alive on `monoceros remove`.
+    `by_dc_label=$(docker ps -aq --filter "label=devcontainer.local_folder=${dockerLocalFolderLabel(containerPath)}" 2>/dev/null || true)`,
     // Container-name prefix fallback (catches half-broken state).
     `by_compose_name=$(docker ps -aq --filter "name=^${projectName}-" 2>/dev/null || true)`,
     // Image-mode devcontainer-cli name fallback (only kicks in when
     // the cli used a deterministic name — modern versions don't).
     `by_image_name=$(docker ps -aq --filter "name=^vsc-${opts.name}-" 2>/dev/null || true)`,
     `to_remove=$(printf "%s\\n%s\\n%s\\n%s\\n" "$by_label" "$by_dc_label" "$by_compose_name" "$by_image_name" | sort -u | grep -v "^$" || true)`,
-    `if [ -n "$to_remove" ]; then echo "[remove] removing containers: $(echo $to_remove | tr "\\n" " ")"; docker rm -f $to_remove >/dev/null || true; else echo "[remove] no containers found"; fi`,
+    // Unquoted `$to_remove` so bash word-splitting joins the
+    // newline-separated IDs with single spaces on echo. A `tr "\n" " "`
+    // pipe here used to do the same job but tripped MSYS2's arg
+    // translation on Git Bash for Windows ("tr: extra operand").
+    `if [ -n "$to_remove" ]; then echo "[remove] removing containers:" $to_remove; docker rm -f $to_remove >/dev/null || true; else echo "[remove] no containers found"; fi`,
     `docker network rm ${projectName}_default 2>/dev/null && echo "[remove] network ${projectName}_default removed" || true`,
     `echo "[remove] docker cleanup done"`,
   ].join('; ');
