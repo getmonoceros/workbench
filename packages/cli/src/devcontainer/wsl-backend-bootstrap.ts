@@ -100,8 +100,7 @@ export function formatWslBackendHint(): string {
     cyan(`  wsl --update`),
     cyan(`  wsl --install -d Ubuntu`),
     ``,
-    `Then reboot and start Docker Desktop. Full walkthrough:`,
-    `docs/install-windows.md in the workbench repo.`,
+    `Then reboot and start Docker Desktop.`,
   ].join('\n');
 }
 

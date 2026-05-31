@@ -142,45 +142,44 @@ new PowerShell tabs can run `monoceros` too.
   # ── 1. Prerequisites ──────────────────────────────────────────────
   Section 'Prerequisites'
 
+  # Per-user winget install for Docker Desktop. Avoid nested-quote
+  # ambiguity in `Say "    $(Cmd '...""...""...')"` by extracting once.
+  $dockerWingetCmd = 'winget install Docker.DockerDesktop --override "install --user --accept-license"'
+
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Fail 'Docker is not installed.'
+    Say ''
     if (Get-Wsl2Ready) {
-      # WSL 2 is already set up — only Docker is missing. Skip the
-      # `wsl --install` step entirely.
-      @'
-
-Monoceros needs Docker. WSL 2 is already set up on this machine, so
-only Docker Desktop is missing. Install it:
-
-  winget install Docker.DockerDesktop
-  # no admin? winget install Docker.DockerDesktop --override "install --user --accept-license"
-
-Start Docker Desktop (you can skip the sign-in), then re-run this
-installer. Background + the no-admin path: docs/install-windows.md.
-'@ | Write-Host
+      # WSL 2 is already set up — only Docker is missing. Default to
+      # the per-user install so no UAC/admin is needed.
+      Say 'Monoceros needs Docker. This install does NOT need admin --'
+      Say '--override tells the installer to use the per-user path'
+      Say '(%LOCALAPPDATA%\Programs\DockerDesktop).'
+      Say ''
+      Say "    $(Cmd $dockerWingetCmd)"
+      Say ''
+      Say 'Start Docker Desktop (you can skip the sign-in), then re-run this'
+      Say 'installer.'
     } else {
-      # No WSL 2 distro yet — set up WSL first, then Docker.
-      @'
-
-Monoceros needs Docker. On Windows, Docker Desktop runs on the WSL 2
-backend, and no WSL 2 distro is set up yet -- so do both. From a
-PowerShell opened as Administrator (right-click -> "Run as administrator"):
-
-  1. wsl --install                     # WSL + Ubuntu, sets WSL 2 as default
-                                        #   when the Linux shell opens, type
-                                        #   `exit` to leave it
-  2. winget install Docker.DockerDesktop
-  3. Start Docker Desktop (you can skip the sign-in)
-
-Then open a NEW, regular (non-admin) PowerShell and re-run this
-installer. If Windows asks for a reboot along the way, do it and
-continue afterwards.
-
-No admin rights on a managed machine? A per-user Docker Desktop
-install (no admin) is possible when WSL is already enabled. That
-path, the "Virtualization support not detected" fix, and the full
-walkthrough: see docs/install-windows.md in the workbench repo.
-'@ | Write-Host
+      # No WSL 2 distro yet — set up WSL first (needs admin), then
+      # install Docker per-user (no admin).
+      Say 'Monoceros needs Docker. On Windows, Docker Desktop runs on the WSL 2'
+      Say "backend, and no WSL 2 distro is set up yet -- so we'll do both."
+      Say ''
+      Say 'Step 1: install WSL 2 + Ubuntu. This needs a PowerShell opened as'
+      Say 'Administrator (right-click on PowerShell -> "Run as administrator").'
+      Say 'When the Linux shell pops up, type `exit` to leave it; if Windows'
+      Say 'asks for a reboot, do it now.'
+      Say ''
+      Say "    $(Cmd 'wsl --install')"
+      Say ''
+      Say 'Step 2: install Docker Desktop. This step does NOT need admin --'
+      Say '--override tells the installer to use the per-user path.'
+      Say ''
+      Say "    $(Cmd $dockerWingetCmd)"
+      Say ''
+      Say 'Start Docker Desktop (you can skip the sign-in), wait for the whale'
+      Say 'icon to settle, then re-run this installer.'
     }
     return 1
   }
@@ -190,31 +189,25 @@ walkthrough: see docs/install-windows.md in the workbench repo.
     if ($LASTEXITCODE -ne 0) { throw 'docker info non-zero' }
   } catch {
     Fail "Docker is installed but the daemon isn't reachable."
+    Say ''
     if (Get-Wsl2Ready) {
-      @'
-
-Start Docker Desktop, wait until the whale icon stops animating,
-then re-run this installer.
-'@ | Write-Host
+      Say 'Start Docker Desktop, wait until the whale icon stops animating,'
+      Say 'then re-run this installer.'
     } else {
-      # No WSL 2 distro — this is almost certainly why Docker Desktop's
-      # backend won't come up. Give the exact fix.
-      @'
-
-Docker Desktop's daemon isn't reachable, and no WSL 2 distro is
-registered -- Docker runs on the WSL 2 backend, so without a distro it
-can't start (often shown as the misleading "Virtualization support not
-detected", even with virtualization enabled in BIOS).
-
-Fix it in an elevated PowerShell:
-
-  wsl --set-default-version 2
-  wsl --update
-  wsl --install -d Ubuntu
-
-Then reboot, start Docker Desktop, and re-run this installer. Full
-walkthrough: docs/install-windows.md.
-'@ | Write-Host
+      # No WSL 2 distro — almost certainly why Docker Desktop's backend
+      # won't come up. Give the exact three-step fix.
+      Say "Docker Desktop's daemon isn't reachable, and no WSL 2 distro is"
+      Say 'registered. Docker runs on the WSL 2 backend, so without a distro'
+      Say 'it cannot start (often shown as the misleading "Virtualization'
+      Say 'support not detected", even with virtualization enabled in BIOS).'
+      Say ''
+      Say 'Fix it in a PowerShell opened as Administrator (right-click on'
+      Say 'PowerShell -> "Run as administrator"). Reboot afterwards, then'
+      Say 'start Docker Desktop and re-run this installer.'
+      Say ''
+      Say "    $(Cmd 'wsl --set-default-version 2')"
+      Say "    $(Cmd 'wsl --update')"
+      Say "    $(Cmd 'wsl --install -d Ubuntu')"
     }
     return 1
   }

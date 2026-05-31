@@ -26,35 +26,42 @@ Virtualisierung an sich in Ordnung ist.
 
 ---
 
-## Standard-Weg (mit Adminrechten)
+## Standard-Weg
 
-Der getestete, empfohlene Ablauf auf einer frischen Maschine:
+Der getestete, empfohlene Ablauf auf einer frischen Maschine. **Nur
+Schritt 1 braucht eine Admin-PowerShell**, der Rest läuft als normaler
+User.
 
-1. **PowerShell als Administrator öffnen**
-   (Rechtsklick auf PowerShell → „Als Administrator ausführen").
-
-2. **WSL installieren:**
+1. **WSL 2 + Ubuntu installieren.** PowerShell als Administrator
+   öffnen (Rechtsklick → „Als Administrator ausführen") und:
 
    ```powershell
    wsl --install
    ```
 
    Das aktiviert die nötigen Windows-Features, installiert **Ubuntu**
-   und setzt **WSL 2 als Default**. Wenn anschließend die Linux-Shell
-   aufgeht, mit `exit` wieder verlassen. Verlangt Windows einen
-   Neustart, jetzt neu starten.
+   und setzt **WSL 2 als Default**. Wenn die Linux-Shell aufgeht, mit
+   `exit` verlassen. Verlangt Windows einen Neustart, jetzt neu
+   starten.
 
-3. **Docker Desktop installieren:**
+2. **Docker Desktop installieren** (kein Admin nötig). Eine **neue,
+   normale PowerShell** öffnen:
 
    ```powershell
-   winget install Docker.DockerDesktop
+   winget install Docker.DockerDesktop --override "install --user --accept-license"
    ```
 
-4. **Docker Desktop starten** und warten, bis das Wal-Symbol nicht
+   `--override "install --user --accept-license"` schickt die Argumente
+   an den Docker-Installer durch und installiert ihn in
+   `%LOCALAPPDATA%\Programs\DockerDesktop` (Per-User-Modus). Ohne
+   `--override` würde winget den All-Users-Pfad nehmen und UAC/Admin
+   anfordern.
+
+3. **Docker Desktop starten** und warten, bis das Wal-Symbol nicht
    mehr animiert. Die Anmelde-Aufforderung kannst du überspringen —
    sie ist für den Betrieb nicht nötig.
 
-5. **Execution-Policy freigeben** (einmalig, kein Admin nötig). Bei
+4. **Execution-Policy freigeben** (einmalig, kein Admin). Bei
    Windows-Default `Restricted` laufen die von npm angelegten
    `.ps1`-Wrapper für `npm` **und** `monoceros` nicht — der Installer
    bricht sonst kryptisch an `npm.ps1` ab:
@@ -67,8 +74,8 @@ Der getestete, empfohlene Ablauf auf einer frischen Maschine:
    ausführen können. Der Installer prüft die Policy und weist auf
    genau diesen Befehl hin, falls er fehlt.
 
-6. **Monoceros-Installer in einer NEUEN, normalen PowerShell**
-   (ohne Admin) ausführen:
+5. **Monoceros-Installer ausführen:**
+
    ```powershell
    iwr -useb https://raw.githubusercontent.com/getmonoceros/workbench/main/install.ps1 | iex
    ```
@@ -138,55 +145,46 @@ nur einen generischen Docker-Fehler zu zeigen.
 
 ## Fall: keine Adminrechte (managed/Firmen-Laptop)
 
-Docker Desktop kann **ohne Admin** installiert werden — im
-**Per-User-Modus**. Der installiert nach
-`%LOCALAPPDATA%\Programs\DockerDesktop` und braucht keine erhöhten
-Rechte.
+Der Per-User-Docker-Install aus dem Standard-Weg (Schritt 2) braucht
+keinen Admin. Einschränkungen dieses Modus:
 
-Direkt mit dem offiziellen Installer:
+- **nur WSL-2-Backend** (kein Hyper-V) — für Monoceros genau richtig
+- **keine Windows-Container**
+
+Alternative: direkt mit dem heruntergeladenen Docker-Installer (gleicher
+Effekt, ohne winget):
 
 ```powershell
 Start-Process 'Docker Desktop Installer.exe' -Wait -ArgumentList 'install','--user'
 ```
 
-Oder über winget, indem die Installer-Argumente durchgereicht werden
-(`winget install Docker.DockerDesktop` allein nimmt sonst den
-All-Users-Pfad mit UAC/Admin):
-
-```powershell
-winget install Docker.DockerDesktop --override "install --user --accept-license"
-```
-
-Einschränkungen des Per-User-Modus:
-
-- **nur WSL-2-Backend** (kein Hyper-V) — für Monoceros genau richtig
-- **keine Windows-Container**
-
 **Wichtiger Haken:** `wsl --install` selbst **braucht Admin**. Der
-No-Admin-Weg für Docker funktioniert also nur, wenn **WSL bereits
-aktiviert** ist (z.B. von der IT vorinstalliert). Ist WSL noch gar
-nicht da und du hast keinen Admin, führt kein Weg an der IT vorbei.
+No-Admin-Weg funktioniert also nur, wenn **WSL bereits aktiviert** ist
+(z.B. von der IT vorinstalliert). Ist WSL noch gar nicht da und du
+hast keinen Admin, führt kein Weg an der IT vorbei.
 
 ---
 
 ## Adminrechte — was braucht was?
 
-| Befehl                                | Admin nötig? |
-| ------------------------------------- | ------------ |
-| `wsl --install`                       | ja           |
-| `wsl --update`                        | ja           |
-| `wsl --set-default-version 2`         | empfohlen \* |
-| `wsl --install -d Ubuntu`             | empfohlen \* |
-| `winget install Docker.DockerDesktop` | ja (UAC)     |
-| Docker Desktop per-user (`--user`)    | nein         |
-| Monoceros-Installer (`install.ps1`)   | nein         |
+| Befehl                                                                             | Admin nötig? |
+| ---------------------------------------------------------------------------------- | ------------ |
+| `wsl --install`                                                                    | ja           |
+| `wsl --update`                                                                     | ja           |
+| `wsl --set-default-version 2`                                                      | empfohlen \* |
+| `wsl --install -d Ubuntu`                                                          | empfohlen \* |
+| `winget install Docker.DockerDesktop` (ohne `--override`)                          | ja (UAC)     |
+| `winget install Docker.DockerDesktop --override "install --user --accept-license"` | nein         |
+| `Docker Desktop Installer.exe install --user`                                      | nein         |
+| Monoceros-Installer (`install.ps1`)                                                | nein         |
 
-\* Technisch nicht zwingend, aber da der Setup-Block ohnehin in einer
+\* Technisch nicht zwingend, aber da der WSL-Setup-Block ohnehin in einer
 Admin-PowerShell läuft, ist „alles als Admin" die einfache Ansage.
 
 Der Monoceros-Installer läuft bewusst **als normaler User** — er
 macht nur ein `npm install -g` und einen `$PROFILE`-Eintrag für die
-Completion. Deshalb am Ende eine **neue, normale PowerShell** öffnen.
+Completion. Deshalb für Schritte 2-5 oben eine **normale, nicht-Admin
+PowerShell** verwenden.
 
 ---
 
