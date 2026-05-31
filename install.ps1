@@ -269,6 +269,24 @@ Once installed, verify with:  monoceros --version
     return 1
   }
 
+  # Remove npm's auto-generated `monoceros.ps1` shim. PowerShell
+  # resolves the bare `monoceros` to .ps1 in preference to .cmd, and
+  # the .ps1 shim drops `$args` into a `& node …` call where PS's
+  # array-literal semantics collapse `--with=node, claude` into the
+  # single string `node claude`. Deleting the .ps1 lets PATHEXT pick
+  # up `monoceros.cmd`, which forwards `%*` to node verbatim — no
+  # arg mangling. Per-invocation `monoceros.ps1` users (rare) can
+  # still call `monoceros.cmd` explicitly.
+  try {
+    $npmPrefix = (npm prefix -g 2>$null).Trim()
+    if ($npmPrefix) {
+      $ps1Shim = Join-Path $npmPrefix 'monoceros.ps1'
+      if (Test-Path $ps1Shim) {
+        Remove-Item $ps1Shim -Force -ErrorAction SilentlyContinue
+      }
+    }
+  } catch {}
+
   $cliPath = (Get-Command monoceros -ErrorAction SilentlyContinue).Source
   $cliVersion = $null
   if ($cliPath) {
