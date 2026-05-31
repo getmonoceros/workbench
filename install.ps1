@@ -158,8 +158,8 @@ new PowerShell tabs can run `monoceros` too.
       Say ''
       Say "    $(Cmd $dockerWingetCmd)"
       Say ''
-      Say 'Start Docker Desktop (you can skip the sign-in), then re-run this'
-      Say 'installer.'
+      Say 'Start Docker Desktop (you can skip the sign-in), then open a fresh'
+      Say 'PowerShell and re-run this installer.'
     } else {
       # No WSL 2 distro yet — set up WSL first (needs admin), then
       # install Docker per-user (no admin).
@@ -179,7 +179,7 @@ new PowerShell tabs can run `monoceros` too.
       Say "    $(Cmd $dockerWingetCmd)"
       Say ''
       Say 'Start Docker Desktop (you can skip the sign-in), wait for the whale'
-      Say 'icon to settle, then re-run this installer.'
+      Say 'icon to settle, then open a fresh PowerShell and re-run this installer.'
     }
     return 1
   }
@@ -215,25 +215,13 @@ new PowerShell tabs can run `monoceros` too.
 
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Fail 'Node is not installed.'
-    @"
-
-Monoceros needs Node $NodeMinMajor or newer. Pick whichever install
-style fits your setup -- Monoceros doesn't care, we just need ``node``
-on PATH:
-
-  System-wide (admin):
-    winget install OpenJS.NodeJS
-    choco install nodejs
-    https://nodejs.org/en/download  (.msi installer)
-
-  Per-user (no admin):
-    winget install OpenJS.NodeJS --scope user
-    nvm-windows:  https://github.com/coreybutler/nvm-windows
-    fnm:          https://github.com/Schniz/fnm
-    Direct ZIP:   https://nodejs.org/en/download (extract + add to PATH)
-
-Then re-run this installer.
-"@ | Write-Host
+    Say ''
+    Say "Monoceros needs Node $NodeMinMajor or newer. The simplest path is winget"
+    Say 'in per-user mode (no admin needed):'
+    Say ''
+    Say "    $(Cmd 'winget install OpenJS.NodeJS --scope user')"
+    Say ''
+    Say 'After install, open a fresh PowerShell and re-run this installer.'
     return 1
   }
 
@@ -241,21 +229,20 @@ Then re-run this installer.
   $nodeMajor = [int]($nodeVersionRaw -split '\.')[0]
   if ($nodeMajor -lt $NodeMinMajor) {
     Fail "Node $nodeVersionRaw is too old. Monoceros needs >= $NodeMinMajor."
-    @"
-
-Upgrade Node, then re-run this installer. See the install hints
-above for the common upgrade paths.
-"@ | Write-Host
+    Say ''
+    Say "Upgrade Node to version $NodeMinMajor or newer, then open a fresh PowerShell"
+    Say 'and re-run this installer.'
     return 1
   }
 
   if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     Fail 'npm is not on PATH (unusual -- npm normally ships with Node).'
-    @'
-
-Reinstall Node from one of the sources above; npm should come along
-automatically.
-'@ | Write-Host
+    Say ''
+    Say 'Reinstall Node:'
+    Say ''
+    Say "    $(Cmd 'winget install OpenJS.NodeJS --scope user')"
+    Say ''
+    Say 'Then open a fresh PowerShell and re-run this installer.'
     return 1
   }
   Ok "Node $(Dim $nodeVersionRaw) with npm"
