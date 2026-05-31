@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runMain } from 'citty';
 import { bootstrapDockerGroup } from './devcontainer/docker-group-bootstrap.js';
+import { bootstrapWslBackend } from './devcontainer/wsl-backend-bootstrap.js';
 import { maybeRenderHelp } from './help.js';
 import { consumeInnerArgsFromProcessArgv } from './inner-args.js';
 import { main } from './main.js';
@@ -17,6 +18,12 @@ import { main } from './main.js';
 // their work in the re-exec'd process, not in the about-to-die
 // parent.
 bootstrapDockerGroup();
+
+// On Windows: warn early (with the fix) when Docker Desktop's WSL 2
+// backend has no Linux distro to run — the "Virtualization support not
+// detected" trap. No-op on other platforms and when a WSL 2 distro is
+// present. See wsl-backend-bootstrap.ts for the rationale.
+bootstrapWslBackend();
 
 // Pull everything after `--` out of argv before citty starts parsing.
 // Otherwise citty's eager --help/--version handling shadows the inner

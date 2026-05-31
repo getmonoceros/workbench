@@ -1,10 +1,11 @@
 # Monoceros installer — Windows (PowerShell).
 #
 # What this does:
-#   1. Verifies Docker is reachable (`docker info`).
-#   2. Verifies Node >= 20 is on PATH (with npm).
-#   3. Runs `npm install -g @getmonoceros/workbench`.
-#   4. Drops a PowerShell completion script and wires it into $PROFILE.
+#   1. Checks the PowerShell execution policy isn't blocking .ps1 shims.
+#   2. Verifies Docker is reachable (`docker info`).
+#   3. Verifies Node >= 20 is on PATH (with npm).
+#   4. Runs `npm install -g @getmonoceros/workbench`.
+#   5. Drops a PowerShell completion script and wires it into $PROFILE.
 #
 # What this does NOT do:
 #   - Install Docker.
@@ -83,29 +84,104 @@ function Invoke-MonocerosInstaller {
   function Cmd ($txt) { return "$ESC[36m$txt$RESET" }
   function Dim ($txt) { return "$ESC[90m$txt$RESET" }
 
+  # True iff at least one WSL 2 distro is registered. Lets the Docker
+  # hints below show only the relevant step (full `wsl --install` vs.
+  # nothing). WSL_UTF8 makes `wsl -l -v` emit UTF-8 instead of UTF-16LE
+  # (which arrives full of NUL bytes); we strip NULs anyway as a guard
+  # for older WSL builds that ignore the env var.
+  function Get-Wsl2Ready {
+    try {
+      $env:WSL_UTF8 = '1'
+      $out = (& wsl -l -v 2>$null) -join "`n"
+    } catch { return $false }
+    if (-not $out) { return $false }
+    $out = $out -replace "`0", ''
+    foreach ($line in ($out -split "`r?`n")) {
+      $t = ($line.Trim() -replace '^\*\s*', '')
+      if (-not $t) { continue }
+      if ($t -match '\bNAME\b' -and $t -match '\bVERSION\b') { continue }
+      $tokens = $t -split '\s+'
+      if ($tokens[-1] -eq '2') { return $true }
+    }
+    return $false
+  }
+
   # ── Header ────────────────────────────────────────────────────────
   Say ''
   Write-Host "${BOLD}Monoceros installer${RESET}"
   Write-Host "  $(Dim 'local, reproducible dev containers with AI coding tooling')"
+
+  # ── 0. Execution policy ───────────────────────────────────────────
+  # npm installs `npm`, `monoceros`, etc. as PowerShell shims (*.ps1).
+  # PowerShell prefers the .ps1 over the .cmd, so under the Windows-
+  # default `Restricted` (or `AllSigned`) policy every such call — this
+  # installer's `npm install` AND, later, every `monoceros` command —
+  # dies with a cryptic PSSecurityException. We can't run those scripts
+  # ourselves, so detect the blocking policy up front and tell the
+  # builder exactly how to unblock it. CurrentUser scope needs no admin
+  # and persists, so future shells can run `monoceros` too.
+  $policy = Get-ExecutionPolicy
+  if ($policy -eq 'Restricted' -or $policy -eq 'AllSigned') {
+    Section 'Prerequisites'
+    Fail "PowerShell execution policy is '$policy' — npm and monoceros can't run."
+    @'
+
+PowerShell won't run the .ps1 wrappers npm creates for `npm` and
+`monoceros`. Unblock them for your user (no admin required), then
+re-run this installer:
+
+  Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+RemoteSigned lets local scripts run and still requires a signature for
+scripts downloaded from the internet. The setting is persistent, so
+new PowerShell tabs can run `monoceros` too.
+'@ | Write-Host
+    return 1
+  }
 
   # ── 1. Prerequisites ──────────────────────────────────────────────
   Section 'Prerequisites'
 
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Fail 'Docker is not installed.'
-    @'
+    if (Get-Wsl2Ready) {
+      # WSL 2 is already set up — only Docker is missing. Skip the
+      # `wsl --install` step entirely.
+      @'
 
-Monoceros needs Docker. Install it before continuing:
+Monoceros needs Docker. WSL 2 is already set up on this machine, so
+only Docker Desktop is missing. Install it:
 
-  Docker Desktop for Windows  ->  https://docs.docker.com/desktop/install/windows-install/
-  (or via WinGet:  winget install Docker.DockerDesktop)
+  winget install Docker.DockerDesktop
+  # no admin? winget install Docker.DockerDesktop --override "install --user --accept-license"
 
-Docker Desktop requires admin rights to install. If you're on a
-managed corporate machine without admin, talk to your IT -- there's
-no userspace Docker on Windows.
-
-Then re-run this installer.
+Start Docker Desktop (you can skip the sign-in), then re-run this
+installer. Background + the no-admin path: docs/install-windows.md.
 '@ | Write-Host
+    } else {
+      # No WSL 2 distro yet — set up WSL first, then Docker.
+      @'
+
+Monoceros needs Docker. On Windows, Docker Desktop runs on the WSL 2
+backend, and no WSL 2 distro is set up yet — so do both. From a
+PowerShell opened as Administrator (right-click -> "Run as administrator"):
+
+  1. wsl --install                     # WSL + Ubuntu, sets WSL 2 as default
+                                        #   when the Linux shell opens, type
+                                        #   `exit` to leave it
+  2. winget install Docker.DockerDesktop
+  3. Start Docker Desktop (you can skip the sign-in)
+
+Then open a NEW, regular (non-admin) PowerShell and re-run this
+installer. If Windows asks for a reboot along the way, do it and
+continue afterwards.
+
+No admin rights on a managed machine? A per-user Docker Desktop
+install (no admin) is possible when WSL is already enabled. That
+path, the "Virtualization support not detected" fix, and the full
+walkthrough: see docs/install-windows.md in the workbench repo.
+'@ | Write-Host
+    }
     return 1
   }
 
@@ -114,11 +190,32 @@ Then re-run this installer.
     if ($LASTEXITCODE -ne 0) { throw 'docker info non-zero' }
   } catch {
     Fail "Docker is installed but the daemon isn't reachable."
-    @'
+    if (Get-Wsl2Ready) {
+      @'
 
 Start Docker Desktop, wait until the whale icon stops animating,
 then re-run this installer.
 '@ | Write-Host
+    } else {
+      # No WSL 2 distro — this is almost certainly why Docker Desktop's
+      # backend won't come up. Give the exact fix.
+      @'
+
+Docker Desktop's daemon isn't reachable, and no WSL 2 distro is
+registered — Docker runs on the WSL 2 backend, so without a distro it
+can't start (often shown as the misleading "Virtualization support not
+detected", even with virtualization enabled in BIOS).
+
+Fix it in an elevated PowerShell:
+
+  wsl --set-default-version 2
+  wsl --update
+  wsl --install -d Ubuntu
+
+Then reboot, start Docker Desktop, and re-run this installer. Full
+walkthrough: docs/install-windows.md.
+'@ | Write-Host
+    }
     return 1
   }
   Ok 'Docker daemon reachable'

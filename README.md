@@ -28,7 +28,11 @@ Der Unterschied zu Cloud-Codespaces oder Cursor-Cloud:
   Aufruf des Install-Skripts selbst gebraucht.
 
 Docker + Node werden vom Install-Skript geprüft; fehlt eines, sagt's
-dir mit plattform-spezifischer Anleitung wo du's holst.
+dir mit plattform-spezifischer Anleitung wo du's holst. Für das
+Windows-Setup (WSL 2 + Docker Desktop, inkl. der „Virtualization
+support not detected"-Falle und dem Weg ohne Adminrechte) siehe
+[`docs/install-windows.md`](docs/install-windows.md); für Linux
+[`docs/docker-on-linux.md`](docs/docker-on-linux.md).
 
 ## Installation
 

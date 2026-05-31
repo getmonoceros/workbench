@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { createSecretMaskStream, maskSecrets } from '../util/mask-secrets.js';
+import {
+  createRuntimePullHintStream,
+  type PullHintState,
+} from './runtime-pull-hint.js';
 
 const require_ = createRequire(import.meta.url);
 
@@ -102,8 +106,17 @@ export const spawnDevcontainer: DevcontainerSpawn = (
       });
       return;
     }
-    child.stdout?.pipe(createSecretMaskStream()).pipe(process.stdout);
-    child.stderr?.pipe(createSecretMaskStream()).pipe(process.stderr);
+    // Shared so the "downloading runtime image…" hint fires once even
+    // though devcontainer-cli may log the manifest line on either stream.
+    const pullHint: PullHintState = { hinted: false };
+    child.stdout
+      ?.pipe(createSecretMaskStream())
+      .pipe(createRuntimePullHintStream(pullHint))
+      .pipe(process.stdout);
+    child.stderr
+      ?.pipe(createSecretMaskStream())
+      .pipe(createRuntimePullHintStream(pullHint))
+      .pipe(process.stderr);
     child.on('error', reject);
     child.on('exit', (code) => resolve(code ?? 0));
   });
