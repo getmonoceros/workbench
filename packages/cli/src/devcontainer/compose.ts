@@ -29,10 +29,13 @@ export const spawnDockerCompose: ComposeSpawn = (args, cwd) => {
 };
 
 // Direct invocation of `docker <args>` with no shell wrapper.
-// Captures stdout (so callers can parse e.g. `docker ps -aq` output)
-// AND stderr (so callers can surface failure messages); stderr is
-// also streamed live through the secret masker to the host terminal
-// so the builder sees errors as they happen.
+// BOTH stdout and stderr are buffered, never live-streamed: the
+// cleanup pipeline routinely runs docker calls that are expected to
+// fail (e.g. `docker network rm <name>` for image-mode containers
+// that never had a project network — "network not found" is the
+// happy path). Live streaming would leak that noise to the user.
+// Callers print buffered stderr on the failure paths they actually
+// care about.
 //
 // Why no bash. The old cleanup path piped a script through
 // `bash -c <script>` which on Windows is typically WSL's bash via
@@ -59,7 +62,6 @@ export const spawnDocker: DockerExec = (args) => {
     child.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk.toString('utf8');
     });
-    child.stderr?.pipe(createSecretMaskStream()).pipe(process.stderr);
     child.on('error', reject);
     child.on('exit', (code) =>
       resolve({ exitCode: code ?? 0, stdout, stderr }),
@@ -135,6 +137,11 @@ export async function cleanupDockerObjects(
     opts.logger.info(`[${tag}] removing containers: ${ids.join(' ')}`);
     const rmResult = await exec(['rm', '-f', ...ids]);
     rmExit = rmResult.exitCode;
+    if (rmExit !== 0 && rmResult.stderr.trim()) {
+      // Real failure path — surface what docker said so the builder
+      // doesn't see a bare non-zero exit with no explanation.
+      opts.logger.info(`[${tag}] ${rmResult.stderr.trim()}`);
+    }
   } else {
     opts.logger.info(`[${tag}] no containers found`);
   }
@@ -144,7 +151,11 @@ export async function cleanupDockerObjects(
     if (netResult.exitCode === 0) {
       opts.logger.info(`[${tag}] network ${opts.network} removed`);
     }
-    // Otherwise: silent — network may not exist, harmless.
+    // Otherwise: silent. The common failure here is "network not
+    // found" because image-mode devcontainers (no compose) never
+    // created one — expected, not actionable, kept the bash version
+    // quiet with `2>/dev/null`. A real docker error (daemon down)
+    // already showed up on the earlier ps/rm calls.
   }
 
   opts.logger.info(`[${tag}] docker cleanup done`);
