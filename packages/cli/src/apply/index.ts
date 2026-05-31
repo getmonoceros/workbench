@@ -49,6 +49,7 @@ import {
 import { type DevcontainerSpawn } from '../devcontainer/cli.js';
 import {
   ensureProxy,
+  kickProxyReload,
   type DockerExec as ProxyDockerExec,
 } from '../proxy/index.js';
 import { removeDynamicConfig, writeDynamicConfig } from '../proxy/dynamic.js';
@@ -357,12 +358,23 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         hostPort: proxyHostPort(globalConfig),
         logger,
       });
+      // Force Traefik to re-scan its dynamic dir. No-op on macOS/Linux
+      // (their inotify fires), no-op when the proxy isn't running
+      // (ensureProxy started it fresh just above with the new file
+      // already in place). Only Windows + an already-running proxy
+      // actually needs the kick — see kickProxyReload's docstring.
+      await kickProxyReload({
+        ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
+      });
     } else {
       // `ports:` is empty (or was removed since the last apply) —
       // drop any stale dynamic-config file. Filesystem only; the
       // proxy itself is offered for teardown by stop/remove, not
       // here (apply ends with the container up, not stopped).
       await removeDynamicConfig(opts.name, { monocerosHome: home });
+      await kickProxyReload({
+        ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
+      });
     }
   } catch (err) {
     // Don't strand the apply if Traefik bookkeeping fails — surface

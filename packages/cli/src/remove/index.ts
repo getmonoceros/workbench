@@ -15,7 +15,7 @@ import {
   spawnDocker,
   type DockerExec,
 } from '../devcontainer/compose.js';
-import { maybeStopProxy } from '../proxy/index.js';
+import { kickProxyReload, maybeStopProxy } from '../proxy/index.js';
 import { removeDynamicConfig } from '../proxy/dynamic.js';
 
 /**
@@ -225,6 +225,11 @@ export async function runRemove(
   // with a clean slate. No-op when the file is absent.
   try {
     await removeDynamicConfig(opts.name, { monocerosHome: home });
+    // Kick Traefik to drop the now-stale route. Windows-only,
+    // no-op everywhere else and when the proxy isn't running.
+    await kickProxyReload({
+      ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
+    });
   } catch (err) {
     logger.warn?.(
       `Could not remove Traefik dynamic config for ${opts.name}: ${err instanceof Error ? err.message : String(err)}. Ignored.`,
