@@ -18,8 +18,10 @@ const silentLogger = {
   warn: () => {},
 };
 
-const stubDocker = (): ((args: string[]) => Promise<number>) => {
-  return () => Promise.resolve(0);
+const stubDocker = (): ((
+  args: string[],
+) => Promise<{ exitCode: number; stdout: string; stderr: string }>) => {
+  return () => Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
 };
 
 describe('runRestore', () => {
@@ -53,7 +55,7 @@ describe('runRestore', () => {
     const result = await runRemove({
       name,
       monocerosHome: home,
-      dockerSpawn: stubDocker(),
+      dockerExec: stubDocker(),
       logger: silentLogger,
       now: new Date('2026-07-04T08:00:00Z'),
     });

@@ -12,7 +12,16 @@ const silentLogger = {
 };
 
 const stubDevcontainerSpawn = async () => 0;
-const stubCleanupSpawn = async () => 0;
+// Replaces the previous `stubCleanupSpawn: async () => 0`. The
+// cleanup is now driven by direct docker exec calls, so the stub
+// returns the DockerResult shape that spawnDocker produces. Empty
+// stdout = "no containers to clean up", exitCode 0 keeps the apply
+// flow going.
+const stubDockerExec = async () => ({
+  exitCode: 0,
+  stdout: '',
+  stderr: '',
+});
 const stubIdentitySpawn = async () => ({ value: '', exitCode: 1 });
 const stubIdentityPrompt = async () => undefined;
 // Default stub: every host has credentials. Apply's pre-flight check
@@ -50,7 +59,7 @@ const baseRunOpts = {
   cliVersion: '0.0.0',
   logger: silentLogger,
   devcontainerSpawn: stubDevcontainerSpawn,
-  cleanupSpawn: stubCleanupSpawn,
+  dockerExec: stubDockerExec,
   identitySpawn: stubIdentitySpawn,
   identityPrompt: stubIdentityPrompt,
   credentialsSpawn: stubCredentialsSpawn,

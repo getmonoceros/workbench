@@ -28,10 +28,7 @@ import {
 } from '../create/scaffold.js';
 import { cyan, dim, sectionLine } from '../util/format.js';
 import { migrateDeprecatedFeatureRef } from '../util/ref.js';
-import {
-  type ComposeSpawn,
-  runContainerCycle,
-} from '../devcontainer/compose.js';
+import { type DockerExec, runContainerCycle } from '../devcontainer/compose.js';
 import {
   type CredentialsSpawn,
   collectGitCredentials,
@@ -104,7 +101,7 @@ export interface RunApplyOptions {
      */
     section?: (label: string) => void;
   };
-  cleanupSpawn?: ComposeSpawn;
+  dockerExec?: DockerExec;
   devcontainerSpawn?: DevcontainerSpawn;
   credentialsSpawn?: CredentialsSpawn;
   reachabilitySpawn?: ReachabilitySpawn;
@@ -379,9 +376,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
   const exitCode = await runContainerCycle(targetDir, {
     hasCompose: needsCompose(createOpts),
-    ...(opts.cleanupSpawn !== undefined
-      ? { cleanupSpawn: opts.cleanupSpawn }
-      : {}),
+    ...(opts.dockerExec !== undefined ? { dockerExec: opts.dockerExec } : {}),
     ...(opts.devcontainerSpawn !== undefined
       ? { devcontainerSpawn: opts.devcontainerSpawn }
       : {}),

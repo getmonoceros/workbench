@@ -9,12 +9,13 @@ import {
 } from '../config/paths.js';
 import { REGEX } from '../config/schema.js';
 import {
+  cleanupDockerObjects,
   composeProjectName,
   dockerLocalFolderLabel,
-  spawnBash,
-  type ComposeSpawn,
+  spawnDocker,
+  type DockerExec,
 } from '../devcontainer/compose.js';
-import { maybeStopProxy, type DockerExec } from '../proxy/index.js';
+import { maybeStopProxy } from '../proxy/index.js';
 import { removeDynamicConfig } from '../proxy/dynamic.js';
 
 /**
@@ -55,8 +56,13 @@ export interface RunRemoveOptions {
   monocerosHome?: string;
   /** Override the timestamp embedded in the backup directory name. */
   now?: Date;
-  /** Bash spawn for the docker cleanup script. Tests inject a stub. */
-  dockerSpawn?: ComposeSpawn;
+  /**
+   * Docker exec for the cleanup pipeline (ps/rm/network/run). Tests
+   * inject a stub. Replaces the previous `dockerSpawn: ComposeSpawn`
+   * which drove a bash script — direct docker spawn dodges the
+   * Windows quoting issues on backslash-bearing label values.
+   */
+  dockerExec?: DockerExec;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: DockerExec;
   logger?: {
@@ -105,40 +111,40 @@ export async function runRemove(
   }
 
   // ── Step 1: stop + remove docker objects ────────────────────────
+  // Four overlapping filters because devcontainer-cli ranges over
+  // multiple naming/labeling schemes depending on container mode:
+  //   1. compose-mode containers carry the compose project label
+  //   2. image-mode + feature-build intermediates carry the
+  //      devcontainer.local_folder label — the most reliable anchor,
+  //      because @devcontainers/cli lets Docker assign random names
+  //      like 'kind_cerf' that neither name-prefix filter catches.
+  //      dockerLocalFolderLabel() lowercases the drive letter on
+  //      Windows to match what devcontainer-cli stamps (`c:\…`
+  //      vs our path.join-built `C:\…`); docker label filters are
+  //      byte-exact.
+  //   3. container-name prefix as a fallback for half-broken state
+  //   4. deterministic `vsc-<name>-` prefix from older
+  //      devcontainer-cli versions
+  // All four are union'd, deduplicated, and `docker rm -f`-ed
+  // together. Cleanup goes through cleanupDockerObjects() (direct
+  // Node spawn of docker, no shell wrapper) so backslash-bearing
+  // label values survive intact -- the previous `bash -c '…'`
+  // approach silently mangled them under WSL bash on Windows.
   const projectName = composeProjectName(containerPath);
-  const dockerSpawn = opts.dockerSpawn ?? spawnBash;
-  const script = [
-    `set -u`,
-    `echo "[remove] tearing down docker project ${projectName}…"`,
-    // Compose-mode containers, identified by the compose project label.
-    `by_label=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}" 2>/dev/null || true)`,
-    // Devcontainer-cli containers (image-mode workspace + feature-
-    // build intermediates) all carry this label, value = the absolute
-    // container-dir path. Most reliable anchor we have, because
-    // @devcontainers/cli lets Docker assign random names like
-    // 'kind_cerf' — neither the project-name nor the vsc-<name>-
-    // prefix filters below catch those.
-    // dockerLocalFolderLabel() lowercases the drive letter on Windows
-    // to match exactly what @devcontainers/cli stamps (`c:\…` vs our
-    // `path.join`-built `C:\…`). Docker label filters are strict
-    // byte-equality, so the case difference was leaving containers
-    // alive on `monoceros remove`.
-    `by_dc_label=$(docker ps -aq --filter "label=devcontainer.local_folder=${dockerLocalFolderLabel(containerPath)}" 2>/dev/null || true)`,
-    // Container-name prefix fallback (catches half-broken state).
-    `by_compose_name=$(docker ps -aq --filter "name=^${projectName}-" 2>/dev/null || true)`,
-    // Image-mode devcontainer-cli name fallback (only kicks in when
-    // the cli used a deterministic name — modern versions don't).
-    `by_image_name=$(docker ps -aq --filter "name=^vsc-${opts.name}-" 2>/dev/null || true)`,
-    `to_remove=$(printf "%s\\n%s\\n%s\\n%s\\n" "$by_label" "$by_dc_label" "$by_compose_name" "$by_image_name" | sort -u | grep -v "^$" || true)`,
-    // Unquoted `$to_remove` so bash word-splitting joins the
-    // newline-separated IDs with single spaces on echo. A `tr "\n" " "`
-    // pipe here used to do the same job but tripped MSYS2's arg
-    // translation on Git Bash for Windows ("tr: extra operand").
-    `if [ -n "$to_remove" ]; then echo "[remove] removing containers:" $to_remove; docker rm -f $to_remove >/dev/null || true; else echo "[remove] no containers found"; fi`,
-    `docker network rm ${projectName}_default 2>/dev/null && echo "[remove] network ${projectName}_default removed" || true`,
-    `echo "[remove] docker cleanup done"`,
-  ].join('; ');
-  const dockerExitCode = await dockerSpawn(['-c', script], home);
+  const dockerExec = opts.dockerExec ?? spawnDocker;
+  const { exitCode: dockerExitCode } = await cleanupDockerObjects({
+    projectName,
+    filters: [
+      `label=com.docker.compose.project=${projectName}`,
+      `label=devcontainer.local_folder=${dockerLocalFolderLabel(containerPath)}`,
+      `name=^${projectName}-`,
+      `name=^vsc-${opts.name}-`,
+    ],
+    network: `${projectName}_default`,
+    logTag: 'remove',
+    logger,
+    exec: dockerExec,
+  });
 
   // ── Step 2: optional backup ────────────────────────────────────
   let backupPath: string | null = null;
@@ -184,13 +190,18 @@ export async function runRemove(
       logger.info(
         `[remove] host-side rm hit ${code} on ${prettyPath(containerPath)}; using a throw-away alpine container to clean root-owned files…`,
       );
-      const exit = await dockerSpawn(
-        [
-          '-c',
-          `docker run --rm -v "${containerPath}":/target alpine:3.21 find /target -mindepth 1 -delete`,
-        ],
-        home,
-      );
+      const { exitCode: exit } = await dockerExec([
+        'run',
+        '--rm',
+        '-v',
+        `${containerPath}:/target`,
+        'alpine:3.21',
+        'find',
+        '/target',
+        '-mindepth',
+        '1',
+        '-delete',
+      ]);
       if (exit !== 0) {
         throw new Error(
           `docker-based cleanup of ${containerPath} exited ${exit}. Inspect with \`sudo ls -la ${containerPath}\` and clean manually.`,

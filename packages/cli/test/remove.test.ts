@@ -17,17 +17,26 @@ const silentLogger = {
   warn: () => {},
 };
 
-/** No-op docker spawn — runRemove still calls through, we just capture
- *  the script for the assertion and return 0. */
-function captureDockerSpawn(captured: string[]): typeof spawnStub {
-  function spawnStub(args: string[]): Promise<number> {
-    // -c "...script..."
-    if (args[0] === '-c' && typeof args[1] === 'string') {
-      captured.push(args[1]);
-    }
-    return Promise.resolve(0);
+/** No-op docker exec — runRemove still calls through, we capture
+ *  each docker invocation's args (one array per call) and return 0
+ *  with empty stdout/stderr. With the bash-script approach gone, the
+ *  cleanup now drives docker directly via multiple Node spawns, so
+ *  the capture is a list of arg arrays rather than one big script. */
+function captureDockerExec(captured: string[][]): typeof execStub {
+  function execStub(
+    args: string[],
+  ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    captured.push([...args]);
+    return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
   }
-  return spawnStub;
+  return execStub;
+}
+
+/** Flatten captured arg arrays into a single string for substring
+ *  assertions. Joining with `\n` keeps individual call boundaries
+ *  visible in test failure output. */
+function flattenCalls(calls: string[][]): string {
+  return calls.map((c) => c.join(' ')).join('\n');
 }
 
 describe('runRemove', () => {
@@ -70,28 +79,33 @@ describe('runRemove', () => {
 
   it('removes docker objects, backs up yml + container dir, and deletes them', async () => {
     await seedContainer('sandbox', { withData: true });
-    const dockerCalls: string[] = [];
+    const dockerCalls: string[][] = [];
     const result = await runRemove({
       name: 'sandbox',
       monocerosHome: home,
       now: new Date('2026-06-01T12:00:00Z'),
-      dockerSpawn: captureDockerSpawn(dockerCalls),
+      dockerExec: captureDockerExec(dockerCalls),
       logger: silentLogger,
     });
 
-    // docker cleanup script ran with the expected scope
-    expect(dockerCalls).toHaveLength(1);
-    expect(dockerCalls[0]).toContain(
+    // Cleanup drove docker directly (no shell), and walked through
+    // all four filters + the network removal:
+    //   - one `docker ps -aq --filter <X>` per filter (4 calls)
+    //   - no `docker rm -f` because the stub returned empty stdout
+    //   - one `docker network rm <project>_default`
+    const flat = flattenCalls(dockerCalls);
+    expect(flat).toContain(
       'label=com.docker.compose.project=sandbox_devcontainer',
     );
     // Devcontainer-cli label filter — anchors on the container-dir
     // path because @devcontainers/cli lets Docker assign random
     // container names that name-prefix filters can't match.
-    expect(dockerCalls[0]).toContain(
+    expect(flat).toContain(
       `label=devcontainer.local_folder=${path.join(home, 'container', 'sandbox')}`,
     );
-    expect(dockerCalls[0]).toContain('name=^sandbox_devcontainer-');
-    expect(dockerCalls[0]).toContain('name=^vsc-sandbox-');
+    expect(flat).toContain('name=^sandbox_devcontainer-');
+    expect(flat).toContain('name=^vsc-sandbox-');
+    expect(flat).toContain('network rm sandbox_devcontainer_default');
 
     // yml + container dir are gone
     expect(result.dockerExitCode).toBe(0);
@@ -136,12 +150,12 @@ describe('runRemove', () => {
 
   it('skips the backup step under --no-backup', async () => {
     await seedContainer('sandbox');
-    const dockerCalls: string[] = [];
+    const dockerCalls: string[][] = [];
     const result = await runRemove({
       name: 'sandbox',
       noBackup: true,
       monocerosHome: home,
-      dockerSpawn: captureDockerSpawn(dockerCalls),
+      dockerExec: captureDockerExec(dockerCalls),
       logger: silentLogger,
     });
     expect(result.backupPath).toBeNull();
@@ -159,7 +173,7 @@ describe('runRemove', () => {
       runRemove({
         name: 'never-there',
         monocerosHome: home,
-        dockerSpawn: captureDockerSpawn([]),
+        dockerExec: captureDockerExec([]),
         logger: silentLogger,
       }),
     ).rejects.toThrow(/Nothing to remove/);
@@ -170,14 +184,15 @@ describe('runRemove', () => {
       path.join(home, 'container-configs', 'half.yml'),
       'schemaVersion: 1\nname: half\n',
     );
-    const dockerCalls: string[] = [];
+    const dockerCalls: string[][] = [];
     const result = await runRemove({
       name: 'half',
       monocerosHome: home,
-      dockerSpawn: captureDockerSpawn(dockerCalls),
+      dockerExec: captureDockerExec(dockerCalls),
       logger: silentLogger,
     });
-    expect(dockerCalls).toHaveLength(1);
+    // 4 ps-filter calls + 1 network rm = 5 docker invocations.
+    expect(dockerCalls.length).toBeGreaterThan(0);
     expect(result.configPath).toBe(
       path.join(home, 'container-configs', 'half.yml'),
     );
@@ -193,7 +208,7 @@ describe('runRemove', () => {
       runRemove({
         name: 'has space',
         monocerosHome: home,
-        dockerSpawn: captureDockerSpawn([]),
+        dockerExec: captureDockerExec([]),
         logger: silentLogger,
       }),
     ).rejects.toThrow(/Invalid config name/);

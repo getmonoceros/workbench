@@ -2,8 +2,11 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
+import { type DockerExec } from '../proxy/index.js';
 import { createSecretMaskStream } from '../util/mask-secrets.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
+
+export { type DockerExec, type DockerResult } from '../proxy/index.js';
 
 export type ComposeSpawn = (args: string[], cwd: string) => Promise<number>;
 
@@ -25,38 +28,128 @@ export const spawnDockerCompose: ComposeSpawn = (args, cwd) => {
   });
 };
 
-// Generic shell spawn used by `monoceros apply`/`remove` for label-
-// based docker cleanup pipelines. Same ComposeSpawn shape so tests
-// can inject a fake; `args[0]` is `-c`, `args[1]` is the shell
-// command string. Output goes through the secret masker for the
-// same reasons spawnDockerCompose does.
+// Direct invocation of `docker <args>` with no shell wrapper.
+// Captures stdout (so callers can parse e.g. `docker ps -aq` output)
+// AND stderr (so callers can surface failure messages); stderr is
+// also streamed live through the secret masker to the host terminal
+// so the builder sees errors as they happen.
 //
-// MSYS_NO_PATHCONV + MSYS2_ARG_CONV_EXCL on Windows: bash on
-// Windows is usually Git Bash (MSYS2-based), which by default
-// rewrites Windows-style paths in args to POSIX form on the way
-// to native executables -- so a literal
-//   docker ps --filter label=devcontainer.local_folder=c:\Users\foo
-// becomes
-//   docker ps --filter label=...=/c/Users/foo
-// and the docker label match silently misses. Both env vars are
-// no-ops on a real Linux bash, so safe to set unconditionally.
-export const spawnBash: ComposeSpawn = (args, cwd) => {
+// Why no bash. The old cleanup path piped a script through
+// `bash -c <script>` which on Windows is typically WSL's bash via
+// the C:\Users\…\WindowsApps\bash.exe launcher. Quoting a label
+// value with backslashes (`c:\Users\…\.monoceros\…`) survives PS,
+// CreateProcess, WSL launcher, and bash's own parser only to come
+// out the other end mangled when handed to docker, and the label
+// filter then silently matches nothing. Going through Node spawn
+// directly removes every one of those layers.
+//
+// Shape matches `DockerExec` re-exported above (originally from
+// proxy/index.ts) so tests can swap in the same fake across both the
+// proxy lifecycle and the cleanup pipelines.
+export const spawnDocker: DockerExec = (args) => {
   return new Promise((resolve, reject) => {
-    const child = spawn('bash', args, {
-      cwd,
-      stdio: ['inherit', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        MSYS_NO_PATHCONV: '1',
-        MSYS2_ARG_CONV_EXCL: '*',
-      },
+    const child = spawn('docker', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    child.stdout?.pipe(createSecretMaskStream()).pipe(process.stdout);
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8');
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
     child.stderr?.pipe(createSecretMaskStream()).pipe(process.stderr);
     child.on('error', reject);
-    child.on('exit', (code) => resolve(code ?? 0));
+    child.on('exit', (code) =>
+      resolve({ exitCode: code ?? 0, stdout, stderr }),
+    );
   });
 };
+
+/**
+ * Collect container IDs matching ANY of the given docker `--filter`
+ * values, deduplicated. Tolerates per-filter failures (treats them as
+ * empty) so a malformed/unsupported filter doesn't take the whole
+ * cleanup down.
+ *
+ * Each `filter` is the literal value passed after `--filter`, e.g.
+ * `label=com.docker.compose.project=foo` or `name=^foo-`.
+ */
+export async function findContainerIds(
+  filters: readonly string[],
+  exec: DockerExec = spawnDocker,
+): Promise<string[]> {
+  const ids = new Set<string>();
+  for (const filter of filters) {
+    const result = await exec(['ps', '-aq', '--filter', filter]);
+    if (result.exitCode !== 0) continue;
+    for (const line of result.stdout.split(/\r?\n/)) {
+      const id = line.trim();
+      if (id) ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
+export interface CleanupDockerObjectsOptions {
+  /** Display name in log lines (`[cleanup] tearing down docker project <projectName>…`). */
+  projectName: string;
+  /** Docker `--filter` values; containers matching ANY are removed. */
+  filters: readonly string[];
+  /** Optional network name to `docker network rm` after container removal. Failure is ignored (network may not exist). */
+  network?: string;
+  /** `[cleanup] …` prefix on log lines. Defaults to `cleanup`; `remove/index.ts` uses `remove` to match the existing on-screen tag. */
+  logTag?: string;
+  logger: { info: (message: string) => void };
+  exec?: DockerExec;
+}
+
+export interface CleanupDockerObjectsResult {
+  exitCode: number;
+  removedIds: string[];
+}
+
+/**
+ * Replacement for the previous `bash -c '…'` cleanup script in
+ * `remove` and the apply pre-cleanup. Drives docker directly via
+ * Node spawn (`spawnDocker`) so backslash-bearing Windows label
+ * values reach docker unmangled.
+ *
+ * `exitCode` is 0 unless `docker rm -f` itself returned non-zero;
+ * per-filter `docker ps` failures are tolerated silently. Use
+ * {@link findContainerIds} afterwards if you need to verify the
+ * tear-down actually emptied the project.
+ */
+export async function cleanupDockerObjects(
+  opts: CleanupDockerObjectsOptions,
+): Promise<CleanupDockerObjectsResult> {
+  const exec = opts.exec ?? spawnDocker;
+  const tag = opts.logTag ?? 'cleanup';
+  opts.logger.info(`[${tag}] tearing down docker project ${opts.projectName}…`);
+
+  const ids = await findContainerIds(opts.filters, exec);
+
+  let rmExit = 0;
+  if (ids.length > 0) {
+    opts.logger.info(`[${tag}] removing containers: ${ids.join(' ')}`);
+    const rmResult = await exec(['rm', '-f', ...ids]);
+    rmExit = rmResult.exitCode;
+  } else {
+    opts.logger.info(`[${tag}] no containers found`);
+  }
+
+  if (opts.network) {
+    const netResult = await exec(['network', 'rm', opts.network]);
+    if (netResult.exitCode === 0) {
+      opts.logger.info(`[${tag}] network ${opts.network} removed`);
+    }
+    // Otherwise: silent — network may not exist, harmless.
+  }
+
+  opts.logger.info(`[${tag}] docker cleanup done`);
+  return { exitCode: rmExit, removedIds: ids };
+}
 
 /**
  * Normalize a host filesystem path into the form devcontainer-cli
@@ -162,7 +255,14 @@ export async function runStart(opts: StartOptions): Promise<number> {
 
 export interface RunContainerCycleOptions {
   hasCompose: boolean;
-  cleanupSpawn?: ComposeSpawn;
+  /**
+   * Inject a fake docker exec for tests. Replaces the previous
+   * `cleanupSpawn: ComposeSpawn` which fed a bash script to
+   * `bash -c`; we now drive docker directly via Node spawn, so the
+   * shell layer (and its Windows quoting failures) is out of the
+   * picture.
+   */
+  dockerExec?: DockerExec;
   devcontainerSpawn?: DevcontainerSpawn;
   logger: {
     info: (message: string) => void;
@@ -185,7 +285,6 @@ export async function runContainerCycle(
     logger.info(
       `Force-removing existing ${projectName} containers (volumes preserved)…`,
     );
-    const cleanupSpawn = opts.cleanupSpawn ?? spawnBash;
     // Two-step removal so a container with stale/missing labels still
     // gets caught:
     //   - by docker-compose project label
@@ -194,25 +293,32 @@ export async function runContainerCycle(
     // Containers extension is the likely culprit (auto-recreates on
     // container loss); we abort with a clear hint rather than letting
     // `devcontainer up` collide.
-    const script = [
-      `set -u`,
-      `echo "[cleanup] checking project ${projectName}…"`,
-      `by_label=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}" 2>/dev/null || true)`,
-      `by_name=$(docker ps -aq --filter "name=^${projectName}-" 2>/dev/null || true)`,
-      `to_remove=$(printf "%s\\n%s\\n" "$by_label" "$by_name" | sort -u | grep -v "^$" || true)`,
-      // Unquoted `$to_remove` so bash word-splitting joins the
-      // newline-separated IDs with single spaces on echo. A `tr "\n" " "`
-      // pipe here used to do the same job but tripped MSYS2's arg
-      // translation on Git Bash for Windows ("tr: extra operand").
-      `if [ -n "$to_remove" ]; then echo "[cleanup] removing:" $to_remove; docker rm -f $to_remove >/dev/null || true; else echo "[cleanup] no containers to remove"; fi`,
-      `docker network rm ${projectName}_default 2>/dev/null && echo "[cleanup] network ${projectName}_default removed" || echo "[cleanup] network ${projectName}_default not present"`,
-      `remaining_label=$(docker ps -aq --filter "label=com.docker.compose.project=${projectName}" 2>/dev/null || true)`,
-      `remaining_name=$(docker ps -aq --filter "name=^${projectName}-" 2>/dev/null || true)`,
-      `if [ -n "$remaining_label" ] || [ -n "$remaining_name" ]; then echo "" >&2; echo "ERROR: containers under project ${projectName} reappeared after removal." >&2; echo "This typically means VS Code's Remote Containers extension is connected to" >&2; echo "this devcontainer and auto-recreated it. Close the dev container session" >&2; echo "in VS Code (Cmd+Shift+P → 'Dev Containers: Close Remote Connection')" >&2; echo "and retry \\\`monoceros apply\\\`." >&2; exit 1; fi`,
-      `echo "[cleanup] done"`,
-    ].join('; ');
-    const cleanupCode = await cleanupSpawn(['-c', script], root);
-    if (cleanupCode !== 0) return cleanupCode;
+    const exec = opts.dockerExec ?? spawnDocker;
+    const filters = [
+      `label=com.docker.compose.project=${projectName}`,
+      `name=^${projectName}-`,
+    ];
+    const { exitCode: rmExit } = await cleanupDockerObjects({
+      projectName,
+      filters,
+      network: `${projectName}_default`,
+      logger,
+      exec,
+    });
+    if (rmExit !== 0) return rmExit;
+
+    const remaining = await findContainerIds(filters, exec);
+    if (remaining.length > 0) {
+      const warn = logger.warn ?? logger.info;
+      warn(
+        `ERROR: containers under project ${projectName} reappeared after removal.\n` +
+          `This typically means VS Code's Remote Containers extension is connected\n` +
+          `to this devcontainer and auto-recreated it. Close the dev container\n` +
+          `session in VS Code (Cmd+Shift+P → 'Dev Containers: Close Remote Connection')\n` +
+          `and retry \`monoceros apply\`.`,
+      );
+      return 1;
+    }
 
     return runStart({
       root,
