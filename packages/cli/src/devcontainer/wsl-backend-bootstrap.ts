@@ -91,7 +91,7 @@ export function formatWslBackendHint(): string {
   return [
     `Docker's daemon isn't reachable, and no WSL 2 distro is registered.`,
     `Docker Desktop runs on the WSL 2 backend, so without a distro it`,
-    `can't start — often shown as the misleading "Virtualization support`,
+    `can't start -- often shown as the misleading "Virtualization support`,
     `not detected" (even with virtualization enabled in BIOS).`,
     ``,
     `Fix it in an elevated PowerShell:`,

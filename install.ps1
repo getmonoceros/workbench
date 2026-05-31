@@ -123,7 +123,7 @@ function Invoke-MonocerosInstaller {
   $policy = Get-ExecutionPolicy
   if ($policy -eq 'Restricted' -or $policy -eq 'AllSigned') {
     Section 'Prerequisites'
-    Fail "PowerShell execution policy is '$policy' — npm and monoceros can't run."
+    Fail "PowerShell execution policy is '$policy' -- npm and monoceros can't run."
     @'
 
 PowerShell won't run the .ps1 wrappers npm creates for `npm` and
@@ -163,7 +163,7 @@ installer. Background + the no-admin path: docs/install-windows.md.
       @'
 
 Monoceros needs Docker. On Windows, Docker Desktop runs on the WSL 2
-backend, and no WSL 2 distro is set up yet — so do both. From a
+backend, and no WSL 2 distro is set up yet -- so do both. From a
 PowerShell opened as Administrator (right-click -> "Run as administrator"):
 
   1. wsl --install                     # WSL + Ubuntu, sets WSL 2 as default
@@ -202,7 +202,7 @@ then re-run this installer.
       @'
 
 Docker Desktop's daemon isn't reachable, and no WSL 2 distro is
-registered — Docker runs on the WSL 2 backend, so without a distro it
+registered -- Docker runs on the WSL 2 backend, so without a distro it
 can't start (often shown as the misleading "Virtualization support not
 detected", even with virtualization enabled in BIOS).
 

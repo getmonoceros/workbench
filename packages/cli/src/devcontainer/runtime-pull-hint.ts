@@ -13,10 +13,13 @@ import { dim } from '../util/format.js';
 export const RUNTIME_PULL_MARKER =
   'No manifest found for ghcr.io/getmonoceros/monoceros-runtime';
 
+// User-visible string. ASCII-only on purpose: on Windows PS 5.1 conhost
+// (default codepage OEM/ANSI), multi-byte glyphs render as `?`. Same
+// reason install.ps1 uses ASCII glyphs for its Ok/Warn/Fail markers.
 export const RUNTIME_PULL_HINT =
-  'Downloading the Monoceros runtime image now — expected on first apply, ' +
-  'takes ~1–2 min (Docker pulls the multi-arch base with no progress ' +
-  'output). The "No manifest found" line above is harmless. Please wait…';
+  'Downloading the Monoceros runtime image now -- expected on first apply, ' +
+  'takes ~1-2 min (Docker pulls the multi-arch base with no progress ' +
+  'output). The "No manifest found" line above is harmless. Please wait...';
 
 export interface PullHintState {
   hinted: boolean;
@@ -36,7 +39,7 @@ export function createRuntimePullHintStream(state: PullHintState): Transform {
   const appendHintIfMarker = (block: string): string => {
     if (state.hinted || !block.includes(RUNTIME_PULL_MARKER)) return block;
     state.hinted = true;
-    return `${block}${dim(`ℹ ${RUNTIME_PULL_HINT}`)}\n`;
+    return `${block}${dim(`(i) ${RUNTIME_PULL_HINT}`)}\n`;
   };
   return new Transform({
     decodeStrings: true,
