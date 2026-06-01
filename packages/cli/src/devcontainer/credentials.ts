@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { RepoEntry } from '../create/types.js';
 import { KNOWN_PROVIDER_HOSTS, type RepoProvider } from '../config/schema.js';
-import { cyan } from '../util/format.js';
+import { cyan, dim } from '../util/format.js';
 
 /**
  * Spawn signature for `git credential fill`: takes the credential-
@@ -153,6 +153,16 @@ function uniqueHttpsHosts(repos: readonly RepoEntry[]): HostWithProvider[] {
  * Linux command (then `linuxBrew` is set and used). Callers embed the
  * resulting single line into a setup-instructions block.
  */
+/**
+ * Official Homebrew install one-liner (from https://brew.sh). Shown
+ * as the first cyan line in any brew-based provider hint so users
+ * who don't have Homebrew yet aren't stuck staring at `brew: command
+ * not found`. Users who DO have Homebrew can skip the line — we say
+ * so right below in dim text.
+ */
+const BREW_INSTALL_COMMAND =
+  '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"';
+
 function installCommandForOS(opts: {
   brew: string;
   winget: string;
@@ -166,13 +176,21 @@ function installCommandForOS(opts: {
   linuxBrew?: string;
   linuxDocsUrl: string;
 }): string {
+  const withBrewBootstrap = (cmd: string): string =>
+    [
+      '',
+      cyan(BREW_INSTALL_COMMAND),
+      cyan(cmd),
+      '',
+      dim('(Skip the first line if you already have Homebrew.)'),
+    ].join('\n');
   switch (process.platform) {
     case 'darwin':
-      return cyan(opts.brew);
+      return withBrewBootstrap(opts.brew);
     case 'win32':
-      return cyan(opts.winget);
+      return ['', cyan(opts.winget)].join('\n');
     default:
-      if (opts.linuxBrew) return cyan(opts.linuxBrew);
+      if (opts.linuxBrew) return withBrewBootstrap(opts.linuxBrew);
       return `See ${opts.linuxDocsUrl} for package instructions.`;
   }
 }
