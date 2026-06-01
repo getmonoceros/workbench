@@ -274,8 +274,26 @@ EOF
   exit 1
 fi
 
-if ! command -v node >/dev/null 2>&1; then
-  fail "Node is not installed."
+# WSL footgun: when install.sh runs inside WSL and Linux-side Node is
+# missing, PATH-interop surfaces the Windows install's node from
+# /mnt/c/.../node-vXX-win-x64/. Invoked from Linux bash, npm then
+# writes to a Windows-side prefix, and the resulting `monoceros` on
+# PATH is the Windows .cmd shim — no actual WSL install happens, just
+# a re-install of the Windows variant. Treat /mnt/-resolved node as
+# "Linux-side Node missing" and route through the existing
+# install-Node hint (which tells the user to apt install nodejs npm).
+node_path=$(command -v node 2>/dev/null || true)
+node_via_wsl_interop=0
+if [[ -n "$node_path" && "$node_path" == /mnt/* ]]; then
+  node_path=""
+  node_via_wsl_interop=1
+fi
+if [[ -z "$node_path" ]]; then
+  if [[ "$node_via_wsl_interop" -eq 1 ]]; then
+    fail "No Linux-side Node found (PATH-interop is surfacing the Windows install)."
+  else
+    fail "Node is not installed."
+  fi
   case "$PLATFORM" in
     macos)
       cat >&2 <<EOF
@@ -334,8 +352,19 @@ EOF
   exit 1
 fi
 
-if ! command -v npm >/dev/null 2>&1; then
-  fail "npm is not on PATH."
+# Same WSL footgun as above, for npm.
+npm_path=$(command -v npm 2>/dev/null || true)
+npm_via_wsl_interop=0
+if [[ -n "$npm_path" && "$npm_path" == /mnt/* ]]; then
+  npm_path=""
+  npm_via_wsl_interop=1
+fi
+if [[ -z "$npm_path" ]]; then
+  if [[ "$npm_via_wsl_interop" -eq 1 ]]; then
+    fail "No Linux-side npm found (PATH-interop is surfacing the Windows install)."
+  else
+    fail "npm is not on PATH."
+  fi
   cat >&2 <<EOF
 
 Monoceros needs npm.
