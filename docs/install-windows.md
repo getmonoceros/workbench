@@ -153,16 +153,20 @@ Gleiche, findet sie den Proxy schon laufend — und reicht ihre yml in
 einen Ordner, den der laufende Proxy nicht beobachtet → Routes
 funktionieren nicht.
 
-**Switch-Ritual** vor dem Wechsel zwischen Windows- und WSL-Seite (in
-beliebiger Shell, Docker ist ja geteilt):
+**Switch-Ritual** vor dem Wechsel zwischen Windows- und WSL-Seite:
+einfach den `monoceros-proxy`-Container löschen — egal ob via
+Docker-Desktop-UI (Container-Tab → Zeile `monoceros-proxy` →
+Mülleimer-Icon) oder per CLI:
 
 ```sh
 docker rm -f monoceros-proxy
-docker network rm monoceros-proxy
 ```
 
 Beim nächsten `monoceros apply` der „neuen" Seite startet der Proxy
-frisch mit deren Dynamic-Dir. Sauber.
+frisch mit deren `dynamic/`-Mount. Das Netzwerk `monoceros-proxy`
+darf stehen bleiben — daran hängt nichts seitenspezifisches, und
+laufende dev-Container auf der anderen Seite, die noch routen
+sollen, blieben sonst beziehungslos.
 
 \*\* **Git-Credentials:** Windows-Git und WSL-Linux-Git haben
 verschiedene Credential-Stores (Windows Credential Manager via GCM
