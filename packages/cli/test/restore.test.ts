@@ -56,6 +56,11 @@ describe('runRestore', () => {
       name,
       monocerosHome: home,
       dockerExec: stubDocker(),
+      // Stub the proxy docker too so maybeStopProxy at end of remove
+      // doesn't shell out to a real `docker network inspect`. On slow
+      // CI runners that call took 5+ seconds and tripped vitest's
+      // default 5s test timeout.
+      proxyDocker: stubDocker(),
       logger: silentLogger,
       now: new Date('2026-07-04T08:00:00Z'),
     });

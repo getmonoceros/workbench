@@ -85,6 +85,7 @@ describe('runRemove', () => {
       monocerosHome: home,
       now: new Date('2026-06-01T12:00:00Z'),
       dockerExec: captureDockerExec(dockerCalls),
+      proxyDocker: captureDockerExec([]),
       logger: silentLogger,
     });
 
@@ -156,6 +157,7 @@ describe('runRemove', () => {
       noBackup: true,
       monocerosHome: home,
       dockerExec: captureDockerExec(dockerCalls),
+      proxyDocker: captureDockerExec([]),
       logger: silentLogger,
     });
     expect(result.backupPath).toBeNull();
@@ -189,6 +191,7 @@ describe('runRemove', () => {
       name: 'half',
       monocerosHome: home,
       dockerExec: captureDockerExec(dockerCalls),
+      proxyDocker: captureDockerExec([]),
       logger: silentLogger,
     });
     // 4 ps-filter calls + 1 network rm = 5 docker invocations.
