@@ -2,6 +2,10 @@
 
 - Status: accepted
 - Datum: 2026-05-20
+- Amendment 2026-06-01: § „Install-Skripte als Bouncer" — `install.ps1`
+  abgelöst, Windows-Pfad läuft seit 1.12 über WSL. Siehe
+  [ADR 0011](0011-wsl-only-auf-windows.md). Der `install.sh`-Teil der
+  Sektion bleibt unverändert gültig und gilt für macOS / Linux / WSL.
 
 ## Kontext
 

@@ -469,19 +469,16 @@ auf der Platte; gilt nicht mehr als operativ.
         vergeben (`kind_cerf`, `thirsty_bartik`), unser Name-Filter
         ging ins Leere. Vierter Filter über
         `label=devcontainer.local_folder=<containerPath>` ergänzt. ([f409d9d](https://github.com/getmonoceros/workbench/commit/f409d9d))
-   - **Windows** ⏸ — aktuell **nicht testbar**. Apple-Silicon-
-     Parallels supportet nested virtualization für Windows-ARM-
-     Gäste nicht (offiziell von Parallels bestätigt: [KB 129234](https://kb.parallels.com/129234),
-     [KB 129497](https://kb.parallels.com/129497)). Docker Desktop in der
-     Windows-VM kann darum WSL2 nicht hochfahren, der eigentliche
-     `apply`-Pfad ist von dort aus unerreichbar. Cloud-Windows-VMs
-     (Azure Dsv5, AWS m6i) wären ein Ausweg, sind aber an Lizenz-/
-     Kosten-Fragen geknüpft, die noch offen sind. Bis eine Lösung
-     gefunden ist, bleibt der Windows-Walkthrough ungetestet — das
-     `install.ps1`-Rendering wurde immerhin verifiziert (zwei
-     Render-Bugs gefunden + gefixt: exit-in-iex killt Host, UTF-8-
-     Glyphen kaputt unter PowerShell 5.1 / conhost — [c88e95d](https://github.com/getmonoceros/workbench/commit/c88e95d),
-     [994ad34](https://github.com/getmonoceros/workbench/commit/994ad34)), aber der echte `apply hello`-Lauf steht aus.
+   - **Windows** ✅ — auf einer x86-Windows-Box (pictor-win) Ende
+     Mai/Anfang Juni 2026 durchgespielt. Erst auf dem Windows-Host-
+     Pfad, dabei ~12 plattform-spezifische Bugs in 1.11.1 – 1.11.11
+     gefunden + gefixt. Dann mit 1.12 strategisch auf WSL umgestellt
+     (siehe [ADR 0011](./adr/0011-wsl-only-auf-windows.md) und die
+     1.12-Notiz am Ende von M5): die e2e-Suite (`monoceros-e2e`)
+     läuft inside WSL Ubuntu jetzt komplett durch, 7/7 Szenarien
+     grün. Die Apple-Silicon-Parallels-Beschränkung von oben ist
+     damit auch egal — der Windows-Pfad ist auf einer realen x86-
+     Box validiert.
 
 ### Zusätzliche Arbeiten die während M4 dazukamen
 
@@ -917,6 +914,31 @@ Output.
   apply/init-Prompt schreibt nach Scope `g`/`c`/`b`/`n` in
   monoceros-config und/oder container-yml; Re-Prompt wenn nur
   `.monoceros/gitconfig` Werte trägt und keine Defaults gesetzt sind.
+
+#### 1.12 — Windows-Pfad konsolidiert auf WSL ([ADR 0011](./adr/0011-wsl-only-auf-windows.md))
+
+Zwei Tage am Stück Windows-Host-Bugs auszubügeln (Drive-Letter-Case
+in Docker-Labels, cmd.exe-Quoting in bash-Cleanups, npm's `.ps1`-Shim
+vs. PowerShell-Komma-Operator, Traefik-File-Watch-Defekt auf
+gRPC-FUSE-Bind-Mounts, GCM-`fill`-ohne-`store`, taskkill statt SIGINT,
+PATHEXT-Lookup für `.cmd`-Spawn, e2e-spawn-Shim-Parsing, etc.) hat
+gezeigt: der Windows-Host-Pfad war eine fortlaufende Bug-Quelle ohne
+echten User-Mehrwert — WSL ist auf Windows ohnehin Pflicht für
+Docker Desktop, der „direkt-aus-PowerShell"-Komfort sparte einzig
+einen Terminal-Tab-Wechsel.
+
+Mit 1.12 ist **WSL der einzige unterstützte Windows-Pfad**:
+
+- `install.ps1` entfernt
+- `docs/install-windows.md` dokumentiert WSL-Setup als Standardweg
+- Windows-spezifischer Code aus workbench und e2e-repo entfernt
+  (−547 Zeilen im workbench, −170 im e2e); ein einziger WSL-Quirk
+  bleibt (`.localhost`-Auflösung im e2e-with-port-Probe via
+  Host-Header-Trick)
+- e2e-Suite läuft auf macOS / Linux / WSL identisch durch
+
+Sieh ADR 0011 für die volle Begründung + Liste der entfernten
+Stellen.
 
 ---
 
