@@ -42,17 +42,16 @@ Drei Pfade, je nachdem was du vorhast.
 
 Das Install-Skript prüft Docker + Node, installiert `monoceros`
 global via npm, und richtet die Shell-Completion für deine Shell
-(bash, zsh oder PowerShell) ein:
+(bash, zsh) ein:
 
 ```sh
-# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
 ```
 
-```powershell
-# Windows (PowerShell)
-iwr -useb https://raw.githubusercontent.com/getmonoceros/workbench/main/install.ps1 | iex
-```
+Auf Windows läuft Monoceros über WSL — siehe
+[`docs/install-windows.md`](docs/install-windows.md) für die
+einmalige Einrichtung (WSL + Docker Desktop), danach gilt der
+Linux-Pfad oben in deiner WSL-Distro.
 
 Im selben Terminal direkt weiterarbeiten geht, sobald die Shell den
 PATH-Hash neu aufbaut — zsh cached den Startup-PATH und sieht neu
@@ -61,7 +60,6 @@ installierte Binaries erst nach `rehash`:
 ```sh
 rehash && compinit           # zsh
 hash -r && source ~/.bashrc  # bash
-. $PROFILE                   # PowerShell
 ```
 
 Das ist kein Monoceros-Spezifikum, sondern Shell-Standard für alles
