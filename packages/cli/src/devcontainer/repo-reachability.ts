@@ -36,16 +36,22 @@ export type ReachabilitySpawn = (url: string) => Promise<{
 
 const realGitLsRemote: ReachabilitySpawn = (url) => {
   return new Promise((resolve, reject) => {
-    // Same env-var hardening as credentials.ts: prevent any kind of
-    // interactive prompt (terminal, GUI askpass) so the pre-flight
-    // never hangs and always returns a useful exit code + stderr.
+    // GIT_TERMINAL_PROMPT=0 stops `git` itself from prompting on a
+    // controlling terminal, which is all we want here — the
+    // pre-flight is non-interactive. We DON'T also set
+    // GIT_ASKPASS='' or SSH_ASKPASS='': empty string is version-
+    // dependently interpreted (some git versions take it as "no
+    // askpass", others try to spawn the empty path and fail in
+    // weird ways) and, more importantly, it tickles a bug in Git
+    // Credential Manager on Windows where `git credential-manager
+    // store` after a successful OAuth flow silently no-ops. The
+    // credential helper (GCM / gh's helper / Atlassian's) is the
+    // right tool for authenticated probes — let it run.
     const child = spawn('git', ['ls-remote', '--heads', '--', url], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
         GIT_TERMINAL_PROMPT: '0',
-        GIT_ASKPASS: '',
-        SSH_ASKPASS: '',
       },
     });
     let stdout = '';

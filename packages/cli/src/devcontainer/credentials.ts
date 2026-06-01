@@ -25,16 +25,19 @@ const realGitCredentialFill: CredentialsSpawn = (input) => {
     // the helpers produced (possibly empty) and exits cleanly,
     // letting our pre-flight detect "no credentials" reliably.
     //
-    // GIT_ASKPASS='' / SSH_ASKPASS='' are belt-and-suspenders for
-    // setups where a GUI askpass helper is configured globally —
-    // emptying them prevents a popup that would also block apply.
+    // We deliberately do NOT also set GIT_ASKPASS='' / SSH_ASKPASS=''.
+    // Empty string is interpreted differently across git versions, and
+    // — concretely observed on Windows + Git Credential Manager — it
+    // tickles a path where GCM's `store` silently no-ops after a
+    // successful OAuth flow. The credential helper IS the right tool
+    // for non-interactive credential resolution; the terminal-prompt
+    // gate above already takes care of the hang scenario this was
+    // meant to guard against.
     const child = spawn('git', ['credential', 'fill'], {
       stdio: ['pipe', 'pipe', 'inherit'],
       env: {
         ...process.env,
         GIT_TERMINAL_PROMPT: '0',
-        GIT_ASKPASS: '',
-        SSH_ASKPASS: '',
       },
     });
     let stdout = '';
@@ -43,6 +46,41 @@ const realGitCredentialFill: CredentialsSpawn = (input) => {
     });
     child.on('error', reject);
     child.on('exit', (code) => resolve({ stdout, exitCode: code ?? 0 }));
+    child.stdin.write(input);
+    child.stdin.end();
+  });
+};
+
+/**
+ * Tell git's configured credential helpers to persist a credential.
+ *
+ * Why this exists: `git credential fill` returns credentials but never
+ * tells the helper to save them — that step normally happens AFTER git
+ * has used the credential successfully against a remote, when git
+ * itself calls `git credential approve`. Our pre-flight uses `fill`
+ * for a lookup-only check, so the helper's `store` is never reached
+ * by the natural git flow, and the OAuth-acquired token GCM returned
+ * gets thrown away. Next apply: browser dialog again.
+ *
+ * Calling `approve` explicitly after a successful `fill` closes the
+ * loop: GCM (and gh's helper, and the Atlassian one) write the
+ * credential to their persistent store on this call, so subsequent
+ * applies (and the in-container clone) find it cached. Idempotent —
+ * approve on an already-stored credential is a no-op.
+ */
+export type CredentialsApprove = (input: string) => Promise<void>;
+
+const realGitCredentialApprove: CredentialsApprove = (input) => {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['credential', 'approve'], {
+      stdio: ['pipe', 'ignore', 'inherit'],
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+      },
+    });
+    child.on('error', reject);
+    child.on('exit', () => resolve()); // best-effort, non-zero is non-fatal
     child.stdin.write(input);
     child.stdin.end();
   });
@@ -324,6 +362,14 @@ function formatCredentialLine(
 
 export interface CollectCredentialsOptions {
   spawn?: CredentialsSpawn;
+  /**
+   * Approve callback — called once per host after a successful
+   * `fill`, with the full credential-protocol payload (incl. password).
+   * Tells the host's credential helper to persist the credential.
+   * Defaults to `git credential approve`. Tests inject a stub that
+   * records calls without spawning git.
+   */
+  approve?: CredentialsApprove;
   logger?: { info: (msg: string) => void; warn: (msg: string) => void };
 }
 
@@ -383,6 +429,7 @@ export async function collectGitCredentials(
   const credentialsPath = path.join(credsDir, 'git-credentials');
 
   const spawnFn = options.spawn ?? realGitCredentialFill;
+  const approveFn = options.approve ?? realGitCredentialApprove;
   const logger = options.logger ?? { info: () => {}, warn: () => {} };
 
   // Callers must filter out 'unknown' providers before invoking this
@@ -439,6 +486,23 @@ export async function collectGitCredentials(
     }
     lines.push(formatCredentialLine(host, username, password));
     perHost.push({ host, provider, status: 'ok', detail: '' });
+
+    // Tell the host credential helper to persist the credential we
+    // just received. `git credential fill` itself never triggers a
+    // helper `store` — git only does that automatically after using
+    // a credential successfully on a real remote operation. Without
+    // this explicit approve, an OAuth flow that GCM kicked off on
+    // first apply returns the token to us, but GCM never writes it
+    // to the Windows Credential Manager. Result: every subsequent
+    // apply pops a fresh browser auth dialog. Best-effort — non-zero
+    // from approve is non-fatal; we still wrote the in-container
+    // credentials file, which is what apply actually relies on.
+    const approveInput = `protocol=https\nhost=${host}\nusername=${username}\npassword=${password}\n\n`;
+    try {
+      await approveFn(approveInput);
+    } catch {
+      /* best-effort, don't block apply on credential-store hiccups */
+    }
   }
 
   await fs.mkdir(credsDir, { recursive: true });
