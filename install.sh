@@ -36,6 +36,23 @@ fi
 
 set -euo pipefail
 
+# ── cwd into $HOME ────────────────────────────────────────────────
+#
+# Common WSL footgun: opening WSL from PowerShell (or VS Code's "WSL
+# Terminal" button) inherits the Windows-side cwd, so the user lands
+# in something like /mnt/c/Users/<name>. Running `curl … | bash` from
+# there means the installer's cwd is on Windows' filesystem, accessed
+# via 9P/gRPC-FUSE — which has subtly broken POSIX semantics. `npm
+# install -g` and various spawn calls then fail in odd ways (silent
+# aborts, EACCES on tmp files, locked .npm-cache directories).
+#
+# Switching to $HOME up front sidesteps all of it. The installer itself
+# doesn't depend on cwd for anything (all paths are absolute), so this
+# is invisible and harmless on macOS / native Linux. The user's
+# original cwd is gone after the curl pipe finishes anyway — they
+# don't notice the change.
+cd "$HOME"
+
 # ── Auto-recover from missing docker group in current shell ────────
 #
 # After `sudo usermod -aG docker $USER`, the user is in /etc/group's
