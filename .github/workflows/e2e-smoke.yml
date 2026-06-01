@@ -17,6 +17,10 @@ on:
     paths: ['packages/cli/**']
   pull_request:
     paths: ['packages/cli/**']
+  # Manual trigger for ad-hoc smoke runs (e.g. after a workbench
+  # change that didn't touch packages/cli/ but you still want to
+  # verify, or right after pushing the workflow itself).
+  workflow_dispatch:
 
 # Cancel an in-flight run on the same ref when a new commit lands.
 concurrency:
