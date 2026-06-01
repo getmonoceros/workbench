@@ -38,6 +38,13 @@ jobs:
     # box (~7-8 min) and leaves headroom for slow GH runners.
     timeout-minutes: 20
 
+    # Job-level env so $GH_TOKEN is in scope for the credential
+    # helper script we install below — that script runs later, in
+    # the apply step's git subprocess, and would see an empty token
+    # if GH_TOKEN were only set on the configure step.
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     steps:
       - name: Checkout workbench
         uses: actions/checkout@v4
@@ -73,16 +80,11 @@ jobs:
         # repos like the e2e-fixture, no helper → "Missing Git
         # credentials" → apply bails.
         #
-        # First attempt was `gh auth login --with-token` + `gh auth
-        # setup-git`, but gh refuses to overwrite stored auth when
-        # GH_TOKEN is already in the environment (and we need it
-        # there for gh itself to be authenticated). Skipping gh
-        # entirely and writing an inline credential helper that
-        # returns the token from env is cleaner: no auth-state
-        # plumbing, no env conflict, exact same effect for git's
-        # `credential fill` query.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # The inline helper reads $GH_TOKEN from env — which is set
+        # at the JOB level above so the variable is also present
+        # when git invokes the helper later during the apply step.
+        # First attempt set GH_TOKEN per-step here only, which made
+        # the helper expand to an empty password downstream.
         run: |
           git config --global credential.helper \
             '!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f'
