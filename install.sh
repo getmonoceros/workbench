@@ -295,13 +295,14 @@ EOF
     linux)
       cat >&2 <<EOF
 
-Monoceros needs Node ${NODE_MIN_MAJOR} or newer (npm is included).
-NodeSource adds an apt repo with current Node — run both commands:
+Monoceros needs Node ${NODE_MIN_MAJOR} or newer plus npm.
 
-  curl -fsSL https://deb.nodesource.com/setup_${NODE_MIN_MAJOR}.x | sudo bash -
-  sudo apt install -y nodejs
+Install both with these two commands:
 
-Other paths (Fedora/RHEL, fnm, nvm, volta, manual download):
+  ${CYAN}curl -fsSL https://deb.nodesource.com/setup_${NODE_MIN_MAJOR}.x | sudo -E bash -${RESET}
+  ${CYAN}sudo apt install -y nodejs npm${RESET}
+
+Other systems (Fedora/RHEL, fnm, nvm, volta, manual download):
 
   https://nodejs.org/en/download
 
@@ -334,11 +335,21 @@ EOF
 fi
 
 if ! command -v npm >/dev/null 2>&1; then
-  fail "npm is not on PATH (unusual — npm normally ships with Node)."
+  fail "npm is not on PATH."
   cat >&2 <<EOF
 
-Reinstall Node from one of the sources above; npm should come along
-automatically.
+Monoceros needs npm.
+
+Install it with these two commands:
+
+  ${CYAN}curl -fsSL https://deb.nodesource.com/setup_${NODE_MIN_MAJOR}.x | sudo -E bash -${RESET}
+  ${CYAN}sudo apt install -y npm${RESET}
+
+Other systems (Fedora/RHEL, fnm, nvm, volta, manual download):
+
+  https://nodejs.org/en/download
+
+Then re-run this installer.
 EOF
   exit 1
 fi
