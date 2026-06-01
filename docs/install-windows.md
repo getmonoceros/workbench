@@ -85,6 +85,112 @@ fragt.
 
 ---
 
+## Variante: Monoceros in WSL betreiben (statt oder parallel zu Windows-Host)
+
+Statt Monoceros auf dem Windows-Host laufen zu lassen, kann man's
+genauso gut **inside WSL** installieren — also als reines Linux-Tool
+in deiner Ubuntu-Distro. Vorteile dieses Setups:
+
+- Alle Windows-spezifischen Eigenheiten (Drive-Letter-Case in
+  Docker-Labels, Quoting im Cleanup, GCM-Auth-Dance, Traefik-
+  File-Watch-Defekt auf gRPC-FUSE) entfallen — innerhalb der WSL-VM
+  ist das alles natives Linux.
+- VS Code's „WSL Remote" und der Dev-Container-Workflow fühlen sich
+  identisch zu nativ Linux an.
+- Du kannst **parallel** zu einer Windows-Host-Installation laufen —
+  derselbe Docker-Daemon, aber komplett getrennter Monoceros-State
+  (`~/.monoceros` innerhalb der Distro vs. `%USERPROFILE%\.monoceros`
+  auf dem Windows-Host).
+
+Genauso valide wenn man's nur **statt** der Windows-Host-Installation
+nutzt — funktional gleichwertig, nur Linux-flavored.
+
+### Setup
+
+1. **Docker Desktop's WSL Integration einschalten** (Settings →
+   Resources → WSL Integration → Toggle für deine Distro). Damit
+   landet der `docker`-Befehl IN der WSL-Distro und redet mit dem
+   gleichen Daemon wie das Windows-`docker`.
+
+   > **Nicht** zusätzlich `apt install docker.io` o.ä. in der WSL-
+   > Distro ausführen — das wäre ein zweiter, konkurrierender Docker-
+   > Daemon. Docker Desktop + WSL Integration ist der einzige
+   > unterstützte Weg.
+
+2. **Node ≥ 20 in WSL installieren** über deinen bevorzugten Weg.
+   `install.sh` schlägt NodeSource vor (offizielles Node-Apt-Repo),
+   geht aber auch über `nvm`, `fnm`, oder Linuxbrew.
+
+3. **Monoceros installieren** — derselbe Befehl wie für native Linux:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
+   ```
+
+   Der Installer prüft Docker + Node, macht `npm install -g`, legt
+   `~/.monoceros/monoceros-config.yml` an, verdrahtet Bash-Completion
+   in `~/.bashrc`.
+
+Verifizieren: `monoceros --version` aus der WSL-Shell.
+
+### Parallel-Betrieb mit Windows-Host: was sich teilt, was nicht
+
+| Ressource                                            | Geteilt?             |
+| ---------------------------------------------------- | -------------------- |
+| Docker-Daemon (`docker ps` zeigt alles)              | ja                   |
+| Image-Cache                                          | ja                   |
+| `monoceros-proxy`-Container (Traefik-Singleton)      | **konfliktär** \*    |
+| Container-Configs (`<home>/container-configs/`)      | nein, je User-Home   |
+| Materialisierte Container-Dirs (`<home>/container/`) | nein, je User-Home   |
+| Globale Config (`<home>/monoceros-config.yml`)       | nein, je User-Home   |
+| Git-Credentials                                      | nein, je System \*\* |
+
+\* **Traefik-Konflikt:** beide Seiten nutzen den Container-Namen
+`monoceros-proxy` und Hostport 80. Wer zuerst `monoceros apply` mit
+`--with-ports` macht, startet den Proxy mit Verweis auf den **eigenen**
+`<home>/traefik/dynamic/`-Ordner. Macht die andere Seite danach das
+Gleiche, findet sie den Proxy schon laufend — und reicht ihre yml in
+einen Ordner, den der laufende Proxy nicht beobachtet → Routes
+funktionieren nicht.
+
+**Switch-Ritual** vor dem Wechsel zwischen Windows- und WSL-Seite (in
+beliebiger Shell, Docker ist ja geteilt):
+
+```sh
+docker rm -f monoceros-proxy
+docker network rm monoceros-proxy
+```
+
+Beim nächsten `monoceros apply` der „neuen" Seite startet der Proxy
+frisch mit deren Dynamic-Dir. Sauber.
+
+\*\* **Git-Credentials:** Windows-Git und WSL-Linux-Git haben
+verschiedene Credential-Stores (Windows Credential Manager via GCM
+auf Windows; libsecret / cache / Plain-File in WSL Ubuntu). Auf der
+WSL-Seite musst du dich also separat einmal authentifizieren. Wer
+sich das ersparen will: in WSL den Windows-GCM als Helper eintragen,
+dann teilen sich beide Seiten den Windows-Store:
+
+```sh
+git config --global credential.helper \
+  "/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"
+```
+
+### Caveats beim Hin-und-her-Wechseln
+
+- Container, die du auf einer Seite mit `monoceros apply` erzeugt
+  hast, sind für die jeweils andere Seite **unsichtbar**: die
+  `devcontainer.local_folder`-Label-Pfade matchen nicht
+  (`C:\Users\…` vs. `/home/…`), also findet `monoceros run` / `shell`
+  auf der anderen Seite nichts. `docker ps -a` zeigt sie natürlich
+  trotzdem an, du musst nur wissen, wo sie hingehören.
+- Wenn du eine Seite endgültig nicht mehr brauchst: dort `monoceros
+remove …` pro Container, dann die globale Config + `~/.monoceros`
+  (bzw. `%USERPROFILE%\.monoceros`) löschen, dann den Installer der
+  anderen Seite nochmal laufen lassen um sicher zu sein.
+
+---
+
 ## Erster `monoceros apply` — die „No manifest found"-Zeile
 
 Beim allerersten `apply` zieht Docker das Multi-Arch-Runtime-Image.
