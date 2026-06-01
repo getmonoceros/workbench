@@ -740,15 +740,27 @@ dist/bin.js` aus dem Checkout reicht für die 1-2 Personen die
    - ~~npm-Publish `@getmonoceros/e2e`~~ — siehe oben.
 
    **Was stattdessen gemacht wird:**
-   - **CI-Smoketest** — GH-Actions-Workflow im **Workbench-Repo**
-     der auf jedem PR + push to main `--all` gegen das aktuell
-     gebaute monoceros laufen lässt. Damit fängt der CI Regressionen
-     bevor sie nach npm rausgehen. Workbench wird per `npm pack` +
-     `npm install -g` aus dem Tarball installiert (exakt der Weg den
-     End-User via `install.sh` auch gehen), GitHub-Credentials via
-     `gh auth login --with-token` mit dem auto-bereitgestellten
-     `GITHUB_TOKEN`. e2e wird per `actions/checkout@v4` aus dem
-     externen Repo geholt.
+   - ✅ **CI-Smoketest** — GH-Actions-Workflow
+     [`e2e-smoke.yml`](../.github/workflows/e2e-smoke.yml) im
+     **Workbench-Repo** der auf jedem PR + push to main `--all`
+     gegen das aktuell gebaute monoceros laufen lässt — sofern die
+     Änderung `packages/cli/**` betrifft (Path-Filter, kein Lauf bei
+     reinen Doc/Backlog/ADR-Edits). `concurrency`-Block canceled
+     in-flight Runs wenn ein neuer Commit auf den gleichen Ref
+     landet, also nur der jeweils letzte Stand läuft komplett durch.
+     Plus `workflow_dispatch` für Ad-hoc-Triggern.
+
+     Aufbau: workbench wird per `npm pack` + `npm install -g` aus
+     dem Tarball installiert (exakt der Weg den End-User via
+     `install.sh` auch gehen — der Shim auf PATH, das bin-Mapping,
+     die globale Module-Resolution werden alle exerziert).
+     GitHub-Credentials per Inline-`credential.helper`-Script aus
+     dem auto-bereitgestellten `GITHUB_TOKEN` (Job-Level-Env, damit
+     spätere git-Subprozesse den Token noch sehen). e2e per
+     `actions/checkout@v4` aus dem externen Repo geholt.
+
+     Live seit 2026-06-01, Laufzeit ~3:30 für `--all` auf
+     ubuntu-latest. Bug-Vorfilter pre-Release. ✓
 
 5. **`docs/commands/`-Lücken füllen** — neue Detail-Seiten für die
    Befehle aus Task 3 (`tunnel`, ggf. `tunnel-stop`). CLAUDE.md-
