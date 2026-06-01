@@ -982,9 +982,80 @@ Stellen.
 - **Optionaler Secret-Manager-Hook** — heute liegen Credentials in
   `monoceros-config.yml` (gitignored). Für Teams später ggf. ein
   Hook auf 1Password CLI, AWS Secrets Manager, etc.
+- **`init`-Umbau auf explizite Kategorie-Flags + flexible Services/Features**
+  — Designgespräch 2026-06-01, ausgelöst von einer realen Test-Solution
+  (logoscraper) die Postgres **und** RustFS als Services braucht. Drei
+  Entscheidungen stehen:
+  1. `init` bekommt explizite Plural-Flags statt des `--with`-Magic-Bags:
+     `--with-languages`, `--with-features`, `--with-services`,
+     `--with-repos`, `--with-apt-packages`. Komma-Liste oder wiederholbar.
+     `--with` fliegt raus (sauberer Schnitt, kein Alias — wir sind bei
+     1.12, jung genug). Jedes Flag spiegelt den passenden `add-*`-Befehl
+     (init = mehrere `add-*` auf einmal).
+  2. Features **und** Services nehmen beliebige, nicht-kuratierte
+     Einträge. Regel: Name im Katalog → kuratiert; sonst → als Image
+     (Service) bzw. OCI-Ref (Feature) interpretiert. Ein `/` im Namen
+     (`rustfs/rustfs:latest`) heißt nie-im-Katalog → immer Image.
+     Sprachen bleiben kuratiert (bounded; JS/TS sind kein eigener
+     Eintrag, beide sind `node`).
+  3. **Service-Config-Modell** — Services werden im Schema generisch
+     wie Features heute; der kuratierte Katalog wird zu Init-Sugar, das
+     einen vollständigen, editierbaren Service-Block emittiert. Ein
+     neues Service-Image braucht dann keinen Workbench-Release mehr.
+     Macht den Punkt „Compose-Service-Katalog erweitern" unten
+     weitgehend gegenstandslos.
+     - **Ansatz A: eigenes kleines Feld-Subset, KEIN Notausgang** (kein
+       Roh-Compose-Merge fürs Erste). Sieht compose-artig aus, ist aber
+       bewusst _kein_ Compose — mehrere Felder haben andere Bedeutung.
+     - Felder im Scope: `image`, `env` (Map, `${VAR}`-Interpolation),
+       `volumes` (mit `data:`-Kurzform → Bind-Mount unter
+       `container/<name>/data/<svc>/` nach ADR 0003, plus host-relative
+       Mounts z.B. für init.sql), `healthcheck` (verschlankt: `test:` +
+       Defaults, nicht volles Compose), `restart` (Default
+       `unless-stopped`, kein prominenter Knopf), evtl.
+       `command`/`args`-Override.
+     - Bewusst **draußen**: `ports` (Traefik `routing.ports` + `tunnel`
+       besitzen die Host-Exposition), `build`, `container_name`.
+     - **Mentales Modell:** die App/webapp ist _kein_ Service — sie ist
+       der Devcontainer-Workspace (das Repo mit `npm run dev`). Beim
+       Portieren einer docker-compose werden nur die _Backing_-Services
+       zu Monoceros-Services; der App-Service fällt weg.
+     - Reihenfolge: Workspace wartet implizit auf die Services
+       (`service_healthy` wenn Healthcheck, sonst `service_started`) —
+       gibt's schon. Explizites Service→Service-`depends_on` ist
+       niedrig-prioritär; der 95%-Fall ist automatisch.
+
+  4. **Secret-Sourcing** — pro Container zwei Dateien nebeneinander in
+     `container-configs/`: `<name>.yml` + `<name>.env`, beide im
+     persönlichen Home. `${VAR}` in der yml löst aus `<name>.env` auf.
+     - **Basis: literale Werte in einer gitignorierten `.env`.**
+       Bedrohungsmodell = „nicht in git committen" (der realistische
+       Fall für eine lokale Werkbank — auf der Platte liegen eh schon
+       OAuth-Tokens, SSH-Keys). Konsistent damit, wie Feature-Tokens
+       heute schon klartext-gitignored in `monoceros-config.yml` liegen.
+     - **Vorgemerkt (späteres opt-in):** ein `cmd:`-Resolver in der
+       `.env` (`PG_PASSWORD=cmd:op read op://…`) — Monoceros führt das
+       Kommando beim Apply auf dem Host aus und nimmt stdout.
+       Universeller Brückenkopf zu jedem Passwort-Manager mit CLI
+       (1Password/KeePassXC/Bitwarden/Vault) ohne Pro-Tool-Code;
+       kollabiert N Secrets auf ein Vault-Entsperren. Caveat: Manager
+       mit interaktivem Prompt (KeePassXC) blockieren nicht-interaktives
+       Apply; Session-/Agent-Manager (op, bw, gpg-agent) lösen still
+       auf. Offen für diesen Pfad: ob aufgelöster Klartext in die
+       generierte compose.yaml gebacken wird oder nur als Prozess-Env
+       durchgereicht.
+     - Verschlüsselt-at-rest (committbare Secrets) weiter aufgeschoben;
+       falls je nötig, **SOPS + age**, nicht Ansible Vault.
+     - **Lifecycle-Folge:** `monoceros remove` muss die `<name>.env`
+       mit ins Backup nehmen (heute: Docker-Objekte + `<name>.yml` +
+       Container-Dir). Sonst ist nach `remove` + `restore` das
+       Secret-Mapping weg. `restore` zieht sie entsprechend wieder
+       zurück. `.gitignore` muss `container-configs/*.env` ausschließen.
+
 - **Compose-Service-Katalog erweitern** — heute: `postgres`, `mysql`,
   `redis`. Denkbar: `mongodb`, `elasticsearch`, `kafka`, je nach
-  Nachfrage.
+  Nachfrage. (Hinfällig, falls der `init`/Service-Umbau oben kommt —
+  dann reicht der Image-Name direkt, ohne Katalog-Eintrag.)
 - **Sprach-Toolchain-Katalog erweitern** — heute via Devcontainer-
   Features genug abgedeckt; nur falls häufig nachgefragte Tools
   außerhalb der offiziellen Sets auftauchen, eigene Wrapper anlegen.
