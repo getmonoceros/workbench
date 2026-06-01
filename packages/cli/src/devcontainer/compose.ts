@@ -162,28 +162,6 @@ export async function cleanupDockerObjects(
   return { exitCode: rmExit, removedIds: ids };
 }
 
-/**
- * Normalize a host filesystem path into the form devcontainer-cli
- * stores in the `devcontainer.local_folder` Docker label.
- *
- * On Windows, @devcontainers/cli lowercases the drive letter (e.g.
- * `C:\Users\...` → `c:\Users\...`) before stamping it onto every
- * container it creates. Docker's `--filter label=…=<value>` does an
- * exact byte-for-byte match, so feeding it our untouched
- * `path.join(USERPROFILE, ...)` (which preserves the uppercase
- * drive) silently misses and leaves the container behind on
- * `monoceros remove`.
- *
- * No-op on macOS / Linux: there is no drive letter to lowercase.
- */
-export function dockerLocalFolderLabel(p: string): string {
-  if (process.platform !== 'win32') return p;
-  return p.replace(
-    /^([A-Z]):/,
-    (_, drive: string) => `${drive.toLowerCase()}:`,
-  );
-}
-
 interface ResolvedCompose {
   composeFile: string;
   projectName: string;

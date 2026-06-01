@@ -31,7 +31,6 @@ import {
 import { loadComponentCatalog } from '../init/components.js';
 import {
   ensureProxy,
-  kickProxyReload,
   maybeStopProxy,
   type DockerExec as ProxyDockerExec,
 } from '../proxy/index.js';
@@ -864,12 +863,6 @@ async function syncPortsToProxy(
         ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
         logger: { info: (m) => logger.info(m), warn: (m) => logger.warn(m) },
       });
-      // Windows-only: Docker Desktop's bind-mount layer drops inotify
-      // events, so Traefik never sees the yml change. No-op on
-      // macOS/Linux and when the proxy isn't running.
-      await kickProxyReload({
-        ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
-      });
       const urls = proxyUrlsFor(input.name, allPorts, hostPort);
       const lines = urls.map((u) => {
         const tag = u.isDefault ? ' (default)' : '';
@@ -878,9 +871,6 @@ async function syncPortsToProxy(
       logger.info(`Traefik routes refreshed:\n${lines.join('\n')}`);
     } else {
       await removeDynamicConfig(input.name, { monocerosHome: home });
-      await kickProxyReload({
-        ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
-      });
       await maybeStopProxy({
         monocerosHome: home,
         ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),

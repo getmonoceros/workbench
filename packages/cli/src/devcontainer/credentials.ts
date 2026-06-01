@@ -165,13 +165,13 @@ const BREW_INSTALL_COMMAND =
 
 function installCommandForOS(opts: {
   brew: string;
-  winget: string;
   /**
    * Linux install command when the provider's docs officially
    * recommend a single uniform path (e.g. GitLab's glab CLI ships
    * Homebrew as the supported Linux install method). When omitted,
    * Linux gets a docs link instead because distro packaging is too
-   * heterogeneous to pick a winner.
+   * heterogeneous to pick a winner. Windows users hit this branch
+   * too — Monoceros on Windows runs inside WSL, so the host IS Linux.
    */
   linuxBrew?: string;
   linuxDocsUrl: string;
@@ -184,15 +184,10 @@ function installCommandForOS(opts: {
       '',
       dim('(Skip the first line if you already have Homebrew.)'),
     ].join('\n');
-  switch (process.platform) {
-    case 'darwin':
-      return withBrewBootstrap(opts.brew);
-    case 'win32':
-      return ['', cyan(opts.winget)].join('\n');
-    default:
-      if (opts.linuxBrew) return withBrewBootstrap(opts.linuxBrew);
-      return `See ${opts.linuxDocsUrl} for package instructions.`;
-  }
+  if (process.platform === 'darwin') return withBrewBootstrap(opts.brew);
+  // Linux + WSL (Windows runs Monoceros inside WSL as of 1.12).
+  if (opts.linuxBrew) return withBrewBootstrap(opts.linuxBrew);
+  return `See ${opts.linuxDocsUrl} for package instructions.`;
 }
 
 /**
@@ -225,14 +220,10 @@ export function providerSetupHint(
     const hostArg = isSaas ? '' : ` --hostname ${host}`;
     // GitHub CLI publishes a Linuxbrew formula alongside the macOS
     // one (https://github.com/cli/cli/blob/trunk/docs/install_linux.md
-    // lists Homebrew under "Linux & WSL"). Use the same brew command
-    // on macOS AND Linux for symmetry with the GitLab hint — keeps
-    // the "all OSes look the same" promise we made when designing
-    // the provider hints. Winget on Windows for users who don't go
-    // through WSL; docs URL only as the absolute last resort.
+    // lists Homebrew under "Linux & WSL"), so the same brew command
+    // works on macOS, Linux and WSL.
     const install = installCommandForOS({
       brew: 'brew install gh',
-      winget: 'winget install --id GitHub.cli',
       linuxBrew: 'brew install gh',
       linuxDocsUrl: 'https://github.com/cli/cli#installation',
     });
@@ -259,12 +250,9 @@ export function providerSetupHint(
     // GitLab's official install docs (https://gitlab.com/gitlab-org/
     // cli/-/blob/main/docs/installation_options.md) state that
     // Homebrew is "the officially supported installation method for
-    // Linux" — so we use the same brew command on macOS AND Linux,
-    // with winget on Windows and a docs link as the absolute last
-    // resort.
+    // Linux" — same brew command on macOS, Linux and WSL.
     const install = installCommandForOS({
       brew: 'brew install glab',
-      winget: 'winget install --id GLab.GLab',
       linuxBrew: 'brew install glab',
       linuxDocsUrl: 'https://gitlab.com/gitlab-org/cli#installation',
     });

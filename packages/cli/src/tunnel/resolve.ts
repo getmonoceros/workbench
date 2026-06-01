@@ -2,10 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { containerConfigPath, containerDir } from '../config/paths.js';
 import { readConfig } from '../config/io.js';
-import {
-  composeProjectName,
-  dockerLocalFolderLabel,
-} from '../devcontainer/compose.js';
+import { composeProjectName } from '../devcontainer/compose.js';
 import { SERVICE_CATALOG, knownServices } from '../create/catalog.js';
 import {
   defaultDockerExec,
@@ -216,10 +213,7 @@ async function lookupContainerNetwork(args: {
     'ps',
     '-q',
     '--filter',
-    // Windows-normalize: devcontainer-cli lowercases the drive letter
-    // when stamping the label, docker filter is byte-exact. No-op
-    // off Windows.
-    `label=devcontainer.local_folder=${dockerLocalFolderLabel(args.containerRoot)}`,
+    `label=devcontainer.local_folder=${args.containerRoot}`,
   ]);
   if (psResult.exitCode !== 0) {
     throw new Error(

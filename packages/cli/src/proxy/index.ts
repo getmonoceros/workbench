@@ -96,40 +96,6 @@ export function proxyDynamicDir(home?: string): string {
 }
 
 /**
- * Force Traefik to re-scan its dynamic config directory by restarting
- * the proxy container.
- *
- * Why: Docker Desktop for Windows surfaces the bind-mounted dynamic
- * dir through a gRPC-FUSE / 9P layer that does not deliver inotify
- * events reliably for files added/removed by host-side writes. The
- * yml lands on disk fine, but Traefik's `--providers.file.watch`
- * never fires, so newly-applied containers 404 at their hostname
- * route until something kicks the proxy. macOS / Linux native bind
- * mounts surface inotify correctly, so this is a no-op there.
- *
- * Also a no-op when the proxy container isn't running — first apply
- * on a fresh machine calls ensureProxy() right after this, which
- * starts the proxy with the freshly-written config already in place.
- *
- * Quiet on success, swallows daemon errors (the caller can't recover
- * from a broken docker mid-flow any better than this can, and the
- * proxy restart is best-effort).
- */
-export async function kickProxyReload(opts: ProxyOptions = {}): Promise<void> {
-  if (process.platform !== 'win32') return;
-  const docker = opts.docker ?? realDocker;
-  const inspect = await docker([
-    'inspect',
-    '--format',
-    '{{.State.Running}}',
-    PROXY_CONTAINER_NAME,
-  ]);
-  if (inspect.exitCode !== 0) return; // proxy not present yet
-  if (inspect.stdout.trim() !== 'true') return; // present but not running
-  await docker(['restart', PROXY_CONTAINER_NAME]);
-}
-
-/**
  * Bring the singleton + network up if they aren't already.
  *
  * Steps (all idempotent):

@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { dockerLocalFolderLabel } from './compose.js';
 
 /**
  * Find the running docker container that hosts a Monoceros
@@ -13,11 +12,6 @@ import { dockerLocalFolderLabel } from './compose.js';
  * `null` when nothing matches. `null` is the normal "container not
  * up yet" signal; callers should treat it as "fall back to yml-only,
  * suggest `monoceros apply`".
- *
- * Drive-letter quirk on Windows: devcontainer-cli lowercases the
- * drive letter when stamping the label (`c:\…` from our
- * `C:\…`-flavored path.join), and docker filters are byte-exact —
- * dockerLocalFolderLabel() normalizes so the match lands.
  */
 
 export interface RunningContainerLookupOptions {
@@ -63,7 +57,7 @@ export async function findRunningContainerByLocalFolder(
     'ps',
     '-q',
     '--filter',
-    `label=devcontainer.local_folder=${dockerLocalFolderLabel(containerPath)}`,
+    `label=devcontainer.local_folder=${containerPath}`,
     '--filter',
     'status=running',
   ]);

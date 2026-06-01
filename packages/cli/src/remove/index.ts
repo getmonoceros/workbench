@@ -11,11 +11,10 @@ import { REGEX } from '../config/schema.js';
 import {
   cleanupDockerObjects,
   composeProjectName,
-  dockerLocalFolderLabel,
   spawnDocker,
   type DockerExec,
 } from '../devcontainer/compose.js';
-import { kickProxyReload, maybeStopProxy } from '../proxy/index.js';
+import { maybeStopProxy } from '../proxy/index.js';
 import { removeDynamicConfig } from '../proxy/dynamic.js';
 
 /**
@@ -118,25 +117,19 @@ export async function runRemove(
   //      devcontainer.local_folder label — the most reliable anchor,
   //      because @devcontainers/cli lets Docker assign random names
   //      like 'kind_cerf' that neither name-prefix filter catches.
-  //      dockerLocalFolderLabel() lowercases the drive letter on
-  //      Windows to match what devcontainer-cli stamps (`c:\…`
-  //      vs our path.join-built `C:\…`); docker label filters are
-  //      byte-exact.
   //   3. container-name prefix as a fallback for half-broken state
   //   4. deterministic `vsc-<name>-` prefix from older
   //      devcontainer-cli versions
   // All four are union'd, deduplicated, and `docker rm -f`-ed
-  // together. Cleanup goes through cleanupDockerObjects() (direct
-  // Node spawn of docker, no shell wrapper) so backslash-bearing
-  // label values survive intact -- the previous `bash -c '…'`
-  // approach silently mangled them under WSL bash on Windows.
+  // together via cleanupDockerObjects() (direct Node spawn of docker,
+  // no shell wrapper).
   const projectName = composeProjectName(containerPath);
   const dockerExec = opts.dockerExec ?? spawnDocker;
   const { exitCode: dockerExitCode } = await cleanupDockerObjects({
     projectName,
     filters: [
       `label=com.docker.compose.project=${projectName}`,
-      `label=devcontainer.local_folder=${dockerLocalFolderLabel(containerPath)}`,
+      `label=devcontainer.local_folder=${containerPath}`,
       `name=^${projectName}-`,
       `name=^vsc-${opts.name}-`,
     ],
@@ -225,11 +218,6 @@ export async function runRemove(
   // with a clean slate. No-op when the file is absent.
   try {
     await removeDynamicConfig(opts.name, { monocerosHome: home });
-    // Kick Traefik to drop the now-stale route. Windows-only,
-    // no-op everywhere else and when the proxy isn't running.
-    await kickProxyReload({
-      ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
-    });
   } catch (err) {
     logger.warn?.(
       `Could not remove Traefik dynamic config for ${opts.name}: ${err instanceof Error ? err.message : String(err)}. Ignored.`,
