@@ -1,0 +1,97 @@
+name: E2E Smoke
+
+# Runs the maintainer-facing e2e suite (getmonoceros/monoceros-e2e)
+# against the CURRENT workbench code on every PR / main push that
+# touches the CLI. Catches regressions before they ever get to
+# release-cli.yml — much cheaper than rolling back an npm publish.
+#
+# Why workbench installs from `npm pack` instead of `node dist/bin.js`
+# directly: the install path is what end users hit (npm shim, bin
+# mapping, global module resolution), and we've burned hours on
+# install-pipeline bugs before — see the 1.11.x WSL bug-hunt and ADR
+# 0011. The pack-and-install round trip exercises all of it.
+
+on:
+  push:
+    branches: [main]
+    paths: ['packages/cli/**']
+  pull_request:
+    paths: ['packages/cli/**']
+
+# Cancel an in-flight run on the same ref when a new commit lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: e2e --all
+    runs-on: ubuntu-latest
+    # `--all` runs seven scenarios end-to-end with real docker
+    # container builds; the first run pulls the runtime image cold
+    # (~1-2 min) plus apt-installs feature layers per scenario. 20
+    # minutes is comfortably above what we've seen on a local Linux
+    # box (~7-8 min) and leaves headroom for slow GH runners.
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout workbench
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workbench dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workbench
+        run: pnpm --filter @getmonoceros/workbench build
+
+      - name: Install monoceros from packed tarball
+        # `npm pack` produces the same tarball release-cli.yml would
+        # publish; installing from it locally mimics the end-user
+        # `install.sh` → `npm install -g @getmonoceros/workbench`
+        # path closely. The shell glob expands to a single match
+        # because npm pack only writes one tarball per invocation.
+        working-directory: packages/cli
+        run: |
+          npm pack
+          npm install -g ./getmonoceros-workbench-*.tgz
+          monoceros --version
+
+      - name: Configure git credential helper via gh + GITHUB_TOKEN
+        # monoceros apply pre-flight calls `git credential fill` for
+        # every HTTPS host in the yml's `repos:` list. Even for public
+        # repos like the e2e-fixture, no helper → "Missing Git
+        # credentials" → apply bails. `gh auth setup-git` wires gh as
+        # the credential helper; the auto-provided GITHUB_TOKEN has
+        # scope for public-repo reads (and our org's private ones if
+        # any of the scenarios ever needed them).
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GH_TOKEN" | gh auth login --with-token
+          gh auth setup-git
+
+      - name: Checkout e2e suite
+        uses: actions/checkout@v4
+        with:
+          repository: getmonoceros/monoceros-e2e
+          path: monoceros-e2e
+
+      - name: Install + build e2e
+        working-directory: monoceros-e2e
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Run e2e --all
+        working-directory: monoceros-e2e
+        # The e2e tool detects GITHUB_ACTIONS=true and emits
+        # ::error::/::notice:: annotations on top of the pretty
+        # output, so failures surface in the PR check UI directly.
+        run: node dist/bin.js run --all
