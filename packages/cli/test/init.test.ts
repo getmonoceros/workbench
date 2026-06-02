@@ -150,6 +150,46 @@ describe('runInit', () => {
     expect(parsed.config.languages).toEqual(['node']);
   });
 
+  it('writes a gitignored <name>.env stub with an info header', async () => {
+    await runInit({
+      name: 'sandbox',
+      languages: ['node'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const envText = await readFile(
+      path.join(monocerosHome, 'container-configs', 'sandbox.env'),
+      'utf8',
+    );
+    expect(envText).toMatch(/Secrets and values for \$\{VAR\}/);
+    expect(envText).toContain('sandbox.yml');
+    // the gitignore guard also covers it
+    const gi = await readFile(
+      path.join(monocerosHome, 'container-configs', '.gitignore'),
+      'utf8',
+    );
+    expect(gi).toContain('*.env');
+  });
+
+  it('never clobbers an existing <name>.env', async () => {
+    const envPath = path.join(
+      monocerosHome,
+      'container-configs',
+      'sandbox.env',
+    );
+    await mkdir(path.dirname(envPath), { recursive: true });
+    await writeFile(envPath, 'PG_PASSWORD=keep-me\n');
+    await runInit({
+      name: 'sandbox',
+      languages: ['node'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    expect(await readFile(envPath, 'utf8')).toBe('PG_PASSWORD=keep-me\n');
+  });
+
   it('documented mode: no --with writes a default with every component commented out', async () => {
     const result = await runInit({
       name: 'sandbox',

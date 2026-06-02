@@ -3,6 +3,7 @@ import { consola } from 'consola';
 import {
   containerConfigPath,
   containerConfigsDir,
+  containerEnvPath,
   monocerosHome as defaultMonocerosHome,
   workbenchRoot as defaultWorkbenchRoot,
   workbenchCheckoutRoot,
@@ -279,6 +280,17 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   await ensureEnvGitignored(containerConfigsDir(home));
   await fs.writeFile(dest, text, 'utf8');
 
+  // Drop a gitignored `<name>.env` stub alongside the yml so the secret
+  // mechanism is discoverable: `${VAR}` references in the yml resolve
+  // from here at apply time. No-clobber — never overwrite an existing
+  // env file (e.g. one carried over by `monoceros restore`).
+  const envPath = containerEnvPath(opts.name, home);
+  let wroteEnv = false;
+  if (!existsSync(envPath)) {
+    await fs.writeFile(envPath, buildEnvStub(opts.name), 'utf8');
+    wroteEnv = true;
+  }
+
   // Persist the prompted identity AFTER the yml is on disk: scope
   // `g` writes the global monoceros-config; `c` mutates the freshly-
   // written container yml in place via the AST setter; `b` does both.
@@ -348,8 +360,32 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
       `Edit the file if you need to tweak, then \`monoceros apply ${opts.name}\`.`,
     );
   }
+  if (wroteEnv) {
+    logger.info(
+      `Also wrote ${prettyPath(envPath)} (gitignored) — put values for any ` +
+        `\${VAR} you reference in the yml there.`,
+    );
+  }
 
   return { configPath: dest, documented };
+}
+
+/**
+ * Short, builder-facing header for a fresh `<name>.env`. Explains what
+ * the file is for; no real keys (a freshly-generated yml has no active
+ * `${VAR}` yet — curated services use literal dev-defaults).
+ */
+function buildEnvStub(name: string): string {
+  return [
+    `# Secrets and values for \${VAR} references in ${name}.yml.`,
+    `# Gitignored — keep credentials here, never in the yml itself.`,
+    `#`,
+    `# One KEY=value per line, e.g.:`,
+    `#   PG_PASSWORD=change-me`,
+    `# then reference it in the yml:  POSTGRES_PASSWORD: \${PG_PASSWORD}`,
+    `# Values are substituted into the services at \`monoceros apply ${name}\`.`,
+    ``,
+  ].join('\n');
 }
 
 // ───── Composed-mode input resolution ─────────────────────────────
