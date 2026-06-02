@@ -984,8 +984,12 @@ Stellen.
   Hook auf 1Password CLI, AWS Secrets Manager, etc.
 - **`init`-Umbau auf explizite Kategorie-Flags + flexible Services/Features**
   — Designgespräch 2026-06-01, ausgelöst von einer realen Test-Solution
-  (logoscraper) die Postgres **und** RustFS als Services braucht. Drei
-  Entscheidungen stehen:
+  (logoscraper) die Postgres **und** RustFS als Services braucht.
+  **✅ Implementiert 2026-06-02** (Service-Modell + Host-Clone in
+  `761494b`/`44e9656`; init-Flag-Umbau im Folge-Commit): `--with` raus,
+  `--with-languages`/`--with-features`/`--with-services`/`--with-apt-packages`/`--with-repos`/`--with-ports`,
+  Features+Services nehmen beliebige Refs/Images, logoscraper end-to-end
+  validiert. Die ursprünglichen Entscheidungen zur Nachvollziehbarkeit:
   1. `init` bekommt explizite Plural-Flags statt des `--with`-Magic-Bags:
      `--with-languages`, `--with-features`, `--with-services`,
      `--with-repos`, `--with-apt-packages`. Komma-Liste oder wiederholbar.

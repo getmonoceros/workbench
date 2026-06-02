@@ -221,7 +221,7 @@ Drei Familien:
 
 ```sh
 # Konfig + Lifecycle
-monoceros init <name> [--with=…]           # yml komponieren (oder dokumentierte Vorlage)
+monoceros init <name> [--with-languages=… --with-features=… --with-services=… …]  # yml komponieren (oder dokumentierte Vorlage)
 monoceros list-components                  # Komponenten-Katalog anzeigen
 monoceros apply <name>                     # materialisieren + Container hochfahren
 monoceros start|stop|status <name>         # Compose-Lifecycle
@@ -250,7 +250,7 @@ monoceros-workbench/
 ├── images/
 │   └── runtime/            # Dockerfile fürs Werkbank-Image
 ├── templates/
-│   └── components/         # Komponenten-Katalog für `monoceros init --with=`
+│   └── components/         # Komponenten-Katalog für `monoceros init --with-*`
 └── docs/
 ```
 

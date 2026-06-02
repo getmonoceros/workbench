@@ -256,7 +256,7 @@ function isResolvedComponent(
   return 'component' in x;
 }
 
-function mergeFeatureOptions(
+export function mergeFeatureOptions(
   a: Record<string, string | number | boolean>,
   b: Record<string, string | number | boolean>,
 ): Record<string, string | number | boolean> {

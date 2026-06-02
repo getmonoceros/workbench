@@ -1,12 +1,11 @@
-import type { Component, ResolvedComponent } from './components.js';
-import { mergeComponents } from './components.js';
+import type { Component } from './components.js';
 import type { FeatureManifestSummary } from './manifest.js';
 import {
   buildFeatureHeaderLines,
   wrapToComment as sharedWrapToComment,
 } from './feature-doc.js';
 import { expandCuratedService } from '../create/catalog.js';
-import { renderServiceObjectBody } from './service-doc.js';
+import { renderCustomService, renderServiceObjectBody } from './service-doc.js';
 
 /**
  * Renderer for the container yml that `monoceros init` produces.
@@ -47,14 +46,31 @@ const COMMENT_WIDTH = 76;
 /**
  * Render the active-mode yml for the given components.
  */
+/** A service the builder asked for via `--with-services`. */
+export interface InitService {
+  /** `curated` → expand via SERVICE_CATALOG; `custom` → name + image + scaffold. */
+  kind: 'curated' | 'custom';
+  /** Compose service name (curated id, or derived from the image). */
+  name: string;
+  /** Image ref — only for `custom` services. */
+  image?: string;
+}
+
+/** Resolved, categorized inputs for the composed-mode generator. */
+export interface ComposedInit {
+  languages: readonly string[];
+  aptPackages: readonly string[];
+  services: readonly InitService[];
+  features: readonly RenderableFeature[];
+}
+
 export function generateComposedYml(
   name: string,
-  components: ResolvedComponent[],
+  composed: ComposedInit,
   lookupManifest: ManifestLookup,
   repoUrls: readonly string[] = [],
   ports: readonly number[] = [],
 ): string {
-  const merged = mergeComponents(components);
   const lines: string[] = [];
   pushHeader(lines, SCHEMA_HEADER_ACTIVE, name);
   lines.push('');
@@ -62,26 +78,28 @@ export function generateComposedYml(
   lines.push(`name: ${name}`);
   lines.push('');
 
-  if (merged.languages.length > 0) {
+  if (composed.languages.length > 0) {
     pushSectionHeader(lines, LANGUAGES_HEADER, /* commented */ false);
     lines.push('languages:');
-    for (const lang of merged.languages) lines.push(`  - ${lang}`);
+    for (const lang of composed.languages) lines.push(`  - ${lang}`);
     lines.push('');
   }
-  if (merged.services.length > 0) {
+  if (composed.aptPackages.length > 0) {
+    pushSectionHeader(lines, APT_PACKAGES_HEADER, /* commented */ false);
+    lines.push('aptPackages:');
+    for (const pkg of composed.aptPackages) lines.push(`  - ${pkg}`);
+    lines.push('');
+  }
+  if (composed.services.length > 0) {
     pushSectionHeader(lines, SERVICES_HEADER, /* commented */ false);
     lines.push('services:');
-    for (const svc of merged.services) {
-      const body = renderServiceObjectBody(expandCuratedService(svc));
-      lines.push(`  - ${body[0]}`);
-      for (const line of body.slice(1)) lines.push(`    ${line}`);
-    }
+    for (const svc of composed.services) pushServiceEntry(lines, svc);
     lines.push('');
   }
-  if (merged.features.length > 0) {
+  if (composed.features.length > 0) {
     pushSectionHeader(lines, FEATURES_HEADER_ACTIVE, /* commented */ false);
     lines.push('features:');
-    for (const f of merged.features) {
+    for (const f of composed.features) {
       lines.push('');
       renderFeatureBlock(
         lines,
@@ -250,6 +268,28 @@ const LANGUAGES_HEADER =
 
 const SERVICES_HEADER =
   'Sibling containers that run alongside the dev-container (databases, caches, message queues, …). Each service is reachable from inside the dev-container by its name as hostname (e.g. `postgres://postgres:5432`). Activating any service switches the container to docker-compose mode automatically.';
+
+const APT_PACKAGES_HEADER =
+  'Debian/Ubuntu apt packages installed in the dev-container at build time. No curated list — any apt package name works; an invalid name surfaces as an apt error during build.';
+
+// Render one composed-mode service entry as a `services:` sequence item.
+// Curated services expand to the full catalog block; custom images get
+// name + image active plus the commented field scaffold.
+function pushServiceEntry(out: string[], svc: InitService): void {
+  if (svc.kind === 'custom') {
+    const { bodyLines, comment } = renderCustomService(
+      svc.name,
+      svc.image ?? '',
+    );
+    out.push(`  - ${bodyLines[0]}`);
+    for (const line of bodyLines.slice(1)) out.push(`    ${line}`);
+    for (const cl of comment.split('\n')) out.push(`    #${cl}`);
+    return;
+  }
+  const body = renderServiceObjectBody(expandCuratedService(svc.name));
+  out.push(`  - ${body[0]}`);
+  for (const line of body.slice(1)) out.push(`    ${line}`);
+}
 
 const FEATURES_HEADER_ACTIVE =
   'A Monoceros dev-container is shaped by features — pluggable units that drop tooling (AI assistants, language CLIs, cloud SDKs, …) into the container and bring their own options. The features active for this container are listed below; adjust their options as needed. Shared credentials used across containers belong in monoceros-config.yml under `defaults.features.<ref>` rather than here. Full catalog: `monoceros list-components`.';

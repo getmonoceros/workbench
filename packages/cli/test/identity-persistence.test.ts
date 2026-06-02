@@ -470,7 +470,7 @@ describe('init persists prompted identity to monoceros-config when --with-repo',
     const { runInit } = await import('../src/init/index.js');
     await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       withRepo: ['https://github.com/foo/bar.git'],
       workbenchRoot: workbench,
       monocerosHome: home,
@@ -497,7 +497,7 @@ describe('init persists prompted identity to monoceros-config when --with-repo',
     const { runInit } = await import('../src/init/index.js');
     await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       withRepo: ['https://github.com/foo/bar.git'],
       workbenchRoot: workbench,
       monocerosHome: home,
@@ -526,7 +526,7 @@ describe('init persists prompted identity to monoceros-config when --with-repo',
     const { runInit } = await import('../src/init/index.js');
     await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       withRepo: ['https://github.com/foo/bar.git'],
       workbenchRoot: workbench,
       monocerosHome: home,
@@ -552,7 +552,7 @@ describe('init persists prompted identity to monoceros-config when --with-repo',
     let promptCalled = 0;
     await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       workbenchRoot: workbench,
       monocerosHome: home,
       identitySpawn: async () => ({ value: '', exitCode: 1 }),

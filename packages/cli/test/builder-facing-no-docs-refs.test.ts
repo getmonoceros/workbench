@@ -85,7 +85,7 @@ describe('no internal docs/ADR refs in builder-facing output', () => {
   it('init composed-mode yml with --with-ports and --with-repo has no internal doc refs', async () => {
     const result = await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       withRepo: ['https://github.com/foo/bar.git'],
       withPorts: [3000, 5173],
       workbenchRoot: workbench,

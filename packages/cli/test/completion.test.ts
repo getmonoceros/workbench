@@ -196,7 +196,7 @@ describe('resolveCompletions', () => {
     expect(r).toEqual([]);
   });
 
-  it('init --w suggests value-flag candidates with trailing `=`', async () => {
+  it('init --w suggests the per-category value-flags with trailing `=`', async () => {
     const r = await resolveCompletions(
       'monoceros init demo --w',
       'monoceros init demo --w'.length,
@@ -204,38 +204,59 @@ describe('resolveCompletions', () => {
     // Trailing `=` is part of the candidate so the shell wrappers can
     // suppress the auto-added trailing space — without that the
     // builder ends up with `--with-ports =3000` after typing `=3000`.
-    expect(r).toContain('--with=');
-    expect(r).toContain('--with-repo=');
+    expect(r).toContain('--with-languages=');
+    expect(r).toContain('--with-features=');
+    expect(r).toContain('--with-services=');
+    expect(r).toContain('--with-apt-packages=');
+    expect(r).toContain('--with-repos=');
     expect(r).toContain('--with-ports=');
+    // the old magic flag is gone
+    expect(r).not.toContain('--with=');
   });
 
-  it('init --with= suggests catalog component short names', async () => {
+  it('init --with-features= suggests catalog feature short names', async () => {
     const r = await resolveCompletions(
-      'monoceros init demo --with=',
-      'monoceros init demo --with='.length,
+      'monoceros init demo --with-features=',
+      'monoceros init demo --with-features='.length,
     );
-    expect(r).toContain('--with=node');
-    expect(r).toContain('--with=claude');
-    expect(r).toContain('--with=atlassian/twg');
+    expect(r).toContain('--with-features=claude');
+    expect(r).toContain('--with-features=atlassian/twg');
+    // languages are not features
+    expect(r).not.toContain('--with-features=node');
   });
 
-  it('init --with=cla filters catalog values by prefix', async () => {
+  it('init --with-languages= suggests language runtimes', async () => {
     const r = await resolveCompletions(
-      'monoceros init demo --with=cla',
-      'monoceros init demo --with=cla'.length,
+      'monoceros init demo --with-languages=',
+      'monoceros init demo --with-languages='.length,
     );
-    expect(r).toContain('--with=claude');
-    expect(r).not.toContain('--with=node');
+    expect(r).toContain('--with-languages=node');
+    expect(r).toContain('--with-languages=rust');
   });
 
-  it('init --with=node, suggests next values after the comma', async () => {
+  it('init --with-services= suggests curated service names', async () => {
     const r = await resolveCompletions(
-      'monoceros init demo --with=node,',
-      'monoceros init demo --with=node,'.length,
+      'monoceros init demo --with-services=',
+      'monoceros init demo --with-services='.length,
     );
-    // Comma-separated lists: the engine returns continuations.
-    expect(r).toContain('--with=node,claude');
-    expect(r).toContain('--with=node,postgres');
+    expect(r).toContain('--with-services=postgres');
+  });
+
+  it('init --with-features=cla filters by prefix', async () => {
+    const r = await resolveCompletions(
+      'monoceros init demo --with-features=cla',
+      'monoceros init demo --with-features=cla'.length,
+    );
+    expect(r).toContain('--with-features=claude');
+    expect(r).not.toContain('--with-features=atlassian/twg');
+  });
+
+  it('init --with-languages=node, suggests next values after the comma', async () => {
+    const r = await resolveCompletions(
+      'monoceros init demo --with-languages=node,',
+      'monoceros init demo --with-languages=node,'.length,
+    );
+    expect(r).toContain('--with-languages=node,rust');
   });
 
   it('add-feature <name> <fragment> suggests feature short names', async () => {
@@ -309,14 +330,21 @@ describe('resolveCompletions', () => {
     );
     expect(r1).toEqual([]);
     // `monoceros init hello <TAB>` is past the fresh-name positional
-    // → flags surface so Tab discovers `--with` / `--with-repo` /
-    // `--with-ports` without the builder having to know they exist.
+    // → the per-category flags surface so Tab discovers them without
+    // the builder having to know they exist.
     const r2 = await resolveCompletions(
       'monoceros init hello ',
       'monoceros init hello '.length,
     );
     expect(r2).toEqual(
-      expect.arrayContaining(['--with=', '--with-repo=', '--with-ports=']),
+      expect.arrayContaining([
+        '--with-languages=',
+        '--with-features=',
+        '--with-services=',
+        '--with-apt-packages=',
+        '--with-repos=',
+        '--with-ports=',
+      ]),
     );
   });
 

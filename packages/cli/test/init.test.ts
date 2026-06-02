@@ -106,10 +106,12 @@ describe('runInit', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('composed mode: --with=node,postgres,claude writes an active yml that validates', async () => {
+  it('composed mode: --with-languages/services/features writes an active yml that validates', async () => {
     const result = await runInit({
       name: 'sandbox',
-      with: ['node', 'postgres', 'claude'],
+      languages: ['node'],
+      services: ['postgres'],
+      features: ['claude'],
       workbenchRoot: root,
       monocerosHome,
       logger: silentLogger,
@@ -189,7 +191,7 @@ describe('runInit', () => {
   it('--with-repo: clones into composed yml with URL-derived path', async () => {
     const result = await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       withRepo: ['https://github.com/foo/bar.git'],
       workbenchRoot: root,
       monocerosHome,
@@ -220,7 +222,7 @@ describe('runInit', () => {
   it('--with-repo: multiple URLs all land in repos, in order', async () => {
     const result = await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       withRepo: [
         'https://github.com/foo/api.git',
         'https://github.com/foo/ui.git',
@@ -240,7 +242,7 @@ describe('runInit', () => {
   it('--with-repo: same URL passed twice → single entry (idempotent)', async () => {
     const result = await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       withRepo: [
         'https://github.com/foo/bar.git',
         'https://github.com/foo/bar.git',
@@ -273,7 +275,7 @@ describe('runInit', () => {
   it('--with-ports: writes an active routing block, first entry default', async () => {
     const result = await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       withPorts: [3000, 5173, 6006],
       workbenchRoot: root,
       monocerosHome,
@@ -315,7 +317,7 @@ describe('runInit', () => {
   it('--with-ports: dedupes repeated values, preserving order', async () => {
     const result = await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       withPorts: [3000, 5173, 3000, 6006],
       workbenchRoot: root,
       monocerosHome,
@@ -329,7 +331,7 @@ describe('runInit', () => {
     await expect(
       runInit({
         name: 'sandbox',
-        with: ['node'],
+        languages: ['node'],
         withPorts: [70000],
         workbenchRoot: root,
         monocerosHome,
@@ -354,22 +356,81 @@ describe('runInit', () => {
     ).rejects.toThrow(/git\.firma\.de[\s\S]*add-repo[\s\S]*--provider/);
   });
 
-  it("errors when --with names a component that's not in the catalog, listing alternatives", async () => {
+  it('errors on an unknown language, listing the known runtimes', async () => {
     await expect(
       runInit({
         name: 'sandbox',
-        with: ['node', 'rust'],
+        languages: ['node', 'cobol'],
         workbenchRoot: root,
         monocerosHome,
         logger: silentLogger,
       }),
-    ).rejects.toThrow(/Unknown component: rust[\s\S]*claude.*node.*postgres/);
+    ).rejects.toThrow(/Unknown language.*cobol[\s\S]*Known:.*node/);
+  });
+
+  it('errors on an unknown feature short name, pointing at catalog + OCI ref', async () => {
+    await expect(
+      runInit({
+        name: 'sandbox',
+        features: ['nope'],
+        workbenchRoot: root,
+        monocerosHome,
+        logger: silentLogger,
+      }),
+    ).rejects.toThrow(/Unknown feature.*nope[\s\S]*OCI ref/);
+  });
+
+  it('accepts a full OCI ref as a feature (not just catalog short names)', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      features: ['ghcr.io/devcontainers/features/go:1'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    expect(text).toContain('  - ref: ghcr.io/devcontainers/features/go:1');
+  });
+
+  it('expands a curated service and scaffolds a custom image in composed mode', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      services: ['postgres', 'rustfs/rustfs:latest'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    // curated → full block
+    expect(text).toContain('  - name: postgres');
+    expect(text).toContain('    image: postgres:18');
+    // custom image → name + image active + commented scaffold
+    expect(text).toContain('  - name: rustfs');
+    expect(text).toContain('    image: rustfs/rustfs:latest');
+    expect(text).toMatch(/^\s+#\s*port:/m);
+  });
+
+  it('writes an active aptPackages block from --with-apt-packages', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      aptPackages: ['openssl', 'make'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    expect(result.documented).toBe(false);
+    const text = await readFile(result.configPath, 'utf8');
+    expect(text).toMatch(/^aptPackages:/m);
+    expect(text).toContain('  - openssl');
+    expect(text).toContain('  - make');
+    const parsed = parseConfig(text);
+    expect(parsed.config.aptPackages).toEqual(['openssl', 'make']);
   });
 
   it('errors when the target config already exists', async () => {
     await runInit({
       name: 'sandbox',
-      with: ['node'],
+      languages: ['node'],
       workbenchRoot: root,
       monocerosHome,
       logger: silentLogger,
@@ -377,7 +438,7 @@ describe('runInit', () => {
     await expect(
       runInit({
         name: 'sandbox',
-        with: ['node'],
+        languages: ['node'],
         workbenchRoot: root,
         monocerosHome,
         logger: silentLogger,
@@ -389,7 +450,7 @@ describe('runInit', () => {
     await expect(
       runInit({
         name: 'has space',
-        with: ['node'],
+        languages: ['node'],
         workbenchRoot: root,
         monocerosHome,
         logger: silentLogger,
@@ -405,7 +466,7 @@ describe('runInit', () => {
       await expect(
         runInit({
           name: 'sandbox',
-          with: ['node'],
+          languages: ['node'],
           workbenchRoot: emptyRoot,
           monocerosHome: path.join(emptyRoot, '.local'),
           logger: silentLogger,

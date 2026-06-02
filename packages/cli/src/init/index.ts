@@ -23,9 +23,21 @@ import {
   type IdentitySpawn,
 } from '../devcontainer/identity.js';
 import { setContainerGitUserInDoc } from '../modify/yml.js';
-import { loadComponentCatalog, resolveComponents } from './components.js';
-import { generateComposedYml, generateDocumentedYml } from './generator.js';
+import { loadComponentCatalog, mergeFeatureOptions } from './components.js';
+import type { Component } from './components.js';
+import {
+  generateComposedYml,
+  generateDocumentedYml,
+  type ComposedInit,
+  type InitService,
+} from './generator.js';
 import { loadFeatureManifestSummary } from './manifest.js';
+import {
+  deriveServiceName,
+  isCuratedService,
+  knownLanguages,
+  parseLanguageSpec,
+} from '../create/catalog.js';
 
 /**
  * `monoceros init <name> [--with=<components>]` — produce a fresh
@@ -58,11 +70,23 @@ import { loadFeatureManifestSummary } from './manifest.js';
 export interface RunInitOptions {
   name: string;
   /**
-   * Component names to compose. When empty/undefined → documented
-   * mode (every component commented out). When set → composed mode
-   * with exactly these components active.
+   * Explicit per-category inputs (from `--with-languages`,
+   * `--with-features`, `--with-services`, `--with-apt-packages`).
+   * When ALL of these are empty/undefined → documented mode (every
+   * catalog component commented out). When any is set → composed mode.
+   *
+   *   - `languages`: curated runtime names, optional `:version`
+   *     (`java:17`). Validated against the language catalog.
+   *   - `features`: curated short names (`claude`, `atlassian/twg`) OR
+   *     full OCI refs (`ghcr.io/foo/bar:1`).
+   *   - `services`: curated names (`postgres`) → expanded block, OR any
+   *     image (`rustfs/rustfs:latest`) → name+image + commented scaffold.
+   *   - `aptPackages`: arbitrary apt package names (no catalog).
    */
-  with?: string[];
+  languages?: string[];
+  features?: string[];
+  services?: string[];
+  aptPackages?: string[];
   /**
    * Git URLs to clone into `projects/` on the first apply. Each URL
    * lands at `projects/<URL-derived-leaf>/` (e.g.
@@ -234,12 +258,21 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   // mode, active entries in composed mode), keeping the "all
   // available options visible" rule consistent across sections.
   let text: string;
-  const requested = opts.with ?? [];
-  if (requested.length === 0) {
+  const composed = resolveComposedInit(catalog, {
+    languages: opts.languages ?? [],
+    features: opts.features ?? [],
+    services: opts.services ?? [],
+    aptPackages: opts.aptPackages ?? [],
+  });
+  const anyComposed =
+    composed.languages.length > 0 ||
+    composed.features.length > 0 ||
+    composed.services.length > 0 ||
+    composed.aptPackages.length > 0;
+  if (!anyComposed) {
     text = generateDocumentedYml(opts.name, catalog, lookup, repos, ports);
   } else {
-    const components = resolveComponents(catalog, requested);
-    text = generateComposedYml(opts.name, components, lookup, repos, ports);
+    text = generateComposedYml(opts.name, composed, lookup, repos, ports);
   }
 
   await fs.mkdir(containerConfigsDir(home), { recursive: true });
@@ -297,20 +330,170 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     }
   }
 
-  const documented = requested.length === 0;
+  const documented = !anyComposed;
   const displayPath = prettyPath(dest);
   if (documented) {
     logger.success(
       `Wrote documented default to ${displayPath}. Un-comment what you need, then \`monoceros apply ${opts.name}\`.`,
     );
   } else {
-    logger.success(
-      `Composed ${requested.length} component(s) into ${displayPath}: ${requested.join(', ')}`,
-    );
+    const summary = [
+      ...composed.languages,
+      ...composed.aptPackages,
+      ...composed.services.map((s) => s.name),
+      ...composed.features.map((f) => f.ref),
+    ].join(', ');
+    logger.success(`Composed into ${displayPath}: ${summary}`);
     logger.info(
       `Edit the file if you need to tweak, then \`monoceros apply ${opts.name}\`.`,
     );
   }
 
   return { configPath: dest, documented };
+}
+
+// ───── Composed-mode input resolution ─────────────────────────────
+
+/**
+ * Resolve the raw `--with-*` lists into the categorized, validated
+ * shape the composed generator consumes. Curated vs. arbitrary handling
+ * lives here:
+ *   - languages → validated against the language catalog (`:version` ok)
+ *   - features  → catalog short name OR full OCI ref
+ *   - services  → curated name (expanded) OR any image (scaffolded)
+ *   - aptPackages → arbitrary names (shape-checked only)
+ */
+function resolveComposedInit(
+  catalog: Map<string, Component>,
+  raw: {
+    languages: string[];
+    features: string[];
+    services: string[];
+    aptPackages: string[];
+  },
+): ComposedInit {
+  return {
+    languages: resolveInitLanguages(raw.languages),
+    aptPackages: resolveInitAptPackages(raw.aptPackages),
+    services: resolveInitServices(raw.services),
+    features: resolveInitFeatures(catalog, raw.features),
+  };
+}
+
+function resolveInitLanguages(entries: string[]): string[] {
+  const known = new Set(knownLanguages());
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const unknown: string[] = [];
+  for (const raw of entries) {
+    const e = raw.trim();
+    if (!e || seen.has(e)) continue;
+    const spec = parseLanguageSpec(e);
+    if (!spec || !known.has(spec.name)) {
+      unknown.push(e);
+      continue;
+    }
+    seen.add(e);
+    out.push(e);
+  }
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown language${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}. ` +
+        `Known: ${knownLanguages().join(', ')}.`,
+    );
+  }
+  return out;
+}
+
+function resolveInitAptPackages(entries: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const bad: string[] = [];
+  for (const raw of entries) {
+    const e = raw.trim();
+    if (!e || seen.has(e)) continue;
+    if (!REGEX.aptPackage.test(e)) {
+      bad.push(e);
+      continue;
+    }
+    seen.add(e);
+    out.push(e);
+  }
+  if (bad.length > 0) {
+    throw new Error(
+      `Invalid apt package name${bad.length > 1 ? 's' : ''}: ${bad.join(', ')}. ` +
+        `Expected lowercase alphanumeric plus '.+-'.`,
+    );
+  }
+  return out;
+}
+
+function resolveInitServices(entries: string[]): InitService[] {
+  const out: InitService[] = [];
+  const byName = new Map<string, InitService>();
+  for (const raw of entries) {
+    const e = raw.trim();
+    if (!e) continue;
+    const svc: InitService = isCuratedService(e)
+      ? { kind: 'curated', name: e }
+      : { kind: 'custom', name: deriveServiceName(e), image: e };
+    const existing = byName.get(svc.name);
+    if (existing) {
+      // Same entry twice → no-op; a genuine name clash → error.
+      if (existing.kind === svc.kind && existing.image === svc.image) continue;
+      throw new Error(
+        `Two --with-services entries resolve to the service name '${svc.name}'. ` +
+          `Add one after init with \`monoceros add-service ${'<name>'} <image> --as=<other>\`.`,
+      );
+    }
+    byName.set(svc.name, svc);
+    out.push(svc);
+  }
+  return out;
+}
+
+function resolveInitFeatures(
+  catalog: Map<string, Component>,
+  entries: string[],
+): Array<{ ref: string; options: Record<string, string | number | boolean> }> {
+  const byRef = new Map<
+    string,
+    { ref: string; options: Record<string, string | number | boolean> }
+  >();
+  const unknown: string[] = [];
+  for (const raw of entries) {
+    const e = raw.trim();
+    if (!e) continue;
+    if (REGEX.featureRef.test(e)) {
+      if (!byRef.has(e)) byRef.set(e, { ref: e, options: {} });
+      continue;
+    }
+    const c = catalog.get(e);
+    if (!c || c.file.category !== 'feature') {
+      unknown.push(e);
+      continue;
+    }
+    for (const f of c.file.contributes.features ?? []) {
+      const existing = byRef.get(f.ref);
+      if (!existing) {
+        byRef.set(f.ref, { ref: f.ref, options: { ...(f.options ?? {}) } });
+      } else {
+        existing.options = mergeFeatureOptions(
+          existing.options,
+          f.options ?? {},
+        );
+      }
+    }
+  }
+  if (unknown.length > 0) {
+    const featureNames = [...catalog.values()]
+      .filter((c) => c.file.category === 'feature')
+      .map((c) => c.name)
+      .sort();
+    throw new Error(
+      `Unknown feature${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}.\n` +
+        `Use a catalog short name (${featureNames.join(', ')}) or a full OCI ref (ghcr.io/…/<name>:<tag>).`,
+    );
+  }
+  return [...byRef.values()];
 }

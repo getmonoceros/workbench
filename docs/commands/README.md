@@ -44,7 +44,8 @@ $MONOCEROS_HOME/
 ## Typischer Lebenszyklus
 
 ```sh
-monoceros init <name> --with=node,postgres,github,claude  # Konfig komponieren
+monoceros init <name> --with-languages=node --with-services=postgres \
+  --with-features=github,claude                           # Konfig komponieren
 vim $MONOCEROS_HOME/container-configs/<name>.yml          # anpassen (optional)
 monoceros apply <name>                                    # Dev-Container materialisieren + hochfahren
 monoceros shell <name>                                    # darin arbeiten
@@ -54,18 +55,18 @@ monoceros apply <name>                                    # neu bauen, picks up 
 
 ## Solution anlegen + Lifecycle
 
-| Befehl                                  | Zweck                                                  | Doku                                       |
-| --------------------------------------- | ------------------------------------------------------ | ------------------------------------------ |
-| `monoceros init <name> [--with=]`       | Konfig aus Komponenten komponieren (oder dokumentierte | [init.md](./init.md)                       |
-|                                         | Vorlage erzeugen, wenn --with weggelassen)             |                                            |
-| `monoceros list-components`             | Komponenten-Katalog anzeigen                           | [list-components.md](./list-components.md) |
-| `monoceros apply <name>`                | Konfig materialisieren + Container hochfahren          | [apply.md](./apply.md)                     |
-| `monoceros start <name>`                | Devcontainer hochfahren (`devcontainer up` + Services) | [start.md](./start.md)                     |
-| `monoceros stop <name>`                 | Compose-Services stoppen, Daten bleiben                | [stop.md](./stop.md)                       |
-| `monoceros status <name>`               | Compose-Status anzeigen                                | [status.md](./status.md)                   |
-| `monoceros logs <name> [...]`           | Compose-Logs verfolgen                                 | [logs.md](./logs.md)                       |
-| `monoceros remove <name> [--no-backup]` | Container restlos wegräumen (Backup by default)        | [remove.md](./remove.md)                   |
-| `monoceros restore <backup-path>`       | Container aus einem remove-Backup wiederherstellen     | [restore.md](./restore.md)                 |
+| Befehl                                  | Zweck                                                   | Doku                                       |
+| --------------------------------------- | ------------------------------------------------------- | ------------------------------------------ |
+| `monoceros init <name> [--with-*=…]`    | Konfig aus Kategorie-Flags komponieren (oder            | [init.md](./init.md)                       |
+|                                         | dokumentierte Vorlage, wenn alle --with-\* weggelassen) |                                            |
+| `monoceros list-components`             | Komponenten-Katalog anzeigen                            | [list-components.md](./list-components.md) |
+| `monoceros apply <name>`                | Konfig materialisieren + Container hochfahren           | [apply.md](./apply.md)                     |
+| `monoceros start <name>`                | Devcontainer hochfahren (`devcontainer up` + Services)  | [start.md](./start.md)                     |
+| `monoceros stop <name>`                 | Compose-Services stoppen, Daten bleiben                 | [stop.md](./stop.md)                       |
+| `monoceros status <name>`               | Compose-Status anzeigen                                 | [status.md](./status.md)                   |
+| `monoceros logs <name> [...]`           | Compose-Logs verfolgen                                  | [logs.md](./logs.md)                       |
+| `monoceros remove <name> [--no-backup]` | Container restlos wegräumen (Backup by default)         | [remove.md](./remove.md)                   |
+| `monoceros restore <backup-path>`       | Container aus einem remove-Backup wiederherstellen      | [restore.md](./restore.md)                 |
 
 ## Im Container arbeiten
 

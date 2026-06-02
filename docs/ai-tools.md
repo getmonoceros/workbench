@@ -126,8 +126,8 @@ Start auf, mit den Bind-Mounts unter `/home/node/` schon aktiv.
 
 ### 4. Komponenten-Eintrag
 
-Optional, aber empfohlen — damit `monoceros init … --with=foo`
-funktioniert:
+Optional, aber empfohlen — damit `monoceros init … --with-features=foo`
+funktioniert (und der Kurzname in `list-components` auftaucht):
 
 ```
 templates/components/foo.yml

@@ -344,11 +344,6 @@ async function listContainerNames(ctx: Ctx): Promise<string[]> {
     .sort();
 }
 
-async function listAllCatalogComponents(): Promise<string[]> {
-  const catalog = await loadComponentCatalog();
-  return [...catalog.keys()].sort();
-}
-
 async function listFeatureComponents(): Promise<string[]> {
   const catalog = await loadComponentCatalog();
   return [...catalog.values()]
@@ -512,8 +507,14 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     // flag suggestions.
     positionalCount: 1,
     flags: {
-      '--with': { type: 'value', values: () => listAllCatalogComponents() },
-      '--with-repo': { type: 'value' },
+      '--with-languages': { type: 'value', values: () => listLanguageNames() },
+      '--with-features': {
+        type: 'value',
+        values: () => listFeatureComponents(),
+      },
+      '--with-services': { type: 'value', values: () => listServiceNames() },
+      '--with-apt-packages': { type: 'value' },
+      '--with-repos': { type: 'value' },
       '--with-ports': { type: 'value' },
     },
   },
