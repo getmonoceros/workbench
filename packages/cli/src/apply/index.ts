@@ -50,6 +50,11 @@ import {
   formatUnreachableReposError,
 } from '../devcontainer/repo-reachability.js';
 import {
+  type CloneSpawn,
+  cloneReposHostSide,
+  formatCloneFailuresError,
+} from '../devcontainer/repo-clone.js';
+import {
   type DockerInfoSpawn,
   detectDockerMode,
   formatRootlessNotSupportedError,
@@ -113,6 +118,7 @@ export interface RunApplyOptions {
   devcontainerSpawn?: DevcontainerSpawn;
   credentialsSpawn?: CredentialsSpawn;
   reachabilitySpawn?: ReachabilitySpawn;
+  cloneSpawn?: CloneSpawn;
   dockerInfoSpawn?: DockerInfoSpawn;
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
@@ -332,6 +338,30 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     }),
   );
   logger.success(`materialized into ${prettyPath(targetDir)}`);
+
+  // Clone declared repos host-side, BEFORE the container comes up, so a
+  // service that bind-mounts a repo file (e.g. Postgres' init.sql) finds
+  // real content at start instead of an empty dir. Idempotent: existing
+  // projects/<path>/ dirs are left untouched; the in-container
+  // post-create clone skips them via its `[ ! -d ]` guard. Auth reuses
+  // the host credential helper the reachability pre-flight just used.
+  const reposToClone = createOpts.repos ?? [];
+  if (reposToClone.length > 0) {
+    const cloneResults = await cloneReposHostSide(targetDir, reposToClone, {
+      ...(opts.cloneSpawn ? { spawn: opts.cloneSpawn } : {}),
+    });
+    for (const r of cloneResults) {
+      if (r.status === 'cloned') {
+        logger.success(`cloned ${cyan(r.path)} ${dim(`(${r.url})`)}`);
+      } else if (r.status === 'skipped') {
+        logger.info(`projects/${r.path} already present — skipped clone`);
+      }
+    }
+    const cloneFailures = cloneResults.filter((r) => r.status === 'failed');
+    if (cloneFailures.length > 0) {
+      throw new Error(formatCloneFailuresError(cloneFailures));
+    }
+  }
 
   // ── Container ────────────────────────────────────────────────
   section('Container');

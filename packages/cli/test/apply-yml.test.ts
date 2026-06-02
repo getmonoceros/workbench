@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -46,6 +47,15 @@ const stubReachabilitySpawn = async () => ({
   exitCode: 0,
 });
 
+// Default stub for the host-side repo clone: pretend the clone
+// succeeded by creating the target dir, so post-conditions (and any
+// service bind-mount into projects/) see a real directory. Tests that
+// exercise clone failure supply their own cloneSpawn.
+const stubCloneSpawn = async (_url: string, dest: string) => {
+  await mkdir(dest, { recursive: true });
+  return { stdout: '', stderr: '', exitCode: 0 };
+};
+
 // Default stub for the docker-mode probe: rootful daemon (no idmap
 // in the generated devcontainer.json). Tests that exercise the
 // rootless code path supply their own dockerInfoSpawn that returns
@@ -64,6 +74,7 @@ const baseRunOpts = {
   identityPrompt: stubIdentityPrompt,
   credentialsSpawn: stubCredentialsSpawn,
   reachabilitySpawn: stubReachabilitySpawn,
+  cloneSpawn: stubCloneSpawn,
   dockerInfoSpawn: stubDockerInfoSpawn,
 };
 
@@ -857,6 +868,77 @@ describe('runApply', () => {
     expect(postCreate).toContain(
       'git -C "projects/api" config user.email "tk@conciso.de"',
     );
+  });
+
+  it('clones declared repos host-side before bringing the container up', async () => {
+    await writeYml(
+      'cloned',
+      [
+        'schemaVersion: 1',
+        'name: cloned',
+        'repos:',
+        '  - url: https://github.com/foo/bar.git',
+        '',
+      ].join('\n'),
+    );
+    const order: string[] = [];
+    const cloneCalls: Array<{ url: string; dest: string }> = [];
+    await runApply({
+      ...baseRunOpts,
+      name: 'cloned',
+      monocerosHome: home,
+      cloneSpawn: async (url, dest) => {
+        order.push('clone');
+        cloneCalls.push({ url, dest });
+        await mkdir(dest, { recursive: true });
+        return { stdout: '', stderr: '', exitCode: 0 };
+      },
+      devcontainerSpawn: async () => {
+        order.push('up');
+        return 0;
+      },
+    });
+    const projectsBar = path.join(
+      home,
+      'container',
+      'cloned',
+      'projects',
+      'bar',
+    );
+    expect(cloneCalls).toEqual([
+      { url: 'https://github.com/foo/bar.git', dest: projectsBar },
+    ]);
+    expect(existsSync(projectsBar)).toBe(true);
+    // clone must happen before the container comes up
+    expect(order[0]).toBe('clone');
+    expect(order).toContain('up');
+  });
+
+  it('skips the host-side clone on re-apply when projects/<path> already exists', async () => {
+    await writeYml(
+      'recloned',
+      [
+        'schemaVersion: 1',
+        'name: recloned',
+        'repos:',
+        '  - url: https://github.com/foo/bar.git',
+        '',
+      ].join('\n'),
+    );
+    let cloneCount = 0;
+    const opts = {
+      ...baseRunOpts,
+      name: 'recloned',
+      monocerosHome: home,
+      cloneSpawn: async (_url: string, dest: string) => {
+        cloneCount += 1;
+        await mkdir(dest, { recursive: true });
+        return { stdout: '', stderr: '', exitCode: 0 };
+      },
+    };
+    await runApply(opts); // first apply → clones
+    await runApply(opts); // second apply → projects/bar exists → skip
+    expect(cloneCount).toBe(1);
   });
 
   it('post-create.sh does not set per-repo git.user when repo has no override', async () => {

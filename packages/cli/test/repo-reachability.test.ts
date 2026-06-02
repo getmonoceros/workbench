@@ -263,4 +263,32 @@ describe('formatUnreachableReposError', () => {
     ]);
     expect(msg).toMatch(/re-run.*monoceros apply/);
   });
+
+  it('surfaces the raw git stderr verbatim under the failing repo', () => {
+    const msg = formatUnreachableReposError([
+      {
+        url: 'https://github.com/conciso/logoscraper.git',
+        ok: false,
+        kind: 'auth-failed',
+        detail:
+          "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+      },
+    ]);
+    expect(msg).toContain(
+      "git: fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    );
+  });
+
+  it('renders each line of a multi-line stderr with the git: prefix', () => {
+    const msg = formatUnreachableReposError([
+      {
+        url: 'https://github.com/foo/bar.git',
+        ok: false,
+        kind: 'unknown',
+        detail: 'remote: line one\nfatal: line two',
+      },
+    ]);
+    expect(msg).toContain('git: remote: line one');
+    expect(msg).toContain('git: fatal: line two');
+  });
 });

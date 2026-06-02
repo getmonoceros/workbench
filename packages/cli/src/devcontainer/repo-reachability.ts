@@ -224,6 +224,18 @@ export function formatUnreachableReposError(
     lines.push(headerForKind(kind));
     for (const e of entries) {
       lines.push(`  • ${e.url}`);
+      // Surface the raw git stderr verbatim. Our kind-classification is
+      // a best-effort pattern match; the actual git message is the
+      // ground truth. Showing it means a miscategorised or unforeseen
+      // failure (e.g. a macOS Keychain access gate surfacing as "could
+      // not read Username") is still diagnosable by the builder instead
+      // of being hidden behind a canned, possibly-wrong headline.
+      if (e.detail) {
+        for (const detailLine of e.detail.split('\n')) {
+          const trimmed = detailLine.trim();
+          if (trimmed) lines.push(`      git: ${trimmed}`);
+        }
+      }
     }
     for (const advice of adviceForKind(kind)) {
       lines.push(`    - ${advice}`);

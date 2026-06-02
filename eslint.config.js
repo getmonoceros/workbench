@@ -5,7 +5,17 @@ import globals from 'globals';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**'],
+    // `.local/` is the dev MONOCEROS_HOME — it holds materialized
+    // containers and cloned solution repos (foreign source with its own
+    // tooling), none of which is workbench code. Without this, a
+    // `monoceros apply` that clones a repo under `.local/container/…`
+    // pollutes `pnpm lint` with the cloned project's lint errors.
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      '.local/**',
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
