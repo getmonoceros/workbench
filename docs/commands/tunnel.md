@@ -29,10 +29,15 @@ Hintergrund + verworfene Alternativen: [ADR 0009](../adr/0009-tcp-tunnels-foregr
 1. Liest die Container-yml unter `$MONOCEROS_HOME/container-configs/<name>.yml`.
 2. Löst das Ziel auf (yml-first — die konfigurierten Services der
    Container-yml sind die Quelle, nicht ein fester Katalog):
-   - **Service-Name** → muss im `services:`-Block der yml stehen. Der
-     interne Port kommt aus dem `port:`-Feld des Service (bei
-     kuratierten Services aus dem Katalog-Default). Ein Custom-Service
-     ohne `port:` → klarer Fehler mit Hinweis, `port:` zu ergänzen.
+   - **Service-Name** (`postgres`) → muss im `services:`-Block der yml
+     stehen. Der interne Port kommt aus dem `port:`-Feld des Service
+     (bei kuratierten Services aus dem Katalog-Default). Ein
+     Custom-Service ohne `port:` → klarer Fehler (oder `service:port`
+     nutzen, s.u.).
+   - **`Service:Port`** (`rustfs:9001`) → derselbe Service, aber auf
+     einem **expliziten** Port. Für einen zweiten Port (z. B. eine
+     Konsolen-UI auf 9001 neben der API auf 9000) — funktioniert auch,
+     wenn der Service kein `port:` deklariert.
    - **Port-Nummer** (`8080`) → interner Port direkt, Ziel ist der
      Workspace-Container.
 3. Pre-Flight: ist der lokale Port frei? Falls nicht → klarer
@@ -45,10 +50,10 @@ TCP-LISTEN:… TCP:<target>:<internal-port>` im Vordergrund.
 
 ## Argumente
 
-| Argument            | Bedeutung                                                                                                     |
-| ------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `<name>`            | Container-Name (yml in `$MONOCEROS_HOME/container-configs/`).                                                 |
-| `<service-or-port>` | Name eines in der Container-yml konfigurierten Service (kuratiert oder custom) oder eine interne Port-Nummer. |
+| Argument            | Bedeutung                                                                                                                                             |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<name>`            | Container-Name (yml in `$MONOCEROS_HOME/container-configs/`).                                                                                         |
+| `<service-or-port>` | Konfigurierter Service-Name (`postgres`), `service:port` für einen expliziten Port (`rustfs:9001`), oder eine bare interne Port-Nummer (→ Workspace). |
 
 ## Optionen
 

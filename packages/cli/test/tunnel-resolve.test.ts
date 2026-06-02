@@ -118,7 +118,7 @@ describe('resolveTunnelTarget', () => {
       network: `${composeProjectName(root)}_default`,
       targetHost: 'rustfs',
       internalPort: 9000,
-      display: 'demo/rustfs',
+      display: 'demo/rustfs:9000',
     });
   });
 
@@ -144,6 +144,91 @@ describe('resolveTunnelTarget', () => {
     ).rejects.toThrow(/declares no port/);
   });
 
+  it('resolves <service>:<port> to that service on the explicit port', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: rustfs',
+        '    image: rustfs/rustfs:latest',
+        '    port: 9000',
+        '',
+      ].join('\n'),
+    );
+    const root = await materializeContainer('demo', { compose: true });
+    // 9001 (the console) — different from the declared 9000.
+    const resolved = await resolveTunnelTarget({
+      name: 'demo',
+      target: 'rustfs:9001',
+      monocerosHome: home,
+    });
+    expect(resolved).toEqual({
+      network: `${composeProjectName(root)}_default`,
+      targetHost: 'rustfs',
+      internalPort: 9001,
+      display: 'demo/rustfs:9001',
+    });
+  });
+
+  it('<service>:<port> works even when the service declares no port', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: rustfs',
+        '    image: rustfs/rustfs:latest',
+        '',
+      ].join('\n'),
+    );
+    await materializeContainer('demo', { compose: true });
+    const resolved = await resolveTunnelTarget({
+      name: 'demo',
+      target: 'rustfs:9001',
+      monocerosHome: home,
+    });
+    expect(resolved.internalPort).toBe(9001);
+    expect(resolved.targetHost).toBe('rustfs');
+  });
+
+  it('refuses <service>:<port> when the service is not configured', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await materializeContainer('demo', { compose: true });
+    await expect(
+      resolveTunnelTarget({
+        name: 'demo',
+        target: 'mongo:27017',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/not configured/);
+  });
+
+  it('rejects <service>:<bad-port>', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: rustfs',
+        '    image: rustfs/rustfs:latest',
+        '    port: 9000',
+        '',
+      ].join('\n'),
+    );
+    await materializeContainer('demo', { compose: true });
+    await expect(
+      resolveTunnelTarget({
+        name: 'demo',
+        target: 'rustfs:nope',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Invalid target/);
+  });
+
   it('compose + service → compose network and service-name DNS', async () => {
     await writeYml(
       'demo',
@@ -167,7 +252,7 @@ describe('resolveTunnelTarget', () => {
       network: `${composeProjectName(root)}_default`,
       targetHost: 'postgres',
       internalPort: 5432,
-      display: 'demo/postgres',
+      display: 'demo/postgres:5432',
     });
   });
 

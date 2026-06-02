@@ -4,6 +4,7 @@ import { containerConfigPath, containerDir } from '../config/paths.js';
 import { readConfig } from '../config/io.js';
 import { composeProjectName } from '../devcontainer/compose.js';
 import { resolveService } from '../create/catalog.js';
+import type { ResolvedService } from '../create/types.js';
 import {
   defaultDockerExec,
   PROXY_NETWORK_NAME,
@@ -103,29 +104,61 @@ interface ParsedPort {
 type ParsedTarget = ParsedService | ParsedPort;
 
 function parseTargetArg(raw: string, config: SolutionConfig): ParsedTarget {
+  // Explicit `<service>:<port>` — forward a configured service on a
+  // specific in-container port. Lets you reach a second port (e.g. a
+  // console UI on 9001) even if the service declares a different / no
+  // `port:`. Service names never contain ':' (schema), so the colon
+  // unambiguously splits name from port.
+  const colon = raw.indexOf(':');
+  if (colon > 0) {
+    const name = raw.slice(0, colon);
+    const port = Number(raw.slice(colon + 1));
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(
+        `Invalid target '${raw}'. Use <service>:<port> with a numeric port (1–65535), a bare port number, or a configured service name.`,
+      );
+    }
+    findConfiguredService(config, name); // throws if not configured
+    return { kind: 'service', service: name, port };
+  }
+
   const asNumber = Number(raw);
   if (Number.isInteger(asNumber) && asNumber > 0 && asNumber < 65536) {
     return { kind: 'port', port: asNumber };
   }
-  // Treat as a service name. The container yml is the source of truth:
-  // resolve every services[] entry (curated string or explicit object)
-  // and look the name up there. The forward port comes from the resolved
-  // entry — an object's `port:` or a curated service's catalog default.
+
+  // Bare service name. The port comes from the resolved entry — an
+  // object's `port:` or a curated service's catalog default.
+  const match = findConfiguredService(config, raw);
+  if (match.port === undefined) {
+    throw new Error(
+      `Service '${raw}' declares no port, so tunnel can't know what to forward. ` +
+        `Add \`port: <n>\` to the service in the yml and re-apply, or pass one explicitly: ` +
+        `\`monoceros tunnel <name> ${raw}:<port>\`.`,
+    );
+  }
+  return { kind: 'service', service: raw, port: match.port };
+}
+
+/**
+ * Resolve a service name against the container yml (curated string or
+ * explicit object both count). Throws an actionable error listing the
+ * configured services when the name isn't one of them.
+ */
+function findConfiguredService(
+  config: SolutionConfig,
+  name: string,
+): ResolvedService {
   const services = config.services.map(resolveService);
-  const match = services.find((s) => s.name === raw);
+  const match = services.find((s) => s.name === name);
   if (!match) {
     const names = services.map((s) => s.name);
     const list = names.length > 0 ? names.join(', ') : '(none configured)';
     throw new Error(
-      `Service '${raw}' is not configured in this container's yml. Configured services: ${list}. Or pass a port number (e.g. \`monoceros tunnel <name> 8080\`).`,
+      `Service '${name}' is not configured in this container's yml. Configured services: ${list}. Or pass a port number (e.g. \`monoceros tunnel <name> 8080\`).`,
     );
   }
-  if (match.port === undefined) {
-    throw new Error(
-      `Service '${raw}' declares no port, so tunnel can't know what to forward. Add \`port: <n>\` (the in-container port it listens on) to the service in the yml and re-apply.`,
-    );
-  }
-  return { kind: 'service', service: raw, port: match.port };
+  return match;
 }
 
 function resolveCompose(args: {
@@ -139,7 +172,7 @@ function resolveCompose(args: {
       network,
       targetHost: args.parsedTarget.service,
       internalPort: args.parsedTarget.port,
-      display: `${args.name}/${args.parsedTarget.service}`,
+      display: `${args.name}/${args.parsedTarget.service}:${args.parsedTarget.port}`,
     };
   }
   return {

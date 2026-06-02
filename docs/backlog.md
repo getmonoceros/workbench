@@ -19,6 +19,7 @@ Konzeptioneller Überbau: [`konzept.md`](konzept.md).
 | **M3 (neu)** | AI-Tool-Feature-Library                                        | ✅ 2026-05-19             |
 | M4           | Distribution / Go-Live                                         | 🚧 ab 2026-05-19          |
 | M5           | Stabilisierung + Doku                                          | 🚧 ab 2026-05-23          |
+| M6           | Service-Config-Modell, Secrets & init-Redesign                 | ✅ 2026-06-02             |
 
 ---
 
@@ -676,6 +677,11 @@ dokumentieren.
    - Service-Name aus dem `services:`-Block (postgres/mysql/redis;
      Default-Ports aus dem `SERVICE_CATALOG`) ODER bare interne
      Port-Nummer
+   - **`<service>:<port>`-Form** (nachgezogen 2026-06-02) — derselbe
+     Service auf einem expliziten Port (z. B. `rustfs:9001` für eine
+     Konsolen-UI neben der API auf 9000); funktioniert auch, wenn der
+     Service kein `port:` deklariert. Resolver yml-first nach dem
+     Service-Modell-Umbau.
    - `--local-port` default = interner Port, mit `<port>+1`-Hint
      bei Kollision; Pre-Flight via TCP-Connect-Probe
    - `--local-address` default `127.0.0.1` (nur Loopback), opt-in
@@ -963,6 +969,65 @@ Stellen.
 
 ---
 
+## ✅ M6 — Service-Config-Modell, Secrets & init-Redesign
+
+**Ziel:** Eine reale Test-Solution (logoscraper) brauchte Postgres
+**und** RustFS als Services mit Custom-Env, init.sql-Mount und
+Secrets. Das deckte mehrere Lücken auf, die in einem Bogen geschlossen
+wurden. **Abgeschlossen 2026-06-02**, end-to-end gegen logoscraper
+validiert (App läuft, Browser-erreichbar, Postgres + rustfs zusammen).
+Design-Diskussion: 2026-06-01/02.
+
+Alle Commits lokal auf `main`:
+
+1. **Generisches Service-Modell** (`feat(services)`) — `services:` ist
+   objekt-only (`{ name, image, port?, env?, volumes?, healthcheck?,
+restart?, command? }`); kuratierte Namen sind Init-Sugar, die zum
+   vollen Block expandieren, beliebige Images werden mit Scaffold
+   eingetragen. `healthcheck.test` als String **oder** `["CMD", …]`,
+   `data:`-Volume-Kurzform → Bind-Mount, `./`-Prefix geschluckt, Docker
+   Named Volumes abgelehnt. `port:` ist Tunnel-Metadaten, kein
+   Host-Mapping. Die App/webapp ist **kein** Service, sondern der
+   Workspace.
+
+2. **Secrets via `<name>.env`** — `${VAR}` in der yml löst beim Apply
+   aus `container-configs/<name>.env` (gitignored) auf — in
+   Service-Feldern **und** Feature-Optionen (`apiKey`/`apiToken`), damit
+   die yml ohne Tokens teilbar ist. Fehlende Variable → harter Fehler
+   mit `location`-Pfad. `init`/`add-feature` seeden die `.env`-Keys
+   (Var-Regel `<FEATURE>_<OPTION>`) + rendern `${VAR}`-Platzhalter;
+   `remove-*` fasst die `.env` nicht an. `remove`/`restore` sichern die
+   `.env` mit.
+
+3. **Host-seitiges Repo-Klonen** ([ADR 0012](./adr/0012-host-side-repo-clone.md))
+   — Repos werden host-seitig vor `compose up` geklont, damit
+   Service-Bind-Mounts auf Repo-Dateien (init.sql) beim Start existieren.
+   Idempotent; in-container post-create-Clone bleibt Skip-Guard-Fallback.
+   Reachability-Fehler zeigen jetzt die rohe git-stderr (`git: …`).
+
+4. **init-Flag-Umbau** (`feat(init)`) — `--with` raus; explizite
+   Kategorie-Flags `--with-languages` / `--with-features` /
+   `--with-services` / `--with-apt-packages` / `--with-repos` /
+   `--with-ports`. Features + Services nehmen beliebige Refs/Images.
+   `init` legt die `<name>.env` (gitignored, einzeilen-Header) gleich an.
+
+5. **`tunnel <service>:<port>`** — expliziter Port für einen zweiten
+   Service-Port (rustfs-Konsole 9001 neben API 9000).
+
+**Bewusst offen / nicht gemacht:** Services seeden keine `.env`-Vars
+(Dev-Defaults sind keine Blanks); Reachability-Probe ist seit dem
+Host-Clone weitgehend redundant (könnte später warn-only werden); ein
+e2e-Szenario für den Custom-Image+`.env`+init.sql-Pfad fehlt noch.
+Bekannter Punkt: aus dem VS-Code-Terminal kann der Repo-Auth-Pre-Flight
+sporadisch fehlschlagen (VS Codes `GIT_ASKPASS`-Injektion) — dokumentiert
+in [apply.md](./commands/apply.md) mit Workaround, bewusst nicht blind
+gepatcht.
+
+E2E-Repo (`getmonoceros/monoceros-e2e`): alle 7 Szenarien auf die neuen
+`--with-*`-Flags migriert.
+
+---
+
 ## Vorgemerkt für später (jenseits M5)
 
 - **AI-Tool-Library erweitern** — OpenCode, Codex, GitHub Copilot,
@@ -982,84 +1047,26 @@ Stellen.
 - **Optionaler Secret-Manager-Hook** — heute liegen Credentials in
   `monoceros-config.yml` (gitignored). Für Teams später ggf. ein
   Hook auf 1Password CLI, AWS Secrets Manager, etc.
-- **`init`-Umbau auf explizite Kategorie-Flags + flexible Services/Features**
-  — Designgespräch 2026-06-01, ausgelöst von einer realen Test-Solution
-  (logoscraper) die Postgres **und** RustFS als Services braucht.
-  **✅ Implementiert 2026-06-02** (Service-Modell + Host-Clone in
-  `761494b`/`44e9656`; init-Flag-Umbau im Folge-Commit): `--with` raus,
-  `--with-languages`/`--with-features`/`--with-services`/`--with-apt-packages`/`--with-repos`/`--with-ports`,
-  Features+Services nehmen beliebige Refs/Images, logoscraper end-to-end
-  validiert. Die ursprünglichen Entscheidungen zur Nachvollziehbarkeit:
-  1. `init` bekommt explizite Plural-Flags statt des `--with`-Magic-Bags:
-     `--with-languages`, `--with-features`, `--with-services`,
-     `--with-repos`, `--with-apt-packages`. Komma-Liste oder wiederholbar.
-     `--with` fliegt raus (sauberer Schnitt, kein Alias — wir sind bei
-     1.12, jung genug). Jedes Flag spiegelt den passenden `add-*`-Befehl
-     (init = mehrere `add-*` auf einmal).
-  2. Features **und** Services nehmen beliebige, nicht-kuratierte
-     Einträge. Regel: Name im Katalog → kuratiert; sonst → als Image
-     (Service) bzw. OCI-Ref (Feature) interpretiert. Ein `/` im Namen
-     (`rustfs/rustfs:latest`) heißt nie-im-Katalog → immer Image.
-     Sprachen bleiben kuratiert (bounded; JS/TS sind kein eigener
-     Eintrag, beide sind `node`).
-  3. **Service-Config-Modell** — Services werden im Schema generisch
-     wie Features heute; der kuratierte Katalog wird zu Init-Sugar, das
-     einen vollständigen, editierbaren Service-Block emittiert. Ein
-     neues Service-Image braucht dann keinen Workbench-Release mehr.
-     Macht den Punkt „Compose-Service-Katalog erweitern" unten
-     weitgehend gegenstandslos.
-     - **Ansatz A: eigenes kleines Feld-Subset, KEIN Notausgang** (kein
-       Roh-Compose-Merge fürs Erste). Sieht compose-artig aus, ist aber
-       bewusst _kein_ Compose — mehrere Felder haben andere Bedeutung.
-     - Felder im Scope: `image`, `env` (Map, `${VAR}`-Interpolation),
-       `volumes` (mit `data:`-Kurzform → Bind-Mount unter
-       `container/<name>/data/<svc>/` nach ADR 0003, plus host-relative
-       Mounts z.B. für init.sql), `healthcheck` (verschlankt: `test:` +
-       Defaults, nicht volles Compose), `restart` (Default
-       `unless-stopped`, kein prominenter Knopf), evtl.
-       `command`/`args`-Override.
-     - Bewusst **draußen**: `ports` (Traefik `routing.ports` + `tunnel`
-       besitzen die Host-Exposition), `build`, `container_name`.
-     - **Mentales Modell:** die App/webapp ist _kein_ Service — sie ist
-       der Devcontainer-Workspace (das Repo mit `npm run dev`). Beim
-       Portieren einer docker-compose werden nur die _Backing_-Services
-       zu Monoceros-Services; der App-Service fällt weg.
-     - Reihenfolge: Workspace wartet implizit auf die Services
-       (`service_healthy` wenn Healthcheck, sonst `service_started`) —
-       gibt's schon. Explizites Service→Service-`depends_on` ist
-       niedrig-prioritär; der 95%-Fall ist automatisch.
+- **Service-Config-Modell, Secrets & init-Redesign** — ✅ umgesetzt,
+  siehe Milestone **M6** oben. Aus dem damaligen Design noch **offen**
+  (bewusst aufgeschoben):
+  - **`cmd:`-Resolver in der `.env`** (`PG_PASSWORD=cmd:op read op://…`)
+    — Monoceros führt das Kommando beim Apply host-seitig aus und nimmt
+    stdout. Universeller Brückenkopf zu jedem Passwort-Manager mit CLI
+    (1Password/KeePassXC/Bitwarden/Vault), kollabiert N Secrets auf ein
+    Vault-Entsperren. Caveat: interaktive Manager (KeePassXC) blockieren
+    nicht-interaktives Apply; Session-/Agent-Manager (op, bw, gpg-agent)
+    lösen still auf. Offen: ob aufgelöster Klartext in die generierte
+    compose.yaml gebacken wird oder nur als Prozess-Env durchgereicht.
+  - **Verschlüsselt-at-rest** (committbare Secrets) via **SOPS + age**,
+    nicht Ansible Vault — nur falls je echter Team-Bedarf.
 
-  4. **Secret-Sourcing** — pro Container zwei Dateien nebeneinander in
-     `container-configs/`: `<name>.yml` + `<name>.env`, beide im
-     persönlichen Home. `${VAR}` in der yml löst aus `<name>.env` auf.
-     - **Basis: literale Werte in einer gitignorierten `.env`.**
-       Bedrohungsmodell = „nicht in git committen" (der realistische
-       Fall für eine lokale Werkbank — auf der Platte liegen eh schon
-       OAuth-Tokens, SSH-Keys). Konsistent damit, wie Feature-Tokens
-       heute schon klartext-gitignored in `monoceros-config.yml` liegen.
-     - **Vorgemerkt (späteres opt-in):** ein `cmd:`-Resolver in der
-       `.env` (`PG_PASSWORD=cmd:op read op://…`) — Monoceros führt das
-       Kommando beim Apply auf dem Host aus und nimmt stdout.
-       Universeller Brückenkopf zu jedem Passwort-Manager mit CLI
-       (1Password/KeePassXC/Bitwarden/Vault) ohne Pro-Tool-Code;
-       kollabiert N Secrets auf ein Vault-Entsperren. Caveat: Manager
-       mit interaktivem Prompt (KeePassXC) blockieren nicht-interaktives
-       Apply; Session-/Agent-Manager (op, bw, gpg-agent) lösen still
-       auf. Offen für diesen Pfad: ob aufgelöster Klartext in die
-       generierte compose.yaml gebacken wird oder nur als Prozess-Env
-       durchgereicht.
-     - Verschlüsselt-at-rest (committbare Secrets) weiter aufgeschoben;
-       falls je nötig, **SOPS + age**, nicht Ansible Vault.
-     - **Lifecycle-Folge:** `monoceros remove` muss die `<name>.env`
-       mit ins Backup nehmen (heute: Docker-Objekte + `<name>.yml` +
-       Container-Dir). Sonst ist nach `remove` + `restore` das
-       Secret-Mapping weg. `restore` zieht sie entsprechend wieder
-       zurück. `.gitignore` muss `container-configs/*.env` ausschließen.
-
-- **Compose-Service-Katalog erweitern** — heute: `postgres`, `mysql`,
-  `redis`. Denkbar: `mongodb`, `elasticsearch`, `kafka`, je nach
-  Nachfrage. (Hinfällig, falls der `init`/Service-Umbau oben kommt —
-  dann reicht der Image-Name direkt, ohne Katalog-Eintrag.)
+- **Compose-Service-Katalog erweitern** — heute kuratiert: `postgres`,
+  `mysql`, `redis`. Seit M6 weitgehend gegenstandslos — jedes andere
+  Image (`mongodb`, `elasticsearch`, `kafka`, …) geht direkt als
+  `--with-services=<image>` bzw. Objekt-Block, ohne Katalog-Eintrag.
+  Kuratieren lohnt nur noch für bequeme Dev-Defaults bei sehr häufigen
+  Services.
 - **Sprach-Toolchain-Katalog erweitern** — heute via Devcontainer-
   Features genug abgedeckt; nur falls häufig nachgefragte Tools
   außerhalb der offiziellen Sets auftauchen, eigene Wrapper anlegen.

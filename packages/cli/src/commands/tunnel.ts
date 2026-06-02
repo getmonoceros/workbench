@@ -19,7 +19,7 @@ export const tunnelCommand = defineCommand({
     target: {
       type: 'positional',
       description:
-        'Service name from the container yml (e.g. `postgres`) or an in-container port number (e.g. `8080`).',
+        'Service name from the container yml (e.g. `postgres`), `service:port` for an explicit in-container port (e.g. `rustfs:9001`), or a bare in-container port number → workspace (e.g. `8080`).',
       required: true,
     },
     'local-port': {
