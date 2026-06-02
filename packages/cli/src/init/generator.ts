@@ -2,6 +2,7 @@ import type { Component } from './components.js';
 import type { FeatureManifestSummary } from './manifest.js';
 import {
   buildFeatureHeaderLines,
+  featureOptionHints,
   wrapToComment as sharedWrapToComment,
 } from './feature-doc.js';
 import { expandCuratedService } from '../create/catalog.js';
@@ -352,9 +353,12 @@ function renderFeatureBlock(
 
   const options = feature.options ?? {};
   const activeKeys = Object.entries(options);
-  const hintKeys = (summary?.optionHints ?? []).filter((h) => !(h in options));
+  // Hint keys carry a `${VAR}` placeholder so the builder sees exactly
+  // which env var to fill (and `init` / `add-feature` seed the same var
+  // into <name>.env). Derivation is shared via featureOptionHints.
+  const hints = featureOptionHints(summary, feature.ref, Object.keys(options));
 
-  if (activeKeys.length === 0 && hintKeys.length === 0) return;
+  if (activeKeys.length === 0 && hints.length === 0) return;
 
   if (commented) {
     // Documented mode: the whole feature block is single-`#`
@@ -369,8 +373,8 @@ function renderFeatureBlock(
     for (const [key, value] of activeKeys) {
       out.push(`${yamlPrefix}      ${key}: ${renderScalarValue(value)}`);
     }
-    for (const key of hintKeys) {
-      out.push(`${yamlPrefix}      ${key}:`);
+    for (const hint of hints) {
+      out.push(`${yamlPrefix}      ${hint.key}: ${hint.placeholder}`);
     }
     return;
   }
@@ -388,10 +392,10 @@ function renderFeatureBlock(
       out.push(`      ${key}: ${renderScalarValue(value)}`);
     }
   }
-  if (hintKeys.length > 0) {
+  if (hints.length > 0) {
     out.push(`    # options:`);
-    for (const key of hintKeys) {
-      out.push(`    #   ${key}:`);
+    for (const hint of hints) {
+      out.push(`    #   ${hint.key}: ${hint.placeholder}`);
     }
   }
 }

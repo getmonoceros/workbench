@@ -200,6 +200,57 @@ export function interpolateFeatures(
 }
 
 /**
+ * Short, builder-facing header for a fresh `<name>.env`. Explains what
+ * the file is for; no real keys (a freshly-generated yml has no active
+ * `${VAR}` yet — curated services use literal dev-defaults).
+ */
+export function buildEnvStub(name: string): string {
+  return [
+    `# Secrets and values for \${VAR} references in ${name}.yml.`,
+    `#`,
+    `# One KEY=value per line, e.g.:`,
+    `# PG_PASSWORD=change-me`,
+    `# then reference it in the yml (service env OR feature options):`,
+    `#   POSTGRES_PASSWORD: \${PG_PASSWORD}`,
+    `#   apiKey: \${ANTHROPIC_API_KEY}`,
+    `# Values are substituted at \`monoceros apply ${name}\`.`,
+    ``,
+  ].join('\n');
+}
+
+export interface EnsureEnvVarsResult {
+  /** True when the env file did not exist and was created. */
+  created: boolean;
+  /** Var keys that were appended (absent before). */
+  added: string[];
+}
+
+/**
+ * Upsert `<name>.env`: create it with the header stub if absent, and
+ * append a `VAR=` line for every requested var that isn't already
+ * present. Never overwrites existing keys or values. Used by `init` and
+ * `add-feature` to seed the credential vars a feature declares, so the
+ * builder just fills the values.
+ */
+export async function ensureEnvVars(
+  envPath: string,
+  name: string,
+  vars: readonly string[],
+): Promise<EnsureEnvVarsResult> {
+  const exists = existsSync(envPath);
+  let content = exists ? readFileSync(envPath, 'utf8') : buildEnvStub(name);
+  const present = new Set(Object.keys(parseEnvFile(content)));
+  const added = [...new Set(vars)].filter((v) => !present.has(v));
+  if (!exists || added.length > 0) {
+    if (content.length > 0 && !content.endsWith('\n')) content += '\n';
+    for (const v of added) content += `${v}=\n`;
+    await fsp.mkdir(path.dirname(envPath), { recursive: true });
+    await fsp.writeFile(envPath, content);
+  }
+  return { created: !exists, added };
+}
+
+/**
  * Format an actionable error for unresolved `${VAR}` references — names
  * the missing vars, where they're referenced, and the env file the
  * builder should define them in.

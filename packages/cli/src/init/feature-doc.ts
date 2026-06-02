@@ -123,3 +123,57 @@ export function wrapToComment(text: string, width: number): string[] {
 
 /** Default comment width matching the generator's. */
 export const FEATURE_HEADER_WIDTH = 76 - 2; // COMMENT_WIDTH - "# " prefix
+
+/**
+ * Derive the `<name>.env` variable name for a feature option, used as
+ * the `${VAR}` placeholder in the yml and the seeded key in the env
+ * file. Generic rule `<FEATURE_ID>_<OPTION>`, applied uniformly:
+ *   atlassian:1   + apiToken      → ATLASSIAN_API_TOKEN
+ *   claude-code:1 + apiKey        → CLAUDE_CODE_API_KEY
+ *   github-cli:1  + bitbucketToken→ GITHUB_CLI_BITBUCKET_TOKEN
+ *
+ * It is a monoceros-side placeholder key — NOT the env var the tool
+ * itself reads (the value is passed as the feature's option), so a
+ * predictable derived name is honest and avoids per-feature special
+ * cases.
+ */
+export function featureOptionVarName(ref: string, optionKey: string): string {
+  const leaf = ref.split('/').pop() ?? ref;
+  const id = leaf.split('@')[0]!.split(':')[0]!;
+  const idSnake = id.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
+  const optSnake = optionKey
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .toUpperCase();
+  return `${idSnake}_${optSnake}`;
+}
+
+export interface FeatureOptionHint {
+  /** Option key, e.g. `apiToken`. */
+  key: string;
+  /** Derived env var name, e.g. `ATLASSIAN_API_TOKEN`. */
+  envVar: string;
+  /** yml placeholder, e.g. `${ATLASSIAN_API_TOKEN}`. */
+  placeholder: string;
+}
+
+/**
+ * The credential-bearing option hints for a feature (from the manifest's
+ * `x-monoceros.optionHints`), minus any keys already set with an active
+ * value. Shared by the init generator (renders `${VAR}` hint lines) and
+ * `add-feature` (renders the same as a node comment) and the `.env`
+ * seeding (uses `envVar`). Empty for unknown/third-party refs (no
+ * manifest → no hints).
+ */
+export function featureOptionHints(
+  summary: FeatureManifestSummary | undefined,
+  ref: string,
+  activeKeys: readonly string[] = [],
+): FeatureOptionHint[] {
+  return (summary?.optionHints ?? [])
+    .filter((key) => !activeKeys.includes(key))
+    .map((key) => {
+      const envVar = featureOptionVarName(ref, key);
+      return { key, envVar, placeholder: `\${${envVar}}` };
+    });
+}

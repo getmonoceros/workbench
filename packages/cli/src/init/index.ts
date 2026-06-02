@@ -15,7 +15,8 @@ import {
   writeGlobalDefaultGitUser,
 } from '../config/global.js';
 import { parseConfig, stringifyConfig } from '../config/io.js';
-import { ensureEnvGitignored } from '../config/env-file.js';
+import { ensureEnvGitignored, ensureEnvVars } from '../config/env-file.js';
+import { featureOptionHints } from './feature-doc.js';
 import { KNOWN_PROVIDER_HOSTS, REGEX } from '../config/schema.js';
 import {
   resolveIdentityWithPrompt,
@@ -280,16 +281,18 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   await ensureEnvGitignored(containerConfigsDir(home));
   await fs.writeFile(dest, text, 'utf8');
 
-  // Drop a gitignored `<name>.env` stub alongside the yml so the secret
-  // mechanism is discoverable: `${VAR}` references in the yml resolve
-  // from here at apply time. No-clobber — never overwrite an existing
-  // env file (e.g. one carried over by `monoceros restore`).
+  // Scaffold the gitignored `<name>.env`: create it with the header
+  // stub, and seed a `VAR=` key for every credential option the composed
+  // features declare (their `${VAR}` placeholders are rendered into the
+  // yml above). The builder just fills the values. Upsert — never
+  // overwrites an existing env file's keys (e.g. one from `restore`).
   const envPath = containerEnvPath(opts.name, home);
-  let wroteEnv = false;
-  if (!existsSync(envPath)) {
-    await fs.writeFile(envPath, buildEnvStub(opts.name), 'utf8');
-    wroteEnv = true;
-  }
+  const featureVars = composed.features.flatMap((f) =>
+    featureOptionHints(lookup(f.ref), f.ref, Object.keys(f.options ?? {})).map(
+      (h) => h.envVar,
+    ),
+  );
+  const envResult = await ensureEnvVars(envPath, opts.name, featureVars);
 
   // Persist the prompted identity AFTER the yml is on disk: scope
   // `g` writes the global monoceros-config; `c` mutates the freshly-
@@ -360,33 +363,19 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
       `Edit the file if you need to tweak, then \`monoceros apply ${opts.name}\`.`,
     );
   }
-  if (wroteEnv) {
+  if (envResult.created) {
+    const seeded =
+      envResult.added.length > 0
+        ? ` — fill in: ${envResult.added.join(', ')}`
+        : ` — put values for any \${VAR} you reference there`;
+    logger.info(`Also wrote ${prettyPath(envPath)} (gitignored)${seeded}.`);
+  } else if (envResult.added.length > 0) {
     logger.info(
-      `Also wrote ${prettyPath(envPath)} (gitignored) — put values for any ` +
-        `\${VAR} you reference in the yml there.`,
+      `Seeded ${prettyPath(envPath)} with: ${envResult.added.join(', ')} — fill in the values.`,
     );
   }
 
   return { configPath: dest, documented };
-}
-
-/**
- * Short, builder-facing header for a fresh `<name>.env`. Explains what
- * the file is for; no real keys (a freshly-generated yml has no active
- * `${VAR}` yet — curated services use literal dev-defaults).
- */
-function buildEnvStub(name: string): string {
-  return [
-    `# Secrets and values for \${VAR} references in ${name}.yml.`,
-    `#`,
-    `# One KEY=value per line, e.g.:`,
-    `# PG_PASSWORD=change-me`,
-    `# then reference it in the yml (service env OR feature options):`,
-    `#   POSTGRES_PASSWORD: \${PG_PASSWORD}`,
-    `#   apiKey: \${ANTHROPIC_API_KEY}`,
-    `# Values are substituted at \`monoceros apply ${name}\`.`,
-    ``,
-  ].join('\n');
 }
 
 // ───── Composed-mode input resolution ─────────────────────────────

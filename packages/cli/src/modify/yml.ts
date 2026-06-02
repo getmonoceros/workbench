@@ -14,6 +14,7 @@ import { deriveRepoName } from '../create/scaffold.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
 import {
   buildFeatureHeaderCommentBefore,
+  featureOptionHints,
   FEATURE_HEADER_WIDTH,
 } from '../init/feature-doc.js';
 
@@ -509,6 +510,17 @@ export function addFeatureToDoc(
   if (headerBefore.length > 0) {
     (entry as { commentBefore?: string }).commentBefore = headerBefore;
     (entry as { spaceBefore?: boolean }).spaceBefore = true;
+  }
+  // Credential option hints as a commented `${VAR}` skeleton below the
+  // `- ref:` — same placeholders init renders, and the matching env vars
+  // are seeded into <name>.env by runAddFeature. As a node `.comment`
+  // (the only attachment that survives the move into the sequence),
+  // serialized with a `# ` prefix per line.
+  const hints = featureOptionHints(summary, ref, Object.keys(options));
+  if (hints.length > 0) {
+    const commentLines = [' options:'];
+    for (const h of hints) commentLines.push(`   ${h.key}: ${h.placeholder}`);
+    (entry as { comment?: string }).comment = commentLines.join('\n');
   }
   seq.add(entry);
   return true;

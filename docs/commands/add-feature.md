@@ -36,6 +36,37 @@ monoceros add-feature <containername> <feature> [--yes] [-- <key>=<value> …]
 | -------------- | --------------------------- |
 | `--yes` / `-y` | Confirm-Prompt überspringen |
 
+## Credential-Optionen + `${VAR}`
+
+Kuratierte Features deklarieren ihre Credential-Optionen (`apiToken`,
+`apiKey`, …) im Manifest. `add-feature` schreibt sie als kommentiertes
+`${VAR}`-Skelett unter den `- ref:` und **seedet die passenden Keys in
+`<name>.env`** (gitignored) — identisch zu `init`:
+
+```yaml
+features:
+  - ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1
+    options:
+      rovodev: true
+      twg: true
+    # options:
+    #   instance: ${ATLASSIAN_INSTANCE}
+    #   apiToken: ${ATLASSIAN_API_TOKEN}
+    #   …
+```
+
+```sh
+# container-configs/<name>.env  (Keys vorab geseedet, nur Werte fehlen)
+ATLASSIAN_INSTANCE=
+ATLASSIAN_API_TOKEN=
+…
+```
+
+Var-Name = `<FEATURE>_<OPTION>` (einheitlich). Du strippst das `#` an
+der gewünschten Option, füllst den Wert in die `.env`, und `monoceros
+apply` setzt ihn ein — so bleibt die yml teilbar, ohne Tokens
+mitzugeben. `remove-feature` fasst die `.env` nicht an.
+
 ## Feature-Katalog
 
 Es gibt keinen einzelnen "offiziellen" Index, aber drei verlässliche Quellen:

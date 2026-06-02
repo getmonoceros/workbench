@@ -6,9 +6,14 @@ import type { Document } from 'yaml';
 import { parseConfig, readConfig, stringifyConfig } from '../config/io.js';
 import {
   containerConfigPath,
+  containerConfigsDir,
   containerDir,
+  containerEnvPath,
   monocerosHome as defaultMonocerosHome,
 } from '../config/paths.js';
+import { ensureEnvGitignored, ensureEnvVars } from '../config/env-file.js';
+import { featureOptionHints } from '../init/feature-doc.js';
+import { loadFeatureManifestSummary } from '../init/manifest.js';
 import {
   collectGitCredentials,
   resolveProvider,
@@ -618,9 +623,38 @@ export async function runAddFeature(
   // Hand the user's typed form (short-name or full ref) to the AST
   // mutator so any error message it produces echoes the form the
   // builder is using rather than always the resolved OCI ref.
-  return mutate(input, (doc) =>
+  const result = await mutate(input, (doc) =>
     addFeatureToDoc(doc, resolved.ref, merged, raw),
   );
+
+  // Seed the feature's credential vars into <name>.env (the same
+  // ${VAR} placeholders addFeatureToDoc just wrote into the yml), so
+  // the builder only fills values. Skips keys already set with an
+  // active `-- key=value`. Mirrors init; remove-feature does NOT touch
+  // the env file.
+  if (result.status === 'updated') {
+    const summary = loadFeatureManifestSummary(resolved.ref);
+    const vars = featureOptionHints(
+      summary,
+      resolved.ref,
+      Object.keys(merged),
+    ).map((h) => h.envVar);
+    if (vars.length > 0) {
+      const home = input.monocerosHome ?? defaultMonocerosHome();
+      await ensureEnvGitignored(containerConfigsDir(home));
+      const seeded = await ensureEnvVars(
+        containerEnvPath(input.name, home),
+        input.name,
+        vars,
+      );
+      if (seeded.added.length > 0) {
+        (input.logger ?? defaultLogger()).info(
+          `Seeded ${seeded.added.join(', ')} into ${input.name}.env — fill in the values.`,
+        );
+      }
+    }
+  }
+  return result;
 }
 
 /**

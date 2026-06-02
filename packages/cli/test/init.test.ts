@@ -137,7 +137,8 @@ describe('runInit', () => {
     // the global default in monoceros-config with `""`, and (b)
     // attract yaml-lib's trailing-comment-stealing on round-trip.
     expect(text).toMatch(/^\s+#\s+options:\s*$/m);
-    expect(text).toMatch(/^\s+#\s+apiKey:\s*$/m);
+    // hint now carries the derived ${VAR} placeholder
+    expect(text).toMatch(/^\s+#\s+apiKey: \$\{CLAUDE_CODE_API_KEY\}\s*$/m);
     expect(text).not.toMatch(/^[# \t]*#[ \t]+#/m); // no two-`#` per line anywhere
     // Header comment block above the `- ref:` line carries the
     // feature's manifest description verbatim and lists its options
@@ -170,6 +171,26 @@ describe('runInit', () => {
       'utf8',
     );
     expect(gi).toContain('*.env');
+  });
+
+  it('renders ${VAR} feature hints in the yml and seeds them into <name>.env', async () => {
+    await runInit({
+      name: 'sandbox',
+      features: ['claude'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const yml = await readFile(
+      path.join(monocerosHome, 'container-configs', 'sandbox.yml'),
+      'utf8',
+    );
+    expect(yml).toMatch(/#\s+apiKey: \$\{CLAUDE_CODE_API_KEY\}/);
+    const env = await readFile(
+      path.join(monocerosHome, 'container-configs', 'sandbox.env'),
+      'utf8',
+    );
+    expect(env).toMatch(/^CLAUDE_CODE_API_KEY=$/m);
   });
 
   it('never clobbers an existing <name>.env', async () => {

@@ -293,6 +293,30 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toContain('twg: true');
   });
 
+  it('runAddFeature renders ${VAR} option hints and seeds them into <name>.env', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    // commented hint skeleton with derived ${VAR} placeholders
+    expect(yml).toMatch(/#\s+instance: \$\{ATLASSIAN_INSTANCE\}/);
+    expect(yml).toMatch(/#\s+apiToken: \$\{ATLASSIAN_API_TOKEN\}/);
+    expect(yml).toMatch(/#\s+bitbucketToken: \$\{ATLASSIAN_BITBUCKET_TOKEN\}/);
+    // …and the same vars seeded into the env file
+    const env = await fs.readFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      'utf8',
+    );
+    expect(env).toMatch(/^ATLASSIAN_INSTANCE=$/m);
+    expect(env).toMatch(/^ATLASSIAN_EMAIL=$/m);
+    expect(env).toMatch(/^ATLASSIAN_API_TOKEN=$/m);
+    expect(env).toMatch(/^ATLASSIAN_BITBUCKET_TOKEN=$/m);
+  });
+
   it('runAddFeature resolves a sub-component short-name (atlassian/twg)', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({
