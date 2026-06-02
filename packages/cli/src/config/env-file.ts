@@ -205,17 +205,7 @@ export function interpolateFeatures(
  * `${VAR}` yet — curated services use literal dev-defaults).
  */
 export function buildEnvStub(name: string): string {
-  return [
-    `# Secrets and values for \${VAR} references in ${name}.yml.`,
-    `#`,
-    `# One KEY=value per line, e.g.:`,
-    `# PG_PASSWORD=change-me`,
-    `# then reference it in the yml (service env OR feature options):`,
-    `#   POSTGRES_PASSWORD: \${PG_PASSWORD}`,
-    `#   apiKey: \${ANTHROPIC_API_KEY}`,
-    `# Values are substituted at \`monoceros apply ${name}\`.`,
-    ``,
-  ].join('\n');
+  return `# Secrets and values for \${VAR} references in ${name}.yml.\n`;
 }
 
 export interface EnsureEnvVarsResult {

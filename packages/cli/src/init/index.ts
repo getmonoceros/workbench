@@ -1,4 +1,5 @@
 import { existsSync, promises as fs } from 'node:fs';
+import path from 'node:path';
 import { consola } from 'consola';
 import {
   containerConfigPath,
@@ -292,7 +293,7 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
       (h) => h.envVar,
     ),
   );
-  const envResult = await ensureEnvVars(envPath, opts.name, featureVars);
+  await ensureEnvVars(envPath, opts.name, featureVars);
 
   // Persist the prompted identity AFTER the yml is on disk: scope
   // `g` writes the global monoceros-config; `c` mutates the freshly-
@@ -346,32 +347,19 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   }
 
   const documented = !anyComposed;
-  const displayPath = prettyPath(dest);
+  // Paths relative to MONOCEROS_HOME keep the line readable (the dev
+  // .local home is deep under the project root).
+  const ymlRel = path.relative(home, dest);
+  const envRel = path.relative(home, envPath);
   if (documented) {
-    logger.success(
-      `Wrote documented default to ${displayPath}. Un-comment what you need, then \`monoceros apply ${opts.name}\`.`,
+    logger.success(`Wrote documented default to ${ymlRel} and ${envRel}.`);
+    logger.info(
+      `Un-comment what you need, then \`monoceros apply ${opts.name}\`.`,
     );
   } else {
-    const summary = [
-      ...composed.languages,
-      ...composed.aptPackages,
-      ...composed.services.map((s) => s.name),
-      ...composed.features.map((f) => f.ref),
-    ].join(', ');
-    logger.success(`Composed into ${displayPath}: ${summary}`);
+    logger.success(`Composed into ${ymlRel} and ${envRel}.`);
     logger.info(
-      `Edit the file if you need to tweak, then \`monoceros apply ${opts.name}\`.`,
-    );
-  }
-  if (envResult.created) {
-    const seeded =
-      envResult.added.length > 0
-        ? ` — fill in: ${envResult.added.join(', ')}`
-        : ` — put values for any \${VAR} you reference there`;
-    logger.info(`Also wrote ${prettyPath(envPath)} (gitignored)${seeded}.`);
-  } else if (envResult.added.length > 0) {
-    logger.info(
-      `Seeded ${prettyPath(envPath)} with: ${envResult.added.join(', ')} — fill in the values.`,
+      `Edit the files if you need to tweak, then \`monoceros apply ${opts.name}\`.`,
     );
   }
 

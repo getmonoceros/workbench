@@ -26,8 +26,11 @@ describe('featureOptionHints', () => {
   const summary: FeatureManifestSummary = {
     name: 'Atlassian',
     description: 'Rovo Dev + twg',
+    documentationURL: undefined,
     optionHints: ['instance', 'email', 'apiToken', 'bitbucketToken'],
     optionDescriptions: {},
+    optionNames: ['instance', 'email', 'apiToken', 'bitbucketToken'],
+    optionTypes: {},
     usageNotes: [],
   };
   const ref = 'ghcr.io/getmonoceros/monoceros-features/atlassian:1';
