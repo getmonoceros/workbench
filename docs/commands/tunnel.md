@@ -27,11 +27,13 @@ Hintergrund + verworfene Alternativen: [ADR 0009](../adr/0009-tcp-tunnels-foregr
 ## Mechanik
 
 1. Liest die Container-yml unter `$MONOCEROS_HOME/container-configs/<name>.yml`.
-2. Löst das Ziel auf:
-   - **Service-Name** (`postgres`, `mysql`, `redis`) → interner Port
-     kommt aus dem Service-Katalog (5432 / 3306 / 6379). Muss im
-     `services:`-Block der yml deklariert sein.
-   - **Port-Nummer** (`8080`) → interner Port direkt, ziel ist der
+2. Löst das Ziel auf (yml-first — die konfigurierten Services der
+   Container-yml sind die Quelle, nicht ein fester Katalog):
+   - **Service-Name** → muss im `services:`-Block der yml stehen. Der
+     interne Port kommt aus dem `port:`-Feld des Service (bei
+     kuratierten Services aus dem Katalog-Default). Ein Custom-Service
+     ohne `port:` → klarer Fehler mit Hinweis, `port:` zu ergänzen.
+   - **Port-Nummer** (`8080`) → interner Port direkt, Ziel ist der
      Workspace-Container.
 3. Pre-Flight: ist der lokale Port frei? Falls nicht → klarer
    Fehler mit `--local-port`-Hint.
@@ -43,10 +45,10 @@ TCP-LISTEN:… TCP:<target>:<internal-port>` im Vordergrund.
 
 ## Argumente
 
-| Argument            | Bedeutung                                                                                                   |
-| ------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `<name>`            | Container-Name (yml in `$MONOCEROS_HOME/container-configs/`).                                               |
-| `<service-or-port>` | Service-Name aus `monoceros list-components` (heute `postgres`, `mysql`, `redis`) oder interne Port-Nummer. |
+| Argument            | Bedeutung                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `<name>`            | Container-Name (yml in `$MONOCEROS_HOME/container-configs/`).                                                 |
+| `<service-or-port>` | Name eines in der Container-yml konfigurierten Service (kuratiert oder custom) oder eine interne Port-Nummer. |
 
 ## Optionen
 

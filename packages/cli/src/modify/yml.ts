@@ -4,6 +4,7 @@ import {
   isScalar,
   isSeq,
   Pair,
+  parseDocument,
   Scalar,
   YAMLMap,
   YAMLSeq,
@@ -62,11 +63,51 @@ export function addLanguageToDoc(doc: Document, lang: string): boolean {
   return true;
 }
 
-export function addServiceToDoc(doc: Document, service: string): boolean {
+/** Find the services[] item whose `name:` equals `name`. */
+function findServiceItem(seq: YAMLSeq, name: string): YAMLMap | undefined {
+  for (const item of seq.items) {
+    if (isMap(item) && item.get('name') === name) return item;
+  }
+  return undefined;
+}
+
+export type AddServiceOutcome =
+  | { outcome: 'added' }
+  | { outcome: 'exists' }
+  | { outcome: 'conflict'; existingImage: string };
+
+/**
+ * Add a service entry built from pre-rendered map-body lines (see
+ * init/service-doc.ts). Idempotent by `name`:
+ *   - no entry with that name → append (parsing the body so comments in
+ *     a custom scaffold survive), report `added`.
+ *   - an entry with that name + the same image → `exists` (no-op,
+ *     preserves any builder edits to that block).
+ *   - an entry with that name + a different image → `conflict` (caller
+ *     turns this into an actionable error).
+ */
+export function addServiceEntryToDoc(
+  doc: Document,
+  name: string,
+  image: string,
+  bodyLines: string[],
+  scaffoldComment?: string,
+): AddServiceOutcome {
   const seq = ensureSeq(doc, 'services');
-  if (seq.items.some((i) => scalarValue(i) === service)) return false;
-  seq.add(service);
-  return true;
+  const existing = findServiceItem(seq, name);
+  if (existing) {
+    const existingImage = existing.get('image');
+    if (existingImage === image) return { outcome: 'exists' };
+    return { outcome: 'conflict', existingImage: String(existingImage) };
+  }
+  const node = parseDocument(bodyLines.join('\n')).contents as YAMLMap;
+  // The commented scaffold (custom images) rides as the node's trailing
+  // `comment` — comments parsed inside the body string would be dropped
+  // when the map is moved into the sequence, but a node `.comment`
+  // survives and renders each line under the item, prefixed with `#`.
+  if (scaffoldComment) node.comment = scaffoldComment;
+  seq.add(node);
+  return { outcome: 'added' };
 }
 
 export function addAptPackagesToDoc(
@@ -599,7 +640,15 @@ export function removeLanguageFromDoc(doc: Document, lang: string): boolean {
 }
 
 export function removeServiceFromDoc(doc: Document, service: string): boolean {
-  return removeScalarFromSeq(doc, 'services', service);
+  const node = doc.get('services', true);
+  if (!node || !isSeq(node)) return false;
+  const idx = node.items.findIndex(
+    (i) => isMap(i) && i.get('name') === service,
+  );
+  if (idx === -1) return false;
+  node.items.splice(idx, 1);
+  pruneEmptySeq(doc, 'services');
+  return true;
 }
 
 export function removeAptPackageFromDoc(doc: Document, pkg: string): boolean {

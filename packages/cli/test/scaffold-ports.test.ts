@@ -4,6 +4,7 @@ import {
   buildDevcontainerJson,
   normalizeOptions,
 } from '../src/create/scaffold.js';
+import { resolveService, expandCuratedService } from '../src/create/catalog.js';
 import type { CreateOptions } from '../src/create/types.js';
 
 const base: CreateOptions = {
@@ -73,7 +74,7 @@ describe('buildDevcontainerJson — ports & vscode autoForward', () => {
   it('uses compose-mode shape when services are present and leaves runArgs alone', () => {
     const dc = buildDevcontainerJson({
       ...base,
-      services: ['postgres'],
+      services: [resolveService(expandCuratedService('postgres'))],
       ports: [3000],
     });
     if (!('dockerComposeFile' in dc))
@@ -90,7 +91,10 @@ describe('buildDevcontainerJson — ports & vscode autoForward', () => {
 
 describe('buildComposeYaml — ports & networks', () => {
   it('omits the networks block when no ports declared', () => {
-    const yaml = buildComposeYaml({ ...base, services: ['postgres'] });
+    const yaml = buildComposeYaml({
+      ...base,
+      services: [resolveService(expandCuratedService('postgres'))],
+    });
     expect(yaml).not.toContain('monoceros-proxy');
     expect(yaml).not.toMatch(/^networks:/m);
   });
@@ -98,7 +102,7 @@ describe('buildComposeYaml — ports & networks', () => {
   it('attaches the workspace to default + monoceros-proxy with the yml name as alias', () => {
     const yaml = buildComposeYaml({
       ...base,
-      services: ['postgres'],
+      services: [resolveService(expandCuratedService('postgres'))],
       ports: [3000],
     });
     expect(yaml).toMatch(/workspace:/);

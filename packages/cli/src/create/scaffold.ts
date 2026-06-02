@@ -6,9 +6,7 @@ import {
   BASE_IMAGE,
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
-  SERVICE_CATALOG,
   knownLanguages,
-  knownServices,
   parseLanguageSpec,
 } from './catalog.js';
 import type { CreateOptions } from './types.js';
@@ -75,12 +73,29 @@ export function validateOptions(opts: CreateOptions): void {
       );
     }
   }
+  // Services arrive here already resolved (curated strings expanded
+  // against the catalog, objects taken as-is — see resolveService).
+  // What's left to enforce are the cross-service invariants the schema
+  // can't see: each name is unique and none collides with the reserved
+  // `workspace` compose service.
+  const seenServiceNames = new Set<string>();
   for (const svc of opts.services) {
-    if (!SERVICE_CATALOG[svc]) {
+    if (!svc.image) {
       throw new Error(
-        `Unknown service: ${svc}. Known: ${knownServices().join(', ')}.`,
+        `Service ${JSON.stringify(svc.name)} has no image. Every service needs an 'image:'.`,
       );
     }
+    if (svc.name === 'workspace') {
+      throw new Error(
+        `Invalid service name 'workspace': it collides with the reserved devcontainer workspace service. Pick another name.`,
+      );
+    }
+    if (seenServiceNames.has(svc.name)) {
+      throw new Error(
+        `Duplicate service name: ${JSON.stringify(svc.name)}. Each services[] entry must have a unique name.`,
+      );
+    }
+    seenServiceNames.add(svc.name);
   }
   for (const pkg of opts.aptPackages ?? []) {
     if (!APT_PACKAGE_NAME_RE.test(pkg)) {
@@ -133,10 +148,18 @@ export function validateOptions(opts: CreateOptions): void {
 // external --postgres-url is provided.
 export function normalizeOptions(opts: CreateOptions): CreateOptions {
   const languages = [...new Set(opts.languages)].sort();
-  let services = [...new Set(opts.services)].sort();
-  if (opts.postgresUrl) {
-    services = services.filter((s) => s !== 'postgres');
+  // Dedupe services by name (last write wins) and sort by name so the
+  // generated compose/devcontainer output is deterministic regardless
+  // of yml order. An external `--postgres-url` drops a curated postgres
+  // service — the workspace talks to the external DB instead.
+  const serviceByName = new Map<string, (typeof opts.services)[number]>();
+  for (const svc of opts.services) {
+    if (opts.postgresUrl && svc.name === 'postgres') continue;
+    serviceByName.set(svc.name, svc);
   }
+  const services = [...serviceByName.values()].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
   const aptPackages = [...new Set(opts.aptPackages ?? [])].sort();
   // Sort feature refs alphabetically so devcontainer.json + stack.json
   // output is deterministic regardless of insertion order.
@@ -565,7 +588,9 @@ export function buildDevcontainerJson(
       name: opts.name,
       dockerComposeFile: 'compose.yaml',
       service: 'workspace',
-      ...(opts.services.length > 0 ? { runServices: opts.services } : {}),
+      ...(opts.services.length > 0
+        ? { runServices: opts.services.map((s) => s.name) }
+        : {}),
       workspaceFolder: `/workspaces/${opts.name}`,
       remoteUser: 'node',
       forwardPorts: ports,
@@ -634,6 +659,36 @@ export function buildDevcontainerJson(
   };
 }
 
+// Double-quote a YAML scalar, escaping the chars that matter inside a
+// double-quoted YAML string. Always quoting keeps arbitrary service env
+// values (passwords with `:` / `#` / spaces, interpolated secrets, shell
+// commands) safe without pulling in a YAML serializer.
+export function composeScalar(value: string): string {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\t/g, '\\t');
+  return `"${escaped}"`;
+}
+
+// Rewrite a service volume's source segment to a path relative to the
+// `.devcontainer/` directory (where compose runs). The `data` shorthand
+// maps to the per-service bind-mounted data dir under `../data/<name>`;
+// any other (relative, validated) host path is prefixed with `../` to
+// reach up to the container root. The destination + mode segments pass
+// through verbatim.
+export function composeVolumeSource(spec: string, serviceName: string): string {
+  const parts = spec.split(':');
+  const src = parts[0]!;
+  const rest = parts.slice(1).join(':');
+  if (src === 'data') return `../data/${serviceName}:${rest}`;
+  // Host-relative source: strip a leading `./` (compose habit) so the
+  // `../` prefix that walks up to the container root stays clean.
+  const relative = src.startsWith('./') ? src.slice(2) : src;
+  return `../${relative}:${rest}`;
+}
+
 // Hand-rolled YAML for compose.yaml. The shape is narrow enough that
 // avoiding a YAML dependency outweighs the cost of careful indentation.
 //
@@ -691,24 +746,49 @@ export function buildComposeYaml(
       lines.push(`      - ../home/${sub}:/home/node/${sub}`);
     }
   }
-  for (const svcId of opts.services) {
-    const def = SERVICE_CATALOG[svcId];
-    if (!def) continue;
-    lines.push(`  ${def.id}:`);
-    lines.push(`    image: ${def.image}`);
-    if (def.env) {
+  for (const svc of opts.services) {
+    // `${VAR}` env values were already resolved against <name>.env in
+    // apply, so everything here is a literal. Per-service data dirs are
+    // bind-mounted from the host (`data:` volume shorthand → ../data/<name>)
+    // so DB content is visible at `<container-dir>/data/<name>/` and is
+    // part of remove-backups. See ADR 0003. Pre-created in writeScaffold
+    // so docker doesn't auto-mkdir them as root.
+    lines.push(`  ${svc.name}:`);
+    lines.push(`    image: ${svc.image}`);
+    if (svc.restart) {
+      lines.push(`    restart: ${svc.restart}`);
+    }
+    if (svc.command !== undefined) {
+      lines.push(`    command: ${composeScalar(svc.command)}`);
+    }
+    const envKeys = Object.keys(svc.env);
+    if (envKeys.length > 0) {
       lines.push('    environment:');
-      for (const [k, v] of Object.entries(def.env)) {
-        lines.push(`      ${k}: ${v}`);
+      for (const k of envKeys) {
+        lines.push(`      ${k}: ${composeScalar(svc.env[k]!)}`);
       }
     }
-    if (def.dataMount) {
-      // Per-service data dir bind-mounted from the host so DB content
-      // is visible at `<container-dir>/data/<svc>/`. See ADR 0003 for
-      // the per-container state-model this slots into. Pre-created in
-      // writeScaffold so docker doesn't auto-mkdir as root.
+    if (svc.volumes.length > 0) {
       lines.push('    volumes:');
-      lines.push(`      - ../data/${def.id}:${def.dataMount}`);
+      for (const vol of svc.volumes) {
+        lines.push(`      - ${composeVolumeSource(vol, svc.name)}`);
+      }
+    }
+    if (svc.healthcheck) {
+      const hc = svc.healthcheck;
+      lines.push('    healthcheck:');
+      if (Array.isArray(hc.test)) {
+        // Compose exec-form: a flow sequence of quoted args.
+        lines.push(`      test: [${hc.test.map(composeScalar).join(', ')}]`);
+      } else {
+        lines.push(`      test: ${composeScalar(hc.test)}`);
+      }
+      if (hc.interval) lines.push(`      interval: ${hc.interval}`);
+      if (hc.timeout) lines.push(`      timeout: ${hc.timeout}`);
+      if (hc.retries !== undefined) lines.push(`      retries: ${hc.retries}`);
+      if (hc.startPeriod) {
+        lines.push(`      start_period: ${hc.startPeriod}`);
+      }
     }
   }
 
@@ -992,13 +1072,14 @@ export async function writeScaffold(
   await fs.mkdir(homeDir, { recursive: true });
   if (needsCompose(opts)) {
     await fs.mkdir(dataDir, { recursive: true });
-    // Pre-create one subdir per service so docker bind-mounts onto
-    // an existing host path (and doesn't auto-mkdir as root, which
-    // breaks postgres/mysql first-run on Linux).
-    for (const svcId of opts.services) {
-      const def = SERVICE_CATALOG[svcId];
-      if (def?.dataMount) {
-        await fs.mkdir(path.join(dataDir, def.id), { recursive: true });
+    // Pre-create one subdir per service that uses the `data:` volume
+    // shorthand, so docker bind-mounts onto an existing host path (and
+    // doesn't auto-mkdir as root, which breaks postgres/mysql first-run
+    // on Linux).
+    for (const svc of opts.services) {
+      const hasDataVolume = svc.volumes.some((v) => v.split(':')[0] === 'data');
+      if (hasDataVolume) {
+        await fs.mkdir(path.join(dataDir, svc.name), { recursive: true });
       }
     }
   }

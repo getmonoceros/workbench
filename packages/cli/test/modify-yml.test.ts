@@ -101,12 +101,117 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toContain('- python');
   });
 
+  it('runAddService expands a curated name into a full object block', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const result = await runAddService({
+      ...baseOpts,
+      name: 'demo',
+      service: 'postgres',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('- name: postgres');
+    expect(yml).toContain('image: postgres:18');
+    expect(yml).toContain('port: 5432');
+    expect(yml).toContain('POSTGRES_USER: monoceros');
+    expect(yml).toContain('- data:/var/lib/postgresql');
+  });
+
+  it('runAddService scaffolds a custom image with name + commented hints', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const result = await runAddService({
+      ...baseOpts,
+      name: 'demo',
+      service: 'rustfs/rustfs:latest',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    // active fields
+    expect(yml).toContain('- name: rustfs');
+    expect(yml).toContain('image: rustfs/rustfs:latest');
+    // commented scaffold survives the AST round-trip
+    expect(yml).toMatch(/#\s*port:/);
+    expect(yml).toMatch(/#\s*env:/);
+    // the yml still validates (custom service = name + image is enough)
+    const { validateConfig } = await import('../src/config/schema.js');
+    const { parse } = await import('yaml');
+    expect(() => validateConfig(parse(yml))).not.toThrow();
+  });
+
+  it('runAddService --as adds the same curated image twice under distinct names', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddService({
+      ...baseOpts,
+      name: 'demo',
+      service: 'postgres',
+      as: 'postgres-app',
+      monocerosHome: home,
+    });
+    const second = await runAddService({
+      ...baseOpts,
+      name: 'demo',
+      service: 'postgres',
+      as: 'postgres-analytics',
+      monocerosHome: home,
+    });
+    expect(second.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('- name: postgres-app');
+    expect(yml).toContain('- name: postgres-analytics');
+    // both carry the expanded catalog block, neither keeps the bare
+    // catalog name `postgres`
+    expect(yml).not.toMatch(/- name: postgres$/m);
+    expect(yml.match(/image: postgres:18/g)).toHaveLength(2);
+  });
+
+  it('runAddService rejects an invalid --as name', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      runAddService({
+        ...baseOpts,
+        name: 'demo',
+        service: 'postgres',
+        as: 'Bad Name',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Invalid --as name/);
+  });
+
+  it('runAddService errors on a name collision with a different image', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: rustfs',
+        '    image: rustfs/rustfs:latest',
+        '',
+      ].join('\n'),
+    );
+    await expect(
+      runAddService({
+        ...baseOpts,
+        name: 'demo',
+        service: 'rustfs/rustfs:v2',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/already exists with a different image/);
+  });
+
   it('runAddService is a no-op when the service is already present', async () => {
     await writeYml(
       'demo',
-      ['schemaVersion: 1', 'name: demo', 'services:', '  - postgres', ''].join(
-        '\n',
-      ),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '',
+      ].join('\n'),
     );
     const result = await runAddService({
       ...baseOpts,
@@ -872,8 +977,10 @@ describe('add-*/remove-* against the yml', () => {
         'schemaVersion: 1',
         'name: demo',
         'services:',
-        '  - postgres',
-        '  - redis',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '  - name: redis',
+        '    image: redis:8',
         '',
       ].join('\n'),
     );
@@ -884,7 +991,7 @@ describe('add-*/remove-* against the yml', () => {
       monocerosHome: home,
     });
     const yml = await ymlOf('demo');
-    expect(yml).toContain('- redis');
+    expect(yml).toContain('name: redis');
     expect(yml).not.toContain('postgres');
   });
 

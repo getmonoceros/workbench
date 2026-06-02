@@ -1,94 +1,152 @@
 # `monoceros add-service`
 
-Fügt einen Compose-Service zur Container-Konfig hinzu. Idempotent,
-zeigt vor dem Schreiben einen Diff.
+Fügt einen Backing-Service (Datenbank, Cache, Objektspeicher, …) zur
+Container-Konfig hinzu. Idempotent, zeigt vor dem Schreiben einen Diff.
 
 ```sh
-monoceros add-service <name> <svc> [--yes]
+monoceros add-service <name> <service-or-image> [--as=<service-name>] [--yes]
 ```
 
-## Zweck
+## Zwei Wege, einen Service einzutragen
 
-Editiert die yml unter
-`$MONOCEROS_HOME/container-configs/<name>.yml`. Trägt `<svc>` im
-`services:`-Block ein. Beim nächsten `monoceros apply <name>` wird
-der Container in den Compose-Modus überführt (oder, wenn er das
-schon ist, der Service als zusätzlicher Compose-Container neben
-dem Workspace gestartet).
+`<service-or-image>` wird so interpretiert:
 
-## Mechanik
+- **Kuratierter Name** (`postgres`, `mysql`, `redis`) → expandiert zu
+  einem **vollständigen, editierbaren Service-Block** mit Image,
+  Default-Port, Dev-Env und persistentem `data:`-Volume. Sofort
+  lauffähig; du passt danach an, was du brauchst.
 
-1. **Schema-Validierung** der yml.
-2. **Catalog-Check**: `<svc>` muss in der kuratierten Liste
-   `postgres, mysql, redis` stehen.
-3. **Diff-Vorschau** vor dem Schreiben (mit `--yes` übersprungen).
-4. **AST-Mutation**: schreibt das `services:`-Feld
-   comment-preserving.
+- **Beliebiges Image** (`rustfs/rustfs:latest`, `clickhouse/clickhouse-server:24`)
+  → trägt `name` + `image` aktiv ein und legt den Rest (`port`, `env`,
+  `volumes`, `healthcheck`) als **auskommentiertes Grundgerüst**
+  darunter ab. Monoceros kennt fremde Images nicht — du füllst aus, was
+  das Image braucht. Auf der Konsole erscheint ein Hinweis darauf.
 
-## Argumente
+Der Service-Name (Compose-Service, DNS-Name im Netz, Daten-Verzeichnis)
+wird bei kuratierten Services der Name selbst, bei Images aus dem
+Image-Ref abgeleitet (`rustfs/rustfs:latest` → `rustfs`).
 
-| Argument | Bedeutung                                              |
-| -------- | ------------------------------------------------------ |
-| `<name>` | Container-Name.                                        |
-| `<svc>`  | Service aus dem Katalog: `postgres`, `mysql`, `redis`. |
+## Beispiele
 
-## Optionen
+```sh
+# Kuratiert: voller Block mit Dev-Defaults
+monoceros add-service logoscraper postgres
 
-| Option      | Bedeutung                                       |
-| ----------- | ----------------------------------------------- |
-| `--yes, -y` | Diff-Confirm-Prompt überspringen (für Scripts). |
+# Beliebiges Image: name + image + auskommentiertes Grundgerüst
+monoceros add-service logoscraper rustfs/rustfs:latest
+
+# Denselben Service mehrfach — eigener Name pro Instanz
+monoceros add-service logoscraper postgres --as=postgres-app
+monoceros add-service logoscraper postgres --as=postgres-analytics
+```
+
+## Das Service-Modell
+
+Jeder Service-Eintrag ist ein Objekt. Felder:
+
+| Feld          | Zweck                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| `name`        | Compose-Service-Name / DNS-Hostname / Daten-Verzeichnis. Eindeutig pro Container.                       |
+| `image`       | Docker-Image (Pflicht).                                                                                 |
+| `port`        | **Interner** Listen-Port → Default für `monoceros tunnel`. **Kein** Host-Mapping.                       |
+| `env`         | Umgebungsvariablen. `${VAR}` wird aus `<name>.env` aufgelöst (siehe unten).                             |
+| `volumes`     | `data:/pfad` (persistenter Bind-Mount unter `data/<name>/`) oder relativer Host-Pfad (`projects/…:/…`). |
+| `healthcheck` | Compose-Healthcheck. `test` als String oder `["CMD", …]`-Array.                                         |
+| `restart`     | `no` / `always` / `on-failure` / `unless-stopped`.                                                      |
+| `command`     | Override des Container-Commands.                                                                        |
+
+Bewusst **nicht** dabei: `ports` (Host-Mappings) — Host-Exposition läuft
+über [`add-port`](./add-port.md) (HTTP via Traefik) bzw.
+[`tunnel`](./tunnel.md) (TCP). Und keine Docker Named Volumes — `data:`
+bindet auf die Host-Platte, damit Daten Teil von `remove`-Backups sind
+([ADR 0003](../adr/0003-container-state-model.md)).
+
+## Secrets: `${VAR}` und `<name>.env`
+
+Werte wie Passwörter gehören nicht in die (teilbare) yml. Stattdessen:
+
+```yaml
+# container-configs/logoscraper.yml
+services:
+  - name: postgres
+    image: postgres:18
+    env:
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+```
+
+```sh
+# container-configs/logoscraper.env  (gitignored)
+PG_PASSWORD=s3cret
+```
+
+Beim `apply` werden alle `${VAR}` der Service-Felder aus `<name>.env`
+ersetzt. Fehlt eine Variable, bricht der Apply mit einer klaren,
+gesammelten Fehlermeldung ab (statt still einen leeren Wert zu setzen).
+Die `.env` reist mit `remove`-Backups mit und ist via
+`container-configs/.gitignore` (`*.env`) vom Versionieren ausgeschlossen.
+
+## `--as` — denselben Service mehrfach
+
+`--as=<name>` übersteuert den Service-Namen. Nötig, um dasselbe Image
+mehr als einmal einzutragen (zwei Postgres-Server) oder um zwei Images,
+die denselben Namen ableiten, auseinanderzuhalten. Jede Instanz bekommt
+ein eigenes `data/<name>/`-Verzeichnis und einen eigenen DNS-Namen.
 
 ## Erreichbarkeit + Credentials
 
-Inside-the-container ist der Service als Hostname `<svc>`
-erreichbar (z.B. `postgres:5432`). Die Default-Credentials sind
-eine Dev-Konvention (`monoceros / monoceros / monoceros`) und
-fest im Service-Katalog verdrahtet — siehe Hinweis in
-`packages/cli/src/create/catalog.ts`.
+Aus dem Dev-Container ist der Service über seinen **Namen** als Hostname
+erreichbar (nicht `localhost`) auf seinem internen Port:
 
-Beispiel-Connection-Strings:
+```
+postgresql://<user>:<pass>@<name>:5432/<db>
+```
+
+Kuratierter Postgres mit Dev-Defaults (`monoceros`/`monoceros`/`monoceros`):
 
 ```
 postgresql://monoceros:monoceros@postgres:5432/monoceros
-mysql://monoceros:monoceros@mysql:3306/monoceros
-redis://redis:6379
 ```
 
-DB-Daten werden bind-gemountet auf
-`<MONOCEROS_HOME>/container/<name>/data/<svc>/` (siehe
-[ADR 0003](../adr/0003-container-state-model.md)) — damit
-überleben sie `apply`-Rebuilds und sind teil eines
-`monoceros remove`-Backups.
+Vom **Host** (DB-GUI etc.) gibt es kein `localhost:5432` — dafür
+[`monoceros tunnel <name> <service>`](./tunnel.md).
+
+## Idempotenz + Kollision
+
+- Gleicher Aufruf zweimal → no-change (vorhandener Service mit gleichem
+  Image bleibt unangetastet, deine Edits am Block überleben).
+- Gleicher Name, **anderes** Image → Fehler mit Hinweis auf `--as`.
+
+## Argumente + Optionen
+
+| Argument / Option     | Bedeutung                                                                |
+| --------------------- | ------------------------------------------------------------------------ |
+| `<name>`              | Container-Name.                                                          |
+| `<service-or-image>`  | Kuratierter Name (`postgres`/`mysql`/`redis`) oder beliebiger Image-Ref. |
+| `--as=<service-name>` | Service-Namen übersteuern (mehrfach derselbe Service / Namenskollision). |
+| `--yes, -y`           | Diff-Confirm-Prompt überspringen (für Scripts).                          |
 
 ## Externe Services statt lokalem Compose-Service
 
-Wenn du eine bestehende Datenbank ausserhalb des Containers nutzen
-willst (Production-DB, geteilte Dev-DB, …): statt `add-service`
-trägst du in der yml von Hand ein:
+Bestehende DB ausserhalb des Containers (Production, geteilte Dev-DB):
+statt `add-service` in der yml von Hand:
 
 ```yaml
 externalServices:
   postgres: postgresql://user:pass@host:5432/dbname
 ```
 
-Beim Apply wird kein `postgres`-Compose-Service mehr generiert —
-der Container greift direkt auf den externen Host zu.
-
-## Idempotenz
-
-`add-service sandbox postgres` zweimal in Folge → zweiter Aufruf
-ist ein no-change.
+Beim Apply wird kein `postgres`-Compose-Service generiert — der
+Container greift direkt auf den externen Host zu.
 
 ## Verwandte Befehle
 
-- [`remove-service`](./remove-service.md) — Inverse (Datenvolumen
-  bleibt!)
+- [`remove-service`](./remove-service.md) — Inverse (Daten-Verzeichnis bleibt)
+- [`tunnel`](./tunnel.md) — Service vom Host erreichen
 - [`monoceros apply <name>`](./apply.md) — Änderung wirksam machen
-- [`monoceros init <name> --with=postgres`](./init.md) — Service
-  schon beim Init eintragen
 
 ## Fail-Modi
 
-- **`Unknown service: <name>`** — Tippfehler oder Service nicht
-  im Katalog.
+- **`A service named '<name>' already exists with a different image`** —
+  `--as=<other>` nutzen oder den bestehenden Service erst entfernen.
+- **`Invalid --as name …`** — Name muss `[a-z0-9][a-z0-9_-]*` sein.
 - **`No such config`** — Container-yml existiert nicht.

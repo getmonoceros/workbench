@@ -3,7 +3,7 @@ import path from 'node:path';
 import { containerConfigPath, containerDir } from '../config/paths.js';
 import { readConfig } from '../config/io.js';
 import { composeProjectName } from '../devcontainer/compose.js';
-import { SERVICE_CATALOG, knownServices } from '../create/catalog.js';
+import { resolveService } from '../create/catalog.js';
 import {
   defaultDockerExec,
   PROXY_NETWORK_NAME,
@@ -107,22 +107,25 @@ function parseTargetArg(raw: string, config: SolutionConfig): ParsedTarget {
   if (Number.isInteger(asNumber) && asNumber > 0 && asNumber < 65536) {
     return { kind: 'port', port: asNumber };
   }
-  // Treat as service name. Must be both in the catalog (so we know its
-  // default port) AND in the container's services[] (so we know it's
-  // actually running alongside the workspace).
-  const entry = SERVICE_CATALOG[raw];
-  if (!entry) {
-    const candidates = knownServices().join(', ');
+  // Treat as a service name. The container yml is the source of truth:
+  // resolve every services[] entry (curated string or explicit object)
+  // and look the name up there. The forward port comes from the resolved
+  // entry — an object's `port:` or a curated service's catalog default.
+  const services = config.services.map(resolveService);
+  const match = services.find((s) => s.name === raw);
+  if (!match) {
+    const names = services.map((s) => s.name);
+    const list = names.length > 0 ? names.join(', ') : '(none configured)';
     throw new Error(
-      `Unknown service '${raw}'. Known services: ${candidates}. Or pass a port number (e.g. \`monoceros tunnel <name> 8080\`).`,
+      `Service '${raw}' is not configured in this container's yml. Configured services: ${list}. Or pass a port number (e.g. \`monoceros tunnel <name> 8080\`).`,
     );
   }
-  if (!config.services.includes(raw)) {
+  if (match.port === undefined) {
     throw new Error(
-      `Service '${raw}' is not declared in this container's yml. Add it with \`monoceros add-service ${config.services.length === 0 ? '<name>' : '…'} ${raw}\` and re-apply.`,
+      `Service '${raw}' declares no port, so tunnel can't know what to forward. Add \`port: <n>\` (the in-container port it listens on) to the service in the yml and re-apply.`,
     );
   }
-  return { kind: 'service', service: raw, port: entry.defaultPort };
+  return { kind: 'service', service: raw, port: match.port };
 }
 
 function resolveCompose(args: {

@@ -5,6 +5,7 @@ import {
   containerConfigPath,
   containerConfigsDir,
   containerDir,
+  containerEnvPath,
   monocerosHome as defaultMonocerosHome,
   prettyPath,
 } from '../config/paths.js';
@@ -97,6 +98,11 @@ export async function runRestore(
   const containerInBackup = path.join(backup, 'container');
   const hasContainer = existsSync(containerInBackup);
 
+  // The env file (values behind the yml's `${VAR}` references) is
+  // restored alongside the yml when the backup carries one.
+  const envInBackup = path.join(backup, `${name}.env`);
+  const hasEnv = existsSync(envInBackup);
+
   // Refuse to overwrite live state.
   const destYml = containerConfigPath(name, home);
   const destContainer = containerDir(name, home);
@@ -114,6 +120,9 @@ export async function runRestore(
   // Copy back into place.
   await fs.mkdir(containerConfigsDir(home), { recursive: true });
   await fs.copyFile(path.join(backup, ymlFile), destYml);
+  if (hasEnv) {
+    await fs.copyFile(envInBackup, containerEnvPath(name, home));
+  }
   if (hasContainer) {
     await fs.cp(containerInBackup, destContainer, { recursive: true });
   }

@@ -178,6 +178,17 @@ export function containerConfigPath(
   return path.join(containerConfigsDir(home), `${name}.yml`);
 }
 
+/**
+ * Per-container env file holding values for `${VAR}` references in the
+ * yml (service secrets etc.). Lives beside `<name>.yml`, gitignored.
+ */
+export function containerEnvPath(
+  name: string,
+  home: string = monocerosHome(),
+): string {
+  return path.join(containerConfigsDir(home), `${name}.env`);
+}
+
 export function containersDir(home: string = monocerosHome()): string {
   return path.join(home, 'container');
 }

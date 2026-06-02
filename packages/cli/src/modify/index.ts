@@ -43,10 +43,16 @@ import { preflightHostPort } from '../proxy/port-check.js';
 import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
-  SERVICE_CATALOG,
+  deriveServiceName,
+  expandCuratedService,
+  isCuratedService,
   knownLanguages,
-  knownServices,
 } from '../create/catalog.js';
+import {
+  renderServiceObjectBody,
+  renderCustomService,
+  customServiceHint,
+} from '../init/service-doc.js';
 import { deriveRepoName } from '../create/scaffold.js';
 import type { FeatureOptions, RepoEntry } from '../create/types.js';
 import {
@@ -56,7 +62,7 @@ import {
   addLanguageToDoc,
   addPortsToDoc,
   addRepoToDoc,
-  addServiceToDoc,
+  addServiceEntryToDoc,
   relocateLeakedSectionComments,
   removeAptPackagesFromDoc,
   removeFeatureFromDoc,
@@ -102,6 +108,13 @@ export interface AddLanguageInput extends ModifyOptions {
 }
 export interface AddServiceInput extends ModifyOptions {
   service: string;
+  /**
+   * Override the compose service name. Required to add the same image
+   * more than once (two postgres servers → `--as postgres-app` /
+   * `--as postgres-analytics`) and to disambiguate two custom images
+   * that derive the same name.
+   */
+  as?: string;
 }
 export interface AddAptPackagesInput extends ModifyOptions {
   packages: string[];
@@ -204,13 +217,58 @@ export function runAddLanguage(input: AddLanguageInput): Promise<ModifyResult> {
   return mutate(input, (doc) => addLanguageToDoc(doc, input.language));
 }
 
-export function runAddService(input: AddServiceInput): Promise<ModifyResult> {
-  if (!SERVICE_CATALOG[input.service]) {
+export async function runAddService(
+  input: AddServiceInput,
+): Promise<ModifyResult> {
+  // Curated catalog name → expand to a full active object block.
+  // Anything else → treat the argument as an image, derive the service
+  // name from it, and drop in a commented scaffold for the fields
+  // Monoceros can't know.
+  const arg = input.service;
+  const curated = isCuratedService(arg);
+
+  // `--as` overrides the compose service name (default: the curated
+  // name, or one derived from the image). Validate the override here so
+  // the builder gets a focused message rather than a schema round-trip
+  // error. Mirrors the schema's SERVICE_NAME_RE.
+  if (input.as !== undefined && !/^[a-z0-9][a-z0-9_-]*$/.test(input.as)) {
     throw new Error(
-      `Unknown service: ${input.service}. Known: ${knownServices().join(', ')}.`,
+      `Invalid --as name ${JSON.stringify(input.as)}. Use lowercase letters, digits, '_' or '-' (must start with a letter or digit).`,
     );
   }
-  return mutate(input, (doc) => addServiceToDoc(doc, input.service));
+  const name = input.as ?? (curated ? arg : deriveServiceName(arg));
+  const image = curated ? expandCuratedService(arg).image : arg;
+  // Render the block under the resolved name. For curated services the
+  // expansion carries the catalog name, so override it before rendering.
+  const custom = curated ? null : renderCustomService(name, arg);
+  const bodyLines = curated
+    ? renderServiceObjectBody({ ...expandCuratedService(arg), name })
+    : custom!.bodyLines;
+  const scaffoldComment = curated ? undefined : custom!.comment;
+
+  const result = await mutate(input, (doc) => {
+    const r = addServiceEntryToDoc(
+      doc,
+      name,
+      image,
+      bodyLines,
+      scaffoldComment,
+    );
+    if (r.outcome === 'conflict') {
+      throw new Error(
+        `A service named '${name}' already exists with a different image (${r.existingImage}). ` +
+          `Add it under a different name with \`--as <name>\`, or remove the existing one first ` +
+          `(\`monoceros remove-service ${input.name} ${name}\`).`,
+      );
+    }
+    return r.outcome === 'added';
+  });
+
+  // Point the builder at the scaffold they now need to fill in.
+  if (result.status === 'updated' && !curated) {
+    (input.logger ?? defaultLogger()).info(customServiceHint(name));
+  }
+  return result;
 }
 
 export function runAddAptPackages(

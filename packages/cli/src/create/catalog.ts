@@ -3,6 +3,9 @@
 // reviewable; unknown values are rejected up front rather than passed
 // through to devcontainer / compose.
 
+import type { ServiceObject } from '../config/schema.js';
+import type { ResolvedService } from './types.js';
+
 // Monoceros runtime image — thin layer on top of Microsoft's
 // typescript-node base (see images/runtime/Dockerfile). The default
 // points at the floating major tag on GHCR, so an `apply` from a
@@ -144,4 +147,64 @@ export function knownLanguages(): string[] {
 
 export function knownServices(): string[] {
   return Object.keys(SERVICE_CATALOG).sort();
+}
+
+/**
+ * Normalize a `services:` object to a `ResolvedService` — fills the two
+ * fields the scaffold treats as always-present (env, volumes) with their
+ * empty defaults. `${VAR}` references in env/command pass through
+ * untouched; they're resolved against `<name>.env` at apply time
+ * (config/env-file.ts).
+ */
+export function resolveService(entry: ServiceObject): ResolvedService {
+  return {
+    name: entry.name,
+    image: entry.image,
+    ...(entry.port !== undefined ? { port: entry.port } : {}),
+    env: entry.env ? { ...entry.env } : {},
+    volumes: entry.volumes ? [...entry.volumes] : [],
+    ...(entry.healthcheck ? { healthcheck: entry.healthcheck } : {}),
+    ...(entry.restart ? { restart: entry.restart } : {}),
+    ...(entry.command ? { command: entry.command } : {}),
+  };
+}
+
+/** Whether `name` is a known curated catalog service. */
+export function isCuratedService(name: string): boolean {
+  return Object.prototype.hasOwnProperty.call(SERVICE_CATALOG, name);
+}
+
+/**
+ * Expand a curated catalog name into a full `ServiceObject` — the
+ * init-sugar form written into the yml so the builder sees (and can
+ * edit) every field. Throws if `name` isn't curated.
+ */
+export function expandCuratedService(name: string): ServiceObject {
+  const def = SERVICE_CATALOG[name];
+  if (!def) {
+    throw new Error(
+      `Unknown service '${name}'. Known catalog services: ${knownServices().join(', ')}.`,
+    );
+  }
+  return {
+    name: def.id,
+    image: def.image,
+    port: def.defaultPort,
+    ...(def.env ? { env: { ...def.env } } : {}),
+    ...(def.dataMount ? { volumes: [`data:${def.dataMount}`] } : {}),
+  };
+}
+
+/**
+ * Derive a compose service name from an image ref. Takes the last
+ * path segment, strips the tag/digest, lowercases and sanitises:
+ *   rustfs/rustfs:latest  → rustfs
+ *   postgres:16-alpine    → postgres
+ *   ghcr.io/foo/bar:1     → bar
+ *   ghcr.io:5000/x/app    → app
+ */
+export function deriveServiceName(image: string): string {
+  const lastSegment = image.split('/').pop() ?? image;
+  const noTag = lastSegment.split('@')[0]!.split(':')[0]!;
+  return noTag.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
 }

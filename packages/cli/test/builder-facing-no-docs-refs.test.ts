@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { validateConfig } from '../src/config/schema.js';
 import { runInit } from '../src/init/index.js';
 import { buildComposeYaml } from '../src/create/scaffold.js';
+import { resolveService, expandCuratedService } from '../src/create/catalog.js';
 import { renderDynamicConfig } from '../src/proxy/dynamic.js';
 import { formatRootlessNotSupportedError } from '../src/devcontainer/docker-mode.js';
 import { formatHostPortHeldError } from '../src/proxy/port-check.js';
@@ -99,7 +100,7 @@ describe('no internal docs/ADR refs in builder-facing output', () => {
     const yaml = buildComposeYaml({
       name: 'sandbox',
       languages: [],
-      services: ['postgres'],
+      services: [resolveService(expandCuratedService('postgres'))],
       ports: [3000],
     });
     expectNoInternalDocRefs('compose.yaml (with ports)', yaml);

@@ -59,7 +59,7 @@ describe('resolveTunnelTarget', () => {
     ).rejects.toThrow(/not materialised/);
   });
 
-  it('refuses an unknown service with the catalog list in the message', async () => {
+  it('refuses an unconfigured service, listing the configured ones', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await materializeContainer('demo', { compose: true });
     await expect(
@@ -68,15 +68,22 @@ describe('resolveTunnelTarget', () => {
         target: 'mongo',
         monocerosHome: home,
       }),
-    ).rejects.toThrow(/Unknown service 'mongo'.*mysql.*postgres.*redis/s);
+    ).rejects.toThrow(
+      /Service 'mongo' is not configured.*\(none configured\)/s,
+    );
   });
 
-  it('refuses a service that is in the catalog but not declared in the yml', async () => {
+  it('refuses a service not declared in the yml, listing what is configured', async () => {
     await writeYml(
       'demo',
-      ['schemaVersion: 1', 'name: demo', 'services:', '  - redis', ''].join(
-        '\n',
-      ),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: redis',
+        '    image: redis:8',
+        '',
+      ].join('\n'),
     );
     await materializeContainer('demo', { compose: true });
     await expect(
@@ -85,15 +92,70 @@ describe('resolveTunnelTarget', () => {
         target: 'postgres',
         monocerosHome: home,
       }),
-    ).rejects.toThrow(/not declared in this container's yml/);
+    ).rejects.toThrow(/not configured in this container's yml.*redis/s);
+  });
+
+  it('resolves a custom (non-catalog) service via its declared port', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: rustfs',
+        '    image: rustfs/rustfs:latest',
+        '    port: 9000',
+        '',
+      ].join('\n'),
+    );
+    const root = await materializeContainer('demo', { compose: true });
+    const resolved = await resolveTunnelTarget({
+      name: 'demo',
+      target: 'rustfs',
+      monocerosHome: home,
+    });
+    expect(resolved).toEqual({
+      network: `${composeProjectName(root)}_default`,
+      targetHost: 'rustfs',
+      internalPort: 9000,
+      display: 'demo/rustfs',
+    });
+  });
+
+  it('refuses a custom service that declares no port', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: rustfs',
+        '    image: rustfs/rustfs:latest',
+        '',
+      ].join('\n'),
+    );
+    await materializeContainer('demo', { compose: true });
+    await expect(
+      resolveTunnelTarget({
+        name: 'demo',
+        target: 'rustfs',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/declares no port/);
   });
 
   it('compose + service → compose network and service-name DNS', async () => {
     await writeYml(
       'demo',
-      ['schemaVersion: 1', 'name: demo', 'services:', '  - postgres', ''].join(
-        '\n',
-      ),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '    port: 5432',
+        '',
+      ].join('\n'),
     );
     const root = await materializeContainer('demo', { compose: true });
     const resolved = await resolveTunnelTarget({
@@ -128,9 +190,15 @@ describe('resolveTunnelTarget', () => {
   it('image-mode + service → refuses (services need compose mode)', async () => {
     await writeYml(
       'demo',
-      ['schemaVersion: 1', 'name: demo', 'services:', '  - postgres', ''].join(
-        '\n',
-      ),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '    port: 5432',
+        '',
+      ].join('\n'),
     );
     await materializeContainer('demo'); // no compose.yaml
     await expect(

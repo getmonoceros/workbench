@@ -5,6 +5,8 @@ import {
   buildFeatureHeaderLines,
   wrapToComment as sharedWrapToComment,
 } from './feature-doc.js';
+import { expandCuratedService } from '../create/catalog.js';
+import { renderServiceObjectBody } from './service-doc.js';
 
 /**
  * Renderer for the container yml that `monoceros init` produces.
@@ -69,7 +71,11 @@ export function generateComposedYml(
   if (merged.services.length > 0) {
     pushSectionHeader(lines, SERVICES_HEADER, /* commented */ false);
     lines.push('services:');
-    for (const svc of merged.services) lines.push(`  - ${svc}`);
+    for (const svc of merged.services) {
+      const body = renderServiceObjectBody(expandCuratedService(svc));
+      lines.push(`  - ${body[0]}`);
+      for (const line of body.slice(1)) lines.push(`    ${line}`);
+    }
     lines.push('');
   }
   if (merged.features.length > 0) {
@@ -152,7 +158,9 @@ export function generateDocumentedYml(
     lines.push('# services:');
     for (const c of byCategory.service) {
       for (const svc of c.file.contributes.services ?? []) {
-        lines.push(`#   - ${svc}`);
+        const body = renderServiceObjectBody(expandCuratedService(svc));
+        lines.push(`#   - ${body[0]}`);
+        for (const line of body.slice(1)) lines.push(`#     ${line}`);
       }
     }
     lines.push('');

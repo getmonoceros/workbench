@@ -7,7 +7,7 @@ export const addServiceCommand = defineCommand({
     name: 'add-service',
     group: 'edit',
     description:
-      'Add a compose service (postgres, mysql, redis, …) to the container config. Idempotent, prints a diff before writing.',
+      'Add a backing service to the container config. A curated name (postgres, mysql, redis) expands to a full editable block; any other image (e.g. rustfs/rustfs:latest) drops in name + image plus a commented scaffold. Idempotent, prints a diff before writing.',
   },
   args: {
     name: {
@@ -18,8 +18,14 @@ export const addServiceCommand = defineCommand({
     },
     service: {
       type: 'positional',
-      description: 'Service identifier (postgres, mysql, redis).',
+      description:
+        'Curated name (postgres, mysql, redis) or any image ref (e.g. rustfs/rustfs:latest).',
       required: true,
+    },
+    as: {
+      type: 'string',
+      description:
+        'Override the service name (the compose service / DNS name / data dir). Lets you add the same image more than once — e.g. two postgres servers as postgres-app and postgres-analytics.',
     },
     yes: {
       type: 'boolean',
@@ -33,6 +39,7 @@ export const addServiceCommand = defineCommand({
       const result = await runAddService({
         name: args.name,
         service: args.service,
+        ...(args.as ? { as: args.as } : {}),
         yes: args.yes,
       });
       process.exit(result.status === 'aborted' ? 1 : 0);

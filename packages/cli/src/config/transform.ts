@@ -1,3 +1,4 @@
+import { resolveService } from '../create/catalog.js';
 import { deriveRepoName } from '../create/scaffold.js';
 import type { CreateOptions, FeatureOptions } from '../create/types.js';
 import { portNumber, type SolutionConfig } from './schema.js';
@@ -48,7 +49,11 @@ export function solutionConfigToCreateOptions(
   const result: CreateOptions = {
     name: config.name,
     languages: [...config.languages],
-    services: [...config.services],
+    // Normalize every services[] entry (curated string or explicit
+    // object) to the canonical ResolvedService shape. `${VAR}` values
+    // survive untouched here — apply interpolates them against
+    // <name>.env afterwards.
+    services: config.services.map(resolveService),
   };
 
   if (config.externalServices.postgres !== undefined) {

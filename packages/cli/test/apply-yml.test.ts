@@ -521,7 +521,8 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'name: pgdemo',
         'services:',
-        '  - postgres',
+        '  - name: postgres',
+        '    image: postgres:18',
         '',
       ].join('\n'),
     );
@@ -541,8 +542,14 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'name: dbhost',
         'services:',
-        '  - postgres',
-        '  - redis',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '    volumes:',
+        '      - data:/var/lib/postgresql',
+        '  - name: redis',
+        '    image: redis:8',
+        '    volumes:',
+        '      - data:/data',
         '',
       ].join('\n'),
     );
@@ -678,9 +685,14 @@ describe('runApply', () => {
 
     await writeYml(
       'demo',
-      ['schemaVersion: 1', 'name: demo', 'services:', '  - redis', ''].join(
-        '\n',
-      ),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: redis',
+        '    image: redis:8',
+        '',
+      ].join('\n'),
     );
     await runApply({ ...baseRunOpts, name: 'demo', monocerosHome: home });
 
@@ -694,9 +706,14 @@ describe('runApply', () => {
   it('removes a stale compose.yaml when services are dropped on re-apply', async () => {
     await writeYml(
       'demo',
-      ['schemaVersion: 1', 'name: demo', 'services:', '  - postgres', ''].join(
-        '\n',
-      ),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '',
+      ].join('\n'),
     );
     await runApply({ ...baseRunOpts, name: 'demo', monocerosHome: home });
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
@@ -1012,7 +1029,8 @@ describe('runApply', () => {
         'schemaVersion: 1',
         'name: cmp-clean',
         'services:',
-        '  - postgres',
+        '  - name: postgres',
+        '    image: postgres:18',
         '',
       ].join('\n'),
     );

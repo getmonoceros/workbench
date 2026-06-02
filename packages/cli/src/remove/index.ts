@@ -4,6 +4,7 @@ import { consola } from 'consola';
 import {
   containerConfigPath,
   containerDir,
+  containerEnvPath,
   monocerosHome as defaultMonocerosHome,
   prettyPath,
 } from '../config/paths.js';
@@ -99,8 +100,10 @@ export async function runRemove(
   }
 
   const ymlPath = containerConfigPath(opts.name, home);
+  const envPath = containerEnvPath(opts.name, home);
   const containerPath = containerDir(opts.name, home);
   const hasYml = existsSync(ymlPath);
+  const hasEnv = existsSync(envPath);
   const hasContainer = existsSync(containerPath);
 
   if (!hasYml && !hasContainer) {
@@ -148,6 +151,12 @@ export async function runRemove(
     if (hasYml) {
       await fs.copyFile(ymlPath, path.join(backupPath, `${opts.name}.yml`));
     }
+    // The per-container env file holds the values behind the yml's
+    // `${VAR}` references (secrets). It must travel with the backup, or
+    // a restore would bring back a yml that can't be applied.
+    if (hasEnv) {
+      await fs.copyFile(envPath, path.join(backupPath, `${opts.name}.env`));
+    }
     if (hasContainer) {
       await fs.cp(containerPath, path.join(backupPath, 'container'), {
         recursive: true,
@@ -159,6 +168,9 @@ export async function runRemove(
   // ── Step 3: delete host-side state ─────────────────────────────
   if (hasYml) {
     await fs.rm(ymlPath, { force: true });
+  }
+  if (hasEnv) {
+    await fs.rm(envPath, { force: true });
   }
   if (hasContainer) {
     try {

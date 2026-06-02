@@ -32,7 +32,8 @@ features:
 installUrls:
   - https://teamwork-graph.atlassian.com/cli/install
 services:
-  - postgres
+  - name: postgres
+    image: postgres:18
 repos:
   - url: https://github.com/foo/bar.git
   - url: https://github.com/baz/qux.git
@@ -248,7 +249,7 @@ describe('validateConfig', () => {
         },
       ],
       installUrls: ['https://teamwork-graph.atlassian.com/cli/install'],
-      services: ['postgres'],
+      services: [{ name: 'postgres', image: 'postgres:18' }],
       repos: [
         { url: 'https://github.com/foo/bar.git' },
         {
@@ -389,7 +390,7 @@ describe('createDoc', () => {
         },
       ],
       installUrls: [],
-      services: ['postgres'],
+      services: [{ name: 'postgres', image: 'postgres:18' }],
       repos: [],
       externalServices: {},
     };

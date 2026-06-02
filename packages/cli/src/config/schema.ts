@@ -231,6 +231,118 @@ export const RoutingSchema = z.object({
   vscodeAutoForward: z.boolean().optional(),
 });
 
+// ── Services ────────────────────────────────────────────────────────
+//
+// A `services:` entry is always an object: `image` is required; env,
+// volumes, port, healthcheck, restart and command are opt-in.
+//
+// There is deliberately ONE form. The curated catalog (postgres / mysql
+// / redis) is init-sugar: `monoceros init --with-services=postgres` and
+// `monoceros add-service <name> postgres` EXPAND the catalog name into a
+// full, editable object block. The bare-string form is NOT accepted in
+// the yml — a single shape keeps the model and the docs unambiguous.
+// See docs/backlog.md (init + service redesign).
+
+// Compose service name: becomes the docker compose service key, the
+// in-network DNS alias other services dial it by, and the per-service
+// data dir name under container/<name>/data/<svc>/.
+const SERVICE_NAME_RE = /^[a-z0-9][a-z0-9_-]*$/;
+
+// env values: yaml may parse a value as string/number/bool, or a bare
+// `KEY:` as null. Coerce everything to a string for compose output;
+// null → "" (an explicitly empty env var). `${VAR}` references survive
+// verbatim here — they are resolved against `<name>.env` at apply time.
+const ServiceEnvValueSchema = z
+  .union([z.string(), z.number(), z.boolean(), z.null()])
+  .transform((v) => (v === null ? '' : String(v)));
+
+export const ServiceHealthcheckSchema = z.object({
+  // Compose accepts both forms and they differ semantically:
+  //   - string         → run via the shell (CMD-SHELL)
+  //   - ["CMD", …]      → exec the args directly, no shell
+  //   - ["CMD-SHELL", …]
+  // We accept either and render it back faithfully.
+  test: z.union([
+    z.string().min(1, 'Healthcheck test must not be empty.'),
+    z
+      .array(z.string().min(1))
+      .min(1, 'Healthcheck test array must not be empty.'),
+  ]),
+  interval: z.string().optional(),
+  timeout: z.string().optional(),
+  retries: z.number().int().min(1).optional(),
+  startPeriod: z.string().optional(),
+});
+
+export const SERVICE_RESTART_VALUES = [
+  'no',
+  'always',
+  'on-failure',
+  'unless-stopped',
+] as const;
+
+// A volume entry is `src:dest[:mode]`.
+//
+//   - `src` is either the `data` shorthand (→ the per-service
+//     bind-mounted data dir under container/<name>/data/<name>/) or a
+//     path relative to the container root (`projects/app/init.sql`,
+//     `./config/x`). `dest` is an absolute in-container path.
+//   - Docker **named volumes** (a bare token like `rustfs_data`) are NOT
+//     supported — Monoceros binds to the host disk so content is part of
+//     backups (ADR 0003). A bare single token is rejected with a hint to
+//     use `data:` or an explicit relative path, because that's the most
+//     common compose-port mistake.
+//   - Absolute host sources and `..` escapes are rejected.
+function isValidServiceVolume(spec: string): boolean {
+  const parts = spec.split(':');
+  if (parts.length < 2 || parts.length > 3) return false;
+  const [src, dest, mode] = parts;
+  if (!src || !dest) return false;
+  if (!dest.startsWith('/')) return false; // container target must be absolute
+  if (mode !== undefined && !/^(ro|rw|cached|delegated|z|Z)$/.test(mode)) {
+    return false;
+  }
+  if (src === 'data') return true;
+  if (src.startsWith('/')) return false; // absolute host source
+  // A bare token (no `./`, no `/`) is almost always a leftover docker
+  // named volume — reject it rather than silently bind-mounting a junk
+  // host dir of that name.
+  const looksLikePath = src.startsWith('./') || src.includes('/');
+  if (!looksLikePath) return false;
+  const normalized = src.startsWith('./') ? src.slice(2) : src;
+  if (normalized.split('/').some((s) => s === '..' || s === '.')) return false;
+  return true;
+}
+
+export const ServiceObjectSchema = z.object({
+  name: z
+    .string()
+    .regex(
+      SERVICE_NAME_RE,
+      "Invalid service name. Use lowercase letters, digits, '_' or '-' (must start with a letter or digit).",
+    ),
+  image: z.string().min(1, 'Service image must not be empty.'),
+  // In-container port the service listens on. Used by
+  // `monoceros tunnel <name> <service>` to forward without an explicit
+  // port argument. NOT a host port mapping — host exposure goes through
+  // routing.ports (Traefik) or `monoceros tunnel`.
+  port: z.number().int().min(1, 'Port must be ≥ 1.').max(65535).optional(),
+  env: z.record(z.string(), ServiceEnvValueSchema).optional(),
+  volumes: z
+    .array(
+      z
+        .string()
+        .refine(
+          isValidServiceVolume,
+          "Invalid volume. Use 'data:/container/path' for the per-service persistent dir, or a relative host path ('projects/app/init.sql:/...:ro', './config:/...'). Docker named volumes (a bare name like 'rustfs_data') are not supported; absolute host paths and '..' are rejected.",
+        ),
+    )
+    .optional(),
+  healthcheck: ServiceHealthcheckSchema.optional(),
+  restart: z.enum(SERVICE_RESTART_VALUES).optional(),
+  command: z.string().optional(),
+});
+
 export const ExternalServicesSchema = z.object({
   postgres: z
     .string()
@@ -271,7 +383,7 @@ export const SolutionConfigSchema = z.object({
         ),
     )
     .default([]),
-  services: z.array(z.string().min(1)).default([]),
+  services: z.array(ServiceObjectSchema).default([]),
   repos: z.array(RepoEntrySchema).default([]),
   routing: RoutingSchema.optional(),
   externalServices: ExternalServicesSchema.default({}),
@@ -284,6 +396,8 @@ export const SolutionConfigSchema = z.object({
 
 export type SolutionConfig = z.infer<typeof SolutionConfigSchema>;
 export type FeatureEntry = z.infer<typeof FeatureEntrySchema>;
+export type ServiceObject = z.infer<typeof ServiceObjectSchema>;
+export type ServiceHealthcheck = z.infer<typeof ServiceHealthcheckSchema>;
 export type RepoEntry = z.infer<typeof RepoEntrySchema>;
 export type GitUser = z.infer<typeof GitUserSchema>;
 export type ExternalServices = z.infer<typeof ExternalServicesSchema>;

@@ -14,6 +14,7 @@ import {
   writeGlobalDefaultGitUser,
 } from '../config/global.js';
 import { parseConfig, stringifyConfig } from '../config/io.js';
+import { ensureEnvGitignored } from '../config/env-file.js';
 import { KNOWN_PROVIDER_HOSTS, REGEX } from '../config/schema.js';
 import {
   resolveIdentityWithPrompt,
@@ -242,6 +243,7 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   }
 
   await fs.mkdir(containerConfigsDir(home), { recursive: true });
+  await ensureEnvGitignored(containerConfigsDir(home));
   await fs.writeFile(dest, text, 'utf8');
 
   // Persist the prompted identity AFTER the yml is on disk: scope

@@ -46,10 +46,42 @@ export interface GitUser {
   email: string;
 }
 
+/** Healthcheck for a compose service (mirrors `ServiceHealthcheck`). */
+export interface ServiceHealthcheck {
+  /** Shell-form (string) or exec-form (`["CMD", …]`), as in compose. */
+  test: string | string[];
+  interval?: string;
+  timeout?: string;
+  retries?: number;
+  startPeriod?: string;
+}
+
+/**
+ * A fully-resolved backing service, ready for the compose generator.
+ * Curated catalog strings and explicit yml objects both normalize to
+ * this shape via `resolveService` (create/catalog.ts) — the scaffold
+ * never sees the string-vs-object distinction.
+ *
+ * `volumes` carry raw specs (`data:/path`, `rel/host:/path:ro`); the
+ * `data` source shorthand and the host-relative `../` prefix are
+ * resolved at compose-generation time in `buildComposeYaml`.
+ */
+export interface ResolvedService {
+  name: string;
+  image: string;
+  /** In-container listen port — feeds `monoceros tunnel`. Not a host mapping. */
+  port?: number;
+  env: Record<string, string>;
+  volumes: string[];
+  healthcheck?: ServiceHealthcheck;
+  restart?: string;
+  command?: string;
+}
+
 export interface CreateOptions {
   name: string;
   languages: string[];
-  services: string[];
+  services: ResolvedService[];
   postgresUrl?: string;
   /**
    * Additional Debian/Ubuntu apt packages to install via the

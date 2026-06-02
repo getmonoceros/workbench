@@ -115,7 +115,16 @@ schemaVersion: 1
 name: sandbox
 
 languages: [python]
-services: [postgres]
+services:
+  - name: postgres
+    image: postgres:18
+    port: 5432
+    env:
+      POSTGRES_USER: monoceros
+      POSTGRES_PASSWORD: monoceros
+      POSTGRES_DB: monoceros
+    volumes:
+      - data:/var/lib/postgresql
 
 features:
   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1

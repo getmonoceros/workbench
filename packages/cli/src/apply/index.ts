@@ -8,10 +8,18 @@ import {
 import { parseConfig, readConfig, stringifyConfig } from '../config/io.js';
 import {
   containerConfigPath,
+  containerConfigsDir,
   containerDir,
+  containerEnvPath,
   monocerosHome as defaultMonocerosHome,
   prettyPath,
 } from '../config/paths.js';
+import {
+  readEnvFile,
+  interpolateServices,
+  formatMissingVarsError,
+  ensureEnvGitignored,
+} from '../config/env-file.js';
 import { REGEX } from '../config/schema.js';
 import {
   buildStateFile,
@@ -178,6 +186,24 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       globalConfig?.defaults?.features ?? {},
     ),
   );
+
+  // Resolve `${VAR}` references in service env/commands against the
+  // per-container env file (container-configs/<name>.env). Keeping
+  // secrets out of the shareable yml is the whole point — see the
+  // init+service redesign in docs/backlog.md. An unresolved reference
+  // is a hard error: a silently-empty POSTGRES_PASSWORD would fail far
+  // more opaquely at container start.
+  const envPath = containerEnvPath(opts.name, home);
+  await ensureEnvGitignored(containerConfigsDir(home));
+  const envVars = readEnvFile(envPath);
+  const interpolated = interpolateServices(createOpts.services, envVars);
+  if (interpolated.missing.length > 0) {
+    throw new Error(
+      formatMissingVarsError(interpolated.missing, prettyPath(envPath)),
+    );
+  }
+  createOpts.services = interpolated.services;
+
   validateOptions(createOpts);
   logger.success(`yml validated ${dim(`(${prettyPath(ymlPath)})`)}`);
 

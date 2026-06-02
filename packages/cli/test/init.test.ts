@@ -123,7 +123,8 @@ describe('runInit', () => {
     expect(text).toContain('languages:');
     expect(text).toContain('  - node');
     expect(text).toContain('services:');
-    expect(text).toContain('  - postgres');
+    expect(text).toContain('  - name: postgres');
+    expect(text).toContain('    image: postgres:18');
     expect(text).toContain(
       '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
     );
