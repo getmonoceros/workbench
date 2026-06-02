@@ -153,11 +153,16 @@ init <name>` vorher.
 - **`No running container`** (Image-Mode ohne `routing.ports`) —
   Container ist gestoppt. `monoceros start <name>` (oder
   `monoceros shell <name>`) zuerst.
-- **`Unknown service`** — Service-Name ist nicht im Katalog
-  (`list-components` zeigt die gültigen).
-- **`Service '…' is not declared in this container's yml`** — Service
-  ist im Katalog, aber nicht in der yml. `monoceros add-service
-<name> <svc>` + `monoceros apply`.
+- **`Service '…' is not configured in this container's yml`** — der
+  Name steht nicht im `services:`-Block. Die Meldung listet die
+  konfigurierten Services. `monoceros add-service <name> <svc>` +
+  `monoceros apply`.
+- **`Service '…' declares no port`** — bare Service-Name, aber der
+  (Custom-)Service hat kein `port:`. Entweder `port:` in der yml
+  ergänzen + re-applyen, oder den Port explizit angeben:
+  `monoceros tunnel <name> <svc>:<port>`.
+- **`Invalid target '…'`** — `service:port`-Form mit nicht-numerischem
+  oder ungültigem Port (1–65535).
 - **`Local port … is already in use`** — Pre-Flight-Check. Andere
   App lauscht auf dem Default-Port; mit `--local-port=<n>` umlenken.
 - **`image-mode (no compose.yaml)` + Service-Name** — Services
