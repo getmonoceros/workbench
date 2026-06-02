@@ -10,6 +10,7 @@ import {
   parseEnvFile,
   interpolate,
   interpolateServices,
+  interpolateFeatures,
 } from '../src/config/env-file.js';
 import { validateConfig } from '../src/config/schema.js';
 import { solutionConfigToCreateOptions } from '../src/config/transform.js';
@@ -124,7 +125,40 @@ describe('env-file parsing + interpolation', () => {
     const result = interpolateServices(services, { PG_PASSWORD: 'hunter2' });
     expect(result.services[0]!.env.POSTGRES_PASSWORD).toBe('hunter2');
     expect(result.missing).toEqual([
-      { service: 'rustfs', field: 'env.RUSTFS_ACCESS_KEY', name: 'S3_KEY' },
+      { location: 'services.rustfs.env.RUSTFS_ACCESS_KEY', name: 'S3_KEY' },
+    ]);
+  });
+
+  it('interpolates ${VAR} in feature option string values, not numbers/bools', () => {
+    const { features, missing } = interpolateFeatures(
+      {
+        'ghcr.io/getmonoceros/monoceros-features/claude-code:1': {
+          apiKey: '${ANTHROPIC_API_KEY}',
+        },
+        'ghcr.io/getmonoceros/monoceros-features/atlassian:1': {
+          rovodev: true,
+          apiToken: '${ATLASSIAN_TOKEN}',
+        },
+      },
+      { ANTHROPIC_API_KEY: 'sk-ant-xxx', ATLASSIAN_TOKEN: 'ATATT-yyy' },
+    );
+    expect(missing).toEqual([]);
+    expect(
+      features['ghcr.io/getmonoceros/monoceros-features/claude-code:1']!.apiKey,
+    ).toBe('sk-ant-xxx');
+    const atl =
+      features['ghcr.io/getmonoceros/monoceros-features/atlassian:1']!;
+    expect(atl.rovodev).toBe(true); // non-string passes through
+    expect(atl.apiToken).toBe('ATATT-yyy');
+  });
+
+  it('reports a missing feature-option var with a features.<ref>.<key> location', () => {
+    const { missing } = interpolateFeatures(
+      { 'ghcr.io/foo/bar:1': { apiKey: '${NOPE}' } },
+      {},
+    );
+    expect(missing).toEqual([
+      { location: 'features.ghcr.io/foo/bar:1.apiKey', name: 'NOPE' },
     ]);
   });
 });

@@ -97,9 +97,9 @@ export function interpolate(
 }
 
 export interface MissingVar {
-  service: string;
-  /** env key, or `(command)` for the service command. */
-  field: string;
+  /** Dotted path to the field, e.g. `services.postgres.env.POSTGRES_PASSWORD`
+   * or `features.ghcr.io/…:1.apiKey`. */
+  location: string;
   name: string;
 }
 
@@ -124,7 +124,7 @@ export function interpolateServices(
     const interp = (raw: string, field: string): string => {
       const r = interpolate(raw, vars);
       for (const name of r.missing) {
-        missing.push({ service: svc.name, field, name });
+        missing.push({ location: `services.${svc.name}.${field}`, name });
       }
       return r.value;
     };
@@ -163,18 +163,52 @@ export function interpolateServices(
   return { services: resolved, missing };
 }
 
+export interface InterpolateFeaturesResult {
+  features: Record<string, Record<string, string | number | boolean>>;
+  missing: MissingVar[];
+}
+
+/**
+ * Substitute `${VAR}` in feature option *string* values (non-string
+ * options pass through). This is what lets credentials like
+ * `apiKey: ${ANTHROPIC_API_KEY}` live in `<name>.env` instead of in the
+ * shareable yml. Keyed by feature ref → option map, matching the
+ * `CreateOptions.features` shape.
+ */
+export function interpolateFeatures(
+  features: Record<string, Record<string, string | number | boolean>>,
+  vars: Record<string, string>,
+): InterpolateFeaturesResult {
+  const missing: MissingVar[] = [];
+  const out: Record<string, Record<string, string | number | boolean>> = {};
+  for (const [ref, options] of Object.entries(features)) {
+    const next: Record<string, string | number | boolean> = {};
+    for (const [key, value] of Object.entries(options)) {
+      if (typeof value !== 'string') {
+        next[key] = value;
+        continue;
+      }
+      const r = interpolate(value, vars);
+      for (const name of r.missing) {
+        missing.push({ location: `features.${ref}.${key}`, name });
+      }
+      next[key] = r.value;
+    }
+    out[ref] = next;
+  }
+  return { features: out, missing };
+}
+
 /**
  * Format an actionable error for unresolved `${VAR}` references — names
- * the missing vars, the services that reference them, and the env file
- * the builder should define them in.
+ * the missing vars, where they're referenced, and the env file the
+ * builder should define them in.
  */
 export function formatMissingVarsError(
   missing: MissingVar[],
   envPathPretty: string,
 ): string {
-  const lines = missing.map(
-    (m) => `  - \${${m.name}} (services.${m.service}.${m.field})`,
-  );
+  const lines = missing.map((m) => `  - \${${m.name}} (${m.location})`);
   const uniqueNames = [...new Set(missing.map((m) => m.name))];
   return (
     `Unresolved \${VAR} references in the container yml:\n${lines.join('\n')}\n\n` +

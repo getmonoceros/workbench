@@ -378,12 +378,13 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
 function buildEnvStub(name: string): string {
   return [
     `# Secrets and values for \${VAR} references in ${name}.yml.`,
-    `# Gitignored — keep credentials here, never in the yml itself.`,
     `#`,
     `# One KEY=value per line, e.g.:`,
-    `#   PG_PASSWORD=change-me`,
-    `# then reference it in the yml:  POSTGRES_PASSWORD: \${PG_PASSWORD}`,
-    `# Values are substituted into the services at \`monoceros apply ${name}\`.`,
+    `# PG_PASSWORD=change-me`,
+    `# then reference it in the yml (service env OR feature options):`,
+    `#   POSTGRES_PASSWORD: \${PG_PASSWORD}`,
+    `#   apiKey: \${ANTHROPIC_API_KEY}`,
+    `# Values are substituted at \`monoceros apply ${name}\`.`,
     ``,
   ].join('\n');
 }

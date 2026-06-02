@@ -79,11 +79,23 @@ services:
 PG_PASSWORD=s3cret
 ```
 
-Beim `apply` werden alle `${VAR}` der Service-Felder aus `<name>.env`
-ersetzt. Fehlt eine Variable, bricht der Apply mit einer klaren,
-gesammelten Fehlermeldung ab (statt still einen leeren Wert zu setzen).
-Die `.env` reist mit `remove`-Backups mit und ist via
-`container-configs/.gitignore` (`*.env`) vom Versionieren ausgeschlossen.
+Beim `apply` werden alle `${VAR}` aus `<name>.env` ersetzt — sowohl in
+**Service-Feldern** als auch in **Feature-Optionen**. So bleiben auch
+API-Tokens aus der yml draußen:
+
+```yaml
+features:
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
+    options:
+      apiKey: ${ANTHROPIC_API_KEY} # Wert kommt aus <name>.env
+```
+
+Damit kann die yml weitergegeben werden, ohne Tokens mitzugeben. Fehlt
+eine Variable, bricht der Apply mit einer klaren, gesammelten
+Fehlermeldung ab (statt still einen leeren Wert zu setzen). `monoceros
+init` legt die `<name>.env` mit Infotext gleich an; sie reist mit
+`remove`-Backups mit und ist via `container-configs/.gitignore`
+(`*.env`) vom Versionieren ausgeschlossen.
 
 ## `--as` — denselben Service mehrfach
 

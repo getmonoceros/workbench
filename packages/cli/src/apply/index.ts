@@ -17,6 +17,7 @@ import {
 import {
   readEnvFile,
   interpolateServices,
+  interpolateFeatures,
   formatMissingVarsError,
   ensureEnvGitignored,
 } from '../config/env-file.js';
@@ -193,22 +194,26 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     ),
   );
 
-  // Resolve `${VAR}` references in service env/commands against the
-  // per-container env file (container-configs/<name>.env). Keeping
-  // secrets out of the shareable yml is the whole point — see the
-  // init+service redesign in docs/backlog.md. An unresolved reference
-  // is a hard error: a silently-empty POSTGRES_PASSWORD would fail far
-  // more opaquely at container start.
+  // Resolve `${VAR}` references against the per-container env file
+  // (container-configs/<name>.env) — in service fields AND feature
+  // option values. That's what lets credentials (DB passwords,
+  // `apiKey`/`apiToken`) live in the gitignored env file instead of the
+  // shareable yml. An unresolved reference is a hard error (a silently-
+  // empty secret fails far more opaquely later).
   const envPath = containerEnvPath(opts.name, home);
   await ensureEnvGitignored(containerConfigsDir(home));
   const envVars = readEnvFile(envPath);
-  const interpolated = interpolateServices(createOpts.services, envVars);
-  if (interpolated.missing.length > 0) {
-    throw new Error(
-      formatMissingVarsError(interpolated.missing, prettyPath(envPath)),
-    );
+  const interpServices = interpolateServices(createOpts.services, envVars);
+  const interpFeatures = interpolateFeatures(
+    createOpts.features ?? {},
+    envVars,
+  );
+  const missingVars = [...interpServices.missing, ...interpFeatures.missing];
+  if (missingVars.length > 0) {
+    throw new Error(formatMissingVarsError(missingVars, prettyPath(envPath)));
   }
-  createOpts.services = interpolated.services;
+  createOpts.services = interpServices.services;
+  if (createOpts.features) createOpts.features = interpFeatures.features;
 
   validateOptions(createOpts);
   logger.success(`yml validated ${dim(`(${prettyPath(ymlPath)})`)}`);
