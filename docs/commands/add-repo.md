@@ -34,7 +34,7 @@ monoceros add-repo <containername> <url> [--path=<folder>] \
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--path=<folder>`     | Override des Zielpfads unter `projects/`. Subfolders erlaubt (`apps/web`). Default: aus URL abgeleitet (`bar.git` → `bar`).                                                                                                                                                                                                                                           |
 | `--git-name=<name>`   | Per-Repo Git-Committer-Name. Override für das Container-Level `git.user.name`. Mit `--git-email` koppeln.                                                                                                                                                                                                                                                             |
-| `--git-email=<email>` | Per-Repo Git-Committer-Email. Mit `--git-name` koppeln. Beide gemeinsam oder gar nicht.                                                                                                                                                                                                                                                                               |
+| `--git-email=<email>` | Per-Repo Git-Committer-Email. Mit `--git-name` koppeln. Beide gemeinsam oder gar nicht. Akzeptiert auch einen `${VAR}`-Platzhalter (aufgelöst aus `<name>.env`); ein literaler Wert wird sofort auf gültiges Format geprüft.                                                                                                                                          |
 | `--provider=<name>`   | Git-Provider-Hinweis (`github` \| `gitlab` \| `bitbucket` \| `gitea`). **Pflicht für Hosts außerhalb von `github.com` / `gitlab.com` / `bitbucket.org`.** Steuert, welche CLI-Setup-Anleitung der Pre-Flight zeigt, wenn Credentials fehlen. Für die drei kanonischen Hosts überflüssig (auto-detect). `gitea` deckt auch Forgejo ab — gleiche API, gleicher UI-Flow. |
 | `--yes` / `-y`        | Confirm-Prompt überspringen.                                                                                                                                                                                                                                                                                                                                          |
 
@@ -234,6 +234,45 @@ Auflösung pro Repo (höchste Priorität gewinnt):
 post-create.sh setzt `git -C projects/<path> config user.name/email`
 direkt nach dem Clone, sodass die Per-Repo-Identität ab dem ersten
 Commit greift.
+
+#### `${VAR}` aus `<name>.env`
+
+`git.user.name` / `git.user.email` (per-Repo **und** Container-Level)
+dürfen `${VAR}`-Platzhalter tragen, die beim Apply aus `<name>.env`
+aufgelöst werden — so liegt die Identität nicht in der teilbaren yml:
+
+```yaml
+repos:
+  - url: https://github.com/conciso/logoscraper.git
+    git:
+      user:
+        name: ${GIT_USER_NAME}
+        email: ${GIT_USER_EMAIL}
+```
+
+```sh
+# container-configs/<name>.env  (gitignored)
+GIT_USER_NAME=Thorsten Kamann
+GIT_USER_EMAIL=thorsten.kamann@conciso.de
+```
+
+Die Kaskade bleibt erhalten: **fehlt** eine der Vars in der `.env`,
+wird der per-Repo-Override **komplett verworfen** (alles-oder-nichts,
+keine Misch-Identität) und das Repo fällt auf die nächste Stufe zurück
+(monoceros-config → Host → Prompt). Auf Container-Ebene wird **pro Feld**
+zurückgefallen. Ein aufgelöster, aber ungültiger Wert
+(`GIT_USER_EMAIL=quatsch`) bricht den Apply mit klarer Meldung ab — der
+Format-Check sitzt bewusst **nach** der Auflösung, nicht beim Parsen.
+
+`add-repo --git-email` akzeptiert ebenfalls einen `${VAR}`-Platzhalter;
+ein literaler Wert wird am Eingang sofort auf gültiges Format geprüft.
+
+**Scaffold beim ersten Repo:** Hat der Container noch keine `git.user`,
+legt `add-repo` (wie `init`) automatisch einen Container-`git.user` mit
+`${GIT_USER_NAME}`/`${GIT_USER_EMAIL}`-Platzhaltern an und seedet die
+leeren Keys in `<name>.env`. Eine bereits vorhandene `git.user` (literal
+oder Platzhalter) bleibt unangetastet. Leere Keys → die Kaskade füllt die
+Identität beim Apply.
 
 ## On-the-fly-Clone bei laufendem Container
 

@@ -120,11 +120,22 @@ export const FeatureEntrySchema = z.object({
  * Both fields are nullable + accept the empty string. yaml allows
  * a bare `name:` (parsed as null) as a placeholder for "not set
  * yet — apply, please ask me". The resolution logic treats null /
- * empty as "unset" and walks the precedence chain further. Filled-in
- * values must still satisfy the basic shape (non-empty name, email
- * matches the local-part@domain regex).
+ * empty as "unset" and walks the precedence chain further.
+ *
+ * The schema validates only the SHAPE (non-empty string). The email
+ * FORMAT is deliberately NOT checked here: a value may be a `${VAR}`
+ * placeholder resolved from `<name>.env` at apply time, and you can't
+ * validate the format of a value you haven't resolved yet. The format
+ * check moves to apply, after interpolation (see `isValidEmail` +
+ * apply/index.ts). The flag entry points (`add-repo --git-email`)
+ * validate eagerly there instead.
  */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Whether a (resolved) string is a well-formed email address. */
+export function isValidEmail(value: string): boolean {
+  return EMAIL_RE.test(value);
+}
 
 export const GitUserSchema = z.object({
   name: z
@@ -132,11 +143,7 @@ export const GitUserSchema = z.object({
     .nullish()
     .transform((v) => (typeof v === 'string' && v.length > 0 ? v : undefined)),
   email: z
-    .union([
-      z.literal(''),
-      z.null(),
-      z.string().regex(EMAIL_RE, 'Invalid email'),
-    ])
+    .union([z.literal(''), z.null(), z.string().min(1)])
     .nullish()
     .transform((v) => (typeof v === 'string' && v.length > 0 ? v : undefined)),
 });

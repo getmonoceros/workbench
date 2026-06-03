@@ -11,7 +11,12 @@ import {
   containerEnvPath,
   monocerosHome as defaultMonocerosHome,
 } from '../config/paths.js';
-import { ensureEnvGitignored, ensureEnvVars } from '../config/env-file.js';
+import {
+  ensureEnvGitignored,
+  ensureEnvVars,
+  hasVarPlaceholder,
+  GIT_IDENTITY_VAR,
+} from '../config/env-file.js';
 import { featureOptionHints } from '../init/feature-doc.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
 import {
@@ -30,6 +35,7 @@ import {
   KNOWN_PROVIDER_HOSTS,
   PROVIDER_VALUES,
   REGEX,
+  isValidEmail,
   portNumber,
   type RepoProvider,
 } from '../config/schema.js';
@@ -69,6 +75,7 @@ import {
   addPortsToDoc,
   addRepoToDoc,
   addServiceEntryToDoc,
+  ensureContainerGitUserPlaceholder,
   relocateLeakedSectionComments,
   removeAptPackagesFromDoc,
   removeFeatureFromDoc,
@@ -330,6 +337,19 @@ export async function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
       '--git-name and --git-email must be set together. Pass both, or neither.',
     );
   }
+  // Validate the email eagerly at the flag entry — the schema defers
+  // email format to apply (to allow `${VAR}` placeholders from the
+  // hand-edited yml), so a typo'd literal would otherwise only surface
+  // at apply. A `${VAR}` placeholder is allowed through here too, in
+  // case the builder wants to manage the value in <name>.env.
+  if (hasEmail) {
+    const email = input.gitEmail!.trim();
+    if (!isValidEmail(email) && !hasVarPlaceholder(email)) {
+      throw new Error(
+        `Invalid --git-email '${email}': must be a valid email or a \${VAR} placeholder resolved from <name>.env.`,
+      );
+    }
+  }
   // --provider validation:
   //   - host is canonical (github.com / gitlab.com / bitbucket.org):
   //       * no --provider → fine, auto-detected at apply time
@@ -378,7 +398,28 @@ export async function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
       : {}),
     ...(providerToWrite ? { provider: providerToWrite } : {}),
   };
-  const result = await mutate(input, (doc) => addRepoToDoc(doc, entry));
+  // When a NEW repo is added and the container has no `git.user` yet,
+  // scaffold a container-level identity with `${VAR}` placeholders (and
+  // seed the blank keys below) — same env-managed default `init`
+  // produces. Rides along in the same diff. An existing `git.user`
+  // (literal or placeholder) is left untouched.
+  let gitUserScaffolded = false;
+  const result = await mutate(input, (doc) => {
+    const repoAdded = addRepoToDoc(doc, entry);
+    if (repoAdded) gitUserScaffolded = ensureContainerGitUserPlaceholder(doc);
+    return repoAdded;
+  });
+  if (result.status === 'updated' && gitUserScaffolded) {
+    const home = input.monocerosHome ?? defaultMonocerosHome();
+    await ensureEnvGitignored(containerConfigsDir(home));
+    await ensureEnvVars(containerEnvPath(input.name, home), input.name, [
+      GIT_IDENTITY_VAR.name,
+      GIT_IDENTITY_VAR.email,
+    ]);
+    (input.logger ?? defaultLogger()).info(
+      `Added a container git.user with \${${GIT_IDENTITY_VAR.name}}/\${${GIT_IDENTITY_VAR.email}} placeholders and seeded ${input.name}.env — fill them or leave blank to use your global git identity.`,
+    );
+  }
   // On-the-fly clone path: if the yml change took AND the container
   // is currently running, clone the repo directly into the
   // container so the builder doesn't have to `monoceros apply`

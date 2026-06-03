@@ -141,19 +141,20 @@ describe('validateConfig', () => {
     ).toThrowError(/repos\.0\.provider/);
   });
 
-  it('rejects a per-repo git.user with malformed email', () => {
-    expect(() =>
-      validateConfig({
-        schemaVersion: 1,
-        name: 'demo',
-        repos: [
-          {
-            url: 'https://github.com/foo/bar.git',
-            git: { user: { name: 'me', email: 'not-an-email' } },
+  it('accepts a per-repo git.user.email as a ${VAR} placeholder (format deferred to apply)', () => {
+    const cfg = validateConfig({
+      schemaVersion: 1,
+      name: 'demo',
+      repos: [
+        {
+          url: 'https://github.com/foo/bar.git',
+          git: {
+            user: { name: '${GIT_USER_NAME}', email: '${GIT_USER_EMAIL}' },
           },
-        ],
-      }),
-    ).toThrowError(/repos\.0\.git\.user\.email/);
+        },
+      ],
+    });
+    expect(cfg.repos[0]!.git!.user!.email).toBe('${GIT_USER_EMAIL}');
   });
 
   it.each([
@@ -226,14 +227,13 @@ describe('validateConfig', () => {
     expect(caught!.message).toMatch(/installUrls\.0/);
   });
 
-  it('rejects malformed git.user.email', () => {
-    expect(() =>
-      validateConfig({
-        schemaVersion: 1,
-        name: 'demo',
-        git: { user: { name: 'X', email: 'not-an-email' } },
-      }),
-    ).toThrowError(/git\.user\.email/);
+  it('accepts a container git.user.email as a ${VAR} placeholder (format deferred to apply)', () => {
+    const cfg = validateConfig({
+      schemaVersion: 1,
+      name: 'demo',
+      git: { user: { name: 'X', email: '${GIT_USER_EMAIL}' } },
+    });
+    expect(cfg.git!.user!.email).toBe('${GIT_USER_EMAIL}');
   });
 
   it('accepts the full backlog example', () => {

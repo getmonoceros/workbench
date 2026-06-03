@@ -20,8 +20,9 @@ import {
   interpolateFeatures,
   formatMissingVarsError,
   ensureEnvGitignored,
+  resolveGitUserFields,
 } from '../config/env-file.js';
-import { REGEX } from '../config/schema.js';
+import { REGEX, isValidEmail } from '../config/schema.js';
 import {
   buildStateFile,
   readStateFile,
@@ -215,6 +216,62 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   createOpts.services = interpServices.services;
   if (createOpts.features) createOpts.features = interpFeatures.features;
 
+  // Resolve `${VAR}` in git identities — the container-level `git.user`
+  // and each repo's `git.user` — against the same env file. UNLIKE
+  // services/features, a missing var is NOT an error here: the identity
+  // falls through to the existing cascade (monoceros-config defaults →
+  // host → prompt). Only a fully-resolved-but-malformed email is a hard
+  // error, checked now that the actual value is known (the schema defers
+  // email format to apply on purpose).
+  //
+  //   - container `git.user`: per field. A resolved field is used; an
+  //     unresolved one is dropped so the cascade fills it (the cascade
+  //     already resolves name/email independently).
+  //   - repo `git.user`: all-or-nothing. A single missing var drops the
+  //     whole per-repo override, so the repo inherits the container
+  //     identity (.monoceros/gitconfig) — no Frankenstein name-from-env +
+  //     email-from-cascade.
+  const gitUserErrors: string[] = [];
+  let containerGitOverride: { name?: string; email?: string } | undefined;
+  if (parsed.config.git?.user) {
+    const f = resolveGitUserFields(parsed.config.git.user, envVars);
+    if (f.email.value !== undefined && !isValidEmail(f.email.value)) {
+      gitUserErrors.push(
+        `git.user.email resolved to "${f.email.value}", which is not a valid email`,
+      );
+    }
+    const override = {
+      ...(f.name.value !== undefined ? { name: f.name.value } : {}),
+      ...(f.email.value !== undefined ? { email: f.email.value } : {}),
+    };
+    if (Object.keys(override).length > 0) containerGitOverride = override;
+  }
+  for (const repo of createOpts.repos ?? []) {
+    if (!repo.gitUser) continue;
+    const f = resolveGitUserFields(repo.gitUser, envVars);
+    if (f.name.value === undefined || f.email.value === undefined) {
+      // All-or-nothing: a field with no usable value (missing/empty var)
+      // drops the whole per-repo override → the repo inherits the
+      // container identity, which itself climbs the cascade.
+      delete repo.gitUser;
+      continue;
+    }
+    if (!isValidEmail(f.email.value)) {
+      gitUserErrors.push(
+        `repos[${repo.path}].git.user.email resolved to "${f.email.value}", which is not a valid email`,
+      );
+      continue;
+    }
+    repo.gitUser = { name: f.name.value, email: f.email.value };
+  }
+  if (gitUserErrors.length > 0) {
+    throw new Error(
+      `Invalid git identity after resolving ${prettyPath(envPath)}:\n` +
+        gitUserErrors.map((e) => `  - ${e}`).join('\n') +
+        `\n\nFix the value in the env file (or the yml).`,
+    );
+  }
+
   validateOptions(createOpts);
   logger.success(`yml validated ${dim(`(${prettyPath(ymlPath)})`)}`);
 
@@ -244,8 +301,8 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       ...(opts.identityScopePrompt
         ? { scopePrompt: opts.identityScopePrompt }
         : {}),
-      ...(parsed.config.git?.user
-        ? { containerOverride: parsed.config.git.user }
+      ...(containerGitOverride
+        ? { containerOverride: containerGitOverride }
         : {}),
       ...(globalConfig?.defaults?.git?.user
         ? { defaults: globalConfig.defaults.git.user }

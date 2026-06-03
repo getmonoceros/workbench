@@ -7,6 +7,7 @@ import {
 } from './feature-doc.js';
 import { expandCuratedService } from '../create/catalog.js';
 import { renderCustomService, renderServiceObjectBody } from './service-doc.js';
+import { GIT_IDENTITY_VAR } from '../config/env-file.js';
 
 /**
  * Renderer for the container yml that `monoceros init` produces.
@@ -112,6 +113,10 @@ export function generateComposedYml(
     lines.push('');
   }
   if (repoUrls.length > 0) {
+    // Container-level identity first (placeholders + .env seed); repos
+    // inherit it. The per-repo `git.user` below stays commented as the
+    // override hint for the work-vs-personal case.
+    pushGitIdentityBlock(lines);
     pushSectionHeader(lines, REPOS_HEADER, /* commented */ false);
     lines.push('repos:');
     for (const url of repoUrls) {
@@ -221,6 +226,7 @@ export function generateDocumentedYml(
   }
 
   if (repoUrls.length > 0) {
+    pushGitIdentityBlock(lines);
     pushSectionHeader(lines, REPOS_HEADER, /* commented */ false);
     lines.push('repos:');
     for (const url of repoUrls) {
@@ -300,6 +306,22 @@ const FEATURES_HEADER_DOCUMENTED =
 
 const REPOS_HEADER =
   'Git repositories cloned into `projects/` on container start-up. HTTPS URLs only. The provider is auto-detected for github.com / gitlab.com / bitbucket.org; for any other host (self-hosted GitLab, Gitea, …) declare `provider:` explicitly. Add more later with `monoceros add-repo`.';
+
+const GIT_IDENTITY_HEADER =
+  'Git committer identity for commits made inside the container. The ${VAR} values resolve from <name>.env at apply time — fill them there, or leave them blank to fall back to your global git config (or a one-time prompt). Override per repo under repos[].git.user.';
+
+// Top-level `git.user` block with `${VAR}` placeholders. Rendered
+// whenever the container has repos: the identity then lives in the
+// gitignored <name>.env (seeded blank by init/add-repo), keeping the
+// shareable yml free of personal data while staying obvious.
+function pushGitIdentityBlock(lines: string[]): void {
+  pushSectionHeader(lines, GIT_IDENTITY_HEADER, /* commented */ false);
+  lines.push('git:');
+  lines.push('  user:');
+  lines.push(`    name: \${${GIT_IDENTITY_VAR.name}}`);
+  lines.push(`    email: \${${GIT_IDENTITY_VAR.email}}`);
+  lines.push('');
+}
 
 function routingHeader(name: string): string {
   return `Container ports exposed to the host through Traefik. Reach them in your browser as ${name}-<port>.localhost (e.g. ${name}-3000.localhost). The first entry is the default route and is also reachable as the bare ${name}.localhost. Manage the list with \`monoceros add-port\`.`;

@@ -21,6 +21,7 @@ Konzeptioneller Überbau: [`konzept.md`](konzept.md).
 | M5           | Stabilisierung + Doku                                            | 🚧 ab 2026-05-23          |
 | M6           | Service-Config-Modell, Secrets & init-Redesign                   | ✅ 2026-06-02             |
 | M6.1         | Kuratierte Services: `${VAR}`-env + `.env`-Seeding + Healthcheck | ✅ 2026-06-03             |
+| M6.2         | Git-Identity via `${VAR}` (Repo + Container) mit Kaskade         | ✅ 2026-06-03             |
 
 ---
 
@@ -1068,6 +1069,56 @@ seltene Fall; wer das braucht, benennt den Platzhalter von Hand um. Kein
 Grund, den 99-%-Fall dafür hässlich zu machen.
 
 ---
+
+## ✅ M6.2 — Git-Identity via `${VAR}` (Repo + Container) mit Kaskade
+
+**Ziel:** Die Git-Committer-Identität soll genauso aus `<name>.env`
+auflösbar sein wie Service-/Feature-Werte — damit die yml auch hier
+teilbar bleibt — **aber** mit der bestehenden Kaskade als Fallback statt
+hartem Fehler. **Abgeschlossen 2026-06-03**, durch die Dev-CLI validiert
+(`add-repo` mit Platzhalter vs. kaputter Literal-Mail).
+
+1. **`${VAR}` in `git.user.{name,email}`**, auf **beiden** Ebenen:
+   per-Repo (`repos[].git.user`) und Container-Level (`git.user`).
+   Aufgelöst beim Apply aus `<name>.env`.
+
+2. **Weiche Auflösung statt hartem Fehler.** Fehlt eine Var:
+   - **Repo-Ebene**: alles-oder-nichts — der ganze per-Repo-Override
+     fällt weg, das Repo erbt die Container-Identität (keine
+     Misch-Identität aus env-Name + Kaskaden-Mail).
+   - **Container-Ebene**: pro Feld — das aufgelöste Feld greift, das
+     unaufgelöste fällt in die Kaskade (monoceros-config → Host →
+     persisted → Prompt; die löst name/email ohnehin getrennt auf).
+
+3. **Format-Check nach der Auflösung, nicht beim Parsen.** `GitUserSchema`
+   prüft nur noch die Form (nicht-leerer String); die email-Regex wandert
+   in den Apply (`isValidEmail`, nach Interpolation). Ein aufgelöster,
+   aber kaputter Wert → harter Apply-Fehler mit klarer Meldung. Der
+   Flag-Eingang (`add-repo --git-email`) validiert literale Werte weiter
+   sofort, lässt aber `${VAR}` durch. Die globale `monoceros-config`
+   `defaults.git.user.email` bleibt **streng** beim Laden validiert (kein
+   `.env` löst sie auf → kein Platzhalter sinnvoll).
+
+4. **Leerer Wert = unset → Kaskade.** Ein in der `.env` vorhandener, aber
+   **leerer** Key (`GIT_USER_NAME=`) löst zu „kein Wert" auf — genau wie
+   ein fehlender — und lässt die Kaskade hochlaufen, statt eine leere
+   Identität zu setzen (oder bei der Email hart zu fehlern). Spiegelt,
+   wie das Schema einen leeren _literalen_ Wert schon immer als unset
+   behandelt hat.
+
+5. **Scaffold + Seeding (statt nur Mechanik).** Sind Repos vorhanden,
+   schreibt **init** einen Container-`git.user` mit
+   `${GIT_USER_NAME}`/`${GIT_USER_EMAIL}`-Platzhaltern und seedet die
+   leeren Keys in `<name>.env`; **add-repo** macht beim ersten Repo
+   dasselbe (vorhandene `git.user` bleibt unangetastet). init **fragt
+   nicht mehr** nach der Identität — der frühere init-Prompt entfällt, die
+   Auflösung passiert beim Apply (inkl. „global speichern?"-Prompt dort).
+   Die Repos erben den Container-`git.user`; der per-Repo-Block bleibt als
+   auskommentierter Override-Hinweis. (Container-Ebene gewählt, nicht
+   per-Repo — sonst stünden dieselben Platzhalter pro Repo doppelt da.)
+
+Bewusst **nicht** gemacht: Identität wird nicht aus dem Host vor-befüllt
+(leer geseedet, bewusst — Kaskade greift beim Apply).
 
 ## Vorgemerkt für später (jenseits M5)
 

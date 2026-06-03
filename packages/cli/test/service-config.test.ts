@@ -12,6 +12,8 @@ import {
   interpolate,
   interpolateServices,
   interpolateFeatures,
+  hasVarPlaceholder,
+  resolveGitUserFields,
 } from '../src/config/env-file.js';
 import { validateConfig } from '../src/config/schema.js';
 import { solutionConfigToCreateOptions } from '../src/config/transform.js';
@@ -187,6 +189,50 @@ describe('env-file parsing + interpolation', () => {
     expect(missing).toEqual([
       { location: 'features.ghcr.io/foo/bar:1.apiKey', name: 'NOPE' },
     ]);
+  });
+});
+
+describe('git identity placeholders', () => {
+  it('hasVarPlaceholder detects ${VAR}, ignores plain text', () => {
+    expect(hasVarPlaceholder('${GIT_USER_EMAIL}')).toBe(true);
+    expect(hasVarPlaceholder('tk@conciso.de')).toBe(false);
+    expect(hasVarPlaceholder('cost is $5')).toBe(false); // bare $ ignored
+  });
+
+  it('resolveGitUserFields resolves present vars', () => {
+    const r = resolveGitUserFields(
+      { name: '${GIT_USER_NAME}', email: '${GIT_USER_EMAIL}' },
+      { GIT_USER_NAME: 'Thorsten', GIT_USER_EMAIL: 'tk@conciso.de' },
+    );
+    expect(r.name.value).toBe('Thorsten');
+    expect(r.email.value).toBe('tk@conciso.de');
+  });
+
+  it('resolveGitUserFields yields no value for a missing var (climb cascade)', () => {
+    const r = resolveGitUserFields(
+      { name: '${GIT_USER_NAME}', email: '${GIT_USER_EMAIL}' },
+      { GIT_USER_NAME: 'Thorsten' }, // email var absent
+    );
+    expect(r.name.value).toBe('Thorsten');
+    expect(r.email.value).toBeUndefined();
+  });
+
+  it('resolveGitUserFields treats a seeded-but-empty var as no value (climb cascade)', () => {
+    const r = resolveGitUserFields(
+      { name: '${GIT_USER_NAME}', email: '${GIT_USER_EMAIL}' },
+      { GIT_USER_NAME: '', GIT_USER_EMAIL: '   ' }, // present but blank
+    );
+    expect(r.name.value).toBeUndefined();
+    expect(r.email.value).toBeUndefined();
+  });
+
+  it('resolveGitUserFields passes literal values through (trimmed)', () => {
+    const r = resolveGitUserFields(
+      { name: 'Plain Name', email: 'plain@example.com' },
+      {},
+    );
+    expect(r.name.value).toBe('Plain Name');
+    expect(r.email.value).toBe('plain@example.com');
   });
 });
 

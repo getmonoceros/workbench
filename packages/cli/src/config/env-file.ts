@@ -163,6 +163,68 @@ export function interpolateServices(
   return { services: resolved, missing };
 }
 
+/**
+ * Env var names for the scaffolded container git-identity placeholders.
+ * Single source for: the `${VAR}` rendered into the yml (init generator /
+ * add-repo) and the keys seeded blank into `<name>.env`. Resolved at
+ * apply time; blank → the identity cascade fills it.
+ */
+export const GIT_IDENTITY_VAR = {
+  name: 'GIT_USER_NAME',
+  email: 'GIT_USER_EMAIL',
+} as const;
+
+/** True if the string contains at least one `${VAR}` reference. */
+export function hasVarPlaceholder(value: string): boolean {
+  // Local non-global regex — VAR_RE carries the `g` flag and `.test`
+  // on it is stateful (lastIndex), which would make repeated calls flaky.
+  return /\$\{[A-Za-z_][A-Za-z0-9_]*\}/.test(value);
+}
+
+export interface ResolvedGitUserField {
+  /**
+   * The usable, non-empty resolved value, or undefined when the field
+   * has NO usable value — meaning the caller should climb the identity
+   * cascade. "No usable value" collapses three cases that are all
+   * equivalent for git identity:
+   *   - the field was absent,
+   *   - it referenced a `${VAR}` missing from the env (`${X}` survives), or
+   *   - it resolved to empty / whitespace (a seeded-but-blank `X=` in
+   *     `<name>.env`).
+   * This mirrors how the schema already treats an empty *literal* as
+   * "unset" — an empty `${VAR}` value must behave the same.
+   */
+  value?: string;
+}
+
+export interface ResolvedGitUser {
+  name: ResolvedGitUserField;
+  email: ResolvedGitUserField;
+}
+
+/**
+ * Resolve `${VAR}` in a git identity's name + email against the env
+ * file, per field. Unlike services/features, an unresolved/empty value
+ * is NOT an error: the caller treats a missing `value` as "climb the
+ * cascade" (monoceros-config defaults → host → prompt). The email
+ * FORMAT of a present value is the caller's check (see `isValidEmail`).
+ */
+export function resolveGitUserFields(
+  user: { name?: string; email?: string },
+  vars: Record<string, string>,
+): ResolvedGitUser {
+  const resolve = (raw: string | undefined): ResolvedGitUserField => {
+    if (raw === undefined) return {};
+    const r = interpolate(raw, vars);
+    // A missing var leaves the literal `${...}` in the value; treat that
+    // and an empty/whitespace resolution alike — no usable value.
+    if (r.missing.length > 0) return {};
+    const trimmed = r.value.trim();
+    return trimmed.length > 0 ? { value: trimmed } : {};
+  };
+  return { name: resolve(user.name), email: resolve(user.email) };
+}
+
 export interface InterpolateFeaturesResult {
   features: Record<string, Record<string, string | number | boolean>>;
   missing: MissingVar[];

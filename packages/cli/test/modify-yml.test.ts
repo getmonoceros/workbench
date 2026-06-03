@@ -591,6 +591,79 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toMatch(/^ {4}# path:\s*$/m);
   });
 
+  it('runAddRepo scaffolds a container git.user placeholder + seeds .env for the first repo', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toMatch(/^git:/m);
+    expect(yml).toContain('name: ${GIT_USER_NAME}');
+    expect(yml).toContain('email: ${GIT_USER_EMAIL}');
+    const env = await fs.readFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      'utf8',
+    );
+    expect(env).toMatch(/^GIT_USER_NAME=$/m);
+    expect(env).toMatch(/^GIT_USER_EMAIL=$/m);
+  });
+
+  it('runAddRepo leaves an existing git.user untouched', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'git:',
+        '  user:',
+        '    name: Existing Name',
+        '    email: existing@example.com',
+        '',
+      ].join('\n'),
+    );
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('name: Existing Name');
+    expect(yml).not.toContain('${GIT_USER_NAME}');
+  });
+
+  it('runAddRepo rejects a malformed literal --git-email at the flag entry', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await expect(
+      runAddRepo({
+        ...baseOpts,
+        name: 'demo',
+        url: 'https://github.com/foo/bar.git',
+        gitName: 'Me',
+        gitEmail: 'not-an-email',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Invalid --git-email/);
+  });
+
+  it('runAddRepo accepts a ${VAR} placeholder for --git-email', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const result = await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      gitName: '${GIT_USER_NAME}',
+      gitEmail: '${GIT_USER_EMAIL}',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('email: ${GIT_USER_EMAIL}');
+  });
+
   it('runAddRepo persists a non-default path via path option', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddRepo({

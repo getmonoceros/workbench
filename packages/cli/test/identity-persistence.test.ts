@@ -436,10 +436,10 @@ describe('resolveIdentityWithPrompt — scope prompt only when both keys come fr
   });
 });
 
-describe('init persists prompted identity to monoceros-config when --with-repo', () => {
-  // Integration test — init + identity prompt + write to globalconfig.
-  // Skips writing .monoceros/gitconfig (no devContainerRoot exists at
-  // init time); just exercises the prompt → persistence path.
+describe('init scaffolds a ${VAR} git.user + seeds <name>.env when --with-repo', () => {
+  // Integration test — init no longer prompts for identity. With repos
+  // present it renders a container-level `git.user` placeholder block
+  // and seeds blank GIT_USER_* keys; identity resolves at apply time.
   let home: string;
   let workbench: string;
   beforeEach(async () => {
@@ -466,7 +466,7 @@ describe('init persists prompted identity to monoceros-config when --with-repo',
     await rm(workbench, { recursive: true, force: true });
   });
 
-  it('writes defaults.git.user to monoceros-config when scope=g', async () => {
+  it('renders a ${VAR} git.user block and seeds blank GIT_USER_* into <name>.env', async () => {
     const { runInit } = await import('../src/init/index.js');
     await runInit({
       name: 'sandbox',
@@ -474,95 +474,46 @@ describe('init persists prompted identity to monoceros-config when --with-repo',
       withRepo: ['https://github.com/foo/bar.git'],
       workbenchRoot: workbench,
       monocerosHome: home,
-      identitySpawn: async () => ({ value: '', exitCode: 1 }),
-      identityPrompt: async (key) =>
-        key === 'user.name' ? 'Alice' : 'a@example.com',
-      identityScopePrompt: async () => 'g',
       logger: { success: () => {}, info: () => {} },
     });
-    const parsed = await readMonocerosConfig({ monocerosHome: home });
-    expect(parsed?.defaults?.git?.user).toEqual({
-      name: 'Alice',
-      email: 'a@example.com',
+    const ymlText = await readFile(
+      path.join(home, 'container-configs', 'sandbox.yml'),
+      'utf8',
+    );
+    const parsed = parseConfig(ymlText);
+    expect(parsed.config.git?.user).toEqual({
+      name: '${GIT_USER_NAME}',
+      email: '${GIT_USER_EMAIL}',
     });
-    // Container yml does NOT receive a git.user override under scope=g.
+    const envText = await readFile(
+      path.join(home, 'container-configs', 'sandbox.env'),
+      'utf8',
+    );
+    expect(envText).toMatch(/^GIT_USER_NAME=$/m);
+    expect(envText).toMatch(/^GIT_USER_EMAIL=$/m);
+    // No monoceros-config written — identity is env/cascade-resolved.
+    const globalConfig = await readMonocerosConfig({ monocerosHome: home });
+    expect(globalConfig).toBeUndefined();
+  });
+
+  it('renders no git block and seeds no GIT_USER_* when there are no repos', async () => {
+    const { runInit } = await import('../src/init/index.js');
+    await runInit({
+      name: 'sandbox',
+      languages: ['node'],
+      workbenchRoot: workbench,
+      monocerosHome: home,
+      logger: { success: () => {}, info: () => {} },
+    });
     const ymlText = await readFile(
       path.join(home, 'container-configs', 'sandbox.yml'),
       'utf8',
     );
     expect(ymlText).not.toMatch(/^git:/m);
-  });
-
-  it('writes container-level git.user when scope=c', async () => {
-    const { runInit } = await import('../src/init/index.js');
-    await runInit({
-      name: 'sandbox',
-      languages: ['node'],
-      withRepo: ['https://github.com/foo/bar.git'],
-      workbenchRoot: workbench,
-      monocerosHome: home,
-      identitySpawn: async () => ({ value: '', exitCode: 1 }),
-      identityPrompt: async (key) =>
-        key === 'user.name' ? 'Bob' : 'bob@example.com',
-      identityScopePrompt: async () => 'c',
-      logger: { success: () => {}, info: () => {} },
-    });
-    const parsed = parseConfig(
-      await readFile(
-        path.join(home, 'container-configs', 'sandbox.yml'),
-        'utf8',
-      ),
+    const envText = await readFile(
+      path.join(home, 'container-configs', 'sandbox.env'),
+      'utf8',
     );
-    expect(parsed.config.git?.user).toEqual({
-      name: 'Bob',
-      email: 'bob@example.com',
-    });
-    // monoceros-config NOT created under scope=c.
-    const globalConfig = await readMonocerosConfig({ monocerosHome: home });
-    expect(globalConfig).toBeUndefined();
-  });
-
-  it('writes both under scope=b', async () => {
-    const { runInit } = await import('../src/init/index.js');
-    await runInit({
-      name: 'sandbox',
-      languages: ['node'],
-      withRepo: ['https://github.com/foo/bar.git'],
-      workbenchRoot: workbench,
-      monocerosHome: home,
-      identitySpawn: async () => ({ value: '', exitCode: 1 }),
-      identityPrompt: async (key) =>
-        key === 'user.name' ? 'Carol' : 'c@example.com',
-      identityScopePrompt: async () => 'b',
-      logger: { success: () => {}, info: () => {} },
-    });
-    const globalConfig = await readMonocerosConfig({ monocerosHome: home });
-    expect(globalConfig?.defaults?.git?.user?.name).toBe('Carol');
-    const parsed = parseConfig(
-      await readFile(
-        path.join(home, 'container-configs', 'sandbox.yml'),
-        'utf8',
-      ),
-    );
-    expect(parsed.config.git?.user?.name).toBe('Carol');
-  });
-
-  it('skips the prompt entirely when --with-repo is not used', async () => {
-    const { runInit } = await import('../src/init/index.js');
-    let promptCalled = 0;
-    await runInit({
-      name: 'sandbox',
-      languages: ['node'],
-      workbenchRoot: workbench,
-      monocerosHome: home,
-      identitySpawn: async () => ({ value: '', exitCode: 1 }),
-      identityPrompt: async () => {
-        promptCalled++;
-        return 'should-not-be-called';
-      },
-      identityScopePrompt: async () => 'g',
-      logger: { success: () => {}, info: () => {} },
-    });
-    expect(promptCalled).toBe(0);
+    expect(envText).not.toContain('GIT_USER_NAME');
   });
 });

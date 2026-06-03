@@ -870,6 +870,149 @@ describe('runApply', () => {
     );
   });
 
+  it('resolves ${VAR} in per-repo git.user from <name>.env', async () => {
+    await writeYml(
+      'repo-env-id',
+      [
+        'schemaVersion: 1',
+        'name: repo-env-id',
+        'repos:',
+        '  - url: https://github.com/work/api.git',
+        '    git:',
+        '      user:',
+        '        name: ${GIT_USER_NAME}',
+        '        email: ${GIT_USER_EMAIL}',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      path.join(home, 'container-configs', 'repo-env-id.env'),
+      'GIT_USER_NAME=Thorsten\nGIT_USER_EMAIL=tk@conciso.de\n',
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'repo-env-id',
+      monocerosHome: home,
+    });
+    const postCreate = await readFile(
+      path.join(
+        home,
+        'container',
+        'repo-env-id',
+        '.devcontainer',
+        'post-create.sh',
+      ),
+      'utf8',
+    );
+    expect(postCreate).toContain(
+      'git -C "projects/api" config user.name "Thorsten"',
+    );
+    expect(postCreate).toContain(
+      'git -C "projects/api" config user.email "tk@conciso.de"',
+    );
+  });
+
+  it('drops the per-repo override when a ${VAR} is missing from the env (falls through to cascade)', async () => {
+    await writeYml(
+      'repo-missing-id',
+      [
+        'schemaVersion: 1',
+        'name: repo-missing-id',
+        'repos:',
+        '  - url: https://github.com/work/api.git',
+        '    git:',
+        '      user:',
+        '        name: ${GIT_USER_NAME}',
+        '        email: ${GIT_USER_EMAIL}',
+        '',
+      ].join('\n'),
+    );
+    // No .env → both vars unresolved → whole override dropped.
+    await runApply({
+      ...baseRunOpts,
+      name: 'repo-missing-id',
+      monocerosHome: home,
+    });
+    const postCreate = await readFile(
+      path.join(
+        home,
+        'container',
+        'repo-missing-id',
+        '.devcontainer',
+        'post-create.sh',
+      ),
+      'utf8',
+    );
+    // No per-repo override baked in — the placeholder never leaks through.
+    expect(postCreate).not.toContain('git -C "projects/api" config user.name');
+    expect(postCreate).not.toContain('${GIT_USER_NAME}');
+  });
+
+  it('drops the per-repo override when the env vars are seeded but empty (climbs cascade)', async () => {
+    await writeYml(
+      'repo-empty-id',
+      [
+        'schemaVersion: 1',
+        'name: repo-empty-id',
+        'repos:',
+        '  - url: https://github.com/work/api.git',
+        '    git:',
+        '      user:',
+        '        name: ${GIT_USER_NAME}',
+        '        email: ${GIT_USER_EMAIL}',
+        '',
+      ].join('\n'),
+    );
+    // The builder prepared the keys but hasn't filled them — empty must
+    // mean "unset → climb the cascade", NOT an empty/invalid identity.
+    await writeFile(
+      path.join(home, 'container-configs', 'repo-empty-id.env'),
+      'GIT_USER_NAME=\nGIT_USER_EMAIL=\n',
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'repo-empty-id',
+      monocerosHome: home,
+    });
+    const postCreate = await readFile(
+      path.join(
+        home,
+        'container',
+        'repo-empty-id',
+        '.devcontainer',
+        'post-create.sh',
+      ),
+      'utf8',
+    );
+    expect(postCreate).not.toContain('git -C "projects/api" config user.name');
+    expect(postCreate).not.toContain('${GIT_USER_NAME}');
+    expect(postCreate).not.toContain('config user.email ""');
+  });
+
+  it('errors when a resolved git.user.email is malformed', async () => {
+    await writeYml(
+      'repo-bad-id',
+      [
+        'schemaVersion: 1',
+        'name: repo-bad-id',
+        'repos:',
+        '  - url: https://github.com/work/api.git',
+        '    git:',
+        '      user:',
+        '        name: ${GIT_USER_NAME}',
+        '        email: ${GIT_USER_EMAIL}',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      path.join(home, 'container-configs', 'repo-bad-id.env'),
+      'GIT_USER_NAME=Thorsten\nGIT_USER_EMAIL=not-an-email\n',
+    );
+    await expect(
+      runApply({ ...baseRunOpts, name: 'repo-bad-id', monocerosHome: home }),
+    ).rejects.toThrow(/not a valid email/);
+  });
+
   it('clones declared repos host-side before bringing the container up', async () => {
     await writeYml(
       'cloned',

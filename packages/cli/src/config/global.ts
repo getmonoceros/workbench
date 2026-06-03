@@ -2,7 +2,12 @@ import { promises as fs } from 'node:fs';
 import { z } from 'zod';
 import { isMap, Pair, parseDocument, Scalar, YAMLMap } from 'yaml';
 import type { Document } from 'yaml';
-import { FeatureOptionValueSchema, GitUserSchema, REGEX } from './schema.js';
+import {
+  FeatureOptionValueSchema,
+  GitUserSchema,
+  REGEX,
+  isValidEmail,
+} from './schema.js';
 import { monocerosConfigPath, monocerosHome } from './paths.js';
 
 /**
@@ -44,7 +49,15 @@ export const MonocerosConfigSchema = z.object({
       // `.optional()` would reject.
       git: z
         .object({
-          user: GitUserSchema.optional(),
+          // Strict email here: monoceros-config defaults are not tied to
+          // any container `<name>.env`, so `${VAR}` placeholders make no
+          // sense and the format can (and should) be validated at load
+          // time — unlike the container/repo `git.user`, which defers to
+          // apply after interpolation.
+          user: GitUserSchema.optional().refine(
+            (u) => u?.email === undefined || isValidEmail(u.email),
+            { message: 'Invalid email in defaults.git.user', path: ['email'] },
+          ),
         })
         .nullish(),
       // .nullish() for the same reason as `git` — the sample keeps

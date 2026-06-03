@@ -129,6 +129,28 @@ Container, nimm `<name>.yml` **und** `<name>.env` mit und passe die
 `.env` an. Die Datei reist mit `remove`-Backups, `*.env` steht im
 `container-configs/.gitignore`.
 
+### Git-Identität (wenn Repos dabei sind)
+
+Sind Repos im Spiel, schreibt init zusätzlich einen Container-`git.user`
+mit Platzhaltern und seedet die passenden (leeren) Keys:
+
+```yaml
+git:
+  user:
+    name: ${GIT_USER_NAME}
+    email: ${GIT_USER_EMAIL}
+```
+
+```sh
+GIT_USER_NAME=
+GIT_USER_EMAIL=
+```
+
+init **fragt nicht** nach der Identität — du füllst die `.env`, oder
+lässt sie leer: beim Apply läuft dann die Kaskade hoch (monoceros-config
+→ Host-`git config --global` → einmaliger Prompt). Details:
+[add-repo.md → Commit-Identität](./add-repo.md#commit-identität-username--useremail).
+
 ## Versionen für Sprachen
 
 Sprach-Einträge akzeptieren ein optionales `:version`-Suffix, das an das

@@ -17,6 +17,7 @@ import {
   featureOptionHints,
   FEATURE_HEADER_WIDTH,
 } from '../init/feature-doc.js';
+import { GIT_IDENTITY_VAR } from '../config/env-file.js';
 
 /**
  * AST-level mutators for solution-config yml. Each function:
@@ -173,6 +174,25 @@ export function setContainerGitUserInDoc(
   userMap.set('email', user.email);
   relocateLeakedSectionComments(doc);
   return true;
+}
+
+/**
+ * Add a container-level `git.user` with `${VAR}` placeholders IF no
+ * `git.user` exists yet. Used by `add-repo` so the first repo gets the
+ * same env-managed identity scaffold `init` produces. Leaves any
+ * existing `git.user` (literal or placeholder) untouched. Returns true
+ * when it added the block.
+ */
+export function ensureContainerGitUserPlaceholder(doc: Document): boolean {
+  const gitNode = doc.get('git', true);
+  if (gitNode && isMap(gitNode)) {
+    const userNode = gitNode.get('user', true);
+    if (userNode && isMap(userNode)) return false;
+  }
+  return setContainerGitUserInDoc(doc, {
+    name: `\${${GIT_IDENTITY_VAR.name}}`,
+    email: `\${${GIT_IDENTITY_VAR.email}}`,
+  });
 }
 
 /**
