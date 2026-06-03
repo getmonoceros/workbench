@@ -1124,6 +1124,30 @@ Bewusst **nicht** gemacht: Identität wird nicht aus dem Host vor-befüllt
 
 ## Vorgemerkt für später (jenseits M5)
 
+- **`monoceros apply`-Ausgabe: Phasen-Anzeige + Log-Datei**
+  ([ADR 0013](./adr/0013-apply-progress-und-log.md)). Heute streamt
+  `apply` den rohen `@devcontainers/cli`-Output zwischen `▸ Container`
+  und `▸ Next steps` — ISO-Timestamps, voller `docker run`-Aufruf mit
+  metadata-JSON, postCreate-Output. Im Fehlerfall versinkt die echte
+  Diagnose darin. Plan: Spinner mit Phasen-Beschriftung
+  (`pulling runtime image…` / `building feature layers…` /
+  `starting container…` / `running postCreate…`), kompletter
+  Roh-Output ins Log unter `~/.monoceros/container/<name>/logs/apply-<name>-<ISO>.log`,
+  Pfadanzeige am Ende. Im Fehlerfall: letzte ~15 Zeilen + Logpfad.
+  `--verbose` behält das heutige Verhalten (auch automatisch ohne
+  TTY). Pull-Phase wird übersprungen, wenn das Runtime-Image lokal
+  vorliegt. Phasen-Detection ist Heuristik auf Stream-Textmustern —
+  Fallback ist generisches `working…`. Schafft nebenbei den Pfad
+  `container/<name>/logs/` für künftige Audit-Logs (siehe nächster
+  Eintrag).
+- **Audit-Logging unter `container/<name>/logs/`** — sobald
+  ADR 0013 steht, ist das Verzeichnis da; Folge-Commands (`remove`,
+  `add-feature`, `restore`, `add-service`, …) können dort jeweils
+  `<command>-<name>-<ISO>.log` ablegen. Eigene ADR/Spec dann, wenn
+  klar ist, was rein soll (was wird wirklich nachgefragt: „warum
+  ist der Container weg?", „wann wurde Feature X dazugeschaltet?")
+  und ob es darüber hinaus einen zentralen Index braucht.
+
 - **Repo-Datei als Service-Bind-Mount vor `compose up`** — _für den
   DB-Seed-Fall per Konvention gelöst (2026-06-03), Rest geparkt._
   Anlass war: ein Service mountet `init.sql` aus einem geklonten Repo und

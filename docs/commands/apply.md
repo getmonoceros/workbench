@@ -118,6 +118,25 @@ Beide Container koexistieren unter `$MONOCEROS_HOME/container/`.
 - `monoceros down <name> [--volumes]` — Container entfernen vor einem
   destruktiven Re-Apply.
 
+## Log-Datei
+
+Jeder Apply schreibt **zusätzlich** zur Terminal-Ausgabe ein vollständiges
+Transkript nach:
+
+```
+$MONOCEROS_HOME/container/<name>/logs/apply-<name>-<ISO-Zeitstempel>.log
+```
+
+Inhalt: ein kleiner Kopf (Befehl, Startzeit, CLI-Version, Konfig-Pfad,
+Host) plus alles, was im Container-Abschnitt auf dem Terminal landet —
+inklusive des kompletten `@devcontainers/cli`-Streams (Pull-, Build-,
+Container-Start- und postCreate-Output). ANSI-Farbcodes sind entfernt,
+damit `cat` und `grep` direkt funktionieren.
+
+Am Ende des Apply-Outputs verweist eine `log: …`-Zeile auf die Datei —
+auch im Fehlerfall. Der Ordner `logs/` lebt unter `container/<name>/`
+und wird bei `monoceros remove <name>` mit aufgeräumt.
+
 ## Fail-Modi
 
 - **`No such config: <path>`** — die Konfig existiert nicht.

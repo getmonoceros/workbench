@@ -34,6 +34,14 @@ export function visibleLen(s: string): number {
   return s.replace(ANSI_RE, '').length;
 }
 
+/**
+ * Remove ANSI colour/style escape sequences from a string. Used by
+ * the apply log sink so log files stay readable in plain `cat`.
+ */
+export function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, '');
+}
+
 export interface Palette {
   bold: (s: string) => string;
   underline: (s: string) => string;

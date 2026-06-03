@@ -47,6 +47,12 @@ export interface DevcontainerSpawnOptions {
   // The build/log paths in apply and start still go through the
   // masked-pipe path, where there's no TTY at stake.
   interactive?: boolean;
+  // Optional additional sink that receives a copy of the masked
+  // stdout/stderr stream. Used by `apply` to mirror the live
+  // devcontainer-cli output into a per-apply log file. The spawn
+  // never ends this stream — the caller closes it after the apply
+  // wraps up. See ADR 0013 and apply/apply-log.ts.
+  logSink?: NodeJS.WritableStream;
 }
 
 export type DevcontainerSpawn = (
@@ -109,14 +115,22 @@ export const spawnDevcontainer: DevcontainerSpawn = (
     // Shared so the "downloading runtime image…" hint fires once even
     // though devcontainer-cli may log the manifest line on either stream.
     const pullHint: PullHintState = { hinted: false };
-    child.stdout
+    const stdoutPipe = child.stdout
       ?.pipe(createSecretMaskStream())
-      .pipe(createRuntimePullHintStream(pullHint))
-      .pipe(process.stdout);
-    child.stderr
+      .pipe(createRuntimePullHintStream(pullHint));
+    stdoutPipe?.pipe(process.stdout);
+    const stderrPipe = child.stderr
       ?.pipe(createSecretMaskStream())
-      .pipe(createRuntimePullHintStream(pullHint))
-      .pipe(process.stderr);
+      .pipe(createRuntimePullHintStream(pullHint));
+    stderrPipe?.pipe(process.stderr);
+    // Tee both masked streams into the apply log sink. `end: false`
+    // so the caller (apply/index.ts) controls when the log file
+    // closes — stdout and stderr both feed it, and the file should
+    // outlive whichever ends first.
+    if (options.logSink) {
+      stdoutPipe?.pipe(options.logSink, { end: false });
+      stderrPipe?.pipe(options.logSink, { end: false });
+    }
     child.on('error', reject);
     child.on('exit', (code) => resolve(code ?? 0));
   });

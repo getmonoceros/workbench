@@ -219,6 +219,11 @@ export interface StartOptions {
   root: string;
   spawn?: DevcontainerSpawn;
   logger?: { info: (message: string) => void };
+  /**
+   * Forwarded to {@link DevcontainerSpawnOptions.logSink}. See ADR 0013
+   * and apply/apply-log.ts.
+   */
+  logSink?: NodeJS.WritableStream;
 }
 
 // `monoceros start` delegates to `devcontainer up` rather than to
@@ -239,6 +244,7 @@ export async function runStart(opts: StartOptions): Promise<number> {
   return spawnFn(
     ['up', '--workspace-folder', opts.root, '--mount-workspace-git-root=false'],
     opts.root,
+    opts.logSink ? { logSink: opts.logSink } : undefined,
   );
 }
 
@@ -253,6 +259,11 @@ export interface RunContainerCycleOptions {
    */
   dockerExec?: DockerExec;
   devcontainerSpawn?: DevcontainerSpawn;
+  /**
+   * Forwarded to the underlying `spawnDevcontainer` as
+   * {@link DevcontainerSpawnOptions.logSink}. See ADR 0013.
+   */
+  logSink?: NodeJS.WritableStream;
   logger: {
     info: (message: string) => void;
     warn?: (message: string) => void;
@@ -312,6 +323,7 @@ export async function runContainerCycle(
     return runStart({
       root,
       ...(opts.devcontainerSpawn ? { spawn: opts.devcontainerSpawn } : {}),
+      ...(opts.logSink ? { logSink: opts.logSink } : {}),
       logger,
     });
   }
@@ -327,6 +339,7 @@ export async function runContainerCycle(
       '--remove-existing-container',
     ],
     root,
+    opts.logSink ? { logSink: opts.logSink } : undefined,
   );
 }
 

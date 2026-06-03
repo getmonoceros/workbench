@@ -200,6 +200,18 @@ export function containerDir(
   return path.join(containersDir(home), name);
 }
 
+/**
+ * Per-container log directory — receives `apply-<name>-<ISO>.log` and
+ * (future) audit logs for other lifecycle commands. Goes away with
+ * `monoceros remove`. See ADR 0013.
+ */
+export function containerLogsDir(
+  name: string,
+  home: string = monocerosHome(),
+): string {
+  return path.join(containerDir(name, home), 'logs');
+}
+
 export function monocerosConfigPath(home: string = monocerosHome()): string {
   return path.join(home, 'monoceros-config.yml');
 }

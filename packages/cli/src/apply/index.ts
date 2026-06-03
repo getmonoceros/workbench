@@ -38,6 +38,7 @@ import {
 } from '../create/scaffold.js';
 import { cyan, dim, sectionLine } from '../util/format.js';
 import { migrateDeprecatedFeatureRef } from '../util/ref.js';
+import { createApplyLog, teeApplyLogger } from './apply-log.js';
 import { type DockerExec, runContainerCycle } from '../devcontainer/compose.js';
 import {
   type CredentialsSpawn,
@@ -389,12 +390,28 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // ── Container ────────────────────────────────────────────────
   section('Container');
 
+  // Open the per-apply log file under `<container>/logs/`. From this
+  // point on, the wrapped `containerLogger` mirrors info/warn/success
+  // into the log alongside the terminal, and `applyLog.sink` is teed
+  // into the devcontainer-cli stream via `runContainerCycle`'s
+  // `logSink` option. See ADR 0013.
+  const applyLog = createApplyLog({
+    name: opts.name,
+    home,
+    cliVersion: opts.cliVersion,
+    configPath: ymlPath,
+    ...(opts.now ? { now: opts.now } : {}),
+  });
+  const containerLogger = teeApplyLogger(logger, applyLog.sink);
+
   // Pre-announce the feature list so the builder knows what's about
   // to be installed before devcontainer-cli's stream takes over.
   // Empty list = base-image-only container, no features section needed.
   const featureRefs = parsed.config.features.map((f) => f.ref);
   if (featureRefs.length > 0) {
-    logger.info(`Features: ${featureRefs.map((r) => cyan(r)).join(', ')}`);
+    containerLogger.info(
+      `Features: ${featureRefs.map((r) => cyan(r)).join(', ')}`,
+    );
   }
 
   // First-apply UX: devcontainer-cli's upstream output prints
@@ -403,7 +420,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // Docker actually pulls the runtime image. Both are non-fatal —
   // the docker buildx step right after consumes the image just
   // fine. Flag in dim grey so it reads as ambient context.
-  logger.info(
+  containerLogger.info(
     dim(
       'Pulling runtime image and building feature layers. First apply takes ~1–2 min (Docker downloads the multi-arch base); subsequent applies are cached and fast. devcontainer-cli may log a "No manifest found" line — harmless, the pull continues.',
     ),
@@ -434,7 +451,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
         monocerosHome: home,
         hostPort: proxyHostPort(globalConfig),
-        logger,
+        logger: containerLogger,
       });
     } else {
       // `ports:` is empty (or was removed since the last apply) —
@@ -448,7 +465,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     // as a warn and keep going. The devcontainer itself is still
     // usable; the builder loses only the `<name>.localhost` routing,
     // which the next apply / `add-port` will retry.
-    logger.warn?.(
+    containerLogger.warn?.(
       `Could not sync Traefik routes: ${err instanceof Error ? err.message : String(err)}. The container will start, but \`<name>.localhost\` routing may not work until the next \`monoceros apply\`.`,
     );
   }
@@ -459,8 +476,17 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     ...(opts.devcontainerSpawn !== undefined
       ? { devcontainerSpawn: opts.devcontainerSpawn }
       : {}),
-    logger,
+    logSink: applyLog.sink,
+    logger: containerLogger,
   });
+
+  // Close the log before announcing its path — guarantees the file
+  // is fully flushed to disk by the time the builder follows the
+  // pointer. The path is printed on both the success and failure
+  // path; on failure it is the breadcrumb pointing at the real
+  // diagnostic text above.
+  await applyLog.close();
+  logger.info(dim(`log: ${prettyPath(applyLog.path)}`));
 
   // ── Next steps ───────────────────────────────────────────────
   // Only print the wrap-up on a successful container start;
