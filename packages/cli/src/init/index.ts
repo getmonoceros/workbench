@@ -36,6 +36,7 @@ import {
 } from './generator.js';
 import { loadFeatureManifestSummary } from './manifest.js';
 import {
+  curatedServiceEnvDefaults,
   deriveServiceName,
   isCuratedService,
   knownLanguages,
@@ -283,17 +284,30 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   await fs.writeFile(dest, text, 'utf8');
 
   // Scaffold the gitignored `<name>.env`: create it with the header
-  // stub, and seed a `VAR=` key for every credential option the composed
-  // features declare (their `${VAR}` placeholders are rendered into the
-  // yml above). The builder just fills the values. Upsert — never
-  // overwrites an existing env file's keys (e.g. one from `restore`).
+  // stub, then seed the `${VAR}` references the composed yml carries —
+  // feature credential placeholders as blank `VAR=` keys (builder fills
+  // them) and curated-service env vars with their dev-defaults
+  // (`POSTGRES_USER=monoceros`, …; builder can keep or change them).
+  // Upsert — never overwrites an existing env file's keys (e.g. one
+  // from `restore`). Service defaults win over feature blanks on the
+  // (unlikely) key collision.
   const envPath = containerEnvPath(opts.name, home);
-  const featureVars = composed.features.flatMap((f) =>
-    featureOptionHints(lookup(f.ref), f.ref, Object.keys(f.options ?? {})).map(
-      (h) => h.envVar,
-    ),
-  );
-  await ensureEnvVars(envPath, opts.name, featureVars);
+  const seedVars: Record<string, string> = {};
+  for (const f of composed.features) {
+    for (const h of featureOptionHints(
+      lookup(f.ref),
+      f.ref,
+      Object.keys(f.options ?? {}),
+    )) {
+      if (!(h.envVar in seedVars)) seedVars[h.envVar] = '';
+    }
+  }
+  for (const svc of composed.services) {
+    if (svc.kind === 'curated') {
+      Object.assign(seedVars, curatedServiceEnvDefaults(svc.name));
+    }
+  }
+  await ensureEnvVars(envPath, opts.name, seedVars);
 
   // Persist the prompted identity AFTER the yml is on disk: scope
   // `g` writes the global monoceros-config; `c` mutates the freshly-

@@ -217,23 +217,37 @@ export interface EnsureEnvVarsResult {
 
 /**
  * Upsert `<name>.env`: create it with the header stub if absent, and
- * append a `VAR=` line for every requested var that isn't already
- * present. Never overwrites existing keys or values. Used by `init` and
- * `add-feature` to seed the credential vars a feature declares, so the
- * builder just fills the values.
+ * append a line for every requested var that isn't already present.
+ * Never overwrites existing keys or values.
+ *
+ * `vars` takes two forms:
+ *   - `string[]` → seed each as `KEY=` (blank). Used by `add-feature`
+ *     / `init` for credential placeholders the builder must fill.
+ *   - `Record<KEY, default>` → seed each as `KEY=<default>`. Used for
+ *     curated services, which ship working dev-defaults the builder can
+ *     keep as-is or change in one place.
  */
 export async function ensureEnvVars(
   envPath: string,
   name: string,
-  vars: readonly string[],
+  vars: readonly string[] | Readonly<Record<string, string>>,
 ): Promise<EnsureEnvVarsResult> {
+  const entries: Array<[string, string]> = Array.isArray(vars)
+    ? vars.map((v) => [v, ''])
+    : Object.entries(vars);
   const exists = existsSync(envPath);
   let content = exists ? readFileSync(envPath, 'utf8') : buildEnvStub(name);
   const present = new Set(Object.keys(parseEnvFile(content)));
-  const added = [...new Set(vars)].filter((v) => !present.has(v));
+  const seen = new Set<string>();
+  const toAdd = entries.filter(([k]) => {
+    if (present.has(k) || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const added = toAdd.map(([k]) => k);
   if (!exists || added.length > 0) {
     if (content.length > 0 && !content.endsWith('\n')) content += '\n';
-    for (const v of added) content += `${v}=\n`;
+    for (const [k, v] of toAdd) content += `${k}=${v}\n`;
     await fsp.mkdir(path.dirname(envPath), { recursive: true });
     await fsp.writeFile(envPath, content);
   }

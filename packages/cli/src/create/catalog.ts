@@ -3,7 +3,7 @@
 // reviewable; unknown values are rejected up front rather than passed
 // through to devcontainer / compose.
 
-import type { ServiceObject } from '../config/schema.js';
+import type { ServiceHealthcheck, ServiceObject } from '../config/schema.js';
 import type { ResolvedService } from './types.js';
 
 // Monoceros runtime image — thin layer on top of Microsoft's
@@ -71,7 +71,21 @@ export function parseLanguageSpec(spec: string): LanguageSpec | null {
 export interface ServiceEntry {
   id: string;
   image: string;
+  /**
+   * Literal dev-default values for the service's env vars. These are
+   * rendered as `${KEY}` *placeholders* into the yml (expandCuratedService)
+   * and seeded as `KEY=<default>` into `<name>.env` (curatedServiceEnvDefaults),
+   * so the yml is shareable without baking credentials in while the
+   * connection string stays predictable out of the box.
+   */
   env?: Readonly<Record<string, string>>;
+  /**
+   * Readiness probe. Curated services ship one so the workspace's
+   * `depends_on` gates on `service_healthy` (actually accepting
+   * connections) rather than just `service_started`. `${VAR}` in the
+   * test resolves from `<name>.env` at apply time like any other field.
+   */
+  healthcheck?: ServiceHealthcheck;
   /**
    * Container-side mount target for the service's persistent data.
    * Monoceros bind-mounts this onto `<container-dir>/data/<id>/` on
@@ -89,24 +103,20 @@ export interface ServiceEntry {
   defaultPort: number;
 }
 
-// The literal `monoceros` user/password/db on the service entries
-// below is a deliberate dev-only convention, not a secret. The
-// services are only reachable from inside the workspace container
-// (no host port mapping), and the value is hardcoded into the
-// catalog + docs so any builder running this workbench knows the
-// connection string at a glance:
+// The `monoceros` user/password/db below are deliberate dev-only
+// defaults, not secrets. A curated service renders its env as `${KEY}`
+// placeholders into the yml and seeds these literals into the gitignored
+// `<name>.env`, so the yml stays shareable while the connection string
+// is predictable out of the box — any builder running this workbench
+// knows it at a glance:
 //
 //   postgresql://monoceros:monoceros@postgres:5432/monoceros
 //   mysql://monoceros:monoceros@mysql:3306/monoceros
 //
-// Because it isn't a secret, the secret-masking layer
-// (util/mask-secrets.ts) doesn't and shouldn't mask it. Builders
-// who want a real password should either:
-//   - run their own DB outside the workbench and configure it via
-//     `externalServices.postgres: postgresql://…` in the container
-//     yml, OR
-//   - swap to a per-container generated password — open issue when
-//     this becomes a real need.
+// To use a real password, change the value in `<name>.env` (it never
+// leaves the host, never rides along when the yml is shared). Because
+// the default isn't a secret, the secret-masking layer
+// (util/mask-secrets.ts) doesn't and shouldn't mask it.
 export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
   postgres: {
     id: 'postgres',
@@ -115,6 +125,19 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
       POSTGRES_USER: 'monoceros',
       POSTGRES_PASSWORD: 'monoceros',
       POSTGRES_DB: 'monoceros',
+    },
+    healthcheck: {
+      test: [
+        'CMD',
+        'pg_isready',
+        '-U',
+        '${POSTGRES_USER}',
+        '-d',
+        '${POSTGRES_DB}',
+      ],
+      interval: '10s',
+      timeout: '5s',
+      retries: 5,
     },
     // Postgres 18+ stores data under /var/lib/postgresql/<major>/, so
     // the recommended mount is the parent directory; pre-18 used
@@ -130,12 +153,33 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
       MYSQL_ROOT_PASSWORD: 'monoceros',
       MYSQL_DATABASE: 'monoceros',
     },
+    healthcheck: {
+      test: [
+        'CMD',
+        'mysqladmin',
+        'ping',
+        '-h',
+        '127.0.0.1',
+        '-u',
+        'root',
+        '-p${MYSQL_ROOT_PASSWORD}',
+      ],
+      interval: '10s',
+      timeout: '5s',
+      retries: 5,
+    },
     dataMount: '/var/lib/mysql',
     defaultPort: 3306,
   },
   redis: {
     id: 'redis',
     image: 'redis:8',
+    healthcheck: {
+      test: ['CMD', 'redis-cli', 'ping'],
+      interval: '10s',
+      timeout: '5s',
+      retries: 5,
+    },
     dataMount: '/data',
     defaultPort: 6379,
   },
@@ -177,7 +221,10 @@ export function isCuratedService(name: string): boolean {
 /**
  * Expand a curated catalog name into a full `ServiceObject` — the
  * init-sugar form written into the yml so the builder sees (and can
- * edit) every field. Throws if `name` isn't curated.
+ * edit) every field. Env values render as `${KEY}` placeholders (their
+ * literal defaults are seeded into `<name>.env` via
+ * `curatedServiceEnvDefaults`), so the yml is shareable without baking
+ * credentials in. Throws if `name` isn't curated.
  */
 export function expandCuratedService(name: string): ServiceObject {
   const def = SERVICE_CATALOG[name];
@@ -190,9 +237,33 @@ export function expandCuratedService(name: string): ServiceObject {
     name: def.id,
     image: def.image,
     port: def.defaultPort,
-    ...(def.env ? { env: { ...def.env } } : {}),
+    ...(def.env
+      ? {
+          env: Object.fromEntries(
+            Object.keys(def.env).map((k) => [k, `\${${k}}`]),
+          ),
+        }
+      : {}),
     ...(def.dataMount ? { volumes: [`data:${def.dataMount}`] } : {}),
+    ...(def.healthcheck ? { healthcheck: def.healthcheck } : {}),
+    restart: 'unless-stopped',
   };
+}
+
+/**
+ * The literal `KEY=<default>` values to seed into `<name>.env` for a
+ * curated service's `${KEY}` env placeholders — the same dev-defaults
+ * the catalog declares. Empty for services without env (redis).
+ * `init` and `add-service` upsert these so the builder gets a working
+ * container without filling anything, yet can change a value (e.g. a
+ * real password) in one gitignored place. Returns `{}` for non-curated
+ * names.
+ */
+export function curatedServiceEnvDefaults(
+  name: string,
+): Record<string, string> {
+  const def = SERVICE_CATALOG[name];
+  return def?.env ? { ...def.env } : {};
 }
 
 /**

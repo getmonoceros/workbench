@@ -119,12 +119,19 @@ services:
   - name: postgres
     image: postgres:18
     port: 5432
-    env:
-      POSTGRES_USER: monoceros
-      POSTGRES_PASSWORD: monoceros
-      POSTGRES_DB: monoceros
+    env: # ${VAR} → aus sandbox.env; Dev-Defaults werden geseedet
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - data:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test:
+        ['CMD', 'pg_isready', '-U', '${POSTGRES_USER}', '-d', '${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 features:
   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1

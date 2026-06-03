@@ -48,6 +48,7 @@ import { preflightHostPort } from '../proxy/port-check.js';
 import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
+  curatedServiceEnvDefaults,
   deriveServiceName,
   expandCuratedService,
   isCuratedService,
@@ -269,9 +270,32 @@ export async function runAddService(
     return r.outcome === 'added';
   });
 
-  // Point the builder at the scaffold they now need to fill in.
-  if (result.status === 'updated' && !curated) {
-    (input.logger ?? defaultLogger()).info(customServiceHint(name));
+  // Curated service → seed its env dev-defaults into <name>.env (the
+  // same ${KEY} placeholders the expanded block carries), mirroring
+  // init and add-feature. Keys are image-dictated (POSTGRES_USER, …),
+  // so --as renaming the service doesn't change them. Custom images
+  // get the fill-in-the-scaffold hint instead — Monoceros can't know
+  // their vars.
+  if (result.status === 'updated') {
+    if (curated) {
+      const defaults = curatedServiceEnvDefaults(arg);
+      if (Object.keys(defaults).length > 0) {
+        const home = input.monocerosHome ?? defaultMonocerosHome();
+        await ensureEnvGitignored(containerConfigsDir(home));
+        const seeded = await ensureEnvVars(
+          containerEnvPath(input.name, home),
+          input.name,
+          defaults,
+        );
+        if (seeded.added.length > 0) {
+          (input.logger ?? defaultLogger()).info(
+            `Seeded ${seeded.added.join(', ')} into ${input.name}.env (dev-defaults — change them there if needed).`,
+          );
+        }
+      }
+    } else {
+      (input.logger ?? defaultLogger()).info(customServiceHint(name));
+    }
   }
   return result;
 }

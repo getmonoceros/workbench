@@ -114,8 +114,19 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toContain('- name: postgres');
     expect(yml).toContain('image: postgres:18');
     expect(yml).toContain('port: 5432');
-    expect(yml).toContain('POSTGRES_USER: monoceros');
+    // env renders as ${VAR} placeholders; the literal dev-defaults are
+    // seeded into <name>.env instead of baked into the shareable yml.
+    expect(yml).toContain('POSTGRES_USER: ${POSTGRES_USER}');
     expect(yml).toContain('- data:/var/lib/postgresql');
+    expect(yml).toContain('restart: unless-stopped');
+    expect(yml).toMatch(/healthcheck:/);
+    const env = await fs.readFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      'utf8',
+    );
+    expect(env).toContain('POSTGRES_USER=monoceros');
+    expect(env).toContain('POSTGRES_PASSWORD=monoceros');
+    expect(env).toContain('POSTGRES_DB=monoceros');
   });
 
   it('runAddService scaffolds a custom image with name + commented hints', async () => {

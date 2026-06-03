@@ -193,6 +193,29 @@ describe('runInit', () => {
     expect(env).toMatch(/^CLAUDE_CODE_API_KEY=$/m);
   });
 
+  it('renders ${VAR} env placeholders for curated services and seeds their dev-defaults into <name>.env', async () => {
+    await runInit({
+      name: 'sandbox',
+      services: ['postgres'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const yml = await readFile(
+      path.join(monocerosHome, 'container-configs', 'sandbox.yml'),
+      'utf8',
+    );
+    expect(yml).toContain('POSTGRES_USER: ${POSTGRES_USER}');
+    expect(yml).toContain('restart: unless-stopped');
+    const env = await readFile(
+      path.join(monocerosHome, 'container-configs', 'sandbox.env'),
+      'utf8',
+    );
+    expect(env).toMatch(/^POSTGRES_USER=monoceros$/m);
+    expect(env).toMatch(/^POSTGRES_PASSWORD=monoceros$/m);
+    expect(env).toMatch(/^POSTGRES_DB=monoceros$/m);
+  });
+
   it('never clobbers an existing <name>.env', async () => {
     const envPath = path.join(
       monocerosHome,

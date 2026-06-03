@@ -13,8 +13,12 @@ monoceros add-service <name> <service-or-image> [--as=<service-name>] [--yes]
 
 - **Kuratierter Name** (`postgres`, `mysql`, `redis`) → expandiert zu
   einem **vollständigen, editierbaren Service-Block** mit Image,
-  Default-Port, Dev-Env und persistentem `data:`-Volume. Sofort
-  lauffähig; du passt danach an, was du brauchst.
+  Default-Port, persistentem `data:`-Volume, `healthcheck` (der
+  Workspace wartet via `depends_on` auf `service_healthy`, nicht nur
+  „Container gestartet") und `restart: unless-stopped`. Die env-Werte
+  rendern als `${VAR}`-Platzhalter; die Dev-Defaults
+  (`POSTGRES_USER=monoceros`, …) werden in `<name>.env` geseedet (siehe
+  „Secrets"). Sofort lauffähig; du passt danach an, was du brauchst.
 
 - **Beliebiges Image** (`rustfs/rustfs:latest`, `clickhouse/clickhouse-server:24`)
   → trägt `name` + `image` aktiv ein und legt den Rest (`port`, `env`,
@@ -63,7 +67,10 @@ bindet auf die Host-Platte, damit Daten Teil von `remove`-Backups sind
 
 ## Secrets: `${VAR}` und `<name>.env`
 
-Werte wie Passwörter gehören nicht in die (teilbare) yml. Stattdessen:
+Werte wie Passwörter gehören nicht in die (teilbare) yml. Die env-Keys
+heissen in der yml so wie der `${VAR}`-Platzhalter — bei kuratierten
+Services ist das der env-Key selbst, also `POSTGRES_PASSWORD →
+${POSTGRES_PASSWORD}`:
 
 ```yaml
 # container-configs/logoscraper.yml
@@ -71,13 +78,22 @@ services:
   - name: postgres
     image: postgres:18
     env:
-      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 ```
 
 ```sh
 # container-configs/logoscraper.env  (gitignored)
-PG_PASSWORD=s3cret
+POSTGRES_PASSWORD=monoceros        # vom Seeding; hier auf ein echtes Secret ändern
 ```
+
+Kuratierte Services seeden ihre Dev-Defaults beim Eintragen automatisch
+(`add-service` meldet, welche Keys es angelegt hat) — der Container läuft
+also sofort, und du änderst einen Wert nur an einer Stelle. Eigene Images
+seeden nichts (Monoceros kennt ihre Variablen nicht); dort trägst du
+Platzhalter + `.env`-Keys von Hand ein.
+
+Den Container kopieren heisst: `<name>.yml` **und** `<name>.env`
+kopieren, die `.env` anpassen — gleiche Struktur, anderes Geheimnis.
 
 Beim `apply` werden alle `${VAR}` aus `<name>.env` ersetzt — sowohl in
 **Service-Feldern** als auch in **Feature-Optionen**. So bleiben auch
@@ -113,11 +129,14 @@ erreichbar (nicht `localhost`) auf seinem internen Port:
 postgresql://<user>:<pass>@<name>:5432/<db>
 ```
 
-Kuratierter Postgres mit Dev-Defaults (`monoceros`/`monoceros`/`monoceros`):
+Kuratierter Postgres mit den geseedeten Dev-Defaults
+(`monoceros`/`monoceros`/`monoceros` aus `<name>.env`):
 
 ```
 postgresql://monoceros:monoceros@postgres:5432/monoceros
 ```
+
+Änderst du `POSTGRES_*` in der `.env`, ändert sich die URL entsprechend.
 
 Vom **Host** (DB-GUI etc.) gibt es kein `localhost:5432` — dafür
 [`monoceros tunnel <name> <service>`](./tunnel.md).

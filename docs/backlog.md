@@ -9,17 +9,18 @@ Konzeptioneller Überbau: [`konzept.md`](konzept.md).
 
 ## Überblick
 
-| Milestone    | Inhalt                                                         | Status                    |
-| ------------ | -------------------------------------------------------------- | ------------------------- |
-| M0           | Bootstrap (pnpm-Workspace, Tooling)                            | ✅ 2026-05-10             |
-| M1           | DevContainer-CLI (`create`, `shell`, `run`, Compose-Lifecycle) | ✅ 2026-05-11             |
-| ~~M2~~       | Iteration-Pipeline + Plugin                                    | ❌ ausgelagert 2026-05-17 |
-| M2.5         | yml-Profile-Modell (`init`/`apply <name>`, AST-Mutationen)     | ✅ 2026-05-17             |
-| ~~M3 (alt)~~ | Externe Tracking-Adapter                                       | ❌ ausgelagert 2026-05-17 |
-| **M3 (neu)** | AI-Tool-Feature-Library                                        | ✅ 2026-05-19             |
-| M4           | Distribution / Go-Live                                         | 🚧 ab 2026-05-19          |
-| M5           | Stabilisierung + Doku                                          | 🚧 ab 2026-05-23          |
-| M6           | Service-Config-Modell, Secrets & init-Redesign                 | ✅ 2026-06-02             |
+| Milestone    | Inhalt                                                           | Status                    |
+| ------------ | ---------------------------------------------------------------- | ------------------------- |
+| M0           | Bootstrap (pnpm-Workspace, Tooling)                              | ✅ 2026-05-10             |
+| M1           | DevContainer-CLI (`create`, `shell`, `run`, Compose-Lifecycle)   | ✅ 2026-05-11             |
+| ~~M2~~       | Iteration-Pipeline + Plugin                                      | ❌ ausgelagert 2026-05-17 |
+| M2.5         | yml-Profile-Modell (`init`/`apply <name>`, AST-Mutationen)       | ✅ 2026-05-17             |
+| ~~M3 (alt)~~ | Externe Tracking-Adapter                                         | ❌ ausgelagert 2026-05-17 |
+| **M3 (neu)** | AI-Tool-Feature-Library                                          | ✅ 2026-05-19             |
+| M4           | Distribution / Go-Live                                           | 🚧 ab 2026-05-19          |
+| M5           | Stabilisierung + Doku                                            | 🚧 ab 2026-05-23          |
+| M6           | Service-Config-Modell, Secrets & init-Redesign                   | ✅ 2026-06-02             |
+| M6.1         | Kuratierte Services: `${VAR}`-env + `.env`-Seeding + Healthcheck | ✅ 2026-06-03             |
 
 ---
 
@@ -1014,8 +1015,8 @@ restart?, command? }`); kuratierte Namen sind Init-Sugar, die zum
 5. **`tunnel <service>:<port>`** — expliziter Port für einen zweiten
    Service-Port (rustfs-Konsole 9001 neben API 9000).
 
-**Bewusst offen / nicht gemacht:** Services seeden keine `.env`-Vars
-(Dev-Defaults sind keine Blanks); Reachability-Probe ist seit dem
+**Bewusst offen / nicht gemacht:** ~~Services seeden keine `.env`-Vars~~
+(in **M6.1** nachgezogen); Reachability-Probe ist seit dem
 Host-Clone weitgehend redundant (könnte später warn-only werden); ein
 e2e-Szenario für den Custom-Image+`.env`+init.sql-Pfad fehlt noch.
 Bekannter Punkt: aus dem VS-Code-Terminal kann der Repo-Auth-Pre-Flight
@@ -1025,6 +1026,46 @@ gepatcht.
 
 E2E-Repo (`getmonoceros/monoceros-e2e`): alle 7 Szenarien auf die neuen
 `--with-*`-Flags migriert.
+
+---
+
+## ✅ M6.1 — Kuratierte Services: `${VAR}`-env, `.env`-Seeding, Healthcheck
+
+**Ziel:** Die in M6 bewusst offen gelassene Lücke schließen — Services
+und Features verhalten sich jetzt **gleich**. Damit ist die yml auch für
+Service-Credentials teilbar, und der Builder hat ein einheitliches
+mentales Modell: yml + `.env` kopieren, `.env` anpassen → neuer Container
+mit gleicher Struktur, anderem Geheimnis (das Ansible-Template-Prinzip).
+**Abgeschlossen 2026-06-03**, end-to-end durch die Dev-CLI validiert
+(`init --with-services` + `add-service`).
+
+1. **Kuratierte Services rendern `${VAR}`-Platzhalter.** Regel:
+   Platzhalter-Var = der env-Key selbst (`POSTGRES_USER →
+${POSTGRES_USER}`) — maximal vorhersagbar, kein Mapping. Gilt
+   catalog-weit (postgres/mysql/redis), kein Postgres-One-off.
+
+2. **`.env`-Seeding mit Dev-Defaults.** Die literalen Katalog-Defaults
+   (`POSTGRES_USER=monoceros`, …) werden via `curatedServiceEnvDefaults`
+   in `<name>.env` geseedet — uniform in `init` **und** `add-service`
+   über denselben `ensureEnvVars`-Pfad wie Feature-Credentials (der jetzt
+   neben Blank-Keys auch Default-Werte kennt). redis hat keine env → kein
+   Seed. Custom-Images seeden nichts (Monoceros kennt ihre Vars nicht).
+   Connection-String-Default bleibt unverändert (`monoceros`).
+
+3. **Healthcheck + `restart: unless-stopped` für alle kuratierten
+   Services.** `pg_isready` / `mysqladmin ping` / `redis-cli ping`. Der
+   Workspace gated via `depends_on` damit auf `service_healthy` statt nur
+   `service_started` — schließt die „connection refused beim ersten
+   `npm run dev`"-Lücke.
+
+Apply-Pfad unverändert: `buildComposeYaml` + `interpolateServices`
+rendern env/healthcheck/restart bereits seit M6, die `${VAR}` lösen beim
+Apply aus der `.env` auf. Docs: add-service.md + init.md aktualisiert.
+
+**Offen geblieben (wie M6):** `--as`-Zweitinstanz desselben Service-Typs
+teilt die `${VAR}` (z. B. zwei Postgres → beide `${POSTGRES_USER}`) — der
+seltene Fall; wer das braucht, benennt den Platzhalter von Hand um. Kein
+Grund, den 99-%-Fall dafür hässlich zu machen.
 
 ---
 

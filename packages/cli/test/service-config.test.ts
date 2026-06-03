@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveService,
   expandCuratedService,
+  curatedServiceEnvDefaults,
   deriveServiceName,
   isCuratedService,
 } from '../src/create/catalog.js';
@@ -22,19 +23,45 @@ const base: Omit<CreateOptions, 'services'> = {
 };
 
 describe('expandCuratedService / isCuratedService', () => {
-  it('expands a curated name to the full catalog object', () => {
+  it('expands a curated name to the full catalog object with ${VAR} env placeholders', () => {
     expect(isCuratedService('postgres')).toBe(true);
     expect(expandCuratedService('postgres')).toEqual({
       name: 'postgres',
       image: 'postgres:18',
       port: 5432,
       env: {
-        POSTGRES_USER: 'monoceros',
-        POSTGRES_PASSWORD: 'monoceros',
-        POSTGRES_DB: 'monoceros',
+        POSTGRES_USER: '${POSTGRES_USER}',
+        POSTGRES_PASSWORD: '${POSTGRES_PASSWORD}',
+        POSTGRES_DB: '${POSTGRES_DB}',
       },
       volumes: ['data:/var/lib/postgresql'],
+      healthcheck: {
+        test: [
+          'CMD',
+          'pg_isready',
+          '-U',
+          '${POSTGRES_USER}',
+          '-d',
+          '${POSTGRES_DB}',
+        ],
+        interval: '10s',
+        timeout: '5s',
+        retries: 5,
+      },
+      restart: 'unless-stopped',
     });
+  });
+
+  it('exposes literal env dev-defaults for .env seeding', () => {
+    expect(curatedServiceEnvDefaults('postgres')).toEqual({
+      POSTGRES_USER: 'monoceros',
+      POSTGRES_PASSWORD: 'monoceros',
+      POSTGRES_DB: 'monoceros',
+    });
+    // redis has no env → nothing to seed
+    expect(curatedServiceEnvDefaults('redis')).toEqual({});
+    // non-curated → nothing to seed
+    expect(curatedServiceEnvDefaults('rustfs/rustfs:latest')).toEqual({});
   });
 
   it('reports non-catalog names as not curated and refuses to expand them', () => {

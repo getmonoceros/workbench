@@ -83,12 +83,19 @@ services:
   - name: postgres # kuratiert → voller Block
     image: postgres:18
     port: 5432
-    env:
-      POSTGRES_USER: monoceros
-      POSTGRES_PASSWORD: monoceros
-      POSTGRES_DB: monoceros
+    env: # Werte als ${VAR}; Dev-Defaults landen in sandbox.env
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - data:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test:
+        ['CMD', 'pg_isready', '-U', '${POSTGRES_USER}', '-d', '${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
   - name: rustfs # Custom-Image → name+image + Grundgerüst
     image: rustfs/rustfs:latest
     # port: 8080
@@ -106,6 +113,21 @@ routing:
   ports:
     - 3000
 ```
+
+## Die `<name>.env` daneben
+
+`init` legt neben der yml eine gitignorete `<name>.env` an (Header +
+geseedete Keys) und trägt dort die `${VAR}`-Referenzen der yml ein:
+
+- **Kuratierte Services** mit ihren Dev-Defaults
+  (`POSTGRES_USER=monoceros`, …) — der Container läuft sofort, ein Wert
+  wird bei Bedarf an genau einer Stelle geändert.
+- **Feature-Credentials** als leere `KEY=`-Zeilen — du füllst die Werte.
+
+So bleibt die yml teilbar (keine Geheimnisse darin); kopierst du einen
+Container, nimm `<name>.yml` **und** `<name>.env` mit und passe die
+`.env` an. Die Datei reist mit `remove`-Backups, `*.env` steht im
+`container-configs/.gitignore`.
 
 ## Versionen für Sprachen
 
