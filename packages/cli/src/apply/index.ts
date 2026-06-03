@@ -36,9 +36,16 @@ import {
   validateOptions,
   writeScaffold,
 } from '../create/scaffold.js';
-import { cyan, dim, sectionLine } from '../util/format.js';
+import { cyan, dim, sectionLine, stripAnsi } from '../util/format.js';
 import { migrateDeprecatedFeatureRef } from '../util/ref.js';
 import { createApplyLog, teeApplyLogger } from './apply-log.js';
+import {
+  type ApplyProgress,
+  createApplyProgress,
+  logFileOnlyLogger,
+  progressTeeLogger,
+} from './apply-progress.js';
+import { buildApplySummary, formatApplySummary } from './apply-summary.js';
 import { type DockerExec, runContainerCycle } from '../devcontainer/compose.js';
 import {
   type CredentialsSpawn,
@@ -96,6 +103,18 @@ export interface RunApplyOptions {
   /** Override of the user-data home. Tests inject a tmpdir. */
   monocerosHome?: string;
   now?: Date;
+  /**
+   * When true, stream the raw `@devcontainers/cli` output to stderr
+   * exactly like before ADR 0013 step 2 — no spinner, no phase
+   * detection, full transcript live. Also forced on when stderr is
+   * not a TTY (CI, piped output). Defaults to false.
+   */
+  verbose?: boolean;
+  /**
+   * Override the stream the spinner writes to. Tests inject an
+   * in-memory writable so the progress UI doesn't touch process.stderr.
+   */
+  progressOut?: NodeJS.WriteStream;
   logger?: {
     info: (msg: string) => void;
     success: (msg: string) => void;
@@ -402,29 +421,47 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     configPath: ymlPath,
     ...(opts.now ? { now: opts.now } : {}),
   });
-  const containerLogger = teeApplyLogger(logger, applyLog.sink);
 
-  // Pre-announce the feature list so the builder knows what's about
-  // to be installed before devcontainer-cli's stream takes over.
-  // Empty list = base-image-only container, no features section needed.
-  const featureRefs = parsed.config.features.map((f) => f.ref);
-  if (featureRefs.length > 0) {
-    containerLogger.info(
-      `Features: ${featureRefs.map((r) => cyan(r)).join(', ')}`,
-    );
+  // Decide between interactive (spinner) and verbose (raw stream)
+  // mode. ADR 0013: spinner is default; `--verbose` and non-TTY
+  // environments fall back to the live stream so CI logs and
+  // builder-driven debugging stay intact.
+  const progressOut = opts.progressOut ?? process.stderr;
+  const interactive = (progressOut.isTTY ?? false) && !opts.verbose;
+  const progress: ApplyProgress | null = interactive
+    ? createApplyProgress({ out: progressOut, interactive: true })
+    : null;
+
+  // Loggers used inside the container section:
+  //  - `containerLogger` carries status lines that must surface on
+  //    screen (Features list, Traefik routing warning). In spinner
+  //    mode these print above the spinner via println; in verbose
+  //    mode they go through consola as before.
+  //  - `internalLogger` is the chatter from compose pre-cleanup. In
+  //    spinner mode it goes to the log file only — the spinner phase
+  //    label already conveys "cleaning up". In verbose mode it goes
+  //    to screen too.
+  const containerLogger = progress
+    ? progressTeeLogger(progress, applyLog.sink)
+    : teeApplyLogger(logger, applyLog.sink);
+  const internalLogger = progress
+    ? logFileOnlyLogger(applyLog.sink)
+    : containerLogger;
+
+  // First-apply context: devcontainer-cli prints "Error fetching image
+  // details: No manifest found for …" for multi-arch GHCR images, then
+  // sits silent for ~1 min while Docker pulls the runtime image.
+  // Both are non-fatal — the buildx step right after consumes the
+  // image fine. In spinner mode the phase label ("starting container…")
+  // covers this, so the warning lives in the log file only. In verbose
+  // mode it stays on screen as before.
+  const pullWarning =
+    'Pulling runtime image and building feature layers. First apply takes ~1–2 min (Docker downloads the multi-arch base); subsequent applies are cached and fast. devcontainer-cli may log a "No manifest found" line — harmless, the pull continues.';
+  if (progress) {
+    applyLog.stream.write(`# note: ${pullWarning}\n\n`);
+  } else {
+    containerLogger.info(dim(pullWarning));
   }
-
-  // First-apply UX: devcontainer-cli's upstream output prints
-  // `Error fetching image details: No manifest found for …` for
-  // multi-arch GHCR images, then sits silent for ~1 min while
-  // Docker actually pulls the runtime image. Both are non-fatal —
-  // the docker buildx step right after consumes the image just
-  // fine. Flag in dim grey so it reads as ambient context.
-  containerLogger.info(
-    dim(
-      'Pulling runtime image and building feature layers. First apply takes ~1–2 min (Docker downloads the multi-arch base); subsequent applies are cached and fast. devcontainer-cli may log a "No manifest found" line — harmless, the pull continues.',
-    ),
-  );
 
   // Bring up the shared Traefik singleton ahead of the devcontainer
   // when the yml declares ports, and refresh the dynamic config so
@@ -470,6 +507,18 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     );
   }
 
+  // Seed the spinner phase before the actual work so the builder
+  // sees an immediate hint of what is happening. The stream-driven
+  // triggers in apply-progress.ts take over once devcontainer-cli
+  // starts emitting recognizable lines.
+  if (progress) {
+    progress.setPhase(
+      needsCompose(createOpts)
+        ? 'cleaning up previous containers…'
+        : 'starting container…',
+    );
+  }
+
   const exitCode = await runContainerCycle(targetDir, {
     hasCompose: needsCompose(createOpts),
     ...(opts.dockerExec !== undefined ? { dockerExec: opts.dockerExec } : {}),
@@ -477,16 +526,55 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       ? { devcontainerSpawn: opts.devcontainerSpawn }
       : {}),
     logSink: applyLog.sink,
-    logger: containerLogger,
+    ...(progress ? { progressSink: progress.streamSink, silent: true } : {}),
+    logger: internalLogger,
   });
+
+  // Stop the spinner and surface the outcome. In spinner mode the
+  // failure path also prints the captured tail (~15 last lines of the
+  // devcontainer-cli stream) so the builder sees the actual error
+  // without paging through the log file. In verbose mode the stream
+  // was already on screen, so there is nothing to replay.
+  if (progress) {
+    if (exitCode === 0) {
+      progress.succeed();
+    } else {
+      const { tailLines } = progress.fail();
+      progressOut.write(`\n✘ apply failed (exit ${exitCode})\n\n`);
+      for (const line of tailLines) {
+        progressOut.write(`  ${line}\n`);
+      }
+      if (tailLines.length > 0) progressOut.write('\n');
+    }
+  }
+
+  // Inventory block on success: shows the builder what their yml just
+  // materialized (features, services, languages, repos, ports, apt
+  // packages, install URLs). Replaces the cherry-picked "Features: …"
+  // line that used to print above the spinner. Mirrored into the log
+  // file with ANSI escapes stripped so `cat …apply-….log` stays
+  // readable.
+  if (exitCode === 0) {
+    const summaryLines = buildApplySummary(createOpts);
+    if (summaryLines.length > 0) {
+      const formatted = formatApplySummary(summaryLines);
+      progressOut.write(`\n${formatted}\n`);
+      applyLog.stream.write(`\n${stripAnsi(formatted)}\n`);
+    }
+  }
 
   // Close the log before announcing its path — guarantees the file
   // is fully flushed to disk by the time the builder follows the
   // pointer. The path is printed on both the success and failure
-  // path; on failure it is the breadcrumb pointing at the real
-  // diagnostic text above.
+  // path; on failure it is the breadcrumb pointing at the full
+  // diagnostic above what fits in the tail.
+  //
+  // Direct write rather than `logger.info` — the default consola
+  // logger prefixes info lines with a timestamp, which collides with
+  // the structured look of the section. The leading blank line
+  // separates the pointer from the summary block above.
   await applyLog.close();
-  logger.info(dim(`log: ${prettyPath(applyLog.path)}`));
+  progressOut.write(`\n  ${dim(`log: ${prettyPath(applyLog.path)}`)}\n`);
 
   // ── Next steps ───────────────────────────────────────────────
   // Only print the wrap-up on a successful container start;

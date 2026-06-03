@@ -37,14 +37,15 @@ cwd ist irrelevant — der Befehl funktioniert von überall.
 ## Synopsis
 
 ```sh
-monoceros apply <name>
+monoceros apply <name> [--verbose]
 ```
 
-## Argument
+## Argumente
 
-| Argument | Bedeutung                                                                |
-| -------- | ------------------------------------------------------------------------ |
-| `<name>` | Konfig-Name. Resolves zu `$MONOCEROS_HOME/container-configs/<name>.yml`. |
+| Argument    | Bedeutung                                                                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `<name>`    | Konfig-Name. Resolves zu `$MONOCEROS_HOME/container-configs/<name>.yml`.                                                  |
+| `--verbose` | Streamt den rohen `@devcontainers/cli`-Output statt einer Spinner-Anzeige. Auto-an, wenn stderr keine TTY ist (CI, Pipe). |
 
 ## Safety-Check
 
@@ -118,6 +119,54 @@ Beide Container koexistieren unter `$MONOCEROS_HOME/container/`.
 - `monoceros down <name> [--volumes]` — Container entfernen vor einem
   destruktiven Re-Apply.
 
+## Ausgabe
+
+Im Default-Modus (TTY, ohne `--verbose`) zeigt der Container-Abschnitt
+einen Spinner mit Phasen-Beschriftung statt des rohen
+`@devcontainers/cli`-Outputs, gefolgt von einem Inventar dessen, was
+gerade im Container materialisiert wurde:
+
+```
+▸ Container
+
+  ⠹ starting container…
+  ⠹ running postCreate…
+  ✔ container ready (28s)
+
+  Languages     node
+  Services      postgres, redis
+  Features      claude-code, atlassian
+  Repositories  my-app, sandbox-utils
+  Ports         3000, 5173
+  APT packages  make, openssl
+
+  log: ~/.monoceros/container/<name>/logs/apply-<name>-<…>.log
+```
+
+Der Summary-Block listet nur die Sektionen, die in der yml gesetzt
+sind — leere fallen raus. Features und Repos werden mit ihrem Kurznamen
+gezeigt (letzte Pfad-Komponente, ohne `:tag`), damit die Zeilen nicht
+durch GHCR-URLs aufgebläht werden.
+
+Erkannte Phasen:
+
+| Trigger im Stream               | Phase                      |
+| ------------------------------- | -------------------------- |
+| `Start: Run: docker build`      | `building feature layers…` |
+| `Start: Run: docker run`        | `starting container…`      |
+| `Running the postCreateCommand` | `running postCreate…`      |
+
+Bricht ein Apply ab, ersetzt der Spinner den Erfolgsfall durch ein
+`✘ apply failed`-Block mit den letzten ~15 Zeilen des
+`devcontainer-cli`-Streams (damit man die echte Diagnose sieht) und
+dem Verweis auf die Log-Datei.
+
+`--verbose` schaltet den Spinner ab und streamt den vollständigen
+Output live wie früher. Verwende es zum Debuggen der Workbench selbst
+oder wenn du den postCreate-Output schritt-für-schritt mitverfolgen
+willst. Wird in nicht-TTY-Umgebungen (CI, gepipte Ausgabe) automatisch
+aktiviert.
+
 ## Log-Datei
 
 Jeder Apply schreibt **zusätzlich** zur Terminal-Ausgabe ein vollständiges
@@ -128,10 +177,11 @@ $MONOCEROS_HOME/container/<name>/logs/apply-<name>-<ISO-Zeitstempel>.log
 ```
 
 Inhalt: ein kleiner Kopf (Befehl, Startzeit, CLI-Version, Konfig-Pfad,
-Host) plus alles, was im Container-Abschnitt auf dem Terminal landet —
-inklusive des kompletten `@devcontainers/cli`-Streams (Pull-, Build-,
-Container-Start- und postCreate-Output). ANSI-Farbcodes sind entfernt,
-damit `cat` und `grep` direkt funktionieren.
+Host) plus alles, was sonst auf dem Terminal käme — inklusive des
+kompletten `@devcontainers/cli`-Streams (Pull-, Build-, Container-Start-
+und postCreate-Output) und der „First apply takes ~1–2 min"-Vorwarnung,
+die im Spinner-Modus nur noch im Log landet. ANSI-Farbcodes sind
+entfernt, damit `cat` und `grep` direkt funktionieren.
 
 Am Ende des Apply-Outputs verweist eine `log: …`-Zeile auf die Datei —
 auch im Fehlerfall. Der Ordner `logs/` lebt unter `container/<name>/`

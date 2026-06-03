@@ -104,7 +104,7 @@ describe('apply log file', () => {
     );
   });
 
-  it('captures the features line, the pull warning, and the devcontainer-cli stream', async () => {
+  it('captures the pull warning, the devcontainer-cli stream, and the summary block', async () => {
     await writeYml(
       'streamy',
       [
@@ -132,10 +132,7 @@ describe('apply log file', () => {
     const [file] = await readdir(logsDir);
     const contents = await readFile(path.join(logsDir, file!), 'utf8');
 
-    // Our own info lines: prefixed with [info] by the tee logger.
-    expect(contents).toContain(
-      '[info] Features: ghcr.io/devcontainers/features/node:1',
-    );
+    // Pull warning is now log-only (was screen-only before step 2).
     expect(contents).toMatch(
       /\[info\] Pulling runtime image and building feature layers/,
     );
@@ -143,6 +140,9 @@ describe('apply log file', () => {
     // devcontainer-cli stream lines: written raw via logSink.
     expect(contents).toContain('Start: Run: docker run');
     expect(contents).toContain('Container started');
+
+    // Summary block on success: short feature name, no full ref.
+    expect(contents).toMatch(/Features\s+node/);
   });
 
   it('strips ANSI escapes from the mirrored logger output', async () => {
@@ -165,6 +165,102 @@ describe('apply log file', () => {
     // shows escape sequences instead of readable text.
     // eslint-disable-next-line no-control-regex
     expect(contents).not.toMatch(/\x1b\[/);
+  });
+});
+
+describe('runApply spinner integration', () => {
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(path.join(tmpdir(), 'monoceros-spinner-'));
+    await mkdir(path.join(home, 'container-configs'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  function makeProgressOut(): {
+    stream: NodeJS.WriteStream;
+    written: () => string;
+  } {
+    const chunks: string[] = [];
+    const stream = {
+      write: (c: unknown): boolean => {
+        chunks.push(typeof c === 'string' ? c : String(c));
+        return true;
+      },
+      isTTY: true,
+    } as unknown as NodeJS.WriteStream;
+    return { stream, written: () => chunks.join('') };
+  }
+
+  it('engages the spinner: pull warning lands in the log, ✔ ends the section', async () => {
+    await writeFile(
+      path.join(home, 'container-configs', 'spin.yml'),
+      'schemaVersion: 1\nname: spin\n',
+    );
+    const out = makeProgressOut();
+
+    await runApply({
+      ...baseRunOpts,
+      name: 'spin',
+      monocerosHome: home,
+      progressOut: out.stream,
+      devcontainerSpawn: recordingDevcontainerSpawn(''),
+    });
+
+    const screen = out.written();
+    // Spinner success line is on screen.
+    expect(screen).toContain('✔ container ready');
+    // Pull warning is NOT echoed to screen in spinner mode.
+    expect(screen).not.toContain('First apply takes');
+
+    // …but the warning IS in the log file.
+    const logsDir = containerLogsDir('spin', home);
+    const [file] = await readdir(logsDir);
+    const contents = await readFile(path.join(logsDir, file!), 'utf8');
+    expect(contents).toContain('# note: Pulling runtime image');
+  });
+
+  it('on failure prints ✘ + tail and the log path', async () => {
+    await writeFile(
+      path.join(home, 'container-configs', 'boom.yml'),
+      'schemaVersion: 1\nname: boom\n',
+    );
+    const out = makeProgressOut();
+
+    // Spawn fake that emits a transcript via progressSink, then exits non-zero.
+    const failingSpawn = async (
+      _args: string[],
+      _cwd: string,
+      options?: {
+        logSink?: NodeJS.WritableStream;
+        progressSink?: NodeJS.WritableStream;
+      },
+    ): Promise<number> => {
+      const transcript =
+        '[t1] Start: Run: docker run x\n' +
+        '[t2] postCreate failed: ELIFECYCLE 1\n' +
+        '[t3] npm ERR! exited with 1\n';
+      options?.logSink?.write(transcript);
+      options?.progressSink?.write(transcript);
+      return 1;
+    };
+
+    const result = await runApply({
+      ...baseRunOpts,
+      name: 'boom',
+      monocerosHome: home,
+      progressOut: out.stream,
+      devcontainerSpawn: failingSpawn,
+    });
+    expect(result.containerExitCode).toBe(1);
+
+    const screen = out.written();
+    expect(screen).toContain('✘ apply failed (exit 1)');
+    expect(screen).toContain('postCreate failed: ELIFECYCLE 1');
+    expect(screen).toContain('npm ERR! exited with 1');
   });
 });
 

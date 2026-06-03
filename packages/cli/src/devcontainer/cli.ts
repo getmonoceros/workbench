@@ -53,6 +53,14 @@ export interface DevcontainerSpawnOptions {
   // never ends this stream — the caller closes it after the apply
   // wraps up. See ADR 0013 and apply/apply-log.ts.
   logSink?: NodeJS.WritableStream;
+  // Optional sink that receives the same masked stream as `logSink`.
+  // Used by the spinner / phase detector. See apply/apply-progress.ts.
+  progressSink?: NodeJS.WritableStream;
+  // When true, do NOT pipe the masked stream to process.stdout/stderr.
+  // The output is captured by `logSink` and/or `progressSink` instead.
+  // Set in interactive apply mode where the spinner owns the terminal;
+  // verbose / non-TTY mode leaves it false so output still streams live.
+  silent?: boolean;
 }
 
 export type DevcontainerSpawn = (
@@ -118,11 +126,17 @@ export const spawnDevcontainer: DevcontainerSpawn = (
     const stdoutPipe = child.stdout
       ?.pipe(createSecretMaskStream())
       .pipe(createRuntimePullHintStream(pullHint));
-    stdoutPipe?.pipe(process.stdout);
     const stderrPipe = child.stderr
       ?.pipe(createSecretMaskStream())
       .pipe(createRuntimePullHintStream(pullHint));
-    stderrPipe?.pipe(process.stderr);
+    // Live terminal echo — suppressed when the apply runs in
+    // interactive mode (`silent: true`) and the spinner owns the
+    // screen. Verbose / non-TTY apply paths leave silent off so the
+    // raw stream still surfaces.
+    if (!options.silent) {
+      stdoutPipe?.pipe(process.stdout);
+      stderrPipe?.pipe(process.stderr);
+    }
     // Tee both masked streams into the apply log sink. `end: false`
     // so the caller (apply/index.ts) controls when the log file
     // closes — stdout and stderr both feed it, and the file should
@@ -130,6 +144,10 @@ export const spawnDevcontainer: DevcontainerSpawn = (
     if (options.logSink) {
       stdoutPipe?.pipe(options.logSink, { end: false });
       stderrPipe?.pipe(options.logSink, { end: false });
+    }
+    if (options.progressSink) {
+      stdoutPipe?.pipe(options.progressSink, { end: false });
+      stderrPipe?.pipe(options.progressSink, { end: false });
     }
     child.on('error', reject);
     child.on('exit', (code) => resolve(code ?? 0));

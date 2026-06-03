@@ -26,12 +26,19 @@ export const applyCommand = defineCommand({
         'Config name. Resolves to $MONOCEROS_HOME/container-configs/<name>.yml.',
       required: true,
     },
+    verbose: {
+      type: 'boolean',
+      description:
+        'Stream the raw @devcontainers/cli output to stderr instead of showing a phase spinner. Auto-enabled when stderr is not a TTY.',
+      default: false,
+    },
   },
   run({ args }) {
     return dispatch(async () => {
       const result = await runApply({
         name: args.name,
         cliVersion: CLI_VERSION,
+        verbose: args.verbose,
       });
       return result.containerExitCode;
     });

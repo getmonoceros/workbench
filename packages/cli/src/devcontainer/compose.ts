@@ -224,6 +224,10 @@ export interface StartOptions {
    * and apply/apply-log.ts.
    */
   logSink?: NodeJS.WritableStream;
+  /** Forwarded to {@link DevcontainerSpawnOptions.progressSink}. */
+  progressSink?: NodeJS.WritableStream;
+  /** Forwarded to {@link DevcontainerSpawnOptions.silent}. */
+  silent?: boolean;
 }
 
 // `monoceros start` delegates to `devcontainer up` rather than to
@@ -244,8 +248,24 @@ export async function runStart(opts: StartOptions): Promise<number> {
   return spawnFn(
     ['up', '--workspace-folder', opts.root, '--mount-workspace-git-root=false'],
     opts.root,
-    opts.logSink ? { logSink: opts.logSink } : undefined,
+    buildSpawnOptions(opts),
   );
+}
+
+function buildSpawnOptions(
+  opts: Pick<StartOptions, 'logSink' | 'progressSink' | 'silent'>,
+): DevcontainerSpawnOptionsForwarded | undefined {
+  const out: DevcontainerSpawnOptionsForwarded = {};
+  if (opts.logSink) out.logSink = opts.logSink;
+  if (opts.progressSink) out.progressSink = opts.progressSink;
+  if (opts.silent) out.silent = true;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+interface DevcontainerSpawnOptionsForwarded {
+  logSink?: NodeJS.WritableStream;
+  progressSink?: NodeJS.WritableStream;
+  silent?: boolean;
 }
 
 export interface RunContainerCycleOptions {
@@ -264,6 +284,10 @@ export interface RunContainerCycleOptions {
    * {@link DevcontainerSpawnOptions.logSink}. See ADR 0013.
    */
   logSink?: NodeJS.WritableStream;
+  /** Forwarded to {@link DevcontainerSpawnOptions.progressSink}. */
+  progressSink?: NodeJS.WritableStream;
+  /** Forwarded to {@link DevcontainerSpawnOptions.silent}. */
+  silent?: boolean;
   logger: {
     info: (message: string) => void;
     warn?: (message: string) => void;
@@ -324,6 +348,8 @@ export async function runContainerCycle(
       root,
       ...(opts.devcontainerSpawn ? { spawn: opts.devcontainerSpawn } : {}),
       ...(opts.logSink ? { logSink: opts.logSink } : {}),
+      ...(opts.progressSink ? { progressSink: opts.progressSink } : {}),
+      ...(opts.silent ? { silent: true } : {}),
       logger,
     });
   }
@@ -339,7 +365,7 @@ export async function runContainerCycle(
       '--remove-existing-container',
     ],
     root,
-    opts.logSink ? { logSink: opts.logSink } : undefined,
+    buildSpawnOptions(opts),
   );
 }
 
