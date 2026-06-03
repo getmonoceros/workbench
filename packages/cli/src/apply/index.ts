@@ -47,16 +47,6 @@ import {
   formatUnknownProviderError,
 } from '../devcontainer/credentials.js';
 import {
-  type ReachabilitySpawn,
-  checkRepoReachability,
-  formatUnreachableReposError,
-} from '../devcontainer/repo-reachability.js';
-import {
-  type CloneSpawn,
-  cloneReposHostSide,
-  formatCloneFailuresError,
-} from '../devcontainer/repo-clone.js';
-import {
   type DockerInfoSpawn,
   detectDockerMode,
   formatRootlessNotSupportedError,
@@ -119,8 +109,6 @@ export interface RunApplyOptions {
   dockerExec?: DockerExec;
   devcontainerSpawn?: DevcontainerSpawn;
   credentialsSpawn?: CredentialsSpawn;
-  reachabilitySpawn?: ReachabilitySpawn;
-  cloneSpawn?: CloneSpawn;
   dockerInfoSpawn?: DockerInfoSpawn;
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
@@ -352,22 +340,16 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     }
   }
 
-  // Pre-flight stage 2: now that credentials are in place, probe each
-  // declared repo URL via host-side `git ls-remote`. Catches the
-  // "repo doesn't exist / token can't see it / DNS broken" failure
-  // modes before the docker build runs — saving ~1–2 min on first
-  // apply and replacing the noisy devcontainer-cli stack trace with
-  // a focused per-repo error.
-  const declaredRepos = createOpts.repos ?? [];
-  if (declaredRepos.length > 0) {
-    const reachability = await checkRepoReachability(declaredRepos, {
-      ...(opts.reachabilitySpawn ? { spawn: opts.reachabilitySpawn } : {}),
-    });
-    const unreachable = reachability.filter((r) => !r.ok);
-    if (unreachable.length > 0) {
-      throw new Error(formatUnreachableReposError(unreachable));
-    }
-  }
+  // NOTE: repos are cloned IN the container (post-create.sh), using the
+  // container's network + the mounted credential helper. We deliberately
+  // do NOT probe or clone repos host-side: the host's network/credential
+  // context isn't the container's (a host may fail to resolve a remote
+  // the container reaches fine), so host-side gating produced spurious
+  // pre-flight failures across platforms. The in-container clone is the
+  // single source of truth and reports a real error if a repo genuinely
+  // can't be reached. (The host-side clone added in ADR 0012 — for
+  // service bind-mounts of repo files like init.sql — was reverted; that
+  // ordering needs a container-side solution instead.)
 
   // ── Scaffold ─────────────────────────────────────────────────
   section('Scaffold');
@@ -401,29 +383,8 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   );
   logger.success(`materialized into ${prettyPath(targetDir)}`);
 
-  // Clone declared repos host-side, BEFORE the container comes up, so a
-  // service that bind-mounts a repo file (e.g. Postgres' init.sql) finds
-  // real content at start instead of an empty dir. Idempotent: existing
-  // projects/<path>/ dirs are left untouched; the in-container
-  // post-create clone skips them via its `[ ! -d ]` guard. Auth reuses
-  // the host credential helper the reachability pre-flight just used.
-  const reposToClone = createOpts.repos ?? [];
-  if (reposToClone.length > 0) {
-    const cloneResults = await cloneReposHostSide(targetDir, reposToClone, {
-      ...(opts.cloneSpawn ? { spawn: opts.cloneSpawn } : {}),
-    });
-    for (const r of cloneResults) {
-      if (r.status === 'cloned') {
-        logger.success(`cloned ${cyan(r.path)} ${dim(`(${r.url})`)}`);
-      } else if (r.status === 'skipped') {
-        logger.info(`projects/${r.path} already present — skipped clone`);
-      }
-    }
-    const cloneFailures = cloneResults.filter((r) => r.status === 'failed');
-    if (cloneFailures.length > 0) {
-      throw new Error(formatCloneFailuresError(cloneFailures));
-    }
-  }
+  // Repos are cloned in-container by post-create.sh (see the NOTE above
+  // the Scaffold section) — no host-side clone here.
 
   // ── Container ────────────────────────────────────────────────
   section('Container');

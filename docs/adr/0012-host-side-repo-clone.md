@@ -1,7 +1,27 @@
 # ADR 0012 — Repos host-seitig vor `compose up` klonen
 
-- Status: accepted
+- Status: **reverted (2026-06-03)** — siehe „Revert" am Ende
 - Datum: 2026-06-02
+
+> **Revert-Hinweis (2026-06-03):** Diese Entscheidung wurde
+> zurückgenommen. Der host-seitige Clone (und der host-seitige
+> `git ls-remote`-Reachability-Pre-Flight) verlagerten Netz- und
+> Credential-Auflösung von der **Container**-Seite (die funktioniert)
+> auf die **Host**-Seite — und produzierten dadurch plattformübergreifend
+> falsche Vorab-Abbrüche: VS-Code-`GIT_ASKPASS` auf macOS, fehlende
+> github.com-DNS-Auflösung des Host-git auf einer Linux-VM. Der Host hat
+> nicht denselben Netz-/Auth-Kontext wie der Container. Beides ist
+> entfernt; Repos werden wieder ausschließlich **in-container** geklont
+> (post-create.sh) — der einzige Pfad, der auf allen Plattformen
+> funktioniert. Der eigentliche Anlass dieser ADR — ein Service, der eine
+> Repo-Datei bind-mountet (init.sql) und sie **vor** `compose up` braucht
+> — bleibt offen und gehört **container-seitig** gelöst (z. B. ein
+> Clone-Init-Schritt im Compose, von dem die Services per `depends_on`
+> abhängen), nicht über den Host. Siehe backlog.md.
+
+---
+
+_Ursprünglicher Text (überholt):_
 
 ## Kontext
 

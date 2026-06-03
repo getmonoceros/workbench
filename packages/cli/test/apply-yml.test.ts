@@ -1,5 +1,4 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -38,24 +37,6 @@ const stubCredentialsSpawn = async (input: string) => {
     exitCode: 0,
   };
 };
-// Default stub for the repo-reachability pre-flight (stage 2):
-// every declared repo URL is reachable. Tests that exercise the
-// "repo not found" path supply their own reachabilitySpawn.
-const stubReachabilitySpawn = async () => ({
-  stdout: '',
-  stderr: '',
-  exitCode: 0,
-});
-
-// Default stub for the host-side repo clone: pretend the clone
-// succeeded by creating the target dir, so post-conditions (and any
-// service bind-mount into projects/) see a real directory. Tests that
-// exercise clone failure supply their own cloneSpawn.
-const stubCloneSpawn = async (_url: string, dest: string) => {
-  await mkdir(dest, { recursive: true });
-  return { stdout: '', stderr: '', exitCode: 0 };
-};
-
 // Default stub for the docker-mode probe: rootful daemon (no idmap
 // in the generated devcontainer.json). Tests that exercise the
 // rootless code path supply their own dockerInfoSpawn that returns
@@ -73,8 +54,6 @@ const baseRunOpts = {
   identitySpawn: stubIdentitySpawn,
   identityPrompt: stubIdentityPrompt,
   credentialsSpawn: stubCredentialsSpawn,
-  reachabilitySpawn: stubReachabilitySpawn,
-  cloneSpawn: stubCloneSpawn,
   dockerInfoSpawn: stubDockerInfoSpawn,
 };
 
@@ -1013,77 +992,6 @@ describe('runApply', () => {
     ).rejects.toThrow(/not a valid email/);
   });
 
-  it('clones declared repos host-side before bringing the container up', async () => {
-    await writeYml(
-      'cloned',
-      [
-        'schemaVersion: 1',
-        'name: cloned',
-        'repos:',
-        '  - url: https://github.com/foo/bar.git',
-        '',
-      ].join('\n'),
-    );
-    const order: string[] = [];
-    const cloneCalls: Array<{ url: string; dest: string }> = [];
-    await runApply({
-      ...baseRunOpts,
-      name: 'cloned',
-      monocerosHome: home,
-      cloneSpawn: async (url, dest) => {
-        order.push('clone');
-        cloneCalls.push({ url, dest });
-        await mkdir(dest, { recursive: true });
-        return { stdout: '', stderr: '', exitCode: 0 };
-      },
-      devcontainerSpawn: async () => {
-        order.push('up');
-        return 0;
-      },
-    });
-    const projectsBar = path.join(
-      home,
-      'container',
-      'cloned',
-      'projects',
-      'bar',
-    );
-    expect(cloneCalls).toEqual([
-      { url: 'https://github.com/foo/bar.git', dest: projectsBar },
-    ]);
-    expect(existsSync(projectsBar)).toBe(true);
-    // clone must happen before the container comes up
-    expect(order[0]).toBe('clone');
-    expect(order).toContain('up');
-  });
-
-  it('skips the host-side clone on re-apply when projects/<path> already exists', async () => {
-    await writeYml(
-      'recloned',
-      [
-        'schemaVersion: 1',
-        'name: recloned',
-        'repos:',
-        '  - url: https://github.com/foo/bar.git',
-        '',
-      ].join('\n'),
-    );
-    let cloneCount = 0;
-    const opts = {
-      ...baseRunOpts,
-      name: 'recloned',
-      monocerosHome: home,
-      cloneSpawn: async (_url: string, dest: string) => {
-        cloneCount += 1;
-        await mkdir(dest, { recursive: true });
-        return { stdout: '', stderr: '', exitCode: 0 };
-      },
-    };
-    await runApply(opts); // first apply → clones
-    await runApply(opts); // second apply → projects/bar exists → skip
-    expect(cloneCount).toBe(1);
-  });
-
   it('post-create.sh does not set per-repo git.user when repo has no override', async () => {
     await writeYml(
       'no-identity',
@@ -1278,48 +1186,11 @@ describe('runApply', () => {
     expect(compose).not.toContain('idmap');
   });
 
-  it('pre-flight stage 2 (reachability) catches a missing repo before docker build', async () => {
-    // Credentials are present (default stub) but the repo URL is
-    // unreachable. Stage 2 short-circuits — we never reach
-    // runContainerCycle.
-    await writeYml(
-      'missing-repo',
-      [
-        'schemaVersion: 1',
-        'name: missing-repo',
-        'repos:',
-        '  - url: https://bitbucket.org/conciso/monoceros-app.git',
-        '',
-      ].join('\n'),
-    );
-    let devcontainerCalled = false;
-    await expect(
-      runApply({
-        ...baseRunOpts,
-        devcontainerSpawn: async () => {
-          devcontainerCalled = true;
-          return 0;
-        },
-        reachabilitySpawn: async () => ({
-          stdout: '',
-          stderr:
-            'remote: You may not have access to this repository or it no longer exists in this workspace.\nfatal: Authentication failed',
-          exitCode: 128,
-        }),
-        name: 'missing-repo',
-        monocerosHome: home,
-      }),
-    ).rejects.toThrow(/Cannot reach.*monoceros-app[\s\S]*Repository not found/);
-    // Confirms we short-circuit before docker spend.
-    expect(devcontainerCalled).toBe(false);
-  });
-
-  it('pre-flight stage 2 runs AFTER credential pre-flight (credentials error wins)', async () => {
-    // If credentials are missing, reachability never runs — we
-    // never want to probe a URL with no creds in place because the
-    // resulting failure-mode classification ("auth-failed") would
-    // be a worse diagnostic than the existing provider-specific
-    // setup hint.
+  it('credential pre-flight fails fast (before docker build) when no creds are found', async () => {
+    // Credentials for the repo host can't be resolved → apply aborts
+    // before the container build, with provider-specific setup hints.
+    // (Repos themselves are cloned in-container; we don't probe them
+    // host-side anymore.)
     await writeYml(
       'no-creds',
       [
@@ -1330,20 +1201,20 @@ describe('runApply', () => {
         '',
       ].join('\n'),
     );
-    let reachabilityCalled = false;
+    let devcontainerCalled = false;
     await expect(
       runApply({
         ...baseRunOpts,
         credentialsSpawn: async () => ({ stdout: '', exitCode: 0 }),
-        reachabilitySpawn: async () => {
-          reachabilityCalled = true;
-          return { stdout: '', stderr: '', exitCode: 0 };
+        devcontainerSpawn: async () => {
+          devcontainerCalled = true;
+          return 0;
         },
         name: 'no-creds',
         monocerosHome: home,
       }),
     ).rejects.toThrow(/Missing Git credentials/);
-    expect(reachabilityCalled).toBe(false);
+    expect(devcontainerCalled).toBe(false);
   });
 
   it('pre-flight accepts non-canonical host when provider: is set explicitly', async () => {

@@ -133,27 +133,19 @@ Beide Container koexistieren unter `$MONOCEROS_HOME/container/`.
   der Liste der unterstützten Sprachen/Services.
 - **`Invalid config name`** — Name enthält Slash, Space oder
   Shell-Meta-Zeichen. Nur `[A-Za-z0-9._-]+` erlaubt.
-- **`Cannot reach declared repo … Authentication failed`** — der
-  Apply prüft jedes `repos:`-Ziel host-seitig (`git ls-remote`), bevor
-  Docker startet. Die Meldung zeigt jetzt die **rohe git-Ausgabe**
-  (`git: …`) — die ist die Wahrheit, nicht die darüberstehende
-  Kategorie. Häufige Fälle:
-  - `git: ... could not read Username` → git bekam **kein** Credential
-    (nicht: ein falsches). Prüfe deinen Credential-Helper
-    (`git credential fill` für den Host) bzw. den Provider-Login
-    (`gh auth login`).
-  - `git: ... Invalid username or token` → ein Credential wurde
-    gesendet und abgelehnt. Token abgelaufen, ohne Org-Zugriff
-    (GitHub-SSO!) oder ohne `repo`-Scope.
-  - **Sporadisch aus dem VS-Code-Terminal:** VS Code injiziert
-    `GIT_ASKPASS` + `VSCODE_GIT_*` ins Terminal und routet git-Auth
-    über seine eigene GitHub-Anmeldung — die kann einen anderen Token
-    liefern als dein OS-Credential-Helper. Wenn ein Apply aus dem
-    integrierten Terminal mit Auth-Fehler abbricht, obwohl
-    `git ls-remote <url>` von Hand läuft: einfach **nochmal applyen**,
-    aus einem **normalen Terminal** starten, oder die Variablen für die
-    Session entfernen:
-
-    ```
-    unset GIT_ASKPASS VSCODE_GIT_ASKPASS_MAIN VSCODE_GIT_ASKPASS_NODE VSCODE_GIT_IPC_HANDLE VSCODE_GIT_ASKPASS_EXTRA_ARGS
-    ```
+- **`Missing Git credentials for <host>`** — der Apply holt für jeden
+  `repos:`-Host **host-seitig** die HTTPS-Credentials (über den
+  Credential-Helper) und mountet sie in den Container, damit der Clone
+  dort authentifiziert ist. Findet er keine, bricht er **vor** dem
+  Docker-Build mit provider-spezifischen Hinweisen ab (z. B.
+  `gh auth login`). Das ist ein **lokaler** Check (kein Netzzugriff auf
+  den Git-Host) — er prüft nur, ob ein Credential vorhanden ist.
+- **Repo-Clone schlägt fehl** — Repos werden **im Container** geklont
+  (post-create.sh, mit dem gemounteten Credential-Helper). Schlägt ein
+  Clone fehl (falsches/abgelaufenes Token, getippter URL, Host nicht
+  erreichbar), erscheint die echte git-Meldung im Container-Build-Log.
+  Häufige Fälle: `could not read Username` → kein Credential; `Invalid
+username or token` → Token abgelaufen / ohne Org-Zugriff (GitHub-SSO!)
+  / ohne `repo`-Scope. Den Clone nutzt die **Container**-Umgebung —
+  Host-spezifische Eigenheiten (VPN-DNS, VS-Code-`GIT_ASKPASS`) spielen
+  hier bewusst keine Rolle mehr.

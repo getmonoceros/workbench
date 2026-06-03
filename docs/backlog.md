@@ -1001,11 +1001,13 @@ restart?, command? }`); kuratierte Namen sind Init-Sugar, die zum
    `remove-*` fasst die `.env` nicht an. `remove`/`restore` sichern die
    `.env` mit.
 
-3. **Host-seitiges Repo-Klonen** ([ADR 0012](./adr/0012-host-side-repo-clone.md))
-   — Repos werden host-seitig vor `compose up` geklont, damit
-   Service-Bind-Mounts auf Repo-Dateien (init.sql) beim Start existieren.
-   Idempotent; in-container post-create-Clone bleibt Skip-Guard-Fallback.
-   Reachability-Fehler zeigen jetzt die rohe git-stderr (`git: …`).
+3. ~~**Host-seitiges Repo-Klonen** ([ADR 0012](./adr/0012-host-side-repo-clone.md))~~
+   — **2026-06-03 zurückgenommen.** Der host-seitige Clone + der
+   host-seitige `git ls-remote`-Reachability-Pre-Flight verlagerten Netz/
+   Auth auf den Host und brachen plattformübergreifend falsch ab (VS-Code-
+   `GIT_ASKPASS` macOS; github.com-DNS Linux-VM). Repos werden wieder nur
+   **in-container** geklont. Der init.sql-vor-`compose up`-Fall bleibt
+   offen → container-seitig lösen (siehe „Vorgemerkt").
 
 4. **init-Flag-Umbau** (`feat(init)`) — `--with` raus; explizite
    Kategorie-Flags `--with-languages` / `--with-features` /
@@ -1122,6 +1124,17 @@ Bewusst **nicht** gemacht: Identität wird nicht aus dem Host vor-befüllt
 
 ## Vorgemerkt für später (jenseits M5)
 
+- **Repo-Datei als Service-Bind-Mount vor `compose up`** (war ADR 0012,
+  host-seitig — 2026-06-03 zurückgenommen, weil host-seitiges Klonen
+  plattformübergreifend brach). Anlass: ein Service mountet `init.sql`
+  aus einem geklonten Repo und braucht die Datei, bevor der Service
+  startet. **Container-seitig** lösen, nicht über den Host: z. B. ein
+  Clone-Init-Schritt im Compose, von dem die Services per
+  `depends_on: service_completed_successfully` abhängen (Clone läuft im
+  Container-Netz, schreibt in die gemountete `projects/`, Services warten
+  darauf). Bis dahin: Repos klonen in-container via post-create (nach
+  Container-Start) — für reinen Workspace-Inhalt ausreichend, nur der
+  Bind-mount-vor-Start-Fall fehlt.
 - **AI-Tool-Library erweitern** — OpenCode, Codex, GitHub Copilot,
   Aider als Features dazu, jeweils nach dem Cookbook in
   [`docs/ai-tools.md`](./ai-tools.md). Im Original-M5-Plan, aber
