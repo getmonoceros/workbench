@@ -234,7 +234,7 @@ describe('runInit', () => {
     expect(await readFile(envPath, 'utf8')).toBe('PG_PASSWORD=keep-me\n');
   });
 
-  it('documented mode: no --with writes a default with every component commented out', async () => {
+  it('documented mode: no --with-* flag writes a default with every component commented out', async () => {
     const result = await runInit({
       name: 'sandbox',
       workbenchRoot: root,

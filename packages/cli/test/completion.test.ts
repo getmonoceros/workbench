@@ -116,18 +116,21 @@ describe('parseCompletionLine', () => {
 
   it('treats `--flag=value` as a single token', () => {
     const r = parseCompletionLine(
-      'monoceros init demo --with=no',
-      'monoceros init demo --with=no'.length,
+      'monoceros init demo --with-features=no',
+      'monoceros init demo --with-features=no'.length,
     );
     expect(r.prev).toEqual(['monoceros', 'init', 'demo']);
-    expect(r.current).toBe('--with=no');
+    expect(r.current).toBe('--with-features=no');
   });
 
   it('handles cursor before end of buffer', () => {
-    const line = 'monoceros init demo --with=node,';
-    const r = parseCompletionLine(line, 'monoceros init demo --with=no'.length);
+    const line = 'monoceros init demo --with-features=node,';
+    const r = parseCompletionLine(
+      line,
+      'monoceros init demo --with-features=no'.length,
+    );
     expect(r.prev).toEqual(['monoceros', 'init', 'demo']);
-    expect(r.current).toBe('--with=no');
+    expect(r.current).toBe('--with-features=no');
   });
 });
 
@@ -321,7 +324,7 @@ describe('resolveCompletions', () => {
     expect(r).toContain('-y');
   });
 
-  it('init fresh-name slot suggests nothing, but past it suggests the --with flags', async () => {
+  it('init fresh-name slot suggests nothing, but past it suggests the --with-* flags', async () => {
     // `monoceros init <TAB>` is inside the fresh-name positional —
     // no completions (would invite collisions with existing configs).
     const r1 = await resolveCompletions(

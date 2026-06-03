@@ -21,8 +21,8 @@ import { PROVIDER_VALUES, REGEX } from '../config/schema.js';
  *     return the un-quoted content as the token (the shell glue
  *     re-quotes when emitting).
  *   - A `--key=value` form is one token; the equals sign isn't a
- *     separator. Inside `--with=node,claude` we treat the part after
- *     `=` as the current value-fragment for the `--with` flag.
+ *     separator. Inside `--with-features=github,claude` we treat the part
+ *     after `=` as the current value-fragment for the `--with-features` flag.
  *
  * Per-command suggestions live in `COMMAND_SPECS`. Adding a new
  * command means adding (or extending) one entry there — the engine
@@ -158,7 +158,7 @@ interface CommandSpec {
    * MORE positional slots than entries in `positionals` (= "this
    * slot exists but has no suggestion source"). Once the cursor sits
    * past `positionalCount`, completion falls back to flag names so
-   * the builder discovers `--with` / `--yes` etc. via Tab.
+   * the builder discovers `--with-*` / `--yes` etc. via Tab.
    */
   positionalCount?: number;
   /** Flag table. Keys include the leading `--`. */
@@ -253,9 +253,9 @@ async function resolvePreDash(
 
 /**
  * Flag-name suggestion list filtered against the partial token under
- * the cursor. Includes long names (`--with`) and short aliases (`-y`).
+ * the cursor. Includes long names (`--with-features`) and short aliases (`-y`).
  *
- * Value-flags are emitted WITH a trailing `=` (`--with=`) so the shell
+ * Value-flags are emitted WITH a trailing `=` (`--with-features=`) so the shell
  * wrappers can use `compopt -o nospace` (bash) / `compadd -S ''` (zsh)
  * to suppress the auto-added trailing space — without that, picking
  * `--with-ports` via Tab and typing `=3000` afterwards produces the
@@ -314,8 +314,8 @@ async function resolveValues(
   fragment: string,
 ): Promise<string[]> {
   const values = await source(ctx);
-  // For comma-separated value flags (`--with=node,claude`) the user
-  // may have typed `node,cl` — the fragment to filter against is the
+  // For comma-separated value flags (`--with-features=github,claude`) the
+  // user may have typed `github,cl` — the fragment to filter against is the
   // part AFTER the last comma.
   const commaIdx = fragment.lastIndexOf(',');
   if (commaIdx < 0) {
@@ -437,7 +437,7 @@ async function listFeatureOptionInnerArgs(ctx: Ctx): Promise<string[]> {
 
   // Plain key fragment — suggest the still-unused option keys WITH a
   // trailing `=` so the shell wrappers' nospace logic kicks in (same
-  // shape as `--with=` etc. on the flag side). Without that, the
+  // shape as `--with-features=` etc. on the flag side). Without that, the
   // user gets `instance =foo` instead of `instance=foo` after Tab +
   // manual `=foo`.
   return summary.optionNames

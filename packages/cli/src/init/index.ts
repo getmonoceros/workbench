@@ -35,20 +35,21 @@ import {
 } from '../create/catalog.js';
 
 /**
- * `monoceros init <name> [--with=<components>]` — produce a fresh
- * container-config yml at `<MONOCEROS_HOME>/container-configs/<name>.yml`.
+ * `monoceros init <name> [--with-languages=… --with-features=… …]` —
+ * produce a fresh container-config yml at
+ * `<MONOCEROS_HOME>/container-configs/<name>.yml`.
  *
  * Two modes:
  *
- *   - With `--with=node,postgres,github,claude` (or any comma-list
- *     of component names from the catalog): the listed components
- *     are merged and the result written as an active, immediately-
- *     applyable yml. Per-feature option hints (auth/credentials
- *     from the feature manifest) appear as commented lines next to
- *     the active options so the builder can see what's available
- *     without leaving the file.
+ *   - With any per-category flag (`--with-languages=node`,
+ *     `--with-services=postgres`, `--with-features=github,claude`, …;
+ *     each takes a comma-list): the listed components are merged and
+ *     the result written as an active, immediately-applyable yml.
+ *     Per-feature option hints (auth/credentials from the feature
+ *     manifest) appear as commented lines next to the active options
+ *     so the builder can see what's available without leaving the file.
  *
- *   - Without `--with`: a documented-default yml is written. Every
+ *   - Without any `--with-*` flag: a documented-default yml is written. Every
  *     section is commented out, every catalog component appears as
  *     a suggestion with prose describing what it adds. Builder
  *     un-comments what they want, then `monoceros apply <name>`.
@@ -57,7 +58,7 @@ import {
  *
  *   - the target config already exists (delete it first if you want
  *     to start over — protects hand-edits)
- *   - a `--with` name is not in the catalog (the error message
+ *   - a `--with-*` name is not in the catalog (the error message
  *     lists what *is* available)
  *   - the chosen container name is shape-invalid
  */

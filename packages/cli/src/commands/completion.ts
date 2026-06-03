@@ -45,7 +45,7 @@ export function renderCompletionScript(shell: Shell): string {
       '  COMPREPLY=( $(compgen -W "$candidates" -- "$cur") )',
       '  # Suppress the trailing space when bash narrowed the candidate',
       '  # set to a single token that ends with `=` — those are value-',
-      '  # flags (`--with=`, `--with-ports=`, …) where the user types the',
+      '  # flags (`--with-features=`, `--with-ports=`, …) where the user types the',
       '  # value immediately after.',
       '  if [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == *= ]]; then',
       '    compopt -o nospace',

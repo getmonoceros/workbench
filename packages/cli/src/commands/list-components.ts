@@ -22,7 +22,7 @@ export const listComponentsCommand = defineCommand({
     name: 'list-components',
     group: 'discovery',
     description:
-      'Print the components catalog used by `monoceros init --with=…`, grouped by category (Languages, Services, Features). Component names render in cyan, descriptions in default colour; when piped, the formatting drops out and lines become `name<TAB>description` for grep/awk-friendly consumption.',
+      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=…`, grouped by category (Languages, Services, Features). Component names render in cyan, descriptions in default colour; when piped, the formatting drops out and lines become `name<TAB>description` for grep/awk-friendly consumption.',
   },
   args: {},
   async run() {

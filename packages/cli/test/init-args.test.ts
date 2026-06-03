@@ -71,14 +71,14 @@ describe('collectWithPortsList', () => {
     ).toEqual([3000, 5173, 6006]);
   });
 
-  it('stops sweeping at the next flag, not into other --with options', () => {
+  it('stops sweeping at the next flag, not into other --with-* options', () => {
     expect(
       collectWithPortsList('3000', [
         'init',
         'demo',
         '--with-ports=3000',
         '5173',
-        '--with',
+        '--with-languages',
         'node',
       ]),
     ).toEqual([3000, 5173]);

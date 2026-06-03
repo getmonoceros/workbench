@@ -16,8 +16,8 @@ import { resolveCompletions } from '../completion/resolve.js';
  *   - Exit 0 always (errors → empty output; completion is a comfort
  *     feature, never a fatal one).
  *   - Output: one candidate per line, no decorations, no escapes.
- *   - Comma-separated value flags (`--with=node,claude`) get returned
- *     with the leading prefix already attached so the shell inserts
+ *   - Comma-separated value flags (`--with-features=github,claude`) get
+ *     returned with the leading prefix already attached so the shell inserts
  *     the full token in place — see resolveValues in resolve.ts.
  */
 

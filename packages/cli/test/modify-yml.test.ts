@@ -485,7 +485,7 @@ describe('add-*/remove-* against the yml', () => {
     // Same per-feature header (`<Name> — <description>`, options
     // summary, documentationURL) the init generator emits, so a
     // feature added via add-feature reads the same as one added via
-    // `init --with=…`. Builders shouldn't lose context just because
+    // `init --with-features=…`. Builders shouldn't lose context just because
     // they came in through a different entry point.
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({

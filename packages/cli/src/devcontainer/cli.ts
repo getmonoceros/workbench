@@ -43,7 +43,7 @@ export interface DevcontainerSpawnOptions {
   // no piping, no secret masking, no buffering. Required for any
   // interactive use case (`monoceros shell`, the `exec` step of
   // `monoceros run`): bash detects a non-TTY stdin/stdout and exits
-  // immediately, which makes `--with` stdio pipes a non-starter.
+  // immediately, which makes a stdio-pipe approach a non-starter.
   // The build/log paths in apply and start still go through the
   // masked-pipe path, where there's no TTY at stake.
   interactive?: boolean;

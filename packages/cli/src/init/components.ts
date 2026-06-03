@@ -21,7 +21,7 @@ import { FeatureOptionValueSchema, REGEX } from '../config/schema.js';
  * is: a sub-component sets every sibling boolean option explicitly
  * (`true` for its own feature, `false` for the others), and the
  * merge applies OR-semantics on booleans so combining
- * `--with=atlassian/rovodev,atlassian/twg` correctly yields both
+ * `--with-features=atlassian/rovodev,atlassian/twg` correctly yields both
  * `true`. See `templates/components/README.md` for the full design.
  */
 
@@ -188,7 +188,7 @@ export interface MergedComponents {
  *         defaults.features or the user editing the yml directly).
  *
  * The OR-merge for booleans is what makes
- * `--with=atlassian/rovodev,atlassian/twg` yield both `true` even
+ * `--with-features=atlassian/rovodev,atlassian/twg` yield both `true` even
  * though each sub-component sets the sibling flag to `false`.
  */
 /**
@@ -273,7 +273,7 @@ export function mergeFeatureOptions(
 }
 
 /**
- * Resolve `--with=…` names against the catalog. Accepts plain
+ * Resolve `--with-*` names against the catalog. Accepts plain
  * names (`node`) and language-version pairs (`node:20`). Splits
  * the `:version` off, looks up the bare name in the catalog, and
  * carries the version forward only for language components — a
