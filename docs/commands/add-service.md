@@ -141,6 +141,30 @@ postgresql://monoceros:monoceros@postgres:5432/monoceros
 Vom **Host** (DB-GUI etc.) gibt es kein `localhost:5432` — dafür
 [`monoceros tunnel <name> <service>`](./tunnel.md).
 
+## DB-Schema / Seed: Migration, nicht `init.sql`-Bind-Mount
+
+Naheliegend wäre, eine `init.sql` aus einem Repo in den Service zu
+bind-mounten (Postgres' `docker-entrypoint-initdb.d`). **Mach das nicht**
+in einem Monoceros-Container: Repos werden **im Container** geklont
+(post-create, nach Container-Start), liegen also **nicht** auf dem Host,
+bevor `compose up` den Service startet — die Bind-Mount-Quelle wäre leer,
+und das Schema würde nie eingespielt.
+
+Der robuste Weg ist ohnehin der, den echte Apps nutzen: **eine
+Migration**, die du **aus dem Workspace** gegen den Service fährst,
+nachdem dieser bereit ist. Der Workspace wartet beim Apply bereits auf
+`service_healthy` — wenn deine Migration läuft, nimmt die DB also
+Verbindungen an:
+
+```sh
+# im Workspace, nachdem `monoceros apply` durch ist:
+npm run migrate            # oder: psql "$DATABASE_URL" -f db/schema.sql
+```
+
+Für Einmaliges, das **Superuser**-Rechte braucht (`CREATE EXTENSION`,
+Rollen), einmalig per [`monoceros shell`](./shell.md) /
+[`tunnel`](./tunnel.md) + `psql` einspielen.
+
 ## Idempotenz + Kollision
 
 - Gleicher Aufruf zweimal → no-change (vorhandener Service mit gleichem

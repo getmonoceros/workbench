@@ -1124,17 +1124,27 @@ Bewusst **nicht** gemacht: Identität wird nicht aus dem Host vor-befüllt
 
 ## Vorgemerkt für später (jenseits M5)
 
-- **Repo-Datei als Service-Bind-Mount vor `compose up`** (war ADR 0012,
-  host-seitig — 2026-06-03 zurückgenommen, weil host-seitiges Klonen
-  plattformübergreifend brach). Anlass: ein Service mountet `init.sql`
-  aus einem geklonten Repo und braucht die Datei, bevor der Service
-  startet. **Container-seitig** lösen, nicht über den Host: z. B. ein
-  Clone-Init-Schritt im Compose, von dem die Services per
-  `depends_on: service_completed_successfully` abhängen (Clone läuft im
-  Container-Netz, schreibt in die gemountete `projects/`, Services warten
-  darauf). Bis dahin: Repos klonen in-container via post-create (nach
-  Container-Start) — für reinen Workspace-Inhalt ausreichend, nur der
-  Bind-mount-vor-Start-Fall fehlt.
+- **Repo-Datei als Service-Bind-Mount vor `compose up`** — _für den
+  DB-Seed-Fall per Konvention gelöst (2026-06-03), Rest geparkt._
+  Anlass war: ein Service mountet `init.sql` aus einem geklonten Repo und
+  braucht die Datei, bevor der Service startet — Repos werden aber
+  in-container (post-create, nach Container-Start) geklont, liegen also
+  nicht vor `compose up` auf dem Host. (Der host-seitige Clone aus
+  ADR 0012 war der falsche Fix → zurückgenommen.)
+  **Entscheidung:** DB-Schema/Seed gehört in eine **Migration**, die der
+  Workspace gegen den Service fährt, **nachdem** dieser `service_healthy`
+  ist (M6.1 wartet bereits darauf) — nicht in einen
+  `docker-entrypoint-initdb.d`-Bind-Mount. Das löst die Abhängigkeit
+  vollständig, ohne Monoceros-Infrastruktur. Dokumentiert in
+  [add-service.md](./commands/add-service.md).
+  **Geparkt (kein YAGNI-Bau):** der allgemeinere Fall „ein Service
+  braucht eine **Config-Datei** aus einem Repo beim Start" (nginx.conf
+  o. ä.) hat kein Migrations-Äquivalent. Falls das real auftaucht: ein
+  container-seitiger Clone-Init-Schritt im Compose, von dem die Services
+  per `depends_on: service_completed_successfully` abhängen (Clone im
+  Container-Netz, schreibt in `projects/`) — **erst** das Docker-Timing
+  (wann legt `compose up` das leere Bind-Mount-Verzeichnis an?) per
+  Experiment klären. Nicht spekulativ bauen.
 - **AI-Tool-Library erweitern** — OpenCode, Codex, GitHub Copilot,
   Aider als Features dazu, jeweils nach dem Cookbook in
   [`docs/ai-tools.md`](./ai-tools.md). Im Original-M5-Plan, aber
