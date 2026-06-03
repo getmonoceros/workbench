@@ -1,7 +1,9 @@
 import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import {
+  type ApplyProgress,
   createApplyProgress,
+  createSigintAbort,
   logFileOnlyLogger,
   progressTeeLogger,
 } from '../src/apply/apply-progress.js';
@@ -203,5 +205,110 @@ describe('progressTeeLogger / logFileOnlyLogger', () => {
     expect(written()).toBe('');
     expect(text()).toBe('[info] chatter\n[warn] quiet\n[ok] hush\n');
     progress.fail();
+  });
+});
+
+describe('createSigintAbort', () => {
+  function makeOut(): {
+    out: { write: (c: string) => void };
+    written: () => string;
+  } {
+    const chunks: string[] = [];
+    return {
+      out: { write: (c) => void chunks.push(c) },
+      written: () => chunks.join(''),
+    };
+  }
+
+  function makeLog(): {
+    log: {
+      stream: { write: (c: string) => void };
+      close: () => Promise<void>;
+      path: string;
+    };
+    contents: () => string;
+    closeCalls: () => number;
+  } {
+    const chunks: string[] = [];
+    let closes = 0;
+    return {
+      log: {
+        stream: { write: (c) => void chunks.push(c) },
+        close: () => {
+          closes++;
+          return Promise.resolve();
+        },
+        path: '/tmp/apply-test.log',
+      },
+      contents: () => chunks.join(''),
+      closeCalls: () => closes,
+    };
+  }
+
+  it('clears spinner, marks log, closes file, then exits', async () => {
+    const { out, written } = makeOut();
+    const { log, contents, closeCalls } = makeLog();
+    const exits: number[] = [];
+    let progressFails = 0;
+    const progress = {
+      fail: () => {
+        progressFails++;
+        return { tailLines: [] };
+      },
+    } as unknown as ApplyProgress;
+
+    const handler = createSigintAbort({
+      progress,
+      out,
+      log,
+      formatLogPointer: (p) => `log: ${p}`,
+      onExit: () => exits.push(130),
+    });
+    handler();
+    // The handler defers the pointer write + exit until log.close() resolves.
+    await new Promise((r) => setImmediate(r));
+
+    expect(progressFails).toBe(1);
+    expect(closeCalls()).toBe(1);
+    expect(written()).toContain('⏹ aborted');
+    expect(written()).toContain('log: /tmp/apply-test.log');
+    expect(contents()).toContain('[abort] SIGINT received');
+    expect(exits).toEqual([130]);
+  });
+
+  it('is re-entry safe — second invocation is a no-op', async () => {
+    const { out } = makeOut();
+    const { log, closeCalls } = makeLog();
+    const exits: number[] = [];
+    const handler = createSigintAbort({
+      progress: null,
+      out,
+      log,
+      formatLogPointer: (p) => p,
+      onExit: () => exits.push(130),
+    });
+    handler();
+    handler();
+    handler();
+    await new Promise((r) => setImmediate(r));
+    expect(closeCalls()).toBe(1);
+    expect(exits).toEqual([130]);
+  });
+
+  it('works without a progress instance (verbose / non-TTY apply)', async () => {
+    const { out, written } = makeOut();
+    const { log } = makeLog();
+    const exits: number[] = [];
+    const handler = createSigintAbort({
+      progress: null,
+      out,
+      log,
+      formatLogPointer: (p) => `log: ${p}`,
+      onExit: () => exits.push(130),
+    });
+    handler();
+    await new Promise((r) => setImmediate(r));
+    expect(written()).toContain('⏹ aborted');
+    expect(exits).toEqual([130]);
   });
 });

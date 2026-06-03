@@ -1,7 +1,21 @@
 # ADR 0013 — `monoceros apply` mit Phasen-Anzeige und Log-Datei
 
-- Status: **proposed**
+- Status: **accepted**
 - Datum: 2026-06-03
+- Umgesetzt in: 296dc39 (Step 1 — Log-Datei), cac6478 (Step 2 — Spinner + `--verbose` + Summary), Folge-Commits für Layout-Polishing + SIGINT-Handling.
+
+> **Offen geblieben** (bewusst nicht gebaut, kein Bedarf):
+>
+> - **Pull-Skip via `docker image inspect`** — der Spinner mit Phase
+>   `starting container…` deckt den Pull-Fall heute mit ab; die
+>   irreführende `pulling…`-Phase taucht ohnehin nicht mehr separat
+>   auf (wir starten direkt bei `starting container…`).
+> - **Containerseitige Recovery bei SIGINT** — der Handler räumt
+>   Spinner, Log und Cursor; der halb-erstellte Docker-Container wird
+>   beim nächsten `apply` via `--remove-existing-container` / der
+>   Compose-Pre-Cleanup eingesammelt. Aktive `docker rm -f`-Logik im
+>   Handler wäre Race-anfällig (welcher Container existiert wann),
+>   daher absichtlich nicht implementiert.
 
 ## Kontext
 

@@ -238,3 +238,49 @@ export function logFileOnlyLogger(sink: Writable): {
     warn: (msg) => fileLine('warn', msg),
   };
 }
+
+/**
+ * SIGINT cleanup for `monoceros apply`: stop the spinner, mark the
+ * log file with an abort marker, close the file, then call `onExit`
+ * (which production wires to `process.exit(130)`). Extracted from
+ * `runApply` so the abort flow can be exercised without registering
+ * a real signal handler.
+ *
+ * The returned function is the handler itself. Re-entry — a second
+ * Ctrl+C while the first cleanup is still running — is guarded so
+ * the second press becomes a no-op and lets the runtime handle a
+ * hard kill.
+ */
+export interface ApplyAbortDeps {
+  progress: ApplyProgress | null;
+  /**
+   * Where the `⏹ aborted` line and the final log-path pointer are
+   * written. Production uses `process.stderr` (or the same stream
+   * the spinner uses); tests inject an in-memory writable.
+   */
+  out: { write: (chunk: string) => void };
+  log: {
+    stream: { write: (chunk: string) => void };
+    close: () => Promise<void>;
+    path: string;
+  };
+  /** Format the final pointer line — kept injectable for ANSI-free assertions. */
+  formatLogPointer: (path: string) => string;
+  /** Process-terminator. Production passes a function calling `process.exit(130)`. */
+  onExit: () => void;
+}
+
+export function createSigintAbort(deps: ApplyAbortDeps): () => void {
+  let aborted = false;
+  return (): void => {
+    if (aborted) return;
+    aborted = true;
+    if (deps.progress) deps.progress.fail();
+    deps.out.write('\n⏹ aborted\n');
+    deps.log.stream.write('\n[abort] SIGINT received\n');
+    void deps.log.close().finally(() => {
+      deps.out.write(`\n  ${deps.formatLogPointer(deps.log.path)}\n`);
+      deps.onExit();
+    });
+  };
+}

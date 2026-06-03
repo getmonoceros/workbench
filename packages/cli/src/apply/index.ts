@@ -42,6 +42,7 @@ import { createApplyLog, teeApplyLogger } from './apply-log.js';
 import {
   type ApplyProgress,
   createApplyProgress,
+  createSigintAbort,
   logFileOnlyLogger,
   progressTeeLogger,
 } from './apply-progress.js';
@@ -448,141 +449,166 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     ? logFileOnlyLogger(applyLog.sink)
     : containerLogger;
 
-  // First-apply context: devcontainer-cli prints "Error fetching image
-  // details: No manifest found for …" for multi-arch GHCR images, then
-  // sits silent for ~1 min while Docker pulls the runtime image.
-  // Both are non-fatal — the buildx step right after consumes the
-  // image fine. In spinner mode the phase label ("starting container…")
-  // covers this, so the warning lives in the log file only. In verbose
-  // mode it stays on screen as before.
-  const pullWarning =
-    'Pulling runtime image and building feature layers. First apply takes ~1–2 min (Docker downloads the multi-arch base); subsequent applies are cached and fast. devcontainer-cli may log a "No manifest found" line — harmless, the pull continues.';
-  if (progress) {
-    applyLog.stream.write(`# note: ${pullWarning}\n\n`);
-  } else {
-    containerLogger.info(dim(pullWarning));
-  }
-
-  // Bring up the shared Traefik singleton ahead of the devcontainer
-  // when the yml declares ports, and refresh the dynamic config so
-  // the routes match whatever the yml currently says. `ensureProxy`
-  // and `writeDynamicConfig` are both idempotent; a second
-  // devcontainer that also wants Traefik just joins the already-
-  // running proxy. See ADR 0007.
-  const ports = createOpts.ports ?? [];
-  const hasPorts = ports.length > 0;
-  if (hasPorts) {
-    // Pre-flight: bail with an actionable hint before `docker run`
-    // tries to bind a held port. Throws on conflict — the message
-    // names the routing.hostPort escape hatch and asks the builder
-    // to either free the port or set a different one.
-    await preflightHostPort(proxyHostPort(globalConfig), {
-      ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
-    });
-  }
-
-  try {
-    if (hasPorts) {
-      await writeDynamicConfig(opts.name, ports, { monocerosHome: home });
-      await ensureProxy({
-        ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
-        monocerosHome: home,
-        hostPort: proxyHostPort(globalConfig),
-        logger: containerLogger,
-      });
-    } else {
-      // `ports:` is empty (or was removed since the last apply) —
-      // drop any stale dynamic-config file. Filesystem only; the
-      // proxy itself is offered for teardown by stop/remove, not
-      // here (apply ends with the container up, not stopped).
-      await removeDynamicConfig(opts.name, { monocerosHome: home });
-    }
-  } catch (err) {
-    // Don't strand the apply if Traefik bookkeeping fails — surface
-    // as a warn and keep going. The devcontainer itself is still
-    // usable; the builder loses only the `<name>.localhost` routing,
-    // which the next apply / `add-port` will retry.
-    containerLogger.warn?.(
-      `Could not sync Traefik routes: ${err instanceof Error ? err.message : String(err)}. The container will start, but \`<name>.localhost\` routing may not work until the next \`monoceros apply\`.`,
-    );
-  }
-
-  // Seed the spinner phase before the actual work so the builder
-  // sees an immediate hint of what is happening. The stream-driven
-  // triggers in apply-progress.ts take over once devcontainer-cli
-  // starts emitting recognizable lines.
-  if (progress) {
-    progress.setPhase(
-      needsCompose(createOpts)
-        ? 'cleaning up previous containers…'
-        : 'starting container…',
-    );
-  }
-
-  const exitCode = await runContainerCycle(targetDir, {
-    hasCompose: needsCompose(createOpts),
-    ...(opts.dockerExec !== undefined ? { dockerExec: opts.dockerExec } : {}),
-    ...(opts.devcontainerSpawn !== undefined
-      ? { devcontainerSpawn: opts.devcontainerSpawn }
-      : {}),
-    logSink: applyLog.sink,
-    ...(progress ? { progressSink: progress.streamSink, silent: true } : {}),
-    logger: internalLogger,
-  });
-
-  // Stop the spinner and surface the outcome. In spinner mode the
-  // failure path also prints the captured tail (~15 last lines of the
-  // devcontainer-cli stream) so the builder sees the actual error
-  // without paging through the log file. In verbose mode the stream
-  // was already on screen, so there is nothing to replay.
-  if (progress) {
-    if (exitCode === 0) {
-      progress.succeed();
-    } else {
-      const { tailLines } = progress.fail();
-      progressOut.write(`\n✘ apply failed (exit ${exitCode})\n\n`);
-      for (const line of tailLines) {
-        progressOut.write(`  ${line}\n`);
-      }
-      if (tailLines.length > 0) progressOut.write('\n');
-    }
-  }
-
-  // Inventory block on success: shows the builder what their yml just
-  // materialized (features, services, languages, repos, ports, apt
-  // packages, install URLs). Replaces the cherry-picked "Features: …"
-  // line that used to print above the spinner. Mirrored into the log
-  // file with ANSI escapes stripped so `cat …apply-….log` stays
-  // readable.
-  if (exitCode === 0) {
-    const summaryLines = buildApplySummary(createOpts);
-    if (summaryLines.length > 0) {
-      const formatted = formatApplySummary(summaryLines);
-      progressOut.write(`\n${formatted}\n`);
-      applyLog.stream.write(`\n${stripAnsi(formatted)}\n`);
-    }
-  }
-
-  // Close the log before announcing its path — guarantees the file
-  // is fully flushed to disk by the time the builder follows the
-  // pointer. The path is printed on both the success and failure
-  // path; on failure it is the breadcrumb pointing at the full
-  // diagnostic above what fits in the tail.
+  // SIGINT cleanup. Without a handler, Ctrl+C leaves the spinner's
+  // last frame stuck on screen (cursor mid-line, shell prompt glued
+  // to it), the log file misses its last write-buffer chunk, and the
+  // exit code is whatever Node defaults to. With the handler we stop
+  // the spinner, write a final marker into the log, close it cleanly,
+  // and exit with 130 (128 + SIGINT, conventional for Ctrl+C).
   //
-  // Direct write rather than `logger.info` — the default consola
-  // logger prefixes info lines with a timestamp, which collides with
-  // the structured look of the section. The leading blank line
-  // separates the pointer from the summary block above.
-  await applyLog.close();
-  progressOut.write(`\n  ${dim(`log: ${prettyPath(applyLog.path)}`)}\n`);
+  // The docker child is left to die from signal propagation — what
+  // it leaves behind (half-created container, partial layer) is
+  // cleaned up on the next `apply` via `--remove-existing-container`
+  // / the compose pre-cleanup, so we do not try to undo it here.
+  const onSigint = createSigintAbort({
+    progress,
+    out: progressOut,
+    log: applyLog,
+    formatLogPointer: (p) => dim(`log: ${prettyPath(p)}`),
+    onExit: () => process.exit(130),
+  });
+  process.on('SIGINT', onSigint);
 
-  // ── Next steps ───────────────────────────────────────────────
-  // Only print the wrap-up on a successful container start;
-  // otherwise the failing devcontainer-cli output is the relevant
-  // signal and a cheery "shell into it!" line would be misleading.
-  if (exitCode === 0) {
-    section('Next steps');
-    logger.info(`  ${cyan(`monoceros shell ${opts.name}`)}`);
+  let exitCode: number;
+  try {
+    // First-apply context: devcontainer-cli prints "Error fetching image
+    // details: No manifest found for …" for multi-arch GHCR images, then
+    // sits silent for ~1 min while Docker pulls the runtime image.
+    // Both are non-fatal — the buildx step right after consumes the
+    // image fine. In spinner mode the phase label ("starting container…")
+    // covers this, so the warning lives in the log file only. In verbose
+    // mode it stays on screen as before.
+    const pullWarning =
+      'Pulling runtime image and building feature layers. First apply takes ~1–2 min (Docker downloads the multi-arch base); subsequent applies are cached and fast. devcontainer-cli may log a "No manifest found" line — harmless, the pull continues.';
+    if (progress) {
+      applyLog.stream.write(`# note: ${pullWarning}\n\n`);
+    } else {
+      containerLogger.info(dim(pullWarning));
+    }
+
+    // Bring up the shared Traefik singleton ahead of the devcontainer
+    // when the yml declares ports, and refresh the dynamic config so
+    // the routes match whatever the yml currently says. `ensureProxy`
+    // and `writeDynamicConfig` are both idempotent; a second
+    // devcontainer that also wants Traefik just joins the already-
+    // running proxy. See ADR 0007.
+    const ports = createOpts.ports ?? [];
+    const hasPorts = ports.length > 0;
+    if (hasPorts) {
+      // Pre-flight: bail with an actionable hint before `docker run`
+      // tries to bind a held port. Throws on conflict — the message
+      // names the routing.hostPort escape hatch and asks the builder
+      // to either free the port or set a different one.
+      await preflightHostPort(proxyHostPort(globalConfig), {
+        ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
+      });
+    }
+
+    try {
+      if (hasPorts) {
+        await writeDynamicConfig(opts.name, ports, { monocerosHome: home });
+        await ensureProxy({
+          ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
+          monocerosHome: home,
+          hostPort: proxyHostPort(globalConfig),
+          logger: containerLogger,
+        });
+      } else {
+        // `ports:` is empty (or was removed since the last apply) —
+        // drop any stale dynamic-config file. Filesystem only; the
+        // proxy itself is offered for teardown by stop/remove, not
+        // here (apply ends with the container up, not stopped).
+        await removeDynamicConfig(opts.name, { monocerosHome: home });
+      }
+    } catch (err) {
+      // Don't strand the apply if Traefik bookkeeping fails — surface
+      // as a warn and keep going. The devcontainer itself is still
+      // usable; the builder loses only the `<name>.localhost` routing,
+      // which the next apply / `add-port` will retry.
+      containerLogger.warn?.(
+        `Could not sync Traefik routes: ${err instanceof Error ? err.message : String(err)}. The container will start, but \`<name>.localhost\` routing may not work until the next \`monoceros apply\`.`,
+      );
+    }
+
+    // Seed the spinner phase before the actual work so the builder
+    // sees an immediate hint of what is happening. The stream-driven
+    // triggers in apply-progress.ts take over once devcontainer-cli
+    // starts emitting recognizable lines.
+    if (progress) {
+      progress.setPhase(
+        needsCompose(createOpts)
+          ? 'cleaning up previous containers…'
+          : 'starting container…',
+      );
+    }
+
+    exitCode = await runContainerCycle(targetDir, {
+      hasCompose: needsCompose(createOpts),
+      ...(opts.dockerExec !== undefined ? { dockerExec: opts.dockerExec } : {}),
+      ...(opts.devcontainerSpawn !== undefined
+        ? { devcontainerSpawn: opts.devcontainerSpawn }
+        : {}),
+      logSink: applyLog.sink,
+      ...(progress ? { progressSink: progress.streamSink, silent: true } : {}),
+      logger: internalLogger,
+    });
+
+    // Stop the spinner and surface the outcome. In spinner mode the
+    // failure path also prints the captured tail (~15 last lines of the
+    // devcontainer-cli stream) so the builder sees the actual error
+    // without paging through the log file. In verbose mode the stream
+    // was already on screen, so there is nothing to replay.
+    if (progress) {
+      if (exitCode === 0) {
+        progress.succeed();
+      } else {
+        const { tailLines } = progress.fail();
+        progressOut.write(`\n✘ apply failed (exit ${exitCode})\n\n`);
+        for (const line of tailLines) {
+          progressOut.write(`  ${line}\n`);
+        }
+        if (tailLines.length > 0) progressOut.write('\n');
+      }
+    }
+
+    // Inventory block on success: shows the builder what their yml just
+    // materialized (features, services, languages, repos, ports, apt
+    // packages, install URLs). Replaces the cherry-picked "Features: …"
+    // line that used to print above the spinner. Mirrored into the log
+    // file with ANSI escapes stripped so `cat …apply-….log` stays
+    // readable.
+    if (exitCode === 0) {
+      const summaryLines = buildApplySummary(createOpts);
+      if (summaryLines.length > 0) {
+        const formatted = formatApplySummary(summaryLines);
+        progressOut.write(`\n${formatted}\n`);
+        applyLog.stream.write(`\n${stripAnsi(formatted)}\n`);
+      }
+    }
+
+    // Close the log before announcing its path — guarantees the file
+    // is fully flushed to disk by the time the builder follows the
+    // pointer. The path is printed on both the success and failure
+    // path; on failure it is the breadcrumb pointing at the full
+    // diagnostic above what fits in the tail.
+    //
+    // Direct write rather than `logger.info` — the default consola
+    // logger prefixes info lines with a timestamp, which collides with
+    // the structured look of the section. The leading blank line
+    // separates the pointer from the summary block above.
+    await applyLog.close();
+    progressOut.write(`\n  ${dim(`log: ${prettyPath(applyLog.path)}`)}\n`);
+
+    // ── Next steps ───────────────────────────────────────────────
+    // Only print the wrap-up on a successful container start;
+    // otherwise the failing devcontainer-cli output is the relevant
+    // signal and a cheery "shell into it!" line would be misleading.
+    if (exitCode === 0) {
+      section('Next steps');
+      logger.info(`  ${cyan(`monoceros shell ${opts.name}`)}`);
+    }
+  } finally {
+    process.off('SIGINT', onSigint);
   }
 
   return { targetDir, configPath: ymlPath, containerExitCode: exitCode };
