@@ -401,24 +401,20 @@ function renderFeatureBlock(
     return;
   }
 
-  // Composed mode: `- ref:` is active. Active option values (from
-  // explicit --with-options, when that lands) go under an active
-  // `options:` block. Remaining hints stay in a single-`#`
-  // commented block under the ref — never active-empty, because
-  // bare-null values attract yaml-lib's trailing-comment-stealing
-  // on round-trip via the AST writers (apply / add-port / …) and
-  // would silently override monoceros-config defaults with `""`.
-  if (activeKeys.length > 0) {
-    out.push(`    options:`);
-    for (const [key, value] of activeKeys) {
-      out.push(`      ${key}: ${renderScalarValue(value)}`);
-    }
+  // Composed mode: `- ref:` is active, and so is a single `options:`
+  // block — active sub-component values first, then the credential
+  // hints as `${VAR}` placeholders. The placeholders are NOT bare-null
+  // (they carry a value), so no yaml-lib trailing-comment-stealing on
+  // round-trip; and an empty/missing `${VAR}` resolves to "" at apply,
+  // which the transform skips → the monoceros-config default is
+  // inherited (not clobbered). The matching `.env` keys are seeded blank
+  // by init/add-feature, so the builder just fills the value.
+  out.push(`    options:`);
+  for (const [key, value] of activeKeys) {
+    out.push(`      ${key}: ${renderScalarValue(value)}`);
   }
-  if (hints.length > 0) {
-    out.push(`    # options:`);
-    for (const hint of hints) {
-      out.push(`    #   ${hint.key}: ${hint.placeholder}`);
-    }
+  for (const hint of hints) {
+    out.push(`      ${hint.key}: ${hint.placeholder}`);
   }
 }
 

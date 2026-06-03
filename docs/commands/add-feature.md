@@ -39,9 +39,9 @@ monoceros add-feature <containername> <feature> [--yes] [-- <key>=<value> …]
 ## Credential-Optionen + `${VAR}`
 
 Kuratierte Features deklarieren ihre Credential-Optionen (`apiToken`,
-`apiKey`, …) im Manifest. `add-feature` schreibt sie als kommentiertes
-`${VAR}`-Skelett unter den `- ref:` und **seedet die passenden Keys in
-`<name>.env`** (gitignored) — identisch zu `init`:
+`apiKey`, …) im Manifest. `add-feature` schreibt sie als **aktive
+`${VAR}`-Platzhalter** in den `options:`-Block und **seedet die passenden
+Keys in `<name>.env`** (gitignored) — identisch zu `init`:
 
 ```yaml
 features:
@@ -49,10 +49,9 @@ features:
     options:
       rovodev: true
       twg: true
-    # options:
-    #   instance: ${ATLASSIAN_INSTANCE}
-    #   apiToken: ${ATLASSIAN_API_TOKEN}
-    #   …
+      instance: ${ATLASSIAN_INSTANCE}
+      apiToken: ${ATLASSIAN_API_TOKEN}
+      …
 ```
 
 ```sh
@@ -62,10 +61,13 @@ ATLASSIAN_API_TOKEN=
 …
 ```
 
-Var-Name = `<FEATURE>_<OPTION>` (einheitlich). Du strippst das `#` an
-der gewünschten Option, füllst den Wert in die `.env`, und `monoceros
-apply` setzt ihn ein — so bleibt die yml teilbar, ohne Tokens
-mitzugeben. `remove-feature` fasst die `.env` nicht an.
+Var-Name = `<FEATURE>_<OPTION>` (einheitlich). Du füllst den Wert in die
+`.env`, `monoceros apply` setzt ihn ein — so bleibt die yml teilbar, ohne
+Tokens mitzugeben. **Leer gelassen = nicht gesetzt:** ein leerer (oder
+fehlender) `${VAR}` löst beim Apply zu „weglassen" auf — die Option fällt
+auf einen `defaults.features`-Wert aus `monoceros-config.yml` zurück oder
+bleibt ungesetzt (z. B. leerer `apiKey` → OAuth-Login). Nichts muss
+auskommentiert werden. `remove-feature` fasst die `.env` nicht an.
 
 ## Feature-Katalog
 

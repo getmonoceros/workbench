@@ -106,8 +106,8 @@ services:
 
 features:
   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
-    # options:
-    #   apiKey:
+    options:
+      apiKey: ${CLAUDE_CODE_API_KEY} # leer in .env → OAuth-Login
 
 routing:
   ports:

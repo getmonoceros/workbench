@@ -487,6 +487,19 @@ export function addFeatureToDoc(
 ): boolean {
   const seq = ensureSeq(doc, 'features');
   const label = displayName ?? ref;
+
+  // Credential option hints become ACTIVE `${VAR}` placeholders in the
+  // options block (not a commented skeleton): an empty/missing `${VAR}`
+  // resolves to "" at apply and the transform skips it → the
+  // monoceros-config default is inherited, or the option stays unset.
+  // The matching env vars are seeded blank by runAddFeature. Only keys
+  // the caller didn't already set get a placeholder (featureOptionHints
+  // filters those out).
+  const summary = loadFeatureManifestSummary(ref);
+  const hints = featureOptionHints(summary, ref, Object.keys(options));
+  const mergedOptions: FeatureOptions = { ...options };
+  for (const h of hints) mergedOptions[h.key] = h.placeholder;
+
   for (const item of seq.items) {
     if (!isMap(item)) continue;
     const itemRef = item.get('ref');
@@ -496,7 +509,7 @@ export function addFeatureToDoc(
     // schema/context is required by yaml@2.
     const itemJs = item.toJS(doc) as { options?: FeatureOptions };
     const existingJs = itemJs.options ?? {};
-    if (JSON.stringify(existingJs) === JSON.stringify(options)) {
+    if (JSON.stringify(existingJs) === JSON.stringify(mergedOptions)) {
       return false;
     }
     throw new Error(
@@ -505,8 +518,8 @@ export function addFeatureToDoc(
   }
   const entry = new YAMLMap();
   entry.set('ref', ref);
-  if (Object.keys(options).length > 0) {
-    entry.set('options', options);
+  if (Object.keys(mergedOptions).length > 0) {
+    entry.set('options', mergedOptions);
   }
   // Manifest-driven per-feature header block (tagline + description,
   // options summary, documentationURL) — the same prose the init
@@ -522,7 +535,6 @@ export function addFeatureToDoc(
   // INSIDE the dash block (`- # Atlassian` on one line) — valid yaml
   // but visually inconsistent with what `init` produces. Unknown /
   // third-party refs produce no summary → no header → bare `- ref:`.
-  const summary = loadFeatureManifestSummary(ref);
   const headerBefore = buildFeatureHeaderCommentBefore(
     summary,
     FEATURE_HEADER_WIDTH,
@@ -530,17 +542,6 @@ export function addFeatureToDoc(
   if (headerBefore.length > 0) {
     (entry as { commentBefore?: string }).commentBefore = headerBefore;
     (entry as { spaceBefore?: boolean }).spaceBefore = true;
-  }
-  // Credential option hints as a commented `${VAR}` skeleton below the
-  // `- ref:` — same placeholders init renders, and the matching env vars
-  // are seeded into <name>.env by runAddFeature. As a node `.comment`
-  // (the only attachment that survives the move into the sequence),
-  // serialized with a `# ` prefix per line.
-  const hints = featureOptionHints(summary, ref, Object.keys(options));
-  if (hints.length > 0) {
-    const commentLines = [' options:'];
-    for (const h of hints) commentLines.push(`   ${h.key}: ${h.placeholder}`);
-    (entry as { comment?: string }).comment = commentLines.join('\n');
   }
   seq.add(entry);
   return true;

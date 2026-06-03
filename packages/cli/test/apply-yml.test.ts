@@ -354,6 +354,101 @@ describe('runApply', () => {
     });
   });
 
+  it('an empty ${VAR} feature option inherits the defaults.features value', async () => {
+    // The active placeholder `apiKey: ${CLAUDE_CODE_API_KEY}` with a blank
+    // .env must NOT clobber the global default — it resolves to "" before
+    // the merge, so the transform skips it and the default flows through.
+    await writeFile(
+      path.join(home, 'monoceros-config.yml'),
+      [
+        'schemaVersion: 1',
+        'defaults:',
+        '  features:',
+        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
+        '      apiKey: sk-ant-from-defaults',
+        '',
+      ].join('\n'),
+    );
+    await writeYml(
+      'inherit',
+      [
+        'schemaVersion: 1',
+        'name: inherit',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        '    options:',
+        '      apiKey: ${CLAUDE_CODE_API_KEY}',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      path.join(home, 'container-configs', 'inherit.env'),
+      'CLAUDE_CODE_API_KEY=\n', // seeded but blank
+    );
+    await runApply({ ...baseRunOpts, name: 'inherit', monocerosHome: home });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'inherit',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(devcontainer.features['./features/claude-code']).toEqual({
+      apiKey: 'sk-ant-from-defaults',
+    });
+  });
+
+  it('a filled ${VAR} feature option overrides the defaults.features value', async () => {
+    await writeFile(
+      path.join(home, 'monoceros-config.yml'),
+      [
+        'schemaVersion: 1',
+        'defaults:',
+        '  features:',
+        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
+        '      apiKey: sk-ant-from-defaults',
+        '',
+      ].join('\n'),
+    );
+    await writeYml(
+      'filled',
+      [
+        'schemaVersion: 1',
+        'name: filled',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        '    options:',
+        '      apiKey: ${CLAUDE_CODE_API_KEY}',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      path.join(home, 'container-configs', 'filled.env'),
+      'CLAUDE_CODE_API_KEY=sk-ant-real\n',
+    );
+    await runApply({ ...baseRunOpts, name: 'filled', monocerosHome: home });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'filled',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(devcontainer.features['./features/claude-code']).toEqual({
+      apiKey: 'sk-ant-real',
+    });
+  });
+
   it("does not include a defaults-only feature that's not in the container yml", async () => {
     await writeFile(
       path.join(home, 'monoceros-config.yml'),

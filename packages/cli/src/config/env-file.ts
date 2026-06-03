@@ -225,40 +225,50 @@ export function resolveGitUserFields(
   return { name: resolve(user.name), email: resolve(user.email) };
 }
 
-export interface InterpolateFeaturesResult {
-  features: Record<string, Record<string, string | number | boolean>>;
-  missing: MissingVar[];
+interface FeatureLike {
+  ref: string;
+  options?: Record<string, string | number | boolean>;
 }
 
 /**
- * Substitute `${VAR}` in feature option *string* values (non-string
- * options pass through). This is what lets credentials like
- * `apiKey: ${ANTHROPIC_API_KEY}` live in `<name>.env` instead of in the
- * shareable yml. Keyed by feature ref → option map, matching the
- * `CreateOptions.features` shape.
+ * Resolve `${VAR}` in feature option *string* values against the env
+ * file, BEFORE the options are merged with the monoceros-config
+ * `defaults.features` cascade (config/transform.ts).
+ *
+ * Unlike services, an unresolved/empty feature option is NOT an error:
+ * a string value that references a missing var, OR resolves to
+ * empty/whitespace, becomes `""`. The transform's merge then skips
+ * empty-string container options, so the option falls through to the
+ * global default (or stays unset — e.g. an empty `apiKey` means the
+ * feature uses its OAuth/login path). A resolved non-empty value
+ * overrides the default. This is why feature credential placeholders
+ * can be rendered ACTIVE in the yml (`apiKey: ${VAR}`) with a blank
+ * `.env` seed: blank → unset, filled → used. Non-string options
+ * (booleans, numbers) pass through untouched.
+ *
+ * Must run before the transform merge — at that point `apiKey: ${VAR}`
+ * is still a non-empty string and would wrongly override the default.
  */
-export function interpolateFeatures(
-  features: Record<string, Record<string, string | number | boolean>>,
+export function interpolateFeatureOptions<T extends FeatureLike>(
+  features: readonly T[],
   vars: Record<string, string>,
-): InterpolateFeaturesResult {
-  const missing: MissingVar[] = [];
-  const out: Record<string, Record<string, string | number | boolean>> = {};
-  for (const [ref, options] of Object.entries(features)) {
-    const next: Record<string, string | number | boolean> = {};
-    for (const [key, value] of Object.entries(options)) {
+): T[] {
+  return features.map((f) => {
+    if (!f.options) return f;
+    const opts: Record<string, string | number | boolean> = {};
+    for (const [key, value] of Object.entries(f.options)) {
       if (typeof value !== 'string') {
-        next[key] = value;
+        opts[key] = value;
         continue;
       }
       const r = interpolate(value, vars);
-      for (const name of r.missing) {
-        missing.push({ location: `features.${ref}.${key}`, name });
-      }
-      next[key] = r.value;
+      // Missing var (leaves the literal `${...}`) or an empty/whitespace
+      // resolution → "" so the transform's empty-skip inherits the
+      // default / leaves it unset. Otherwise the trimmed resolved value.
+      opts[key] = r.missing.length > 0 ? '' : r.value.trim();
     }
-    out[ref] = next;
-  }
-  return { features: out, missing };
+    return { ...f, options: opts };
+  });
 }
 
 /**

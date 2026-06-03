@@ -130,22 +130,17 @@ describe('runInit', () => {
     expect(text).toContain(
       '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
     );
-    // In composed mode the option hints from the manifest land as a
-    // single-`#` commented block under the active `- ref:` line —
-    // builder strips one `#` per line to set a value. Never emitted
-    // as active-empty: bare-null option values would (a) override
-    // the global default in monoceros-config with `""`, and (b)
-    // attract yaml-lib's trailing-comment-stealing on round-trip.
-    expect(text).toMatch(/^\s+#\s+options:\s*$/m);
-    // hint now carries the derived ${VAR} placeholder
-    expect(text).toMatch(/^\s+#\s+apiKey: \$\{CLAUDE_CODE_API_KEY\}\s*$/m);
+    // In composed mode the credential option hints land as ACTIVE
+    // `${VAR}` placeholders in the options block (empty/missing resolves
+    // to "" at apply → transform skips → default inherited). The matching
+    // env var is seeded blank into <name>.env.
+    expect(text).toMatch(/^\s+options:\s*$/m);
+    expect(text).toMatch(/^\s+apiKey: \$\{CLAUDE_CODE_API_KEY\}\s*$/m);
     expect(text).not.toMatch(/^[# \t]*#[ \t]+#/m); // no two-`#` per line anywhere
     // Header comment block above the `- ref:` line carries the
     // feature's manifest description verbatim and lists its options
     // synthesized from `optionDescriptions`.
     expect(text).toMatch(/^# Options: apiKey \(/m);
-    // No trailing inline comments leak in alongside the value.
-    expect(text).not.toMatch(/apiKey:[^\n]+#/);
     const parsed = parseConfig(text);
     expect(parsed.config.name).toBe('sandbox');
     expect(parsed.config.languages).toEqual(['node']);
@@ -185,7 +180,9 @@ describe('runInit', () => {
       path.join(monocerosHome, 'container-configs', 'sandbox.yml'),
       'utf8',
     );
-    expect(yml).toMatch(/#\s+apiKey: \$\{CLAUDE_CODE_API_KEY\}/);
+    // Active placeholder (not commented) — empty .env seed → unset at apply.
+    expect(yml).toMatch(/^\s+apiKey: \$\{CLAUDE_CODE_API_KEY\}\s*$/m);
+    expect(yml).not.toMatch(/#\s+apiKey:/);
     const env = await readFile(
       path.join(monocerosHome, 'container-configs', 'sandbox.env'),
       'utf8',

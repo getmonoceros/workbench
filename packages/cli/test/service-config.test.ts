@@ -11,7 +11,7 @@ import {
   parseEnvFile,
   interpolate,
   interpolateServices,
-  interpolateFeatures,
+  interpolateFeatureOptions,
   hasVarPlaceholder,
   resolveGitUserFields,
 } from '../src/config/env-file.js';
@@ -158,37 +158,32 @@ describe('env-file parsing + interpolation', () => {
     ]);
   });
 
-  it('interpolates ${VAR} in feature option string values, not numbers/bools', () => {
-    const { features, missing } = interpolateFeatures(
-      {
-        'ghcr.io/getmonoceros/monoceros-features/claude-code:1': {
-          apiKey: '${ANTHROPIC_API_KEY}',
+  it('resolves ${VAR} in feature option strings; non-strings pass through', () => {
+    const out = interpolateFeatureOptions(
+      [
+        { ref: 'a', options: { apiKey: '${ANTHROPIC_API_KEY}' } },
+        {
+          ref: 'b',
+          options: { rovodev: true, apiToken: '${ATLASSIAN_TOKEN}' },
         },
-        'ghcr.io/getmonoceros/monoceros-features/atlassian:1': {
-          rovodev: true,
-          apiToken: '${ATLASSIAN_TOKEN}',
-        },
-      },
+      ],
       { ANTHROPIC_API_KEY: 'sk-ant-xxx', ATLASSIAN_TOKEN: 'ATATT-yyy' },
     );
-    expect(missing).toEqual([]);
-    expect(
-      features['ghcr.io/getmonoceros/monoceros-features/claude-code:1']!.apiKey,
-    ).toBe('sk-ant-xxx');
-    const atl =
-      features['ghcr.io/getmonoceros/monoceros-features/atlassian:1']!;
-    expect(atl.rovodev).toBe(true); // non-string passes through
-    expect(atl.apiToken).toBe('ATATT-yyy');
+    expect(out[0]!.options!.apiKey).toBe('sk-ant-xxx');
+    expect(out[1]!.options!.rovodev).toBe(true); // non-string passes through
+    expect(out[1]!.options!.apiToken).toBe('ATATT-yyy');
   });
 
-  it('reports a missing feature-option var with a features.<ref>.<key> location', () => {
-    const { missing } = interpolateFeatures(
-      { 'ghcr.io/foo/bar:1': { apiKey: '${NOPE}' } },
-      {},
+  it('turns a missing OR empty feature-option var into "" (→ transform skips → inherit default / unset)', () => {
+    const out = interpolateFeatureOptions(
+      [
+        { ref: 'a', options: { apiKey: '${NOPE}' } }, // missing var
+        { ref: 'b', options: { apiToken: '${BLANK}' } }, // present but empty
+      ],
+      { BLANK: '   ' },
     );
-    expect(missing).toEqual([
-      { location: 'features.ghcr.io/foo/bar:1.apiKey', name: 'NOPE' },
-    ]);
+    expect(out[0]!.options!.apiKey).toBe('');
+    expect(out[1]!.options!.apiToken).toBe('');
   });
 });
 

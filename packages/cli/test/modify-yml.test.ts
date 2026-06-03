@@ -313,10 +313,13 @@ describe('add-*/remove-* against the yml', () => {
       monocerosHome: home,
     });
     const yml = await ymlOf('demo');
-    // commented hint skeleton with derived ${VAR} placeholders
-    expect(yml).toMatch(/#\s+instance: \$\{ATLASSIAN_INSTANCE\}/);
-    expect(yml).toMatch(/#\s+apiToken: \$\{ATLASSIAN_API_TOKEN\}/);
-    expect(yml).toMatch(/#\s+bitbucketToken: \$\{ATLASSIAN_BITBUCKET_TOKEN\}/);
+    // ACTIVE ${VAR} placeholders in the options block (not commented)
+    expect(yml).toMatch(/^\s+instance: \$\{ATLASSIAN_INSTANCE\}\s*$/m);
+    expect(yml).toMatch(/^\s+apiToken: \$\{ATLASSIAN_API_TOKEN\}\s*$/m);
+    expect(yml).toMatch(
+      /^\s+bitbucketToken: \$\{ATLASSIAN_BITBUCKET_TOKEN\}\s*$/m,
+    );
+    expect(yml).not.toMatch(/#\s+apiToken:/);
     // …and the same vars seeded into the env file
     const env = await fs.readFile(
       path.join(home, 'container-configs', 'demo.env'),

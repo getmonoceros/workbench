@@ -17,7 +17,7 @@ import {
 import {
   readEnvFile,
   interpolateServices,
-  interpolateFeatures,
+  interpolateFeatureOptions,
   formatMissingVarsError,
   ensureEnvGitignored,
   resolveGitUserFields,
@@ -194,36 +194,45 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // fail the apply, so they stay in control of the migration.
   warnOnDeprecatedFeatureRefs(parsed.config.features, globalConfig, logger);
 
+  // Read the per-container env file (container-configs/<name>.env) — the
+  // source for `${VAR}` references — BEFORE the transform, because
+  // feature options must be resolved before they're merged with the
+  // monoceros-config `defaults.features` cascade.
+  const envPath = containerEnvPath(opts.name, home);
+  await ensureEnvGitignored(containerConfigsDir(home));
+  const envVars = readEnvFile(envPath);
+
+  // Resolve `${VAR}` in FEATURE options first. A missing/empty value
+  // becomes "" so the transform's merge skips it → the option falls
+  // through to the global default (or stays unset). A filled value
+  // overrides. This lets credential placeholders (`apiKey: ${VAR}`) be
+  // active in the yml with a blank `.env` seed.
+  const resolvedFeatures = interpolateFeatureOptions(
+    parsed.config.features,
+    envVars,
+  );
+
   // Shape validation happened in readConfig; catalog validation
   // (which language/service exists) happens here against
   // create/scaffold's known set.
   const createOpts = normalizeOptions(
     solutionConfigToCreateOptions(
-      parsed.config,
+      { ...parsed.config, features: resolvedFeatures },
       globalConfig?.defaults?.features ?? {},
     ),
   );
 
-  // Resolve `${VAR}` references against the per-container env file
-  // (container-configs/<name>.env) — in service fields AND feature
-  // option values. That's what lets credentials (DB passwords,
-  // `apiKey`/`apiToken`) live in the gitignored env file instead of the
-  // shareable yml. An unresolved reference is a hard error (a silently-
-  // empty secret fails far more opaquely later).
-  const envPath = containerEnvPath(opts.name, home);
-  await ensureEnvGitignored(containerConfigsDir(home));
-  const envVars = readEnvFile(envPath);
+  // Resolve `${VAR}` in SERVICE fields (post-transform — services don't
+  // merge with defaults). Unlike features, an unresolved reference here
+  // is a hard error: a silently-empty DB password fails far more
+  // opaquely later.
   const interpServices = interpolateServices(createOpts.services, envVars);
-  const interpFeatures = interpolateFeatures(
-    createOpts.features ?? {},
-    envVars,
-  );
-  const missingVars = [...interpServices.missing, ...interpFeatures.missing];
-  if (missingVars.length > 0) {
-    throw new Error(formatMissingVarsError(missingVars, prettyPath(envPath)));
+  if (interpServices.missing.length > 0) {
+    throw new Error(
+      formatMissingVarsError(interpServices.missing, prettyPath(envPath)),
+    );
   }
   createOpts.services = interpServices.services;
-  if (createOpts.features) createOpts.features = interpFeatures.features;
 
   // Resolve `${VAR}` in git identities — the container-level `git.user`
   // and each repo's `git.user` — against the same env file. UNLIKE
