@@ -969,6 +969,33 @@ Mit 1.12 ist **WSL der einzige unterstützte Windows-Pfad**:
 Sieh ADR 0011 für die volle Begründung + Liste der entfernten
 Stellen.
 
+#### 1.14 — `monoceros apply` UX-Polish ([ADR 0013](./adr/0013-apply-progress-und-log.md))
+
+Das `▸ Container`-Section zwischen `▸ Scaffold` und `▸ Next steps`
+war ein ungesorteter Block aus ISO-Timestamps, dem vollständigen
+`docker run`-Aufruf mit metadata-JSON und postCreate-Output. Diagnose
+schwierig, scanbar nicht. In drei Schritten umgebaut:
+
+- **Step 1** — pro Apply ein vollständiges Transkript nach
+  `<home>/container/<name>/logs/apply-<name>-<ISO>.log`,
+  Pfad-Pointer am Ende. ANSI gestrippt, Header mit Befehl + Zeit +
+  CLI-Version + Konfig + Host.
+
+- **Step 2** — Spinner mit Phasen-Beschriftung
+  (`starting container…` / `running postCreate…`) statt rohem Stream.
+  Auf Erfolg: `✔ container ready (Xs)` + Inventar-Block (Languages,
+  Services, Features, Repositories, Ports, APT packages, Install URLs;
+  Kurznamen statt voller Refs). Im Fehlerfall: `✘ apply failed` mit
+  den letzten ~15 Zeilen des `@devcontainers/cli`-Streams + Logpfad.
+  `--verbose` streamt wie früher; non-TTY (CI / Pipe) fällt
+  automatisch dahin zurück.
+
+- **Step 3** — sauberes SIGINT-Handling: Ctrl+C stoppt den Spinner,
+  schließt das Log, exit 130. Cursor sauber, Log vollständig.
+
+Schafft nebenbei den Pfad `container/<name>/logs/` für künftige
+Audit-Logs (siehe „Vorgemerkt").
+
 ---
 
 ## ✅ M6 — Service-Config-Modell, Secrets & init-Redesign
@@ -1124,24 +1151,8 @@ Bewusst **nicht** gemacht: Identität wird nicht aus dem Host vor-befüllt
 
 ## Vorgemerkt für später (jenseits M5)
 
-- **`monoceros apply`-Ausgabe: Phasen-Anzeige + Log-Datei**
-  ([ADR 0013](./adr/0013-apply-progress-und-log.md)). Heute streamt
-  `apply` den rohen `@devcontainers/cli`-Output zwischen `▸ Container`
-  und `▸ Next steps` — ISO-Timestamps, voller `docker run`-Aufruf mit
-  metadata-JSON, postCreate-Output. Im Fehlerfall versinkt die echte
-  Diagnose darin. Plan: Spinner mit Phasen-Beschriftung
-  (`pulling runtime image…` / `building feature layers…` /
-  `starting container…` / `running postCreate…`), kompletter
-  Roh-Output ins Log unter `~/.monoceros/container/<name>/logs/apply-<name>-<ISO>.log`,
-  Pfadanzeige am Ende. Im Fehlerfall: letzte ~15 Zeilen + Logpfad.
-  `--verbose` behält das heutige Verhalten (auch automatisch ohne
-  TTY). Pull-Phase wird übersprungen, wenn das Runtime-Image lokal
-  vorliegt. Phasen-Detection ist Heuristik auf Stream-Textmustern —
-  Fallback ist generisches `working…`. Schafft nebenbei den Pfad
-  `container/<name>/logs/` für künftige Audit-Logs (siehe nächster
-  Eintrag).
-- **Audit-Logging unter `container/<name>/logs/`** — sobald
-  ADR 0013 steht, ist das Verzeichnis da; Folge-Commands (`remove`,
+- **Audit-Logging unter `container/<name>/logs/`** — der Pfad steht
+  seit ADR 0013 (siehe M5-Abschnitt „1.14"). Folge-Commands (`remove`,
   `add-feature`, `restore`, `add-service`, …) können dort jeweils
   `<command>-<name>-<ISO>.log` ablegen. Eigene ADR/Spec dann, wenn
   klar ist, was rein soll (was wird wirklich nachgefragt: „warum
