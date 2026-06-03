@@ -149,10 +149,22 @@ function wrapText(
  * Render a left-aligned label column next to wrapped descriptions.
  * Column gutter is four spaces. Description wraps within the
  * remaining terminal width.
+ *
+ *   - `fixedLabelWidth`: use this label-column width instead of the
+ *     per-call maximum. Lets several tables (e.g. every COMMANDS
+ *     group) share one alignment column so descriptions line up
+ *     across sections, not just within one.
+ *   - `rowGap`: insert a blank line between rows so multi-line
+ *     descriptions don't run together.
  */
-function alignTable(rows: Array<[string, string]>, indent: string): string {
+function alignTable(
+  rows: Array<[string, string]>,
+  indent: string,
+  opts: { fixedLabelWidth?: number; rowGap?: boolean } = {},
+): string {
   if (rows.length === 0) return '';
-  const labelWidth = Math.max(...rows.map((r) => visibleLen(r[0])));
+  const labelWidth =
+    opts.fixedLabelWidth ?? Math.max(...rows.map((r) => visibleLen(r[0])));
   const gutter = '    ';
   const descWidth =
     terminalWidth() - indent.length - labelWidth - gutter.length;
@@ -161,11 +173,11 @@ function alignTable(rows: Array<[string, string]>, indent: string): string {
   );
   return rows
     .map(([left, right]) => {
-      const pad = ' '.repeat(labelWidth - visibleLen(left));
+      const pad = ' '.repeat(Math.max(0, labelWidth - visibleLen(left)));
       const wrapped = wrapText(right, descWidth, continuationIndent);
       return `${indent}${left}${pad}${gutter}${wrapped}`;
     })
-    .join('\n');
+    .join(opts.rowGap ? '\n\n' : '\n');
 }
 
 interface SubCommandEntry {
@@ -208,6 +220,10 @@ function renderCommandsBlock(entries: SubCommandEntry[]): string[] {
     byGroup.set(entry.group, arr);
   }
 
+  // One label-column width across ALL groups so every command's
+  // description starts at the same column, not just within a group.
+  const labelWidth = Math.max(...entries.map((e) => visibleLen(cyan(e.name))));
+
   const renderSection = (label: string, items: SubCommandEntry[]) => {
     if (items.length === 0) return;
     lines.push('');
@@ -223,7 +239,11 @@ function renderCommandsBlock(entries: SubCommandEntry[]): string[] {
       cyan(e.name),
       e.description,
     ]);
-    lines.push(alignTable(rows, ''));
+    // Shared label width + a blank line between entries so the wrapped
+    // multi-line descriptions stay readable.
+    lines.push(
+      alignTable(rows, '', { fixedLabelWidth: labelWidth, rowGap: true }),
+    );
   };
 
   for (const { key, label } of GROUPS) {

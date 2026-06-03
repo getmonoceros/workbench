@@ -25,6 +25,8 @@ export const __completeCommand = defineCommand({
   meta: {
     name: '__complete',
     group: 'internal',
+    // Internal plumbing for the shell wrappers — never shown in help.
+    hidden: true,
     description:
       'Internal — shell completion engine. Used by the wrappers emitted by `monoceros completion <shell>`. Output one candidate completion per line.',
   },

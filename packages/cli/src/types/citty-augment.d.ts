@@ -11,6 +11,13 @@ declare module 'citty' {
      * "Other".
      */
     group?: string;
+    /**
+     * When true, the command is omitted from the grouped
+     * `monoceros --help` COMMANDS block (it still runs if invoked
+     * directly). Used for internal plumbing (`__complete`) and
+     * install-script-only commands (`completion`).
+     */
+    hidden?: boolean;
   }
 }
 
