@@ -630,7 +630,7 @@ esac
 say ""
 say "  Try it out:"
 say ""
-say "    $(cmd 'monoceros init hello --with=node,claude')"
+say "    $(cmd 'monoceros init hello --with-languages=node --with-features=claude')"
 say "    $(dim "# optional: edit ~/.monoceros/monoceros-config.yml for global defaults")"
 say "    $(cmd 'monoceros apply hello')"
 say "    $(cmd 'monoceros shell hello')"
