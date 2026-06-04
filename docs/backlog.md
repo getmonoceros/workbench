@@ -22,7 +22,7 @@ Konzeptioneller Überbau: [`konzept.md`](konzept.md).
 | M6           | Service-Config-Modell, Secrets & init-Redesign                   | ✅ 2026-06-02             |
 | M6.1         | Kuratierte Services: `${VAR}`-env + `.env`-Seeding + Healthcheck | ✅ 2026-06-03             |
 | M6.2         | Git-Identity via `${VAR}` (Repo + Container) mit Kaskade         | ✅ 2026-06-03             |
-| M6.3         | AI-Tool-Briefing am Container-Workspace-Root (Claude Code)       | 🚧 ab 2026-06-04          |
+| M6.3         | AI-Tool-Briefing am Container-Workspace-Root (Claude Code)       | ✅ 2026-06-04             |
 
 ---
 
@@ -1152,7 +1152,7 @@ Bewusst **nicht** gemacht: Identität wird nicht aus dem Host vor-befüllt
 
 ---
 
-## 🚧 M6.3 — AI-Tool-Briefing am Container-Workspace-Root
+## ✅ M6.3 — AI-Tool-Briefing am Container-Workspace-Root
 
 **Ziel:** Claude Code im Container weiß, welcher Stack tatsächlich
 materialisiert wurde (Sprachen, Services, Feature-Tools, verfügbare
@@ -1206,38 +1206,27 @@ außerhalb des Scope — Behandlung in "Vorgemerkt für später".
    "Erster Container"-Pfad nimmt den Approval-Hinweis vorweg.
    _(erledigt 2026-06-04)_
 
-5. **E2E-Szenario** `with-briefing` im
-   [`monoceros-e2e`](https://github.com/getmonoceros/monoceros-e2e)-Repo.
-   Setup:
-
-   ```sh
-   monoceros init briefing \
-     --with-languages=node \
-     --with-services=postgres \
-     --with-features=atlassian \
-     -- twg=false
-   monoceros apply briefing
-   ```
-
-   Verifikationen von **innen** via `monoceros run briefing -- bash -c '…'`:
-   - drei Dateien an `/workspaces/briefing/` vorhanden (`AGENTS.md`,
+5. ✅ **E2E-Szenario** `with-briefing` im
+   [`monoceros-e2e`](https://github.com/getmonoceros/monoceros-e2e)-Repo
+   (Commit `aa986e0`). `monoceros init … --with-features=atlassian/rovodev`
+   (Sub-Komponente, die `twg: false` setzt) plus Node und Postgres,
+   dann apply. Verifiziert von **innen** via `monoceros run`:
+   - drei Dateien an `/workspaces/<name>/` vorhanden (`AGENTS.md`,
      `CLAUDE.md`, `.monoceros/commands.md`)
-   - Walk-up-Topologie greift: aus gemocktem
-     `/workspaces/briefing/projects/probe/` über `../../AGENTS.md` &
-     `../../CLAUDE.md` erreichbar
-   - Inhaltliche Smoke-Greps gegen `AGENTS.md`: `Node.js`, `postgres`,
-     `Atlassian Rovo Dev`, **NICHT** `Teamwork Graph` (twg-Gating),
-     `<!-- monoceros:begin -->`
-   - `CLAUDE.md` enthält den `@AGENTS.md`-Import zwischen Markern
-   - `.monoceros/commands.md` enthält den Header und mindestens
-     `monoceros apply`
+   - Walk-up-Topologie greift aus gemocktem
+     `/workspaces/<name>/projects/e2e-probe/` über `../../…`
+   - `AGENTS.md`-Inhalt: Marker, Container-Name-Substitution, Node.js,
+     postgres, Atlassian Rovo Dev, **NICHT** Teamwork Graph
+     (`whenOption`-Gating), `@.monoceros/commands.md`-Import
+   - `CLAUDE.md` enthält `@AGENTS.md` zwischen Markern
+   - `.monoceros/commands.md` Header + apply-Sektion + Lifecycle-Gruppe
 
-   Das Szenario verifiziert die **realen Container-Pfade** plus den
-   `manifests:sync`-Pfad in Prod — beides Lücken, die das
-   CLI-Unit-Test-Setup nicht schließt. Bewusst **nicht** im Scope:
-   "Claude Code lädt die Datei tatsächlich" (Claude-internes
-   Verhalten, vom CLI-Skript nicht antriggerbar) und Marker-Preserve
-   beim Re-Apply (Unit-Test-abgedeckt).
+   Schließt zwei Lücken, die die CLI-Unit-Tests nicht decken: reale
+   In-Container-Pfade und der Manifest-Loader-Pfad gegen die
+   `manifests:sync`-Bundle (statt Dev-Checkout). Bewusst **nicht** im
+   Scope: "Claude Code lädt die Datei tatsächlich" (Claude-internes
+   Verhalten) und Marker-Preserve beim Re-Apply (Unit-Test-abgedeckt).
+   _(erledigt 2026-06-04)_
 
 ### Definition of Done
 
