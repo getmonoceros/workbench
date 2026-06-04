@@ -43,13 +43,15 @@ nicht in Projekt-Verzeichnissen. Konkret:
 container/<name>/
 ├── .devcontainer/
 ├── .monoceros/
+│   ├── state.json
+│   └── commands.md        ← CLI-Referenz, von AGENTS.md @-importiert
 ├── home/
 ├── logs/
 ├── projects/
 │   └── <projekt>/         ← Projekt-Repos, unberührt
 ├── sandbox.code-workspace
-├── AGENTS.md              ← kanonischer Inhalt
-└── CLAUDE.md              ← @AGENTS.md (Import-Stub)
+├── AGENTS.md              ← kanonischer Inhalt (in Markern)
+└── CLAUDE.md              ← @AGENTS.md (in Markern)
 ```
 
 **`AGENTS.md`** ist die Quelle der Wahrheit: enthält Stack-Manifest
@@ -58,12 +60,23 @@ Modell, und die drei Erweiterungsbefehle (`monoceros add-feature`,
 `add-service`, `apply`) als Anweisung an den User — nicht an das
 Tool, das selbst nichts auf dem Host ausführen kann.
 
-**`CLAUDE.md`** enthält eine einzige Zeile `@AGENTS.md`. Das ist der
-in der Claude-Code-Doku empfohlene Mechanismus für AGENTS.md-
-Koexistenz und vermeidet Inhalts-Duplikation.
+**`CLAUDE.md`** importiert `@AGENTS.md`. Das ist der in der
+Claude-Code-Doku empfohlene Mechanismus für AGENTS.md-Koexistenz
+und vermeidet Inhalts-Duplikation. OpenCode liest beide Dateien
+direkt und käme auch ohne diesen Stub aus.
 
-Beide Dateien werden bei jedem `monoceros apply` neu geschrieben. Sie
-gehören Monoceros, nicht dem User.
+**`.monoceros/commands.md`** ist die per-Subcommand-Referenz, aus den
+citty-Definitionen in `commands/*.ts` generiert. `AGENTS.md` zieht sie
+via `@.monoceros/commands.md` rein — so kann die AI-Tool-Session die
+exakte Befehls-Syntax nachschlagen, bevor sie einen Vorschlag macht.
+
+Beide marker-tragenden Dateien (`AGENTS.md` und `CLAUDE.md`) werden
+in HTML-Kommentar-Marker `<!-- monoceros:begin -->` /
+`<!-- monoceros:end -->` eingewickelt. Apply ersetzt **nur** den
+Inhalt zwischen den Markern. Was der Builder außerhalb der Marker
+schreibt (eigene Notizen, projekt-spezifische Erinnerungen), bleibt
+erhalten. `.monoceros/commands.md` ist zu 100 % Monoceros-eigen und
+wird immer komplett neu geschrieben.
 
 ## Begründung
 
@@ -95,15 +108,37 @@ gehören Monoceros, nicht dem User.
 
 ## Konsequenzen
 
-- Beim `apply` generiert Monoceros `AGENTS.md` und `CLAUDE.md` im
-  Container-Verzeichnis. Inhalt leitet sich deterministisch aus der
-  yml und den installierten Features ab.
-- `CLAUDE.md` und `AGENTS.md` werden zur generierten `.gitignore` im
-  Container-Verzeichnis hinzugefügt (falls das Verzeichnis selbst
-  irgendwann unter Versionskontrolle landet — Monoceros-Dateien
-  gehören dort nicht rein).
+- Beim `apply` generiert Monoceros `AGENTS.md`, `CLAUDE.md` und
+  `.monoceros/commands.md` im Container-Verzeichnis. Inhalt von
+  `AGENTS.md` leitet sich deterministisch aus der yml und den
+  installierten Features ab; `commands.md` aus den citty-Definitionen
+  der gerade laufenden CLI-Version.
+- `AGENTS.md` und `CLAUDE.md` werden zur generierten `.gitignore` im
+  Container-Verzeichnis hinzugefügt (`.monoceros/` war schon drin
+  und deckt `commands.md` automatisch ab) — falls das Verzeichnis
+  selbst irgendwann unter Versionskontrolle landet, Monoceros-Dateien
+  gehören dort nicht rein.
+- **Marker-Contract** auf `AGENTS.md` und `CLAUDE.md`: der vom
+  Generator geschriebene Block sitzt zwischen
+  `<!-- monoceros:begin -->` / `<!-- monoceros:end -->`. Re-apply
+  ersetzt nur diesen Block; User-Ergänzungen davor/danach
+  überleben. Claude-Code-Doku stripped die HTML-Kommentare vor
+  Context-Injection, also kein Token-Aufschlag für die Marker selbst.
+- **Manifest-getriebene Feature-Briefings**:
+  `x-monoceros.briefing.lines` in `devcontainer-feature.json` mit
+  optionalem `whenOption`-Gating. Der Generator merged
+  Manifest-Defaults mit User-Optionen, emittiert nur Zeilen die
+  truthy gegeneinander aufgelöst werden. Ein Feature mit
+  Briefing-Block aber ohne matching Zeile wird stillschweigend
+  weggelassen — kein "Tool installiert" wenn keins läuft.
+- **Keine Credentials im Briefing** — weder Dev-Defaults aus dem
+  Service-Catalog noch Werte aus der `.env`. Das Briefing weist das
+  AI-Tool an, den User in der laufenden Session zu fragen wenn es
+  Credentials braucht. Damit ist die Datei auch dann unkritisch,
+  wenn sie als Screenshot/Paste die lokale Maschine verlässt.
 - Das Briefing-Generierungs-Modul (Stack-Manifest aus yml ableiten) ist
-  als eigene Komponente testbar und unabhängig vom Apply-Subprozess.
+  als eigene Komponente testbar und unabhängig vom Apply-Subprozess
+  — siehe `packages/cli/src/briefing/`.
 - **Codex, Gemini CLI, GitHub Copilot bleiben heute blinde Flecken.**
   Sie sehen das Briefing nicht über den Walk-up-Mechanismus. Das ist
   bewusst akzeptiert; Lösungen sind dokumentiert (siehe unten) und
@@ -120,10 +155,12 @@ gehören Monoceros, nicht dem User.
   abhängig von Open-Folder-vs-Multi-Root. Lösung erfordert
   Schreibzugriff auf Projekte oder einen aktivierbaren yml-Schalter
   pro Projekt.
-- **Marker-Block-Schutz** für `AGENTS.md` / `CLAUDE.md`, falls User
-  manuell Inhalte ergänzen wollen, die `apply`-Überschreibungen
-  überleben sollen. Heute überschreibt `apply` rückhaltlos. Kein Bedarf
-  identifiziert.
+- **Service-seitiges Briefing-Manifest** — Features sind seit
+  Implementation manifest-getrieben (`x-monoceros.briefing`); für
+  kuratierte Services könnten analoge Felder im `SERVICE_CATALOG`
+  oder in den Component-Yamls sinnvoll werden, sobald die Praxis das
+  nachfragt. Heute reicht der hardcoded Service-Render-Pfad im
+  Generator.
 
 ## Verworfen
 
