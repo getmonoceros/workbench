@@ -1,81 +1,79 @@
-# Monoceros — Konzept
+# Monoceros — Concept
 
-Was Monoceros ist, was es bewusst nicht ist, und wie die Werkbank
-aufgebaut ist. Wenn du verstehen willst, wofür Monoceros gedacht ist
-und wie die Teile zusammenspielen, bist du hier richtig. Die
-konkreten Befehle stehen unter [`commands/`](./commands/), die
-Architekturentscheidungen unter [`adr/`](./adr/).
+What Monoceros is, what it deliberately is not, and how the workbench
+is built. If you want to understand what Monoceros is for and how the
+pieces fit together, you're in the right place. The concrete commands
+live under [`commands/`](./commands/), the architecture decisions
+under [`adr/`](./adr/).
 
-## Die Positionierung
+## Positioning
 
-> **Monoceros ist eine Werkbank für lokale, reproduzierbare
-> Dev-Container mit AI-Coding-Tooling. Builder beschreibt deklarativ
-> was im Container liegen soll, Monoceros materialisiert das.
-> Sprach- und Stack-agnostisch. Kein Cloud, kein SaaS, kein
-> eingebauter Workflow-Zwang.**
+> **Monoceros is a workbench for local, reproducible dev containers
+> with AI-coding tooling. You declaratively describe what should live
+> in the container, and Monoceros materializes it. Language- and
+> stack-agnostic. No cloud, no SaaS, no built-in workflow lock-in.**
 
-Differenzierung gegenüber den naheliegenden Alternativen:
+How it differs from the obvious alternatives:
 
-| Konkurrent         | Was sie anders machen                         | Was Monoceros besser kann                                                             |
-| ------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------- |
-| GitHub Codespaces  | Cloud-Only, Vendor-Lock-in, Kosten pro Stunde | Lokal, kein Mietzwang, Daten bleiben auf der Maschine                                 |
-| Cursor Cloud       | Cloud-Workspace, fester Tooling-Stack         | Lokal, Tools sind eine Builder-Entscheidung                                           |
-| Plain Devcontainer | Funktioniert; man baut alles selbst           | Wiederverwendbare yml-Profile, CLI-Boilerplate, kuratierte AI-Tool-Features           |
-| Lokales Dev-Setup  | Voller Host-Zugriff für jedes Tool            | Container-Isolation: AI-Tools laufen in einem getrennten Linux, nicht auf deinem Host |
+| Alternative        | What they do differently                | What Monoceros does better                                              |
+| ------------------ | --------------------------------------- | ----------------------------------------------------------------------- |
+| GitHub Codespaces  | Cloud-only, vendor lock-in, hourly cost | Local, no rental, data stays on your machine                            |
+| Cursor Cloud       | Cloud workspace, fixed tooling stack    | Local, tools are the builder's choice                                   |
+| Plain devcontainer | Works; you build everything yourself    | Reusable yml profiles, CLI boilerplate, curated AI-tool features        |
+| Local dev setup    | Full host access for every tool         | Container isolation: AI tools run in a separate Linux, not on your host |
 
-Die Dinge, die zusammen das Produkt machen:
+The things that together make the product:
 
-1. **Deklaratives yml-Modell** — eine Datei beschreibt den Container,
-   `monoceros apply` materialisiert ihn. Reproduzierbar zwischen
-   Maschinen, versionierbar, diffbar.
-2. **AI-Tools sind erstklassig** — Claude Code, OpenCode, Rovo Dev,
-   Codex etc. landen als Devcontainer-Features im Container, vom
-   Builder per yml ausgewählt.
-3. **Container-Isolation als Default** — alles läuft in einem
-   Linux-Container, nicht auf deinem Host. Ein bösartiges npm-Paket
-   oder ein AI-Agent kommt nicht an deine `~/.ssh/`, deinen
-   Browser-State oder Host-Dateien außerhalb des bewusst gemounteten
-   Workspace.
+1. **Declarative yml model** — one file describes the container,
+   `monoceros apply` materializes it. Reproducible across machines,
+   versionable, diffable.
+2. **AI tools are first-class** — Claude Code, OpenCode, Rovo Dev,
+   Codex etc. land as devcontainer features in the container, chosen
+   by the builder via yml.
+3. **Container isolation by default** — everything runs in a Linux
+   container, not on your host. A malicious npm package or an AI
+   agent cannot reach your `~/.ssh/`, your browser state, or host
+   files outside the deliberately mounted workspace.
 
-## Die drei Bausteine
+## The three building blocks
 
-### 1. Werkbank-Runtime-Image
+### 1. Workbench runtime image
 
-Lokales Docker-Image (Stand: `monoceros-runtime:dev`, später GHCR-
-publiziert), aufgebaut auf
+A local Docker image (currently `monoceros-runtime:dev`, later
+published to GHCR), built on
 [`mcr.microsoft.com/devcontainers/typescript-node`](https://hub.docker.com/_/microsoft-vscode-devcontainers).
-Inhalt:
+Contents:
 
 - Debian Bookworm + Node 22 + pnpm + corepack
-- `gosu` für sauberen User-Switch im Entrypoint
-- Standard-Dev-Tools aus dem Base-Image: `git`, `curl`, `ssh`, `jq`,
+- `gosu` for a clean user switch in the entrypoint
+- Standard dev tools from the base image: `git`, `curl`, `ssh`, `jq`,
   `make`
 
-Ein opt-in Egress-Allowlist-Mechanismus (iptables-basiert, aktiviert
-über `MONOCEROS_EGRESS=enforce`) liegt aus historischen Gründen noch
-im Image, ist aber im Default-Workflow deaktiviert — die
-Hostname-Snapshot-Variante ist mit rotierenden CDN-IPs (VS Code
-Marketplace etc.) nicht kompatibel. Details in
+An opt-in egress allowlist mechanism (iptables-based, enabled via
+`MONOCEROS_EGRESS=enforce`) still lives in the image for historical
+reasons but is disabled in the default workflow — the
+hostname-snapshot variant isn't compatible with rotating CDN IPs (VS
+Code Marketplace etc.). Details in
 [ADR 0002](./adr/0002-egress-whitelist-runtime-image.md). Sandboxing
-ist heute **keine** beworbene Eigenschaft von Monoceros über die
-normale Container-Isolation hinaus.
+is **not** an advertised property of Monoceros today beyond normal
+container isolation.
 
-**Was nicht im Image liegt:**
+**What is not in the image:**
 
-- Keine AI-CLIs vorinstalliert. Claude Code, OpenCode, Rovo Dev,
-  Codex etc. werden über Devcontainer-Features in den Container
-  gezogen, nicht ins Image gebacken.
-- Keine Sprach-Toolchains außer Node — Python, Java, Go etc.
-  kommen ebenfalls über Features.
+- No AI CLIs preinstalled. Claude Code, OpenCode, Rovo Dev, Codex
+  etc. are pulled into the container via devcontainer features, not
+  baked into the image.
+- No language toolchains other than Node — Python, Java, Go etc. also
+  come via features.
 
-Dadurch bleibt das Image schlank und sprach-/tool-neutral. Der
-Builder sieht im yml _explizit_ was im Container liegt.
+This keeps the image lean and language-/tool-neutral. The builder
+sees _explicitly_ in the yml what's in the container.
 
-### 2. Deklaratives yml-Modell
+### 2. Declarative yml model
 
-Eine Container-Konfig lebt unter
-`$MONOCEROS_HOME/container-configs/<name>.yml`. Schema-validiert
-(Zod), comment-preserving editierbar, mit klarem Lifecycle:
+A container config lives at
+`$MONOCEROS_HOME/container-configs/<name>.yml`. Schema-validated
+(Zod), comment-preservingly editable, with a clear lifecycle:
 
 ```yaml
 schemaVersion: 1
@@ -86,7 +84,7 @@ services:
   - name: postgres
     image: postgres:18
     port: 5432
-    env: # ${VAR} → aus sandbox.env; Dev-Defaults werden geseedet
+    env: # ${VAR} → from sandbox.env; dev defaults are seeded
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
@@ -111,20 +109,20 @@ repos:
   - url: https://github.com/your-org/api.git
 ```
 
-`monoceros apply sandbox` materialisiert das nach
-`$MONOCEROS_HOME/container/sandbox/` als Devcontainer mit allem
-Drum und Dran. Ein zweiter Apply nach einer Edit überschreibt
-deterministisch.
+`monoceros apply sandbox` materializes this into
+`$MONOCEROS_HOME/container/sandbox/` as a full devcontainer. A second
+apply after an edit overwrites deterministically.
 
-Container-Identity über die Konvention `<MONOCEROS_HOME>/container/<name>/`:
-ein Konfig → ein Container, 1:1. cwd ist irrelevant; alle Befehle
-funktionieren von überall mit `monoceros <command> <containername>`.
+Container identity follows the convention
+`<MONOCEROS_HOME>/container/<name>/`: one config → one container, 1:1.
+cwd is irrelevant; every command works from anywhere via
+`monoceros <command> <containername>`.
 
-### 3. AI-Tools als Devcontainer-Features
+### 3. AI tools as devcontainer features
 
-Jedes AI-Tool ist ein Devcontainer-Feature unter
-`ghcr.io/getmonoceros/monoceros-features/<tool>:1`. Builder wählt explizit
-aus, was im Container liegt. Konsistenter mentaler Modell:
+Each AI tool is a devcontainer feature under
+`ghcr.io/getmonoceros/monoceros-features/<tool>:1`. The builder picks
+explicitly what's in the container. One consistent mental model:
 
 ```yaml
 features:
@@ -132,34 +130,34 @@ features:
   - ref: ghcr.io/getmonoceros/monoceros-features/opencode:1
 ```
 
-Geplanter Feature-Katalog:
+Planned feature catalog:
 
-| Feature       | Tool                                          | Status       |
-| ------------- | --------------------------------------------- | ------------ |
-| `claude-code` | Anthropic Claude Code CLI                     | erste Etappe |
-| `atlassian`   | Atlassian-Stack — Rovo Dev (`acli`) + TWG-CLI | erste Etappe |
-| `opencode`    | sst OpenCode (Multi-Model, OSS)               | Folge-Etappe |
-| `codex`       | OpenAI Codex CLI                              | Folge-Etappe |
-| `gh-copilot`  | GitHub Copilot CLI                            | Folge-Etappe |
-| `aider`       | Aider (Python, OSS)                           | Folge-Etappe |
+| Feature       | Tool                                          | Status      |
+| ------------- | --------------------------------------------- | ----------- |
+| `claude-code` | Anthropic Claude Code CLI                     | first stage |
+| `atlassian`   | Atlassian stack — Rovo Dev (`acli`) + TWG CLI | first stage |
+| `opencode`    | sst OpenCode (multi-model, OSS)               | later stage |
+| `codex`       | OpenAI Codex CLI                              | later stage |
+| `gh-copilot`  | GitHub Copilot CLI                            | later stage |
+| `aider`       | Aider (Python, OSS)                           | later stage |
 
-**Credentials für AI-Tools** werden direkt am Feature-Eintrag in der
-Container-yml hinterlegt — dort, wo das Tool aktiviert wird:
+**Credentials for AI tools** are stored directly on the feature entry
+in the container yml — where the tool is enabled:
 
 ```yaml
 features:
   - ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1
     options:
       email: you@example.com
-      apiToken: ATATT3xFf… # Site/Instance fragt `acli rovodev run` einmalig selbst ab
+      apiToken: ATATT3xFf… # site/instance is asked for once by `acli rovodev run`
   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
     options:
-      apiKey: sk-ant-… # optional → API-Modus statt OAuth/Subscription
+      apiKey: sk-ant-… # optional → API mode instead of OAuth/subscription
 ```
 
-Damit dieselben Atlassian/Anthropic-Daten nicht in jeder Container-yml
-wiederholt werden müssen, hält `monoceros-config.yml` Defaults pro
-Feature-Ref:
+So the same Atlassian/Anthropic data doesn't have to be repeated in
+every container yml, `monoceros-config.yml` holds defaults per feature
+ref:
 
 ```yaml
 defaults:
@@ -169,88 +167,92 @@ defaults:
       apiToken: ATATT3xFf…
 ```
 
-`monoceros apply` merged Per-Container-Optionen über die globalen
-Defaults — Container-yml gewinnt, fehlende Werte werden aus dem
-globalen Block aufgefüllt.
+`monoceros apply` merges per-container options over the global
+defaults — the container yml wins, missing values are filled from the
+global block.
 
-**Der Container erklärt sich selbst.** Damit die AI-Tools wissen
-welcher Stack tatsächlich im Container liegt (Sprachen, Services,
-Feature-Tools), schreibt `monoceros apply` ein Briefing als `AGENTS.md`
-mit `CLAUDE.md`-Import-Stub neben die `.code-workspace`-Datei im
-Container-Workspace-Root. Claude Codes Walk-up vom Projekt-Verzeichnis
-findet die Datei automatisch — keine Konfiguration pro Session nötig.
-Eine Java-Werkbank erzählt Claude beim Start, dass sie Java liefert,
-nicht Node. Details:
+**The container explains itself.** So the AI tools know which stack
+actually lives in the container (languages, services, feature tools),
+`monoceros apply` writes a briefing as `AGENTS.md` with a `CLAUDE.md`
+import stub next to the `.code-workspace` file in the container
+workspace root. Claude Code's walk-up from the project directory finds
+the file automatically — no per-session configuration needed. A Java
+workbench tells Claude at startup that it provides Java, not Node.
+Details:
 [ADR 0014](./adr/0014-ai-tool-briefing-im-workspace-root.md).
 
-### Container-State überlebt apply
+### Container state survives apply
 
-Jeder Container hat ein sichtbares Home-Verzeichnis auf der Host-Disk
-unter `$MONOCEROS_HOME/container/<name>/home/`. Features deklarieren
-über `x-monoceros.persistentHomePaths` welche Unterordner persistent
-sein sollen (z.B. `.claude`, `.config/acli`). Beim Apply wird das als
-Bind-Mount in die `devcontainer.json` eingetragen, sodass Login,
-Session-History und tool-spezifischer State über `monoceros apply`
-hinweg erhalten bleiben. Details: [ADR 0003](adr/0003-container-state-model.md).
+Each container has a visible home directory on the host disk at
+`$MONOCEROS_HOME/container/<name>/home/`. Features declare via
+`x-monoceros.persistentHomePaths` which subfolders should be
+persistent (e.g. `.claude`, `.config/acli`). On apply this is written
+as a bind mount into `devcontainer.json`, so login, session history
+and tool-specific state survive across `monoceros apply`. Details:
+[ADR 0003](adr/0003-container-state-model.md).
 
-## CLI-Shape
+## CLI shape
 
-Alle Befehle folgen einem einheitlichen Schema:
+Every command follows a uniform schema:
 
 ```sh
 monoceros <command> <containername> [<args> …]
 ```
 
-Drei Familien:
+Three families:
 
 ```sh
-# Konfig + Lifecycle
-monoceros init <name> [--with-languages=… --with-features=… --with-services=… …]  # yml komponieren (oder dokumentierte Vorlage)
-monoceros list-components                  # Komponenten-Katalog anzeigen
-monoceros apply <name>                     # materialisieren + Container hochfahren
-monoceros start|stop|status <name>         # Compose-Lifecycle
-monoceros shell <name>                     # interaktive bash
-monoceros run <name> -- <cmd>              # one-off-Befehl
+# config + lifecycle
+monoceros init <name> [--with-languages=… --with-features=… --with-services=… …]  # compose a yml (or a documented template)
+monoceros list-components                  # show the component catalog
+monoceros apply <name>                     # materialize + bring the container up
+monoceros start|stop|status <name>         # compose lifecycle
+monoceros shell <name>                     # interactive bash
+monoceros run <name> -- <cmd>              # one-off command
 monoceros logs <name> [<service>]          # tail
-monoceros remove <name>                    # Container restlos abräumen (Backup default an)
-monoceros restore <backup-path>            # Container aus Backup wiederherstellen
+monoceros remove <name>                    # tear the container down completely (backup on by default)
+monoceros restore <backup-path>            # restore a container from a backup
 
-# Konfig editieren (yml-AST-Mutation, comment-preserving)
+# edit config (yml AST mutation, comment-preserving)
 monoceros add-language|service|apt-packages|feature|from-url|repo <name> …
 monoceros remove-… <name> …
 ```
 
-cwd ist irrelevant — alles geht über Konvention.
+cwd is irrelevant — everything works via convention.
 
-## Code-Layout der Workbench
+## Code layout of the workbench
 
-Die Workbench ist ein einziges Paket:
+The workbench is a single package:
 
 ```
 monoceros-workbench/
 ├── packages/
-│   └── cli/                # die einzige Code-Komponente
+│   └── cli/                # the only code component
 ├── images/
-│   └── runtime/            # Dockerfile fürs Werkbank-Image
+│   └── runtime/            # Dockerfile for the workbench image
 ├── templates/
-│   └── components/         # Komponenten-Katalog für `monoceros init --with-*`
+│   └── components/         # component catalog for `monoceros init --with-*`
 └── docs/
 ```
 
-## Was bewusst nicht ins Produkt gehört
+## What deliberately does not belong in the product
 
-- **Cloud-Hosting / SaaS-Variante** — gegen das Prinzip
-  „dein Docker, deine Daten, kein Mietzwang"
-- **Eigene Web-UI** — die CLI ist die UI, der Container-Workspace ist
-  die Arbeitsumgebung
-- **Eingebauter Iteration-Workflow** — `monoceros iterate` etc. sind
-  raus, weil unklar war ob/wie sie Mehrwert über Claude Codes
-  eigene Mechaniken liefern
-- **Multi-User / Shared State** — jede:r Builder hat eigene
-  Container-Configs unter `$MONOCEROS_HOME`. Synchronisation ist eine
-  Frage von git-Repos und Team-Konventionen, nicht von Monoceros
-- **Fixe Stack-Templates** (`vite-react-pg`, etc.) — die Vorlagen
-  bleiben minimal; was im Container liegt, baut der Builder über
-  `add-*`-Befehle oder Hand-Edits zusammen
-- **Eigene Auth-Infrastruktur** — Bind-Mount von `~/.claude/` plus
-  optional `monoceros-config.yml`-Defaults reichen
+- **Cloud hosting / SaaS variant** — against the principle "your
+  Docker, your data, no rental"
+- **Own web UI** — the CLI is the UI, the container workspace is the
+  working environment
+- **Built-in iteration workflow** — `monoceros iterate` etc. are out,
+  because it was unclear whether/how they add value over Claude
+  Code's own mechanisms
+- **Multi-user / shared state** — every builder has their own
+  container configs under `$MONOCEROS_HOME`. Synchronization is a
+  matter of git repos and team conventions, not of Monoceros
+- **Fixed stack templates** (`vite-react-pg`, etc.) — the templates
+  stay minimal; what's in the container is assembled by the builder
+  via `add-*` commands or hand edits
+- **Own auth infrastructure** — a bind mount of `~/.claude/` plus
+  optional `monoceros-config.yml` defaults are enough
+
+```
+
+```

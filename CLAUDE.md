@@ -89,11 +89,12 @@ cwd ist irrelevant — alles geht über Konvention.
 
 ## Konventionen
 
-- **Commit-Messages** auf Englisch
-- **Source-Code-Dokumentation** (Kommentare, JSDoc) auf Englisch
-- **User-Doku** (README, Konzept-Dokumente, Befehlsdocs unter
-  `docs/commands/`) auf Deutsch — der primäre Solution Builder ist
-  deutschsprachig
+- **Alles im öffentlichen Repo auf Englisch** — Commit-Messages,
+  Source-Code-Doku (Kommentare, JSDoc) und User-Doku (README,
+  Konzept-Dokumente, Befehlsdocs unter `docs/commands/`, ADRs). Der
+  Workbench ist ein öffentliches Projekt mit globalem Publikum.
+  (Interne, deutschsprachige Strategie-Docs liegen im privaten
+  `monoceros-concept`-Repo — siehe lokale `.claude/CLAUDE.md`.)
 - **Pro neuer CLI-Befehl** eine MD-Datei unter `docs/commands/<name>.md`
   im selben Commit wie der Code, und ein Verweis in
   [`docs/commands/README.md`](docs/commands/README.md). Generierte

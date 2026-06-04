@@ -1,215 +1,215 @@
 # Monoceros
 
-Eine **Werkbank für lokale, reproduzierbare Dev-Container mit
-AI-Coding-Tooling**. Du beschreibst in einem yml-Profil, was im
-Container liegen soll — Sprache, Services, AI-Tools, Repos — und
-Monoceros materialisiert das. Sprach- und Stack-agnostisch (Node,
-Python, Java, Rust, Go, .NET laufen alle).
+A **workbench for local, reproducible dev containers with AI-coding
+tooling**. You describe in a yml profile what should live in the
+container — language, services, AI tools, repos — and Monoceros
+materializes it. Language- and stack-agnostic (Node, Python, Java,
+Rust, Go, .NET all run).
 
-Der Unterschied zu Cloud-Codespaces oder Cursor-Cloud:
+How it differs from cloud Codespaces or Cursor Cloud:
 
-- **lokal** — kein SaaS, kein Mietzwang, keine ungewollten
-  Datenabflüsse
-- **deklarativ** — das yml ist die Wahrheit, der Container leitet
-  sich daraus ab; reproduzierbar zwischen Maschinen
-- **AI-Tools als erstklassige Bürger** — Claude Code, Atlassian-CLIs
-  (Rovo Dev + Teamwork Graph), GitHub CLI sind eingebaute
-  Devcontainer-Features; weitere folgen
-- **Container-Isolation als Default** — alles läuft im Linux-
-  Container, nur ein bewusst gemounteter Workspace ist exponiert
+- **local** — no SaaS, no rental, no unwanted data egress
+- **declarative** — the yml is the source of truth, the container is
+  derived from it; reproducible across machines
+- **AI tools as first-class citizens** — Claude Code, Atlassian CLIs
+  (Rovo Dev + Teamwork Graph), GitHub CLI are built-in devcontainer
+  features; more to follow
+- **container isolation by default** — everything runs in the Linux
+  container, only a deliberately mounted workspace is exposed
 
-## Voraussetzungen
+## Requirements
 
-- **Docker** — erreichbar als Daemon (Docker Desktop auf macOS und
-  Windows, Docker Engine auf Linux)
-- **Node ≥ 20** mit `npm`
-- **`curl`** — auf macOS vorinstalliert; auf Ubuntu Desktop/Server
-  nachinstallieren via `sudo apt install curl`. Wird nur für den
-  Aufruf des Install-Skripts selbst gebraucht.
+- **Docker** — reachable as a daemon (Docker Desktop on macOS and
+  Windows, Docker Engine on Linux)
+- **Node ≥ 20** with `npm`
+- **`curl`** — preinstalled on macOS; on Ubuntu Desktop/Server
+  install via `sudo apt install curl`. Only needed to invoke the
+  install script itself.
 
-Docker + Node werden vom Install-Skript geprüft; fehlt eines, sagt's
-dir mit plattform-spezifischer Anleitung wo du's holst. Für das
-Windows-Setup (WSL 2 + Docker Desktop, inkl. der „Virtualization
-support not detected"-Falle und dem Weg ohne Adminrechte) siehe
-[`docs/install-windows.md`](docs/install-windows.md); für Linux
+Docker + Node are checked by the install script; if one is missing it
+tells you, with platform-specific guidance on where to get it. For the
+Windows setup (WSL 2 + Docker Desktop, including the "Virtualization
+support not detected" trap and the no-admin-rights path) see
+[`docs/install-windows.md`](docs/install-windows.md); for Linux see
 [`docs/docker-on-linux.md`](docs/docker-on-linux.md).
 
 ## Installation
 
-Drei Pfade, je nachdem was du vorhast.
+Three paths, depending on what you're after.
 
-### 1 — „Ich will Monoceros nutzen"
+### 1 — "I want to use Monoceros"
 
-Das Install-Skript prüft Docker + Node, installiert `monoceros`
-global via npm, und richtet die Shell-Completion für deine Shell
-(bash, zsh) ein:
+The install script checks Docker + Node, installs `monoceros`
+globally via npm, and sets up shell completion for your shell (bash,
+zsh):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
 ```
 
-Auf Windows läuft Monoceros über WSL — siehe
-[`docs/install-windows.md`](docs/install-windows.md) für die
-einmalige Einrichtung (WSL + Docker Desktop), danach gilt der
-Linux-Pfad oben in deiner WSL-Distro.
+On Windows, Monoceros runs via WSL — see
+[`docs/install-windows.md`](docs/install-windows.md) for the one-time
+setup (WSL + Docker Desktop), after which the Linux path above applies
+inside your WSL distro.
 
-Im selben Terminal direkt weiterarbeiten geht, sobald die Shell den
-PATH-Hash neu aufbaut — zsh cached den Startup-PATH und sieht neu
-installierte Binaries erst nach `rehash`:
+Continuing in the same terminal works as soon as the shell rebuilds
+its PATH hash — zsh caches the startup PATH and only sees
+newly-installed binaries after `rehash`:
 
 ```sh
 rehash && compinit           # zsh
 hash -r && source ~/.bashrc  # bash
 ```
 
-Das ist kein Monoceros-Spezifikum, sondern Shell-Standard für alles
-was via `npm install -g`, `gem install`, `cargo install` o.ä. in
-einen schon-bekannten PATH-Dir reinkommt. Das Install-Skript druckt
-die passende Zeile am Ende mit aus.
+This isn't Monoceros-specific but shell-standard for anything that
+lands in an already-known PATH dir via `npm install -g`, `gem
+install`, `cargo install` etc. The install script prints the matching
+line at the end.
 
-Erster Container:
+First container:
 
 ```sh
-monoceros init hello --with=node,claude
-# Tokens / Defaults in ~/.monoceros/monoceros-config.yml eintragen
+monoceros init hello --with-languages=node --with-features=claude
+# enter tokens / defaults in ~/.monoceros/monoceros-config.yml
 monoceros apply hello
 monoceros shell hello
 ```
 
-Volle Befehlsreferenz unter [`docs/commands/`](docs/commands/).
+Full command reference under [`docs/commands/`](docs/commands/).
 
-Wenn du im Container `claude` in einem Projekt unter `projects/` zum
-ersten Mal startest, fragt Claude Code einmalig nach Approval für
-"external CLAUDE.md file imports" — das ist erwartet und sicher. Die
-importierten Dateien (`AGENTS.md`, `.monoceros/commands.md`) sind
-Monoceros-generierte Briefings, die dem AI-Tool den Container-Stack
-beschreiben. Akzeptieren, und das Briefing greift ab der nächsten
-Antwort. Details in
+When you first start `claude` in a project under `projects/` inside
+the container, Claude Code asks once for approval of "external
+CLAUDE.md file imports" — that's expected and safe. The imported files
+(`AGENTS.md`, `.monoceros/commands.md`) are Monoceros-generated
+briefings that describe the container stack to the AI tool. Accept,
+and the briefing applies from the next response on. Details in
 [`docs/ai-tools.md`](docs/ai-tools.md#container-briefing--agentsmd--claudemd).
 
-Die **Tab-Completion** richtet das Skript automatisch mit ein:
-erkennt deine Shell, legt das Completion-Skript an passender Stelle
-ab und hängt — falls noch nicht vorhanden — die `fpath`/`source`-
-Zeilen in `.zshrc` / `.bashrc` / `$PROFILE`. Idempotent.
+The install script also sets up **tab completion**: it detects your
+shell, places the completion script in the right spot and appends — if
+not already present — the `fpath`/`source` lines to `.zshrc` /
+`.bashrc` / `$PROFILE`. Idempotent.
 
-Completed werden der Befehlsname (`mono<TAB>` → `monoceros`),
-Subcommands (`monoceros <TAB>`) und Container-Namen aus
-`~/.monoceros/container-configs/` (z. B. `monoceros apply <TAB>`).
-Details und manuelle Re-Installation in
+Completed are the command name (`mono<TAB>` → `monoceros`), subcommands
+(`monoceros <TAB>`) and container names from
+`~/.monoceros/container-configs/` (e.g. `monoceros apply <TAB>`).
+Details and manual re-installation in
 [`docs/commands/completion.md`](docs/commands/completion.md).
 
-### 2 — „Ich entwickle am Workbench"
+### 2 — "I'm developing on the workbench"
 
-Klonen, installieren, lokales CLI per `pnpm` aufrufen (statt global
-installiertem `monoceros`):
+Clone, install, invoke the local CLI via `pnpm` (instead of the
+globally installed `monoceros`):
 
 ```sh
 git clone https://github.com/getmonoceros/workbench
 cd workbench
 pnpm install
-pnpm cli init hello --with=node,claude
+pnpm cli init hello --with-languages=node --with-features=claude
 pnpm cli apply hello
 ```
 
-`pnpm cli` ist ein Convenience-Wrapper auf `tsx src/bin.ts` aus
-`packages/cli/`. Identisch zum global installierten Binary
-funktional, aber liest live aus deinem Checkout — Änderungen
-sofort wirksam, kein Re-Build oder Re-Install nötig.
+`pnpm cli` is a convenience wrapper around `tsx src/bin.ts` from
+`packages/cli/`. Functionally identical to the globally installed
+binary, but reads live from your checkout — changes take effect
+immediately, no rebuild or reinstall needed.
 
-Wenn du auch lokal das Runtime-Image oder einzelne Features
-anfassen willst, siehe
-[`images/runtime/README.md`](images/runtime/README.md) und
-[`images/features/README.md`](images/features/README.md). Beide
-beschreiben den lokalen Build und wie er via Env-Vars in `apply`
-hochpriorisiert wird.
+If you also want to work on the runtime image or individual features
+locally, see [`images/runtime/README.md`](images/runtime/README.md)
+and [`images/features/README.md`](images/features/README.md). Both
+describe the local build and how it's prioritized into `apply` via env
+vars.
 
-> **⚠️ Bekanntes Problem — Traefik-Proxy bei zwei Homes.** Sobald du
-> sowohl mit `pnpm cli` (Dev-Home `<checkout>/.local`) als auch mit
-> einer global installierten `monoceros` (Prod-Home `~/.monoceros`)
-> testest, kollidieren beide am maschinenweiten Traefik-Singleton
-> `monoceros-proxy`. Der wird **per Container-Name** wiederverwendet —
-> nicht pro Home und nicht pro Port. Wer ihn zuerst startet, gewinnt;
-> der andere Kontext reused denselben Container, der dann das falsche
-> `traefik/dynamic`-Verzeichnis watcht → Port-Routen liefern `404`
-> (Traefik läuft, kennt aber die Route nicht). Ein
-> `routing.hostPort`-Wechsel hilft **nicht**, solange der Container-Name
-> geteilt ist. Mitigation beim Kontext-Wechsel:
+> **⚠️ Known issue — Traefik proxy with two homes.** As soon as you
+> test with both `pnpm cli` (dev home `<checkout>/.local`) and a
+> globally installed `monoceros` (prod home `~/.monoceros`), they
+> collide on the machine-wide Traefik singleton `monoceros-proxy`.
+> It's reused **by container name** — not per home and not per port.
+> Whoever starts it first wins; the other context reuses the same
+> container, which then watches the wrong `traefik/dynamic` directory
+> → port routes return `404` (Traefik runs but doesn't know the
+> route). A `routing.hostPort` change does **not** help as long as the
+> container name is shared. Mitigation when switching context:
 >
 > ```sh
-> docker rm -f monoceros-proxy   # dann im neuen Kontext apply/add-port erneut
+> docker rm -f monoceros-proxy   # then apply/add-port again in the new context
 > ```
 >
-> Trifft nur Entwickler-Maschinen mit zwei Homes; ein normaler Builder
-> hat nur `~/.monoceros` und sieht das nie.
+> Only affects developer machines with two homes; a normal builder has
+> only `~/.monoceros` and never sees this.
 
-### 3 — „Ich nutze eine bestehende Monoceros-Solution"
+### 3 — "I'm using an existing Monoceros solution"
 
-Ein Builder hat dir ein `<name>.yml` geschickt? Lege es unter
-`~/.monoceros/container-configs/<name>.yml` ab (bzw.
-`%USERPROFILE%\.monoceros\container-configs\<name>.yml` auf
-Windows) und fahr's los:
+A builder sent you a `<name>.yml`? Put it under
+`~/.monoceros/container-configs/<name>.yml` (or
+`%USERPROFILE%\.monoceros\container-configs\<name>.yml` on Windows)
+and bring it up:
 
 ```sh
 monoceros apply <name>
 monoceros shell <name>
 ```
 
-Lieber die yml selbst kuratieren? Die einzelnen Felder sind unter
-[`docs/commands/init.md`](docs/commands/init.md) erklärt, die
-verfügbaren Komponenten unter
+Prefer to curate the yml yourself? The individual fields are explained
+under [`docs/commands/init.md`](docs/commands/init.md), the available
+components under
 [`pnpm cli list-components`](docs/commands/list-components.md).
 
-## Architektur
+## Architecture
 
-Monoceros ist drei unabhängige Release-Artefakte:
+Monoceros is three independent release artifacts:
 
-- **CLI** (`@getmonoceros/workbench` auf npm) — das ist das, was du
-  installierst
-- **Runtime-Image** (`ghcr.io/getmonoceros/monoceros-runtime`) —
-  schmale Schicht über `mcr.microsoft.com/devcontainers/typescript-node`,
-  multi-arch (linux/amd64 + linux/arm64), wird beim ersten
-  `monoceros apply` von Docker gezogen
+- **CLI** (`@getmonoceros/workbench` on npm) — this is what you
+  install
+- **Runtime image** (`ghcr.io/getmonoceros/monoceros-runtime`) — a
+  thin layer over `mcr.microsoft.com/devcontainers/typescript-node`,
+  multi-arch (linux/amd64 + linux/arm64), pulled by Docker on the
+  first `monoceros apply`
 - **Features** (`ghcr.io/getmonoceros/monoceros-features/<name>`) —
-  pro AI-Tool oder Plattform-CLI ein eigener Devcontainer-Feature-
-  Tag, jeder mit eigenem Release-Zyklus
+  one devcontainer feature tag per AI tool or platform CLI, each with
+  its own release cycle
 
-Mehr Details:
-[ADR 0004 — Release-Modell](docs/adr/0004-release-modell-m4.md) und
-[ADR 0005 — CLI-Distribution via npm](docs/adr/0005-cli-distribution-via-npm.md).
+More details:
+[ADR 0004 — Release model](docs/adr/0004-release-modell-m4.md) and
+[ADR 0005 — CLI distribution via npm](docs/adr/0005-cli-distribution-via-npm.md).
 
-## Layout deines `~/.monoceros/`
+## Layout of your `~/.monoceros/`
 
-Wird beim ersten Aufruf automatisch angelegt:
+Created automatically on first use:
 
 ```
 ~/.monoceros/
-├── monoceros-config.yml          ← global: Git-Identität, Default-Token, …
+├── monoceros-config.yml          ← global: git identity, default token, …
 ├── container-configs/
-│   └── <name>.yml                ← yml-Profile (init schreibt hier rein)
+│   └── <name>.yml                ← yml profiles (init writes here)
 └── container/
-    └── <name>/                   ← materialisierter Dev-Container
-        ├── .devcontainer/        ← Build-Rezept (apply schreibt neu)
-        ├── home/                 ← persistente Tool-States (Login, .claude/, …)
-        ├── projects/             ← dein Code (add-repo klont hier rein)
-        └── data/                 ← Service-Daten (Postgres, MySQL, Redis)
+    └── <name>/                   ← materialized dev container
+        ├── .devcontainer/        ← build recipe (apply rewrites it)
+        ├── home/                 ← persistent tool state (login, .claude/, …)
+        ├── projects/             ← your code (add-repo clones here)
+        └── data/                 ← service data (Postgres, MySQL, Redis)
 ```
 
-Update oder Deinstallation der CLI fasst diesen Pfad **niemals**
-an.
+Updating or uninstalling the CLI **never** touches this path.
 
-## Weiterführende Doku
+## Further docs
 
-- [`docs/concept.md`](docs/concept.md) — die Story der Werkbank, was
-  Monoceros macht und ausdrücklich nicht macht
-- [`docs/commands/`](docs/commands/) — Detail-Seite pro CLI-Befehl
-- [`docs/adr/`](docs/adr/) — Architekturentscheidungen
+- [`docs/concept.md`](docs/concept.md) — the story of the workbench,
+  what Monoceros does and explicitly does not do
+- [`docs/commands/`](docs/commands/) — detail page per CLI command
+- [`docs/adr/`](docs/adr/) — architecture decisions
 
-## Mitmachen
+## Contributing
 
-Issues, PRs, Feature-Vorschläge: <https://github.com/getmonoceros/workbench>.
-Für Workbench-Beitragende ist [`CLAUDE.md`](CLAUDE.md) der
-Reset-Kontext, der für jede neue Session als erstes gelesen wird.
+Issues, PRs, feature suggestions:
+<https://github.com/getmonoceros/workbench>. For workbench
+contributors, [`CLAUDE.md`](CLAUDE.md) is the first thing to read each
+new session.
 
-## Lizenz
+## License
 
-MIT — siehe [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE).
+
+```
+
+```
