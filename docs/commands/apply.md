@@ -21,6 +21,9 @@ Dateisystem schreibt:
    - `<name>.code-workspace`
    - `.claude/settings.json`
    - `.monoceros/.gitignore`
+   - **`AGENTS.md`** + **`CLAUDE.md`** + **`.monoceros/commands.md`** —
+     Container-Briefing für AI-Tools im Container (siehe
+     [`docs/ai-tools.md`](../ai-tools.md#container-briefing--agentsmd--claudemd)).
 4. Schreibt `.monoceros/state.json` mit `origin: <name>`,
    `schemaVersion`, `monocerosCliVersion`, `materializedAt`.
 5. Holt host-seitig die Git-Identity (siehe Priorität unten) und für
@@ -186,6 +189,29 @@ entfernt, damit `cat` und `grep` direkt funktionieren.
 Am Ende des Apply-Outputs verweist eine `log: …`-Zeile auf die Datei —
 auch im Fehlerfall. Der Ordner `logs/` lebt unter `container/<name>/`
 und wird bei `monoceros remove <name>` mit aufgeräumt.
+
+## AI-Tool-Briefing
+
+Jedes Apply (re)generiert drei Dateien am Container-Workspace-Root,
+damit Claude Code & Co. im Container den realen Stack kennen:
+
+- `AGENTS.md` — Stack-Inventar (Sprachen, Services, Tools, Repos,
+  Ports) plus Verhaltens-Regeln (deklaratives Modell,
+  Erweiterungs-Befehle).
+- `CLAUDE.md` — Import-Stub `@AGENTS.md`.
+- `.monoceros/commands.md` — komplette CLI-Referenz, via
+  `@.monoceros/commands.md` aus `AGENTS.md` gezogen.
+
+`AGENTS.md` ist von HTML-Kommentar-Markern umgeben. Apply
+überschreibt nur den Inhalt **zwischen** den Markern —
+User-Ergänzungen darüber/darunter bleiben über `apply` hinweg
+erhalten. `CLAUDE.md` und `.monoceros/commands.md` sind zu 100 %
+Monoceros-eigen und werden immer komplett neu geschrieben.
+
+Beim ersten Claude-Start in einem Projekt erscheint einmalig ein
+"Allow external CLAUDE.md file imports?"-Dialog — akzeptieren, die
+Dateien sind Monoceros-generiert. Voller Mechanismus in
+[`docs/ai-tools.md`](../ai-tools.md#container-briefing--agentsmd--claudemd).
 
 ## Fail-Modi
 

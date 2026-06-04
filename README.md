@@ -78,6 +78,15 @@ monoceros shell hello
 
 Volle Befehlsreferenz unter [`docs/commands/`](docs/commands/).
 
+Wenn du im Container `claude` in einem Projekt unter `projects/` zum
+ersten Mal startest, fragt Claude Code einmalig nach Approval für
+"external CLAUDE.md file imports" — das ist erwartet und sicher. Die
+importierten Dateien (`AGENTS.md`, `.monoceros/commands.md`) sind
+Monoceros-generierte Briefings, die dem AI-Tool den Container-Stack
+beschreiben. Akzeptieren, und das Briefing greift ab der nächsten
+Antwort. Details in
+[`docs/ai-tools.md`](docs/ai-tools.md#container-briefing--agentsmd--claudemd).
+
 Die **Tab-Completion** richtet das Skript automatisch mit ein:
 erkennt deine Shell, legt das Completion-Skript an passender Stelle
 ab und hängt — falls noch nicht vorhanden — die `fpath`/`source`-

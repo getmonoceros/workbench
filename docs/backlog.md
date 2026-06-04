@@ -1196,8 +1196,15 @@ außerhalb des Scope — Behandlung in "Vorgemerkt für später".
    schon drin und deckt `commands.md` automatisch ab). _(erledigt
    2026-06-04)_
 
-4. **Doku** — `docs/ai-tools.md` um den Briefing-Mechanismus,
-   `docs/commands/apply.md` um den neuen Output-Schritt ergänzen.
+4. ✅ **Doku** — neuer Abschnitt "Container-Briefing —
+   `AGENTS.md` / `CLAUDE.md`" in `docs/ai-tools.md` (Mechanismus,
+   Marker-Verhalten, External-Imports-Approval-Hinweis,
+   Credentials-Linie, `x-monoceros.briefing`-Schema für Feature-
+   Manifeste); Cookbook-Eintrag in derselben Datei erweitert. Kurze
+   Sektion in `docs/commands/apply.md` direkt nach "Log-Datei"
+   verweist auf die `ai-tools.md`-Details. README-Block im
+   "Erster Container"-Pfad nimmt den Approval-Hinweis vorweg.
+   _(erledigt 2026-06-04)_
 
 5. **E2E-Szenario** im `monoceros-e2e`-Repo: `init --with-languages=node
 --with-services=postgres --with-features=claude → apply` und
