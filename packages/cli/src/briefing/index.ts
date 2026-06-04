@@ -19,17 +19,26 @@ import {
  * Write the three briefing files into the container workspace:
  *
  *   <targetDir>/AGENTS.md           — Monoceros block in markers + user notes
- *   <targetDir>/CLAUDE.md           — single line `@AGENTS.md` (import stub)
+ *   <targetDir>/CLAUDE.md           — `@AGENTS.md` import in markers + user notes
  *   <targetDir>/.monoceros/commands.md  — per-subcommand reference
  *
- * AGENTS.md uses marker-aware writes: if an existing file already has
- * the `<!-- monoceros:begin -->` / `<!-- monoceros:end -->` pair,
- * only the content between markers is replaced and user notes outside
- * survive. If markers are missing, the whole file is rewritten with
- * markers (Monoceros treats files without markers as its own).
+ * Both AGENTS.md and CLAUDE.md use marker-aware writes: if an existing
+ * file already has the `<!-- monoceros:begin -->` /
+ * `<!-- monoceros:end -->` pair, only the content between markers is
+ * replaced and user notes outside survive. If markers are missing, the
+ * whole file is rewritten with markers (Monoceros treats files without
+ * markers as its own).
  *
- * CLAUDE.md and commands.md are always rewritten in full — they're
- * 100% Monoceros-owned.
+ * CLAUDE.md is wrapped in markers too — even though the Monoceros
+ * block is just `@AGENTS.md`. The cost is a few extra lines, and it
+ * lets a builder add Claude-Code-specific instructions below the
+ * markers without losing them on re-apply (e.g. Claude-only behaviour
+ * rules that wouldn't make sense in the multi-tool AGENTS.md).
+ * AGENTS.md is still the better place for content shared across
+ * tools.
+ *
+ * commands.md is always rewritten in full — it's 100% Monoceros-owned
+ * and not a place where user notes belong.
  */
 export async function writeBriefing(input: WriteBriefingInput): Promise<void> {
   const subCommands = input.subCommands ?? (await loadSubCommandsDynamic());
@@ -46,12 +55,8 @@ export async function writeBriefing(input: WriteBriefingInput): Promise<void> {
   const claudeBody = generateClaudeMd();
   const commandsBody = generateCommandsMd(subCommands);
 
-  await writeAgentsMd(path.join(input.targetDir, 'AGENTS.md'), agentsBody);
-  await fs.writeFile(
-    path.join(input.targetDir, 'CLAUDE.md'),
-    claudeBody,
-    'utf8',
-  );
+  await writeMarkerAware(path.join(input.targetDir, 'AGENTS.md'), agentsBody);
+  await writeMarkerAware(path.join(input.targetDir, 'CLAUDE.md'), claudeBody);
 
   const monocerosDir = path.join(input.targetDir, '.monoceros');
   await fs.mkdir(monocerosDir, { recursive: true });
@@ -109,7 +114,14 @@ function featureDisplayMap(
   return out;
 }
 
-async function writeAgentsMd(filePath: string, body: string): Promise<void> {
+/**
+ * Marker-aware write: if the file already exists and contains both
+ * begin/end markers, replace only the content between them and keep
+ * everything outside (user notes). If the markers are missing or the
+ * file doesn't exist, write a fresh marker-wrapped body. Used for both
+ * AGENTS.md and CLAUDE.md.
+ */
+async function writeMarkerAware(filePath: string, body: string): Promise<void> {
   let existing: string | null = null;
   try {
     existing = await fs.readFile(filePath, 'utf8');

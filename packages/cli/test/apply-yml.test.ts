@@ -188,7 +188,9 @@ describe('runApply', () => {
       path.join(containerRoot, 'CLAUDE.md'),
       'utf8',
     );
-    expect(claude).toBe('@AGENTS.md\n');
+    expect(claude).toContain('@AGENTS.md');
+    expect(claude).toContain('<!-- monoceros:begin -->');
+    expect(claude).toContain('<!-- monoceros:end -->');
     const commands = await readFile(
       path.join(containerRoot, '.monoceros', 'commands.md'),
       'utf8',

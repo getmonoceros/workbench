@@ -198,15 +198,15 @@ damit Claude Code & Co. im Container den realen Stack kennen:
 - `AGENTS.md` — Stack-Inventar (Sprachen, Services, Tools, Repos,
   Ports) plus Verhaltens-Regeln (deklaratives Modell,
   Erweiterungs-Befehle).
-- `CLAUDE.md` — Import-Stub `@AGENTS.md`.
+- `CLAUDE.md` — `@AGENTS.md`-Import zwischen denselben Markern.
 - `.monoceros/commands.md` — komplette CLI-Referenz, via
   `@.monoceros/commands.md` aus `AGENTS.md` gezogen.
 
-`AGENTS.md` ist von HTML-Kommentar-Markern umgeben. Apply
-überschreibt nur den Inhalt **zwischen** den Markern —
+`AGENTS.md` und `CLAUDE.md` sind beide von HTML-Kommentar-Markern
+umgeben. Apply überschreibt nur den Inhalt **zwischen** den Markern —
 User-Ergänzungen darüber/darunter bleiben über `apply` hinweg
-erhalten. `CLAUDE.md` und `.monoceros/commands.md` sind zu 100 %
-Monoceros-eigen und werden immer komplett neu geschrieben.
+erhalten. `.monoceros/commands.md` ist zu 100 % Monoceros-eigen und
+wird immer komplett neu geschrieben.
 
 Beim ersten Claude-Start in einem Projekt erscheint einmalig ein
 "Allow external CLAUDE.md file imports?"-Dialog — akzeptieren, die

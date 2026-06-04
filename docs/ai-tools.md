@@ -86,9 +86,13 @@ drei Dateien an den Container-Workspace-Root, die das Briefing
   - wie das AI-Tool auf fehlende Capabilities reagieren soll
     (Vorschlag des passenden Host-Befehls als copy-paste-fähiger
     Code-Block).
-- **`CLAUDE.md`** — eine einzige Zeile `@AGENTS.md`. Claude Codes
-  dokumentierter Mechanismus für AGENTS.md-Koexistenz. OpenCode liest
-  beide Dateien direkt und käme auch ohne diesen Stub aus.
+- **`CLAUDE.md`** — der `@AGENTS.md`-Import zwischen Markern. Claude
+  Codes dokumentierter Mechanismus für AGENTS.md-Koexistenz. OpenCode
+  liest beide Dateien direkt und käme auch ohne diesen Stub aus. Die
+  Datei trägt Marker, damit Claude-Code-spezifische Regeln darunter
+  (die in der multi-tool `AGENTS.md` keinen Sinn ergeben würden)
+  beim Re-Apply nicht verloren gehen — siehe „User-Notizen überleben
+  Re-Apply" unten.
 - **`.monoceros/commands.md`** — Auto-generiert aus den citty-defs in
   `packages/cli/src/commands/*.ts`. Eine H3 pro Subcommand mit
   Signatur, Argumenten und Flags. `AGENTS.md` importiert sie via
@@ -137,9 +141,14 @@ bewusst aufgeschoben, siehe
 
 Jedes `monoceros apply` ersetzt **nur** den Inhalt zwischen den
 Markern. Was du außerhalb schreibst (eigene Coding-Standards,
-Projekt-spezifische Erinnerungen), bleibt erhalten.
-`CLAUDE.md` und `.monoceros/commands.md` sind 100% Monoceros-eigen
-und werden immer komplett neu geschrieben.
+Projekt-spezifische Erinnerungen), bleibt erhalten. Das gilt für
+**`AGENTS.md` und `CLAUDE.md`** — beide tragen Marker. Tool-übergreifende
+Inhalte gehören nach `AGENTS.md`; nur strikt Claude-Code-spezifische
+Sachen (die andere Tools nicht interpretieren) gehören in
+`CLAUDE.md`.
+
+`.monoceros/commands.md` ist 100% Monoceros-eigen und wird immer
+komplett neu geschrieben — kein Ort für User-Notizen.
 
 Alle drei Dateien sind in der container-root `.gitignore` —
 falls dort jemals `git init` läuft, landen sie nicht im Repo.

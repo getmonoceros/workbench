@@ -45,7 +45,10 @@ describe('writeBriefing', () => {
     expect(agents).toContain('## My own notes');
 
     const claude = await readFile(path.join(dir, 'CLAUDE.md'), 'utf8');
-    expect(claude).toBe('@AGENTS.md\n');
+    expect(claude).toContain('<!-- monoceros:begin -->');
+    expect(claude).toContain('<!-- monoceros:end -->');
+    expect(claude).toContain('@AGENTS.md');
+    expect(claude).toContain('## My own notes');
 
     const commands = await readFile(
       path.join(dir, '.monoceros', 'commands.md'),
@@ -91,6 +94,36 @@ describe('writeBriefing', () => {
     const final = await readFile(path.join(dir, 'AGENTS.md'), 'utf8');
     expect(final).toContain('postgres:5432'); // new content inside markers
     expect(final).toContain('Personal: always run lint before commits.'); // user note survived
+  });
+
+  it('preserves user notes between marker-aware rewrites of CLAUDE.md', async () => {
+    // CLAUDE.md is wrapped in markers too so builders can add
+    // Claude-Code-specific rules below the `@AGENTS.md` import line
+    // and have them survive re-apply.
+    await writeBriefing({
+      targetDir: dir,
+      createOpts: { name: 'demo', languages: [], services: [] },
+      components: new Map(),
+      subCommands,
+    });
+    const initial = await readFile(path.join(dir, 'CLAUDE.md'), 'utf8');
+    const edited =
+      initial + '\n## Claude-only rules\n\n- Always use plan mode here.\n';
+    await writeFile(path.join(dir, 'CLAUDE.md'), edited, 'utf8');
+
+    // Second apply — body of the Monoceros block stays the same
+    // (CLAUDE.md is just `@AGENTS.md`), but the file is rewritten and
+    // the user notes outside the markers must survive.
+    await writeBriefing({
+      targetDir: dir,
+      createOpts: { name: 'demo', languages: ['node'], services: [] },
+      components: new Map(),
+      subCommands,
+    });
+
+    const final = await readFile(path.join(dir, 'CLAUDE.md'), 'utf8');
+    expect(final).toContain('@AGENTS.md');
+    expect(final).toContain('Always use plan mode here.');
   });
 
   it('rewrites AGENTS.md with markers when an existing file has none', async () => {

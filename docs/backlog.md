@@ -1206,18 +1206,38 @@ außerhalb des Scope — Behandlung in "Vorgemerkt für später".
    "Erster Container"-Pfad nimmt den Approval-Hinweis vorweg.
    _(erledigt 2026-06-04)_
 
-5. **E2E-Szenario** im `monoceros-e2e`-Repo: `init --with-languages=node
---with-services=postgres --with-features=claude → apply` und
-   verifizieren, dass `AGENTS.md` im Container-Workspace-Root den
-   Node-Stack, die Postgres-Connection und das Claude-Feature
-   reflektiert; aus einem Projekt-Verzeichnis muss Claude die Datei via
-   Walk-up sehen. (CLI-seitig durch `apply-yml.test.ts` schon abgedeckt;
-   E2E-Repo schließt die Browser-/Tool-seitige Lücke.)
+5. **E2E-Szenario** `with-briefing` im
+   [`monoceros-e2e`](https://github.com/getmonoceros/monoceros-e2e)-Repo.
+   Setup:
 
-6. **Briefing-Inhalt in der Praxis schärfen** — die heute generierte
-   Form ist v0 (siehe `docs/private/agents-md-draft.md` für den
-   Working-Draft mit Begründungen). Iteration erfolgt durch reale
-   Nutzung, nicht durch Vorab-Perfektionierung.
+   ```sh
+   monoceros init briefing \
+     --with-languages=node \
+     --with-services=postgres \
+     --with-features=atlassian \
+     -- twg=false
+   monoceros apply briefing
+   ```
+
+   Verifikationen von **innen** via `monoceros run briefing -- bash -c '…'`:
+   - drei Dateien an `/workspaces/briefing/` vorhanden (`AGENTS.md`,
+     `CLAUDE.md`, `.monoceros/commands.md`)
+   - Walk-up-Topologie greift: aus gemocktem
+     `/workspaces/briefing/projects/probe/` über `../../AGENTS.md` &
+     `../../CLAUDE.md` erreichbar
+   - Inhaltliche Smoke-Greps gegen `AGENTS.md`: `Node.js`, `postgres`,
+     `Atlassian Rovo Dev`, **NICHT** `Teamwork Graph` (twg-Gating),
+     `<!-- monoceros:begin -->`
+   - `CLAUDE.md` enthält den `@AGENTS.md`-Import zwischen Markern
+   - `.monoceros/commands.md` enthält den Header und mindestens
+     `monoceros apply`
+
+   Das Szenario verifiziert die **realen Container-Pfade** plus den
+   `manifests:sync`-Pfad in Prod — beides Lücken, die das
+   CLI-Unit-Test-Setup nicht schließt. Bewusst **nicht** im Scope:
+   "Claude Code lädt die Datei tatsächlich" (Claude-internes
+   Verhalten, vom CLI-Skript nicht antriggerbar) und Marker-Preserve
+   beim Re-Apply (Unit-Test-abgedeckt).
 
 ### Definition of Done
 
