@@ -20,6 +20,13 @@
   "x-monoceros": {
     "persistentHomePaths": [".config/gh"],
     "optionHints": ["apiToken"],
-    "usageNotes": []
+    "usageNotes": [],
+    "briefing": {
+      "lines": [
+        {
+          "text": "GitHub CLI (`gh`) — repo, PR, issue, gist operations against github.com. Pre-authenticated; `gh auth status` reflects the active account."
+        }
+      ]
+    }
   }
 }

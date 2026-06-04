@@ -1085,20 +1085,28 @@ export async function writeScaffold(
   }
 
   // Container-root `.gitignore`. Excludes the directories that hold
-  // builder-private or container-runtime state:
+  // builder-private or container-runtime state and the Monoceros-
+  // generated AI-tool briefing files:
   //   - `home/`        — logins, sessions, secrets baked into tool
   //                      config files
   //   - `.monoceros/`  — git-credentials captured from the host
-  //                      credential helper, machine-local gitconfig
+  //                      credential helper, machine-local gitconfig,
+  //                      generated commands.md briefing reference
   //   - `data/`        — DB data the compose services write at
   //                      runtime (postgres/mysql/redis), often big,
   //                      always container-specific
+  //   - `AGENTS.md`    — generated AI-tool briefing (see ADR 0014);
+  //                      Monoceros owns it, rewritten on every apply
+  //   - `CLAUDE.md`    — import stub pointing at AGENTS.md
   // Inside `projects/<repo>/` builders have their own `.git` and
   // any wrapping git operation should be at that level, not at the
   // container root — but a stray `git init` at the root is exactly
   // the accident this .gitignore protects against.
   const containerGitignore = path.join(targetDir, '.gitignore');
-  await fs.writeFile(containerGitignore, '/home/\n/.monoceros/\n/data/\n');
+  await fs.writeFile(
+    containerGitignore,
+    '/home/\n/.monoceros/\n/data/\n/AGENTS.md\n/CLAUDE.md\n',
+  );
 
   // `.gitkeep` so `projects/` survives a fresh git clone before any
   // sub-project has been added.

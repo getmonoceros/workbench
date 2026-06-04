@@ -206,6 +206,16 @@ defaults:
 Defaults — Container-yml gewinnt, fehlende Werte werden aus dem
 globalen Block aufgefüllt.
 
+**Der Container erklärt sich selbst.** Damit die AI-Tools wissen
+welcher Stack tatsächlich im Container liegt (Sprachen, Services,
+Feature-Tools), schreibt `monoceros apply` ein Briefing als `AGENTS.md`
+mit `CLAUDE.md`-Import-Stub neben die `.code-workspace`-Datei im
+Container-Workspace-Root. Claude Codes Walk-up vom Projekt-Verzeichnis
+findet die Datei automatisch — keine Konfiguration pro Session nötig.
+Eine Java-Werkbank erzählt Claude beim Start, dass sie Java liefert,
+nicht Node. Details:
+[ADR 0014](./adr/0014-ai-tool-briefing-im-workspace-root.md).
+
 ### Container-State überlebt apply
 
 Jeder Container hat ein sichtbares Home-Verzeichnis auf der Host-Disk

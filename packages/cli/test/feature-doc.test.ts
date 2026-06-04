@@ -31,6 +31,7 @@ describe('featureOptionHints', () => {
     optionDescriptions: {},
     optionNames: ['instance', 'email', 'apiToken', 'bitbucketToken'],
     optionTypes: {},
+    optionDefaults: {},
     usageNotes: [],
   };
   const ref = 'ghcr.io/getmonoceros/monoceros-features/atlassian:1';

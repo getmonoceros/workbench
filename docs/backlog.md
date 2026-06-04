@@ -22,6 +22,7 @@ Konzeptioneller Überbau: [`konzept.md`](konzept.md).
 | M6           | Service-Config-Modell, Secrets & init-Redesign                   | ✅ 2026-06-02             |
 | M6.1         | Kuratierte Services: `${VAR}`-env + `.env`-Seeding + Healthcheck | ✅ 2026-06-03             |
 | M6.2         | Git-Identity via `${VAR}` (Repo + Container) mit Kaskade         | ✅ 2026-06-03             |
+| M6.3         | AI-Tool-Briefing am Container-Workspace-Root (Claude Code)       | 🚧 ab 2026-06-04          |
 
 ---
 
@@ -1149,7 +1150,78 @@ hartem Fehler. **Abgeschlossen 2026-06-03**, durch die Dev-CLI validiert
 Bewusst **nicht** gemacht: Identität wird nicht aus dem Host vor-befüllt
 (leer geseedet, bewusst — Kaskade greift beim Apply).
 
-## Vorgemerkt für später (jenseits M5)
+---
+
+## 🚧 M6.3 — AI-Tool-Briefing am Container-Workspace-Root
+
+**Ziel:** Claude Code im Container weiß, welcher Stack tatsächlich
+materialisiert wurde (Sprachen, Services, Feature-Tools, verfügbare
+Erweiterungs-Befehle), ohne dass der Builder das pro Session erklären
+muss. Heute startet jede Claude-Code-Session "blind" — Risiko: Claude
+schlägt z. B. ein Node-Backend vor, obwohl der Container Java liefert.
+
+Designentscheid: [ADR 0014 — AI-Tool-Briefing im Container-Workspace-Root](./adr/0014-ai-tool-briefing-im-workspace-root.md).
+Kurzform: `AGENTS.md` neben der `.code-workspace`-Datei im
+Container-Workspace-Root, `CLAUDE.md` enthält `@AGENTS.md` als
+Import-Stub, `.monoceros/commands.md` enthält die Command-Referenz und
+wird von `AGENTS.md` via `@`-Import gezogen. Marker-Blöcke
+(`<!-- monoceros:begin/end -->`) erlauben User-Ergänzungen die apply
+überleben. Claude Codes Walk-up vom cwd findet die Datei aus jedem
+Projekt unter `projects/<name>/` automatisch.
+
+Fokus dieses M6.3 ist **Claude Code als Primärziel**. Die anderen
+AI-Tools (OpenCode, Codex, Gemini CLI, GitHub Copilot) bleiben heute
+außerhalb des Scope — Behandlung in "Vorgemerkt für später".
+
+### Tasks
+
+1. ✅ **Briefing-Generator** — neues Modul `packages/cli/src/briefing/`
+   mit fünf Dateien: `markers.ts` (HTML-Kommentar-Marker für
+   user-edit-safe Rewrite), `agents-md.ts` (Stack-Manifest aus yml),
+   `claude-md.ts` (Stub `@AGENTS.md`), `commands-md.ts` (Subcommand-
+   Referenz aus den citty-defs — keine Refactoring von COMMAND*SPECS
+   nötig, citty hatte alles schon), `index.ts` (Orchestrator mit
+   marker-aware Rewrite und dynamic-import Cycle-Break gegen apply).
+   21 Tests, alle grün. *(erledigt 2026-06-04)\_
+
+2. ✅ **`apply`-Integration** — `writeBriefing` läuft direkt nach
+   `writeStateFile` in `apply/index.ts`. Failure wird geloggt aber
+   bricht apply nicht ab (Container bleibt funktional, nur AI-UX
+   degradiert). Komponenten-Katalog wird für Feature-DisplayName-
+   Mapping geladen; unbekannte Feature-Refs fallen auf den letzten
+   Pfad-Segment-Namen zurück. _(erledigt 2026-06-04)_
+
+3. ✅ **`.gitignore`-Ergänzung** am Container-Root — `/AGENTS.md` und
+   `/CLAUDE.md` ergänzt im `writeScaffold`-Pfad (`/.monoceros/` war
+   schon drin und deckt `commands.md` automatisch ab). _(erledigt
+   2026-06-04)_
+
+4. **Doku** — `docs/ai-tools.md` um den Briefing-Mechanismus,
+   `docs/commands/apply.md` um den neuen Output-Schritt ergänzen.
+
+5. **E2E-Szenario** im `monoceros-e2e`-Repo: `init --with-languages=node
+--with-services=postgres --with-features=claude → apply` und
+   verifizieren, dass `AGENTS.md` im Container-Workspace-Root den
+   Node-Stack, die Postgres-Connection und das Claude-Feature
+   reflektiert; aus einem Projekt-Verzeichnis muss Claude die Datei via
+   Walk-up sehen. (CLI-seitig durch `apply-yml.test.ts` schon abgedeckt;
+   E2E-Repo schließt die Browser-/Tool-seitige Lücke.)
+
+6. **Briefing-Inhalt in der Praxis schärfen** — die heute generierte
+   Form ist v0 (siehe `docs/private/agents-md-draft.md` für den
+   Working-Draft mit Begründungen). Iteration erfolgt durch reale
+   Nutzung, nicht durch Vorab-Perfektionierung.
+
+### Definition of Done
+
+- Claude Code im Container findet aus jedem Projekt-Verzeichnis das
+  Stack-Briefing via Walk-up.
+- Der Inhalt reflektiert den realen Container-Stand nach allen
+  `add-*`-Mutationen, nicht den yml-Stand bei init.
+- Re-Apply nach `add-feature` / `add-service` aktualisiert die Datei
+  und lässt User-Notizen außerhalb der Marker-Blöcke unberührt.
+
+## Vorgemerkt für später (jenseits M6)
 
 - **Audit-Logging unter `container/<name>/logs/`** — der Pfad steht
   seit ADR 0013 (siehe M5-Abschnitt „1.14"). Folge-Commands (`remove`,
@@ -1186,6 +1258,36 @@ Bewusst **nicht** gemacht: Identität wird nicht aus dem Host vor-befüllt
   aus dem aktuellen Block rausgenommen — die heute vorhandenen
   Features (Claude Code, Rovo Dev) decken den Bedarf, weitere
   Tools kommen on demand.
+
+- **AI-Tool-Briefing für weitere Tools** — M6.3 hat Claude Code als
+  primäres Ziel; das in [ADR 0014](./adr/0014-ai-tool-briefing-im-workspace-root.md)
+  beschriebene Setup deckt **OpenCode** mit ab, weil dessen Walk-up
+  und der `CLAUDE.md`-Fallback denselben Pfad lesen — real verifizieren
+  sobald das OpenCode-Feature gebaut ist. **Codex** sieht das Briefing
+  heute nicht (bounded by git root, walkt nach unten); naheliegender
+  Workaround ist eine zusätzliche Kopie/Symlink unter
+  `~/.codex/AGENTS.md` im Container-Home. **Gemini CLI** analog via
+  `~/.gemini/GEMINI.md` plus Klärung was "trusted root" beim Walk-up
+  bedeutet. **GitHub Copilot** ist echter Sonderfall — braucht eine
+  Per-Projekt-`.github/copilot-instructions.md` mit `applyTo`-
+  Frontmatter, plus `chat.useAgentsMdFile`-Schalter in
+  `.vscode/settings.json`. Lösungen erfordern Schreibzugriff auf
+  Projekt-Verzeichnisse oder einen aktivierbaren yml-Schalter pro
+  Projekt — bewusst offen.
+
+- **Host-Policy-Propagation für `/etc/claude-code/` und `/etc/codex/`** —
+  Wenn eine Org per MDM/Group-Policy eine `/etc/claude-code/CLAUDE.md`
+  oder `/etc/codex/requirements.toml` auf den Host deployed, ist das
+  eine bewusste Policy-Entscheidung. Monoceros sollte diese Dateien
+  beim Container-Build aus dem Host übernehmen und an die gleichen
+  Pfade im Container kopieren — der Container respektiert damit die
+  Org-Vorgaben, ohne dass Monoceros sie überschreibt oder ersetzt
+  (siehe ADR 0014, Abschnitt "Verworfen"). Realisierung als
+  opt-in-Verhalten beim `apply`: prüfen, ob die Host-Pfade existieren,
+  und falls ja als read-only ins Container-Image legen. Offen:
+  Plattform-Verhalten auf macOS (`/Library/Application Support/ClaudeCode/`)
+  und Windows (`C:\Program Files\ClaudeCode\`) — andere Pfade als
+  Linux, gehören aber konzeptionell ins gleiche Feature.
 - **VS-Code-Server als Feature** — `code-server` als optionales
   Feature, sodass Builder den Container per Browser erreicht. Erst
   wenn echtes Nutzerinteresse sichtbar wird (siehe konzept.md →

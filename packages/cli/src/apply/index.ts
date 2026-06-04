@@ -47,6 +47,8 @@ import {
   progressTeeLogger,
 } from './apply-progress.js';
 import { buildApplySummary, formatApplySummary } from './apply-summary.js';
+import { writeBriefing } from '../briefing/index.js';
+import { loadComponentCatalog } from '../init/components.js';
 import { type DockerExec, runContainerCycle } from '../devcontainer/compose.js';
 import {
   type CredentialsSpawn,
@@ -411,6 +413,20 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       ...(opts.now ? { now: opts.now } : {}),
     }),
   );
+
+  // Briefing files for AI tools inside the container. Lives next to
+  // the scaffold (AGENTS.md / CLAUDE.md at the workspace root,
+  // .monoceros/commands.md). See ADR 0014. Failure here is logged but
+  // does not abort apply — a missing briefing degrades AI-tool UX but
+  // the container itself is functional.
+  try {
+    const components = await loadComponentCatalog();
+    await writeBriefing({ targetDir, createOpts, components });
+  } catch (err) {
+    const msg = `briefing files not written: ${err instanceof Error ? err.message : String(err)}`;
+    (logger.warn ?? logger.info)(msg);
+  }
+
   logger.success(`materialized into ${prettyPath(targetDir)}`);
 
   // Repos are cloned in-container by post-create.sh (see the NOTE above

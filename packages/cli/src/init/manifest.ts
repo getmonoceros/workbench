@@ -73,13 +73,50 @@ export interface FeatureManifestSummary {
    * `--<bool-key>=`.
    */
   optionTypes: Record<string, 'string' | 'boolean'>;
+  /**
+   * `default` from each option in the manifest, keyed by name. Used by
+   * the briefing generator to resolve `whenOption` conditions when the
+   * user does not explicitly set an option (e.g. atlassian's `rovodev`
+   * defaults to `true`).
+   */
+  optionDefaults: Record<string, string | boolean>;
   /** Free-text per-feature notes rendered above the `- ref:` line. */
   usageNotes: string[];
+  /**
+   * Optional briefing block for `AGENTS.md` — lines describing the
+   * tool(s) this feature installs, optionally gated on the resolved
+   * value of a feature option. Loaded from `x-monoceros.briefing` in
+   * the manifest. See `briefing/agents-md.ts` for how lines are
+   * filtered and rendered.
+   */
+  briefing?: FeatureBriefing;
+}
+
+export interface FeatureBriefing {
+  /** Ordered list of bullet-style lines emitted as installed-tool entries. */
+  lines: FeatureBriefingLine[];
+}
+
+export interface FeatureBriefingLine {
+  /**
+   * Markdown text for the bullet, without the leading `- `. May contain
+   * inline code (backticks) — the consumer wraps the whole line in a
+   * `- ` prefix.
+   */
+  text: string;
+  /**
+   * If set, the line is only emitted when the named feature option
+   * resolves to a truthy value (after merging user-supplied options
+   * over the manifest defaults). Booleans must be `true`, strings must
+   * be non-empty. If unset, the line is emitted unconditionally.
+   */
+  whenOption?: string;
 }
 
 interface RawManifestOption {
   type?: unknown;
   description?: unknown;
+  default?: unknown;
 }
 
 interface RawManifest {
@@ -90,6 +127,7 @@ interface RawManifest {
   'x-monoceros'?: {
     optionHints?: unknown;
     usageNotes?: unknown;
+    briefing?: unknown;
   };
 }
 
@@ -144,6 +182,7 @@ export function loadFeatureManifestSummary(
 
     const optionDescriptions: Record<string, string> = {};
     const optionTypes: Record<string, 'string' | 'boolean'> = {};
+    const optionDefaults: Record<string, string | boolean> = {};
     const optionNames: string[] = [];
     if (parsed.options) {
       for (const [key, opt] of Object.entries(parsed.options)) {
@@ -157,8 +196,16 @@ export function loadFeatureManifestSummary(
         } else if (opt.type === 'string') {
           optionTypes[key] = 'string';
         }
+        if (
+          typeof opt.default === 'string' ||
+          typeof opt.default === 'boolean'
+        ) {
+          optionDefaults[key] = opt.default;
+        }
       }
     }
+
+    const briefing = parseBriefing(parsed['x-monoceros']?.briefing);
 
     const name = typeof parsed.name === 'string' ? parsed.name : '';
     const description =
@@ -178,9 +225,31 @@ export function loadFeatureManifestSummary(
       optionDescriptions,
       optionNames,
       optionTypes,
+      optionDefaults,
       usageNotes,
+      ...(briefing ? { briefing } : {}),
     };
   } catch {
     return undefined;
   }
+}
+
+function parseBriefing(raw: unknown): FeatureBriefing | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const rawLines = (raw as { lines?: unknown }).lines;
+  if (!Array.isArray(rawLines)) return undefined;
+  const lines: FeatureBriefingLine[] = [];
+  for (const entry of rawLines) {
+    if (!entry || typeof entry !== 'object') continue;
+    const text = (entry as { text?: unknown }).text;
+    if (typeof text !== 'string' || text.length === 0) continue;
+    const whenOption = (entry as { whenOption?: unknown }).whenOption;
+    const line: FeatureBriefingLine = { text };
+    if (typeof whenOption === 'string' && whenOption.length > 0) {
+      line.whenOption = whenOption;
+    }
+    lines.push(line);
+  }
+  if (lines.length === 0) return undefined;
+  return { lines };
 }

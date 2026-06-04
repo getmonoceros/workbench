@@ -156,6 +156,10 @@ describe('runApply', () => {
     );
     expect(homeStat).toContain('/home/');
     expect(homeStat).toContain('/.monoceros/');
+    // Briefing artefacts (ADR 0014) are gitignored at the container
+    // root — they're Monoceros-owned, rewritten on every apply.
+    expect(homeStat).toContain('/AGENTS.md');
+    expect(homeStat).toContain('/CLAUDE.md');
     // home/ exists as a directory even when no feature requests a
     // persistent path — the convention is stable regardless of yml.
     await expect(
@@ -163,6 +167,63 @@ describe('runApply', () => {
         () => null,
       ),
     ).resolves.toBeNull();
+  });
+
+  it('writes AGENTS.md, CLAUDE.md, and .monoceros/commands.md briefing files at the container root', async () => {
+    await writeYml(
+      'briefed',
+      'schemaVersion: 1\nname: briefed\nlanguages: [node]\n',
+    );
+    await runApply({ ...baseRunOpts, name: 'briefed', monocerosHome: home });
+    const containerRoot = path.join(home, 'container', 'briefed');
+    const agents = await readFile(
+      path.join(containerRoot, 'AGENTS.md'),
+      'utf8',
+    );
+    expect(agents).toContain('# Monoceros Container — Stack Briefing');
+    expect(agents).toContain('monoceros apply briefed');
+    expect(agents).toContain('<!-- monoceros:begin -->');
+    expect(agents).toContain('<!-- monoceros:end -->');
+    const claude = await readFile(
+      path.join(containerRoot, 'CLAUDE.md'),
+      'utf8',
+    );
+    expect(claude).toBe('@AGENTS.md\n');
+    const commands = await readFile(
+      path.join(containerRoot, '.monoceros', 'commands.md'),
+      'utf8',
+    );
+    expect(commands).toContain('# monoceros — Command reference');
+  });
+
+  it('resolves per-feature briefing lines from manifests, honouring option-gated whenOption clauses', async () => {
+    // atlassian has two boolean sub-tool options (rovodev, twg) and a
+    // manifest-declared `x-monoceros.briefing` with `whenOption` lines
+    // for each. With twg disabled the Teamwork Graph line must NOT
+    // appear; the Rovo Dev line must.
+    await writeYml(
+      'with-atlassian',
+      [
+        'schemaVersion: 1',
+        'name: with-atlassian',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1',
+        '    options:',
+        '      twg: false',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'with-atlassian',
+      monocerosHome: home,
+    });
+    const agents = await readFile(
+      path.join(home, 'container', 'with-atlassian', 'AGENTS.md'),
+      'utf8',
+    );
+    expect(agents).toContain('Atlassian Rovo Dev');
+    expect(agents).not.toContain('Teamwork Graph');
   });
 
   it('generates per-feature persistent-home mounts in image-mode devcontainer.json', async () => {
