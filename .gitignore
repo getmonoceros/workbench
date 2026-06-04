@@ -52,9 +52,10 @@ packages/cli/features/
 # Anything under here is owner-only and stays out of the OSS repo.
 docs/private/
 
-# Machine-local Claude Code files — the auto-loaded local memory
-# pointer (points at sibling repos checked out only on this machine)
-# and the preview-tool launch shim. Owner-only, never in the OSS repo.
-# (.claude/settings.local.json stays tracked, as before.)
+# Machine-local Claude Code files — owner-only, never in the OSS repo:
+# the auto-loaded local memory pointer (points at sibling repos checked
+# out only on this machine), the preview-tool launch shim, and personal
+# permission settings.
 .claude/CLAUDE.md
 .claude/launch.json
+.claude/settings.local.json
