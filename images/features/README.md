@@ -34,8 +34,9 @@ npx -y @devcontainers/cli features publish \
 ```
 
 Org-Name (`getmonoceros`) und GHCR-Namespace (`monoceros-features`)
-sind seit M4 fix; siehe [`docs/m4-brief.md`](../../docs/m4-brief.md)
-für die Hintergründe.
+sind seit M4 fix; siehe
+[ADR 0004](../../docs/adr/0004-release-modell-m4.md) für die
+Hintergründe.
 
 ## Ein neues Feature dazulegen
 

@@ -199,13 +199,10 @@ an.
 
 ## Weiterführende Doku
 
-- [`docs/konzept.md`](docs/konzept.md) — die Story der Werkbank, was
+- [`docs/concept.md`](docs/concept.md) — die Story der Werkbank, was
   Monoceros macht und ausdrücklich nicht macht
-- [`docs/backlog.md`](docs/backlog.md) — Roadmap und Milestone-Stand
 - [`docs/commands/`](docs/commands/) — Detail-Seite pro CLI-Befehl
 - [`docs/adr/`](docs/adr/) — Architekturentscheidungen
-- [`docs/MIGRATION-M4.md`](docs/MIGRATION-M4.md) — Migrations-Hinweise
-  für Bestandscontainer aus Pre-M4-Stand
 
 ## Mitmachen
 

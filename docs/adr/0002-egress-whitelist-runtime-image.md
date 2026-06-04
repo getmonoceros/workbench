@@ -51,12 +51,11 @@ geringer Aufsicht". Container-Isolation alleine reicht dafür nicht —
 ein kompromittierter Agent kann beliebige HTTPS-Calls absetzen, npm-
 Pakete ihre Telemetrie verschicken, und MCP-Server beliebige Hosts
 erreichen. Das Konzept-Dokument
-([`docs/konzept.md`](../konzept.md)) sieht daher Egress-Whitelisting
+([`docs/concept.md`](../concept.md)) sieht daher Egress-Whitelisting
 als Teil der Sicherheits-Differenzierung vor.
 
-Das Vorgänger-Archiv hatte den Punkt in
-[ADR 0005](../../monoceros-for-solution-builder_archive-2026-05-10/docs/adr/0005-container-sandbox-und-user-modell.md)
-beschrieben, aber nie implementiert. Wir bauen die Komponente neu.
+Ein Vorgänger-Stand hatte den Punkt schon beschrieben, aber nie
+implementiert. Wir bauen die Komponente neu.
 
 ## Erwogene Optionen
 

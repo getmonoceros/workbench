@@ -30,7 +30,7 @@ Drei Beobachtungen zum Kontext, bevor wir entscheiden:
    „Docker im Dev" wirklich offene Fall ist der engere: Builder will
    im Dev-Loop **selbst Images bauen oder Container starten**.
 2. **Container-Isolation ist eine zentrale Monoceros-Wette** (siehe
-   konzept.md, „Container-Isolation als Default"). Jede Mechanik, die
+   concept.md, „Container-Isolation als Default"). Jede Mechanik, die
    dem Container Zugriff auf Docker gibt, untergräbt diese Wette,
    weil Docker-Daemon-Zugriff in der Praxis Host-Root-Äquivalenz ist.
 3. **Devcontainers haben für das Problem zwei etablierte Lösungen.**

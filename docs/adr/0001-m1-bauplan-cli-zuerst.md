@@ -5,7 +5,7 @@
 
 ## Kontext
 
-Der M1-Backlog (siehe [`docs/backlog.md`](../backlog.md)) listet die
+Der M1-Backlog (intern) listet die
 elf Tasks ursprünglich in einer Reihenfolge, die mit dem Bau und Publish
 des eigenen Runtime-Images beginnt (Tasks 1–2) und CLI-Implementierung
 sowie Default-Template darauf aufsetzt.

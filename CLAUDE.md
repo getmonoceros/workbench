@@ -9,20 +9,12 @@
 
 ---
 
-Frischer Start am **2026-05-10**, geschärfter Pivot am
-**2026-05-17**. Die Vorgänger-Codebasis liegt unter
-[`../monoceros-for-solution-builder_archive-2026-05-10/`](../monoceros-for-solution-builder_archive-2026-05-10/),
-das ältere Archiv unter
-[`../monoceros_archive_2026-04-30/`](../monoceros_archive_2026-04-30/),
-und die ausgelagerte Iteration-Pipeline unter
-[`../monoceros-iterate_archive-2026-05-17/`](../monoceros-iterate_archive-2026-05-17/).
-
-Das Produkt heißt weiterhin **Monoceros**. Das Verzeichnis heißt
+Das Produkt heißt **Monoceros**. Das Verzeichnis heißt
 `monoceros-workbench`, weil wir die Werkbank bauen — den Rahmen, in
 dem der Builder seinen Dev-Container baut, ohne dass die Werkbank
 selbst vorschreibt was drin liegt.
 
-## Was Monoceros ist (Stand 2026-05-17)
+## Was Monoceros ist
 
 Eine **Werkbank für lokale, reproduzierbare Dev-Container mit AI-Coding-Tooling**.
 Builder beschreibt deklarativ, was im Container liegen soll
@@ -47,9 +39,9 @@ Was Monoceros **nicht** ist:
 
 - keine Cloud-Plattform, kein SaaS, kein fester Tech-Stack
 - keine eigene Web-UI
-- **kein Iteration-Workflow** — die Plan/Generate/Review-Pipeline ist
-  ausgelagert (siehe Archiv-Verweis oben); wenn sie zurückkommt, dann
-  als separates Projekt das auf der Workbench aufsetzt
+- **kein Iteration-Workflow** — keine Plan/Generate/Review-Pipeline;
+  wenn so etwas kommt, dann als separates Projekt das auf der
+  Workbench aufsetzt
 
 ## CLI-Modell
 
@@ -89,39 +81,17 @@ cwd ist irrelevant — alles geht über Konvention.
 
 ## Lese-Reihenfolge für neue Sessions
 
-1. Diese Datei (kurz, gibt den Reset-Kontext + den Pivot)
-2. [`docs/konzept.md`](docs/konzept.md) — die Story der Workbench,
-   wird im Anschluss an den 2026-05-17-Pivot neu geschnitten
-3. [`docs/backlog.md`](docs/backlog.md) — Milestones + Tasks. Wird im
-   Anschluss an den 2026-05-17-Pivot neu geschnitten
-4. [`docs/commands/README.md`](docs/commands/README.md) — was die
-   CLI heute kann, Stand frisch
-5. Bei Iteration-Pipeline-Fragen ins
-   [`../monoceros-iterate_archive-2026-05-17/`](../monoceros-iterate_archive-2026-05-17/)
-   schauen — alle Strukturen + offene Designfragen dort dokumentiert
-
-## Was aus dem Archiv übernommen wurde
-
-Direkt aus
-`../monoceros-for-solution-builder_archive-2026-05-10/`:
-
-- Runtime-Dockerfile-Basis aus `apps/runner/` — Auth/Enrollment-Kram
-  raus, dünner Layer über dem Microsoft typescript-node Base-Image
-- husky + lint-staged + prettier-Setup (aus dem älteren Archiv)
-
-Was **nicht** mit ging (und nicht zurückkommen wird):
-
-- Studio-Frontend (`apps/studio`)
-- Fastify-API als zentraler Service (`apps/api`)
-- Runner als Server mit Reverse-Proxy + Auth (`apps/runner`)
-- BASE_PATH-Routing-Modell, Per-Runner-Secrets, AES-Encryption
-- Plan→Flow-Modell als zentrale Daten-Struktur
+1. Diese Datei (kurzer Überblick)
+2. [`docs/concept.md`](docs/concept.md) — die Story der Workbench,
+   was Monoceros macht und ausdrücklich nicht macht
+3. [`docs/commands/README.md`](docs/commands/README.md) — was die
+   CLI heute kann
 
 ## Konventionen
 
 - **Commit-Messages** auf Englisch
 - **Source-Code-Dokumentation** (Kommentare, JSDoc) auf Englisch
-- **User-Doku** (README, Konzept-Dokumente, Backlog, Befehlsdocs unter
+- **User-Doku** (README, Konzept-Dokumente, Befehlsdocs unter
   `docs/commands/`) auf Deutsch — der primäre Solution Builder ist
   deutschsprachig
 - **Pro neuer CLI-Befehl** eine MD-Datei unter `docs/commands/<name>.md`

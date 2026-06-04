@@ -15,7 +15,7 @@ Dieses Dokument fasst zusammen:
 - wie ein neues Tool-Feature gebaut wird
 
 Der konzeptionelle Überbau (warum Features, warum yml-Modell)
-steht in [konzept.md](./konzept.md). Der State-Modell-Hintergrund
+steht in [concept.md](./concept.md). Der State-Modell-Hintergrund
 (warum jeder Container ein eigenes `home/` hat) in
 [ADR 0003](./adr/0003-container-state-model.md).
 
@@ -120,8 +120,7 @@ aus die Session gestartet wird.
 Codex (begrenzt durch git-root nach unten), Gemini CLI ("trusted
 root", noch ungeklärt) und GitHub Copilot (workspace-root only, in
 Multi-Root buggy) sehen das Briefing **heute nicht** — sie sind
-bewusst aufgeschoben, siehe
-[Backlog → "Vorgemerkt für später (jenseits M6)"](./backlog.md#vorgemerkt-für-später-jenseits-m6).
+bewusst aufgeschoben.
 
 ### User-Notizen überleben Re-Apply
 
@@ -220,7 +219,7 @@ Implementierung lebt unter `packages/cli/src/briefing/`.
 
 ## Was später dazukommen soll
 
-Geplant (siehe [backlog.md](./backlog.md) M5):
+Geplant:
 
 - **OpenCode** — sst's Open-Source-Multi-Modell-CLI
 - **Codex** — OpenAI Codex CLI
@@ -328,7 +327,7 @@ einem Feature bündelt).
 
 ## Verwandte Dokumente
 
-- [konzept.md](./konzept.md) — der Überbau
+- [concept.md](./concept.md) — der Überbau
 - [adr/0003-container-state-model.md](./adr/0003-container-state-model.md)
   — warum jeder Container ein eigenes `home/` hat
 - [commands/init.md](./commands/init.md) — `--with` und

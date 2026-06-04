@@ -15,7 +15,7 @@ Docker Desktop) trat eine Reihe von Reibungspunkten auf, die alle
 auf einen gemeinsamen Punkt zurückgehen: **SSH-Style-URLs
 (`git@github.com:…`, `ssh://…`) erzwingen Host-OS-spezifische Auth-
 Mechaniken, die der „deklarativ + reproduzierbar"-Versprechen aus
-[`docs/konzept.md`](../konzept.md) widersprechen.**
+[`docs/concept.md`](../concept.md) widersprechen.**
 
 Konkret beobachtet:
 
@@ -151,8 +151,8 @@ add-repo` setzt das Feld via `--provider=…`-Flag; `monoceros init
   via CLI-Flag in `init` selten genug ist, um die Syntax nicht damit
   zu belasten.
 
-- **Backlog M5 Task 4 (Test-Plan-Rewrite)**: Die in [M4 Task 9
-  hinzugefügte](../backlog.md#-m4--distribution--go-live) „SSH-Repo-
+- **Backlog M5 Task 4 (Test-Plan-Rewrite)**: Die in M4 Task 9
+  hinzugefügte „SSH-Repo-
   Strecke explizit testen" wird gestrichen. Stattdessen: „HTTPS-Repo
   - Clone + Commit + Push" als Pflichtfall pro Plattform, plus
     „SSH-URL in der yml → klare Fehlermeldung" als Validations-Test.

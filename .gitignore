@@ -51,3 +51,10 @@ packages/cli/features/
 # pre-1.0 thinking that doesn't belong in the public docs/ tree.
 # Anything under here is owner-only and stays out of the OSS repo.
 docs/private/
+
+# Machine-local Claude Code files — the auto-loaded local memory
+# pointer (points at sibling repos checked out only on this machine)
+# and the preview-tool launch shim. Owner-only, never in the OSS repo.
+# (.claude/settings.local.json stays tracked, as before.)
+.claude/CLAUDE.md
+.claude/launch.json
