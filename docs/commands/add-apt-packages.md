@@ -1,23 +1,23 @@
 # `monoceros add-apt-packages`
 
-Installiert beliebige Debian/Ubuntu-apt-Pakete im Devcontainer.
+Installs arbitrary Debian/Ubuntu apt packages in the devcontainer.
 
-## Zweck
+## Purpose
 
-Schnelles, deklaratives Hinzufügen kleiner Tools, die im Base-Image
-fehlen (`make`, `jq`, `openssh-client`, `vim`, `tmux`, `tree`, `rsync`, …).
-Ohne diesen Befehl müsste der Builder entweder `devcontainer.json` von
-Hand editieren oder `apt install …` im Container manuell ausführen —
-letzteres ist nicht persistent, geht beim nächsten `monoceros apply`
-verloren.
+A quick, declarative way to add small tools that are missing from the
+base image (`make`, `jq`, `openssh-client`, `vim`, `tmux`, `tree`, `rsync`, …).
+Without this command the builder would have to either edit
+`devcontainer.json` by hand or run `apt install …` in the container
+manually — the latter is not persistent and is lost on the next
+`monoceros apply`.
 
-Was das ist _nicht_:
+What this is _not_:
 
-- Kein Ersatz für `add-language` (Sprach-Toolchains haben eigene
-  Devcontainer-Features mit zusätzlichem Setup)
-- Kein Ersatz für `add-feature` (Tools, die ihr eigenes Devcontainer-
-  Feature haben — z. B. `gh`, `kubectl`, `terraform` — gehören da hin,
-  weil deren Feature mehr macht als `apt install`)
+- Not a replacement for `add-language` (language toolchains have their
+  own devcontainer features with additional setup)
+- Not a replacement for `add-feature` (tools that ship their own
+  devcontainer feature — e.g. `gh`, `kubectl`, `terraform` — belong
+  there, because their feature does more than `apt install`)
 
 ## Synopsis
 
@@ -25,19 +25,20 @@ Was das ist _nicht_:
 monoceros add-apt-packages <containername> [--yes] -- <pkg> [<pkg> …]
 ```
 
-Das `--` trennt Monoceros-Flags von der Paketliste. Pflicht, weil sonst
-Pakete wie `--ignore-me` als Flag interpretiert würden — Konvention
-konsistent mit `monoceros run -- <cmd>`.
+The `--` separates Monoceros flags from the package list. It is
+mandatory, because otherwise packages like `--ignore-me` would be
+interpreted as flags — a convention consistent with
+`monoceros run -- <cmd>`.
 
-## Optionen
+## Options
 
-| Flag           | Bedeutung                                      |
-| -------------- | ---------------------------------------------- |
-| `--yes` / `-y` | Confirm-Prompt überspringen (für Skripte / CI) |
+| Flag           | Meaning                                       |
+| -------------- | --------------------------------------------- |
+| `--yes` / `-y` | Skip the confirmation prompt (for scripts/CI) |
 
-## Mechanik
+## Mechanics
 
-`add-apt-packages` schreibt in die Container-yml unter
+`add-apt-packages` writes into the container yml at
 `$MONOCEROS_HOME/container-configs/<containername>.yml`:
 
 ```yaml
@@ -46,38 +47,38 @@ aptPackages:
   - jq
 ```
 
-Kommentare und Reihenfolge bestehender Einträge bleiben unangetastet
-(AST-Mutation, kein Re-Generate).
+Comments and the order of existing entries are left untouched
+(AST mutation, no re-generate).
 
-Beim nächsten `monoceros apply <containername>` wird die yml in
-`devcontainer.json` übersetzt — das Devcontainer-Feature
+On the next `monoceros apply <containername>` the yml is translated into
+`devcontainer.json` — the devcontainer feature
 [`ghcr.io/devcontainers-contrib/features/apt-packages:1`](https://github.com/devcontainers-contrib/features/tree/main/src/apt-packages)
-mit kommaseparierter `packages`-Option führt
-`apt-get update && apt-get install -y <list>` beim Container-Build aus.
+with a comma-separated `packages` option runs
+`apt-get update && apt-get install -y <list>` during the container build.
 
-## Validierung
+## Validation
 
-Erlaubte Zeichen pro Paketname: `[a-z0-9][a-z0-9.+-]*`. Das blockt
-Shell-Metacharacters (`;`, `&`, `|`, `$`, `(`, …), damit ein Tipp-Fehler
-keine Shell-Injection ins `apt-get install` einschleusen kann.
+Allowed characters per package name: `[a-z0-9][a-z0-9.+-]*`. This blocks
+shell metacharacters (`;`, `&`, `|`, `$`, `(`, …), so that a typo cannot
+sneak a shell injection into the `apt-get install`.
 
-Es gibt **keinen kuratierten Whitelist** — der Builder weiß selbst, was
-er installieren will. Wenn der Name nicht im apt-Repo existiert,
-scheitert der Container-Build mit einer klaren `apt-get`-Fehlermeldung
+There is **no curated whitelist** — the builder knows what they want to
+install. If the name does not exist in the apt repo, the container build
+fails with a clear `apt-get` error message
 (`E: Unable to locate package …`).
 
-## Idempotenz
+## Idempotency
 
-Mehrfach-Aufruf mit denselben oder einer Teilmenge der Pakete →
-"No changes — solution is already in the desired state.", Exit 0,
-keine Datei-Änderung.
+Repeated invocation with the same packages, or a subset of them →
+"No changes — solution is already in the desired state.", exit 0,
+no file change.
 
-Mehrfach-Aufruf mit zusätzlichen Paketen → akkumuliert die Liste,
-Diff-Preview, dann Schreiben.
+Repeated invocation with additional packages → the list is accumulated,
+diff preview, then write.
 
-## Beispiele
+## Examples
 
-Postgres-Client für DB-Probes ergänzen:
+Add the Postgres client for DB probes:
 
 ```sh
 monoceros add-apt-packages sandbox --yes -- postgresql-client
@@ -85,29 +86,29 @@ monoceros apply sandbox
 monoceros run sandbox -- psql -h postgres -U postgres -c '\dt'
 ```
 
-Build-Essentials für native Node-Module:
+Build essentials for native Node modules:
 
 ```sh
 monoceros add-apt-packages sandbox --yes -- build-essential libssl-dev
 monoceros apply sandbox
 ```
 
-## Verwandte Befehle
+## Related commands
 
-- `monoceros add-language <name> <lang>` — Sprach-Toolchains (Python, Java, Go, …)
-- `monoceros add-feature <name> <ref>` — Devcontainer-Features mit eigenen
-  Install-Skripten (`gh`, `kubectl`, `docker-in-docker`, …)
-- `monoceros apply <name>` — Container neu bauen, damit die Pakete drinlanden
+- `monoceros add-language <name> <lang>` — language toolchains (Python, Java, Go, …)
+- `monoceros add-feature <name> <ref>` — devcontainer features with their own
+  install scripts (`gh`, `kubectl`, `docker-in-docker`, …)
+- `monoceros apply <name>` — rebuild the container so the packages land in it
 
-## Fail-Modi
+## Failure modes
 
-- **`Invalid apt package name: "…"`** — Name enthält Zeichen außerhalb
-  `[a-z0-9.+-]`. Tipp-Fehler? Bei Sonderzeichen den Namen prüfen,
-  z. B. `lib-...` (Bindestrich erlaubt) vs. `lib_…` (Unterstrich nicht).
-- **`No package names given`** — Kein Paket nach `--` übergeben.
-  Synopsis prüfen.
-- **Container-Build scheitert mit `E: Unable to locate package …`** —
-  Paket existiert nicht in den konfigurierten Repos. Korrekten Namen
-  via `apt-cache search <stichwort>` im Container suchen
-  (`monoceros run -- apt-cache search <stichwort>`) oder die
-  Debian-/Ubuntu-Paketsuche im Web nutzen.
+- **`Invalid apt package name: "…"`** — the name contains characters
+  outside `[a-z0-9.+-]`. A typo? For special characters, check the name,
+  e.g. `lib-...` (hyphen allowed) vs. `lib_…` (underscore not allowed).
+- **`No package names given`** — no package was passed after `--`.
+  Check the synopsis.
+- **Container build fails with `E: Unable to locate package …`** — the
+  package does not exist in the configured repos. Look up the correct
+  name with `apt-cache search <keyword>` inside the container
+  (`monoceros run -- apt-cache search <keyword>`) or use the
+  Debian/Ubuntu package search on the web.

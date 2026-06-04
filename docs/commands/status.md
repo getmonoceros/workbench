@@ -1,45 +1,45 @@
 # `monoceros status`
 
-Zeigt welche Compose-Services des benannten Containers gerade
-laufen, gestoppt sind oder noch nie hochgefahren wurden.
+Shows which Compose services of the named container are currently
+running, stopped, or have never been started.
 
 ```sh
 monoceros status <name> [--service <svc>]
 ```
 
-## Zweck
+## Purpose
 
-Schnelle Antwort auf „läuft der Container?" ohne in die
-Docker-CLI wechseln zu müssen. Output kommt direkt von
-`docker compose ps`, also vollständig und ehrlich.
+A quick answer to "is the container running?" without having to drop
+into the Docker CLI. The output comes straight from
+`docker compose ps`, so it is complete and honest.
 
-## Mechanik
+## Mechanics
 
-Ein `docker compose ps` mit dem Compose-File des Containers und
-dem Compose-Project-Name `<name>_devcontainer`. Tabellarisch:
+A `docker compose ps` against the container's Compose file with the
+Compose project name `<name>_devcontainer`. Tabular:
 
-| Column   | Inhalt                                                   |
+| Column   | Content                                                  |
 | -------- | -------------------------------------------------------- |
-| `NAME`   | Container-Name (z.B. `sandbox_devcontainer-workspace-1`) |
-| `IMAGE`  | das geladene Image                                       |
+| `NAME`   | Container name (e.g. `sandbox_devcontainer-workspace-1`) |
+| `IMAGE`  | the loaded image                                         |
 | `STATUS` | `running (...)`, `exited (0)`, …                         |
-| `PORTS`  | gemappte Ports (falls publishet)                         |
+| `PORTS`  | mapped ports (if published)                              |
 
-## Argumente
+## Arguments
 
-| Argument | Bedeutung       |
+| Argument | Meaning         |
 | -------- | --------------- |
-| `<name>` | Container-Name. |
+| `<name>` | Container name. |
 
-## Optionen
+## Options
 
-| Option            | Bedeutung                                                   |
-| ----------------- | ----------------------------------------------------------- |
-| `--service <svc>` | Nur einen Compose-Service anzeigen. Default: alle Services. |
+| Option            | Meaning                                               |
+| ----------------- | ----------------------------------------------------- |
+| `--service <svc>` | Show only one Compose service. Default: all services. |
 
-## Beispiele
+## Examples
 
-Alles:
+Everything:
 
 ```sh
 $ monoceros status sandbox
@@ -48,7 +48,7 @@ sandbox_devcontainer-postgres-1       postgres:18                 Up 2 minutes  
 sandbox_devcontainer-workspace-1      monoceros-runtime:dev       Up 2 minutes        0.0.0.0:3000->3000/tcp, 0.0.0.0:4000->4000/tcp
 ```
 
-Nur eine Service-Zeile:
+Only one service row:
 
 ```sh
 $ monoceros status sandbox --service postgres
@@ -56,17 +56,17 @@ NAME                              IMAGE         STATUS              PORTS
 sandbox_devcontainer-postgres-1   postgres:18   Up 2 minutes        5432/tcp
 ```
 
-## Verwandte Befehle
+## Related commands
 
-- [`monoceros start <name>`](./start.md) — hochfahren
-- [`monoceros stop <name>`](./stop.md) — pausieren
-- [`monoceros logs <name>`](./logs.md) — Compose-Logs verfolgen
+- [`monoceros start <name>`](./start.md) — start up
+- [`monoceros stop <name>`](./stop.md) — pause
+- [`monoceros logs <name>`](./logs.md) — follow Compose logs
 
-## Fail-Modi
+## Failure modes
 
-- **`No compose.yaml at <path>`** — der Container ist im Image-Mode
-  (keine Compose-Services). `status` ist nur für Compose-Mode
-  sinnvoll; bei reinen Image-Mode-Containern liefert `docker ps`
-  vergleichbare Info.
-- **Leere Tabelle** — Compose-Project existiert nicht (noch nie
-  `start` oder `apply` aufgerufen, oder mit `remove` weggeräumt).
+- **`No compose.yaml at <path>`** — the container is in image mode
+  (no Compose services). `status` only makes sense in Compose mode;
+  for pure image-mode containers, `docker ps` provides comparable
+  info.
+- **Empty table** — the Compose project does not exist (`start` or
+  `apply` was never called, or it was cleaned up with `remove`).

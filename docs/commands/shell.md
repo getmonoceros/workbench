@@ -1,39 +1,39 @@
 # `monoceros shell`
 
-Öffnet eine interaktive Bash-Sitzung im benannten Container. Bringt
-ihn vorher automatisch hoch falls nötig.
+Opens an interactive Bash session in the named container. Brings it
+up automatically beforehand if needed.
 
 ```sh
 monoceros shell <name>
 ```
 
-## Zweck
+## Purpose
 
-Der Standard-Weg um „im Container zu sein": direkter Bash-Prompt
-mit allen Tools, Features und Auth-States, die `monoceros apply`
-materialisiert hat. Beendet sich mit `exit` oder `Ctrl-D`.
+The standard way to "be inside the container": a direct Bash prompt
+with all the tools, features, and auth states that `monoceros apply`
+materialized. Exits with `exit` or `Ctrl-D`.
 
-## Mechanik
+## Mechanics
 
-1. **Container-Check**: prüft, ob `<MONOCEROS_HOME>/container/<name>/.devcontainer/`
-   existiert. Wenn nicht → `Run \`monoceros apply <name>\` first`-Fehler.
-2. **Implizites Hochfahren**: `devcontainer up` läuft quiet (Output
-   wird nur bei Fehler ausgegeben). Wenn der Container schon läuft,
-   ist das ein no-op.
-3. **Exec**: `devcontainer exec … bash` startet eine interaktive
-   Bash-Sitzung. stdio wird direkt durchgereicht (kein Masking,
-   kein Buffering), sodass eine echte TTY hängt und Bash sich
-   interaktiv verhält.
+1. **Container check**: verifies that `<MONOCEROS_HOME>/container/<name>/.devcontainer/`
+   exists. If not → `Run \`monoceros apply <name>\` first` error.
+2. **Implicit startup**: `devcontainer up` runs quietly (output is
+   only emitted on error). If the container is already running, this
+   is a no-op.
+3. **Exec**: `devcontainer exec … bash` starts an interactive Bash
+   session. stdio is passed through directly (no masking, no
+   buffering), so a real TTY is attached and Bash behaves
+   interactively.
 
-Der Exit-Code der Bash-Sitzung wird zurückpropagiert.
+The exit code of the Bash session is propagated back.
 
-## Argumente
+## Arguments
 
-| Argument | Bedeutung                                                                                                    |
-| -------- | ------------------------------------------------------------------------------------------------------------ |
-| `<name>` | Container-Name. Muss eine yml unter `container-configs/` und ein materialisiertes `container/<name>/` haben. |
+| Argument | Meaning                                                                                            |
+| -------- | -------------------------------------------------------------------------------------------------- |
+| `<name>` | Container name. Must have a yml under `container-configs/` and a materialized `container/<name>/`. |
 
-## Beispiel
+## Example
 
 ```sh
 $ monoceros shell sandbox
@@ -44,26 +44,26 @@ node ➜ /workspaces/sandbox $ exit
 $
 ```
 
-Auf macOS/Windows mit Docker Desktop: das Bind-Mount-Volume zum
-Workspace-Ordner braucht beim ersten Aufruf ggf. ein paar Sekunden
-für die File-Sharing-Negotiation; danach fühlt es sich nativ an.
+On macOS/Windows with Docker Desktop: the bind-mount volume for the
+workspace folder may need a few seconds for file-sharing negotiation
+on the first call; after that it feels native.
 
-## Verwandte Befehle
+## Related commands
 
-- [`monoceros run <name> -- <cmd>`](./run.md) — One-off-Befehl statt
-  interaktive Sitzung
-- [`monoceros apply <name>`](./apply.md) — Container bauen + hochfahren
-- [`monoceros stop <name>`](./stop.md) — Compose-Services pausieren
+- [`monoceros run <name> -- <cmd>`](./run.md) — one-off command instead
+  of an interactive session
+- [`monoceros apply <name>`](./apply.md) — build + bring up the container
+- [`monoceros stop <name>`](./stop.md) — pause Compose services
 
-## Fail-Modi
+## Failure modes
 
-- **`No .devcontainer/ at <path>`** — Container nie materialisiert.
-  `monoceros apply <name>` vorher.
-- **Container started nicht** — die ersten paar Zeilen aus dem
-  buffered `up`-Output werden bei Fehler an stderr geschickt.
-  Häufige Ursachen: Docker Desktop nicht laufend, Port-Konflikt,
-  Image-Build-Fehler bei geänderten Features.
-- **Sofortiges Exit ohne Fehlermeldung** — Bash sieht kein TTY.
-  Das passiert wenn die CLI nicht über ein Terminal aufgerufen
-  wird (z.B. aus einem nicht-interaktiven Shell-Script). Lösung:
-  `monoceros run <name> -- <cmd>` für scripted Aufrufe nutzen.
+- **`No .devcontainer/ at <path>`** — container was never materialized.
+  Run `monoceros apply <name>` first.
+- **Container does not start** — the first few lines of the buffered
+  `up` output are sent to stderr on error. Common causes: Docker
+  Desktop not running, port conflict, image build failure after
+  changed features.
+- **Immediate exit without an error message** — Bash sees no TTY.
+  This happens when the CLI is not invoked through a terminal (e.g.
+  from a non-interactive shell script). Fix: use
+  `monoceros run <name> -- <cmd>` for scripted calls.

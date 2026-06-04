@@ -1,7 +1,7 @@
 # `monoceros remove-apt-packages`
 
-Inverse zu [`add-apt-packages`](./add-apt-packages.md). Entfernt einen
-oder mehrere apt-Pakete aus der Container-Konfig.
+Inverse of [`add-apt-packages`](./add-apt-packages.md). Removes one or
+more apt packages from the container config.
 
 ## Synopsis
 
@@ -9,28 +9,28 @@ oder mehrere apt-Pakete aus der Container-Konfig.
 monoceros remove-apt-packages <containername> [--yes] -- <pkg> [<pkg> …]
 ```
 
-Wie bei `add-apt-packages` wird die Paketliste **nach `--`** übergeben,
-damit Namen mit `-`-Prefix nicht von citty als Flags geparst werden.
+As with `add-apt-packages`, the package list is passed **after `--`** so
+that names with a `-` prefix are not parsed as flags by citty.
 
-## Mechanik
+## Mechanics
 
-yml-Einträge in `aptPackages:` werden entfernt. Umliegende Kommentare an
-**erhaltenen** Paketen bleiben unverändert. Fällt die Liste leer, fliegt
-das Feld komplett raus.
+Entries in `aptPackages:` are removed from the yml. Surrounding comments
+on **retained** packages stay unchanged. If the list ends up empty, the
+field is dropped entirely.
 
-## Idempotenz
+## Idempotency
 
-Pakete, die schon nicht in der Liste stehen, werden ignoriert. Wenn alle
-aufgeführten Pakete bereits fehlen → no-change.
+Packages that aren't in the list are ignored. If all listed packages are
+already absent → no-change.
 
-## Beispiel
+## Example
 
 ```sh
 monoceros remove-apt-packages sandbox --yes -- make jq
 monoceros apply sandbox
 ```
 
-## Verwandte Befehle
+## Related commands
 
-- `monoceros add-apt-packages` — Inverse
-- `monoceros apply <name>` — Materialisierung
+- `monoceros add-apt-packages` — inverse
+- `monoceros apply <name>` — materialization

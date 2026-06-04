@@ -1,45 +1,45 @@
-# ADR 0003 — Per-Container-Home: persistenter Tool-State unter `container/<name>/home/`
+# ADR 0003 — Per-container home: persistent tool state under `container/<name>/home/`
 
 - Status: accepted
-- Datum: 2026-05-17
+- Date: 2026-05-17
 
-## Kontext
+## Context
 
-Bis M3-pre hatten wir zwei Versuche, Tool-Auth zwischen Host und
-Container zu teilen, beide unbefriedigend:
+Up to M3-pre we had two attempts at sharing tool auth between host and
+container, both unsatisfactory:
 
-1. **Bind-Mount des Host-Home-Subpfads.** `claude-code` mountete
-   ursprünglich `~/.claude` direkt vom Host in den Container. Bequem,
-   aber: jeder Container schreibt rückwärts auf den Host, ein
-   `claude /logout` im Container nimmt den Host-Login mit, mehrere
-   Container überschreiben sich gegenseitig, Container-spezifische
-   Session-Pfade verschmutzen die Host-Projects-Liste. Bricht das
-   Versprechen "Container-Isolation als Default" und ist
-   nicht-skalierbar bei mehreren Containern.
+1. **Bind-mount of a host-home subpath.** `claude-code` originally
+   mounted `~/.claude` directly from the host into the container.
+   Convenient, but: every container writes back to the host, a
+   `claude /logout` inside the container takes the host login with it,
+   multiple containers overwrite each other, and container-specific
+   session paths pollute the host's projects list. This breaks the
+   promise of "container isolation as the default" and doesn't scale
+   with multiple containers.
 
-2. **API-Token-Pipe aus `monoceros-config.yml`.** Funktioniert für
-   ACLI (`acli rovodev auth login --token` ist non-interaktiv), aber
-   nicht für OAuth-Browser-Flows (Claude-Code-Subscription, twg).
-   Macht auch Inhalt wie Skills/Agents/CLAUDE.md nicht persistent.
+2. **Piping an API token from `monoceros-config.yml`.** Works for ACLI
+   (`acli rovodev auth login --token` is non-interactive), but not for
+   OAuth browser flows (Claude Code subscription, twg). It also doesn't
+   make content like skills/agents/CLAUDE.md persistent.
 
-## Entscheidung
+## Decision
 
-Jeder Container bekommt ein eigenes Home-Verzeichnis sichtbar auf
-dem Host unter `<container-dir>/home/`:
+Each container gets its own home directory, visible on the host under
+`<container-dir>/home/`:
 
 ```
 <MONOCEROS_HOME>/container/<name>/
-  .devcontainer/   ← Rezept (apply schreibt bei jedem Lauf neu)
-  .monoceros/      ← Monoceros-Buchhaltung (apply schreibt: state.json, git-credentials, gitconfig)
-  home/            ← Container-Home (Container schreibt zur Laufzeit, apply lässt es in Ruhe)
-  data/            ← Compose-Service-Daten (postgres/, mysql/, redis/ — Bind-Mounts)
-  projects/        ← Workspaces (`monoceros add-repo` klont hier rein)
+  .devcontainer/   ← recipe (apply rewrites it on every run)
+  .monoceros/      ← Monoceros bookkeeping (apply writes: state.json, git-credentials, gitconfig)
+  home/            ← container home (container writes at runtime, apply leaves it alone)
+  data/            ← compose service data (postgres/, mysql/, redis/ — bind mounts)
+  projects/        ← workspaces (`monoceros add-repo` clones in here)
   <name>.code-workspace
-  .gitignore       ← schließt /home/, /.monoceros/ und /data/ aus
+  .gitignore       ← excludes /home/, /.monoceros/ and /data/
 ```
 
-Jedes Monoceros-Feature deklariert in seiner `devcontainer-feature.json`
-ein Monoceros-spezifisches Feld:
+Each Monoceros feature declares a Monoceros-specific field in its
+`devcontainer-feature.json`:
 
 ```json
 "x-monoceros": {
@@ -47,9 +47,9 @@ ein Monoceros-spezifisches Feld:
 }
 ```
 
-Beim `monoceros apply` liest der Scaffold diese Liste aus, legt
-`<container-dir>/home/.claude/` an, und generiert einen Bind-Mount
-in der `devcontainer.json`:
+On `monoceros apply` the scaffold reads this list, creates
+`<container-dir>/home/.claude/`, and generates a bind mount in the
+`devcontainer.json`:
 
 ```json
 "mounts": [
@@ -57,14 +57,14 @@ in der `devcontainer.json`:
 ]
 ```
 
-Im Compose-Modus läuft derselbe Mount als Volume auf den
-`workspace`-Service in `compose.yaml`.
+In compose mode the same mount runs as a volume on the `workspace`
+service in `compose.yaml`.
 
-### Compose-Service-Daten unter `<container-dir>/data/`
+### Compose service data under `<container-dir>/data/`
 
-DB-Daten (Postgres, MySQL, Redis) sind ebenfalls Container-State
-und gehören damit unter `<container-dir>/`. Wir nutzen für sie
-**keine docker-named-Volumes** mehr, sondern Bind-Mounts:
+DB data (Postgres, MySQL, Redis) is container state too and therefore
+belongs under `<container-dir>/`. For it we no longer use
+**docker named volumes** but bind mounts:
 
 ```yaml
 services:
@@ -73,73 +73,68 @@ services:
       - ../data/postgres:/var/lib/postgresql
 ```
 
-Damit erscheinen `data/postgres/`, `data/mysql/` etc. direkt im
-Container-Verzeichnis auf der Host-Disk. Konsequenzen:
+This makes `data/postgres/`, `data/mysql/`, etc. appear directly in the
+container directory on the host disk. Consequences:
 
-- `ls`, `du`, `tar`, `cp -r` über `container/<name>/data/`
-  funktionieren ohne docker-Volume-Indirektion.
-- Das Backup, das `monoceros remove` schreibt, enthält die
-  DB-Daten automatisch (es ist eine plain Datei-Kopie).
-- Der Service-Eintrag im `SERVICE_CATALOG` deklariert nur den
-  Container-seitigen Mount-Pfad (`dataMount`); den Host-Pfad
-  generiert der Scaffold deterministisch aus dem Service-Namen.
+- `ls`, `du`, `tar`, `cp -r` over `container/<name>/data/` work without
+  docker-volume indirection.
+- The backup that `monoceros remove` writes automatically contains the
+  DB data (it's a plain file copy).
+- The service entry in the `SERVICE_CATALOG` only declares the
+  container-side mount path (`dataMount`); the scaffold generates the
+  host path deterministically from the service name.
 
-Linux-Caveat: Postgres läuft als uid 999 im Container. Auf
-Docker-Desktop (macOS / Windows) übernimmt das uid-Mapping die
-Filesharing-Schicht. Auf einem nackten Linux-Host kann der
-pre-created `data/postgres/`-Pfad als Host-User unbeschreibbar
-für den Container sein → wir dokumentieren das wenn ein Builder
-darüber stolpert.
+Linux caveat: Postgres runs as uid 999 inside the container. On Docker
+Desktop (macOS / Windows) the filesharing layer handles the uid
+mapping. On a bare Linux host the pre-created `data/postgres/` path,
+owned by the host user, may be unwritable for the container → we
+document this if a builder trips over it.
 
-## Konsequenzen
+## Consequences
 
-- **Host bleibt unberührt.** Es gibt keinen Bind-Mount mehr auf
-  Host-Home-Subpfade. Was im Container passiert, bleibt im Container.
-- **Login überlebt `monoceros apply`.** Re-Apply schreibt nur das
-  Scaffold (`.devcontainer/`, `.monoceros/`, Scaffold-Dateien),
-  `home/` wird nicht angefasst. Container-Rebuild → Mount fasst den
-  vorhandenen Login wieder auf.
-- **Pro Container ein eigener Login.** Sandbox und Klient-X können
-  unterschiedliche Atlassian-Mandanten / Anthropic-Accounts nutzen,
-  ohne sich zu beißen.
-- **Skills/Agents/CLAUDE.md sind nicht automatisch zwischen Containern
-  geteilt.** Builder kopiert sie explizit zwischen
-  `container/<a>/home/.claude/skills/` und `container/<b>/...`, oder
-  setzt selbst Symlinks. Bewusst — Magic-Sharing würde wieder
-  Cross-Contamination einführen, manuelles Kopieren ist explizit
-  und vorhersagbar.
-- **Secrets liegen auf der Host-Disk** unter
-  `container/<name>/home/<tool>/<credentials-file>`. Die `.gitignore`
-  am Container-Root schließt `/home/` aus, damit ein versehentliches
-  `git init` im Container-Root nichts committet. Builder muss sich
-  trotzdem bewusst sein, dass z.B. ein `tar` über den Container-Dir
-  Secrets mit einsammelt.
-- **Auto-Login für Tools mit non-interaktivem Login-Pfad.** Wenn die
-  Container-yml (oder `monoceros-config.yml → defaults.features`)
-  z.B. für das `atlassian`-Feature `instance`, `email` und `apiToken`
-  setzt, drop't das Feature-`install.sh` ein Skript unter
-  `/usr/local/share/monoceros/post-create.d/<feature>.sh` ab.
-  Scaffold's `post-create.sh` ruft alle dort liegenden Skripte beim
-  Container-Start auf. Idempotent: wenn die Auth-Datei unter
-  `home/.config/acli/...` schon valide ist, wird der Login
-  übersprungen.
-- **Verzeichnis-Ownership.** Scaffold erstellt die Subpaths in
-  `home/` vorab, sodass Docker nicht beim Container-Start eine
-  root-owned Mount-Source anlegt. Auf macOS handelt Docker Desktop
-  das UID-Mapping transparent; auf Linux muss die Host-UID mit der
-  Container-`node`-UID (1000) übereinstimmen, sonst gibt es
-  Permission-Probleme im Container — gleiches Caveat wie bei jedem
-  anderen Bind-Mount.
+- **The host stays untouched.** There is no longer any bind mount onto
+  host-home subpaths. What happens in the container stays in the
+  container.
+- **Login survives `monoceros apply`.** Re-apply writes only the
+  scaffold (`.devcontainer/`, `.monoceros/`, scaffold files); `home/`
+  is left alone. Container rebuild → the mount picks the existing login
+  back up.
+- **One login per container.** Sandbox and Client-X can use different
+  Atlassian tenants / Anthropic accounts without clashing.
+- **Skills/agents/CLAUDE.md are not automatically shared between
+  containers.** The builder copies them explicitly between
+  `container/<a>/home/.claude/skills/` and `container/<b>/...`, or sets
+  up symlinks themselves. Deliberate — magic sharing would reintroduce
+  cross-contamination; manual copying is explicit and predictable.
+- **Secrets live on the host disk** under
+  `container/<name>/home/<tool>/<credentials-file>`. The `.gitignore`
+  at the container root excludes `/home/` so an accidental `git init`
+  in the container root commits nothing. The builder still has to be
+  aware that, e.g., a `tar` over the container dir picks up secrets
+  too.
+- **Auto-login for tools with a non-interactive login path.** When the
+  container yml (or `monoceros-config.yml → defaults.features`) sets,
+  e.g., `instance`, `email` and `apiToken` for the `atlassian` feature,
+  the feature's `install.sh` drops a script under
+  `/usr/local/share/monoceros/post-create.d/<feature>.sh`. The
+  scaffold's `post-create.sh` runs all scripts found there on container
+  start. Idempotent: if the auth file under `home/.config/acli/...` is
+  already valid, the login is skipped.
+- **Directory ownership.** The scaffold pre-creates the subpaths in
+  `home/` so Docker doesn't create a root-owned mount source on
+  container start. On macOS Docker Desktop handles the UID mapping
+  transparently; on Linux the host UID must match the container's
+  `node` UID (1000), otherwise there are permission problems inside the
+  container — the same caveat as for any other bind mount.
 
-## Nicht-Ziele dieser ADR
+## Non-goals of this ADR
 
-- **Shared Skills zwischen Host und Containern.** Wer das will, macht
-  bewusst einen Symlink `container/<name>/home/.claude/skills →
-~/.claude/skills`. Monoceros bietet das nicht als Default an.
-- **Multi-Account-Git.** Heute nutzt jeder Container die
-  Host-Credential-Helper-Daten via `git credential fill`. Pro Remote
-  unterschiedliche Tokens braucht eine eigene Mechanik; offen
-  notiert im Backlog.
-- **`monoceros duplicate <a> <b>`.** Idee aus dem Designgespräch zu
-  diesem Modell: Container-Dir klonen, Projects/.devcontainer
-  resetten, Login bleibt erhalten. Vorgemerkt im Backlog.
+- **Shared skills between host and containers.** Whoever wants this
+  deliberately creates a symlink `container/<name>/home/.claude/skills →
+~/.claude/skills`. Monoceros does not offer this as a default.
+- **Multi-account git.** Today every container uses the host's
+  credential-helper data via `git credential fill`. Different tokens
+  per remote need their own mechanism; noted as open in the backlog.
+- **`monoceros duplicate <a> <b>`.** An idea from the design discussion
+  on this model: clone the container dir, reset projects/.devcontainer,
+  keep the login. Earmarked in the backlog.

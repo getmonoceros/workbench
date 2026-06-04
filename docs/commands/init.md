@@ -1,7 +1,7 @@
 # `monoceros init`
 
-Erzeugt eine Container-Konfig unter
-`$MONOCEROS_HOME/container-configs/<name>.yml`. Zwei Modi:
+Creates a container config at
+`$MONOCEROS_HOME/container-configs/<name>.yml`. Two modes:
 
 ```sh
 monoceros init <name>                                   # documented mode
@@ -10,42 +10,42 @@ monoceros init <name> --with-languages=… --with-features=… \
   --with-repos=… --with-ports=…                         # composed mode
 ```
 
-Ohne ein `--with-*`-Flag schreibt init eine dokumentierte Vorlage (alles
-auskommentiert). Sobald **eine** Kategorie gesetzt ist, wird eine
-sofort applybare yml komponiert.
+Without any `--with-*` flag, init writes a documented template (everything
+commented out). As soon as **one** category is set, it composes a yml that
+is immediately applyable.
 
-## Zweck
+## Purpose
 
-Eine Container-Konfig ist die Wahrheit eines Dev-Containers. Sie liegt
-**außerhalb** des Container-Verzeichnisses und kann frei editiert werden,
-bevor `monoceros apply <name>` daraus einen Container materialisiert.
-`monoceros init` ist der Erst-Setup-Schritt — er produziert die yml,
-nicht den Container.
+A container config is the source of truth for a dev container. It lives
+**outside** the container directory and can be freely edited before
+`monoceros apply <name>` materializes a container from it.
+`monoceros init` is the initial setup step — it produces the yml,
+not the container.
 
-## Kategorie-Flags
+## Category flags
 
-Statt eines Magic-Bags hat jede Kategorie ihr eigenes Flag. Alle nehmen
-eine Komma-Liste oder wiederholte Vorkommen:
+Instead of a magic bag, each category has its own flag. They all take
+a comma-separated list or repeated occurrences:
 
-| Flag                  | Inhalt                                                                                                                                                 |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--with-languages`    | Sprach-Runtimes, kuratiert. Optional `:version` (`java:17`). Katalog: `monoceros list-components`.                                                     |
-| `--with-features`     | Features. Katalog-Kurzname (`claude`, `atlassian/twg`) **oder** volle OCI-Ref (`ghcr.io/foo/bar:1`).                                                   |
-| `--with-services`     | Backing-Services. Kuratierter Name (`postgres`) → voller Block; beliebiges Image (`rustfs/rustfs:latest`) → name+image + auskommentiertes Grundgerüst. |
-| `--with-apt-packages` | Beliebige apt-Pakete (`openssl`, `make`). Kein Katalog.                                                                                                |
-| `--with-repos`        | Git-URLs, geklont nach `projects/` beim ersten Apply. Nur kanonische Hosts (github.com / gitlab.com / bitbucket.org).                                  |
-| `--with-ports`        | Interne Container-Ports → Traefik-Routing. Erster Eintrag = `<name>.localhost`.                                                                        |
+| Flag                  | Content                                                                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--with-languages`    | Language runtimes, curated. Optional `:version` (`java:17`). Catalog: `monoceros list-components`.                                        |
+| `--with-features`     | Features. Catalog short name (`claude`, `atlassian/twg`) **or** full OCI ref (`ghcr.io/foo/bar:1`).                                       |
+| `--with-services`     | Backing services. Curated name (`postgres`) → full block; arbitrary image (`rustfs/rustfs:latest`) → name+image + commented-out scaffold. |
+| `--with-apt-packages` | Arbitrary apt packages (`openssl`, `make`). No catalog.                                                                                   |
+| `--with-repos`        | Git URLs, cloned into `projects/` on first apply. Canonical hosts only (github.com / gitlab.com / bitbucket.org).                         |
+| `--with-ports`        | Internal container ports → Traefik routing. First entry = `<name>.localhost`.                                                             |
 
-Kuratiert vs. beliebig: bei **Features** und **Services** entscheidet
-der Katalog — ist der Name bekannt, wird er expandiert; sonst als
-OCI-Ref bzw. Image interpretiert. **Sprachen** sind kuratiert (es gibt
-nur eine Handvoll Runtimes).
+Curated vs. arbitrary: for **features** and **services**, the catalog
+decides — if the name is known, it is expanded; otherwise it is
+interpreted as an OCI ref or image. **Languages** are curated (there are
+only a handful of runtimes).
 
-## Documented mode — `monoceros init <name>` (ohne `--with-*`)
+## Documented mode — `monoceros init <name>` (without `--with-*`)
 
-Schreibt eine **dokumentierte Vorlage**: jede Katalog-Komponente
-erscheint auskommentiert mit Erklärung. Der Builder kommentiert die
-gewünschten Zeilen aus, fertig.
+Writes a **documented template**: every catalog component appears
+commented out, with an explanation. The builder uncomments the
+desired lines, done.
 
 ```sh
 $ monoceros init sandbox
@@ -54,9 +54,9 @@ $ monoceros init sandbox
 
 ## Composed mode
 
-Verknüpft die genannten Pieces zu einer sofort applybaren yml.
-Auth-Optionen aus den Feature-Manifesten (z. B. `apiKey`, `apiToken`)
-tauchen kommentiert unter den aktiven Options auf.
+Wires the named pieces into a yml that is immediately applyable.
+Auth options from the feature manifests (e.g. `apiKey`, `apiToken`)
+appear commented out beneath the active options.
 
 ```sh
 $ monoceros init sandbox \
@@ -67,7 +67,7 @@ $ monoceros init sandbox \
     --with-ports=3000
 ```
 
-Erzeugt (gekürzt):
+Produces (abridged):
 
 ```yaml
 schemaVersion: 1
@@ -80,10 +80,10 @@ aptPackages:
   - make
 
 services:
-  - name: postgres # kuratiert → voller Block
+  - name: postgres # curated → full block
     image: postgres:18
     port: 5432
-    env: # Werte als ${VAR}; Dev-Defaults landen in sandbox.env
+    env: # values as ${VAR}; dev defaults land in sandbox.env
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
@@ -96,7 +96,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-  - name: rustfs # Custom-Image → name+image + Grundgerüst
+  - name: rustfs # custom image → name+image + scaffold
     image: rustfs/rustfs:latest
     # port: 8080
     # env:
@@ -107,32 +107,32 @@ services:
 features:
   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
     options:
-      apiKey: ${CLAUDE_CODE_API_KEY} # leer in .env → OAuth-Login
+      apiKey: ${CLAUDE_CODE_API_KEY} # empty in .env → OAuth login
 
 routing:
   ports:
     - 3000
 ```
 
-## Die `<name>.env` daneben
+## The `<name>.env` alongside it
 
-`init` legt neben der yml eine gitignorete `<name>.env` an (Header +
-geseedete Keys) und trägt dort die `${VAR}`-Referenzen der yml ein:
+`init` creates a gitignored `<name>.env` next to the yml (header +
+seeded keys) and writes the yml's `${VAR}` references into it:
 
-- **Kuratierte Services** mit ihren Dev-Defaults
-  (`POSTGRES_USER=monoceros`, …) — der Container läuft sofort, ein Wert
-  wird bei Bedarf an genau einer Stelle geändert.
-- **Feature-Credentials** als leere `KEY=`-Zeilen — du füllst die Werte.
+- **Curated services** with their dev defaults
+  (`POSTGRES_USER=monoceros`, …) — the container runs right away, and a
+  value is changed in exactly one place when needed.
+- **Feature credentials** as empty `KEY=` lines — you fill in the values.
 
-So bleibt die yml teilbar (keine Geheimnisse darin); kopierst du einen
-Container, nimm `<name>.yml` **und** `<name>.env` mit und passe die
-`.env` an. Die Datei reist mit `remove`-Backups, `*.env` steht im
+This keeps the yml shareable (no secrets in it); when you copy a
+container, take `<name>.yml` **and** `<name>.env` along and adjust the
+`.env`. The file travels with `remove` backups, and `*.env` is listed in
 `container-configs/.gitignore`.
 
-### Git-Identität (wenn Repos dabei sind)
+### Git identity (when repos are included)
 
-Sind Repos im Spiel, schreibt init zusätzlich einen Container-`git.user`
-mit Platzhaltern und seedet die passenden (leeren) Keys:
+When repos are involved, init additionally writes a container `git.user`
+with placeholders and seeds the matching (empty) keys:
 
 ```yaml
 git:
@@ -146,42 +146,42 @@ GIT_USER_NAME=
 GIT_USER_EMAIL=
 ```
 
-init **fragt nicht** nach der Identität — du füllst die `.env`, oder
-lässt sie leer: beim Apply läuft dann die Kaskade hoch (monoceros-config
-→ Host-`git config --global` → einmaliger Prompt). Details:
-[add-repo.md → Commit-Identität](./add-repo.md#commit-identität-username--useremail).
+init does **not** ask for the identity — you fill in the `.env`, or
+leave it empty: at apply time the cascade then runs upward
+(monoceros-config → host `git config --global` → one-time prompt). Details:
+[add-repo.md → commit identity](./add-repo.md#commit-identität-username--useremail).
 
-## Versionen für Sprachen
+## Versions for languages
 
-Sprach-Einträge akzeptieren ein optionales `:version`-Suffix, das an das
-upstream-Devcontainer-Feature als `version`-Option durchgereicht wird:
+Language entries accept an optional `:version` suffix, which is passed
+through to the upstream devcontainer feature as the `version` option:
 
 ```sh
 monoceros init sandbox --with-languages=java:17,node:20,python:3.12
 ```
 
-Sonderfall `node`: ohne Version bleibt es ein Built-in der Basis-Image-
-Runtime (Node 22); `node:<version>` schaltet auf das upstream-Feature um.
+Special case `node`: without a version it stays a built-in of the base
+image runtime (Node 22); `node:<version>` switches to the upstream feature.
 
-## Sub-Komponenten (Features)
+## Sub-components (features)
 
-Manche Features haben Sub-Komponenten für partielle Installs:
+Some features have sub-components for partial installs:
 
-| Eintrag             | Effekt                          |
-| ------------------- | ------------------------------- |
-| `atlassian`         | Rovo Dev + twg (beide aktiv)    |
-| `atlassian/rovodev` | nur Rovo Dev (twg explizit aus) |
-| `atlassian/twg`     | nur twg (Rovo Dev explizit aus) |
+| Entry               | Effect                             |
+| ------------------- | ---------------------------------- |
+| `atlassian`         | Rovo Dev + twg (both active)       |
+| `atlassian/rovodev` | only Rovo Dev (twg explicitly off) |
+| `atlassian/twg`     | only twg (Rovo Dev explicitly off) |
 
-Kombinieren ist additiv:
-`--with-features=atlassian/rovodev,atlassian/twg` liefert dasselbe wie
-`--with-features=atlassian`. Beim Mergen kollidierender boolescher
-Optionen gewinnt `true`.
+Combining is additive:
+`--with-features=atlassian/rovodev,atlassian/twg` yields the same as
+`--with-features=atlassian`. When merging colliding boolean options,
+`true` wins.
 
-## Schreibweisen
+## Notations
 
-Alle Flags akzeptieren Komma-Liste, Wiederholung und Shell-getrennte
-Token mit Leerzeichen:
+All flags accept comma-separated lists, repetition, and shell-separated
+tokens with spaces:
 
 ```sh
 monoceros init sandbox --with-languages=java,node
@@ -189,26 +189,26 @@ monoceros init sandbox --with-languages=java --with-languages=node
 monoceros init sandbox --with-languages="java, node"
 ```
 
-## Verwandte Befehle
+## Related commands
 
-- [`monoceros list-components`](./list-components.md) — Katalog anzeigen
-- [`monoceros apply <name>`](./apply.md) — Konfig materialisieren
+- [`monoceros list-components`](./list-components.md) — show the catalog
+- [`monoceros apply <name>`](./apply.md) — materialize the config
 - [`monoceros add-service`](./add-service.md) / `add-feature` / … —
-  Konfig nachträglich mutieren (comment-preserving)
+  mutate the config afterward (comment-preserving)
 
-## Fail-Modi
+## Failure modes
 
-- **`Unknown language: <name>`** — kein bekannter Runtime. Bekannte
-  werden gelistet.
-- **`Unknown feature: <name>`** — kein Katalog-Kurzname und keine gültige
-  OCI-Ref. Nutze einen Kurznamen oder `ghcr.io/…/<name>:<tag>`.
-- **`Invalid apt package name`** — nur `[a-z0-9][a-z0-9.+-]*`.
+- **`Unknown language: <name>`** — not a known runtime. Known ones
+  are listed.
+- **`Unknown feature: <name>`** — not a catalog short name and not a valid
+  OCI ref. Use a short name or `ghcr.io/…/<name>:<tag>`.
+- **`Invalid apt package name`** — only `[a-z0-9][a-z0-9.+-]*`.
 - **`Two --with-services entries resolve to the service name '<x>'`** —
-  Namenskollision. Einen Service nach dem Init mit
-  `monoceros add-service <name> <image> --as=<other>` hinzufügen.
-- **`Config already exists: <path>`** — Ziel-Datei existiert. yml löschen
-  oder anderen `<name>` wählen.
-- **`Invalid config name`** — nur `[A-Za-z0-9._-]+`.
+  name collision. Add one service after init with
+  `monoceros add-service <name> <image> --as=<other>`.
+- **`Config already exists: <path>`** — target file exists. Delete the yml
+  or choose a different `<name>`.
+- **`Invalid config name`** — only `[A-Za-z0-9._-]+`.
 - **`--with-repos only supports github.com / gitlab.com / bitbucket.org`**
-  — nicht-kanonischer Host. Erst `monoceros init <name>`, dann
+  — non-canonical host. First `monoceros init <name>`, then
   `monoceros add-repo <name> <url> --provider=…`.

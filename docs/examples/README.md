@@ -1,31 +1,31 @@
-# Beispiele
+# Examples
 
-## Port-Probe-Server → eigenes Repo
+## Port probe server → separate repo
 
-Das frühere `serve-ports.mjs` (mehrere HTTP-Server in einem Prozess,
-JSON-Antwort pro Port — zum Verifizieren von Traefik-Hostname-Routing)
-ist in ein eigenes, öffentliches Fixture-Repo ausgelagert:
+The former `serve-ports.mjs` (several HTTP servers in one process,
+returning a JSON response per port — for verifying Traefik hostname
+routing) has been moved into its own public fixture repo:
 
 **[getmonoceros/monoceros-e2e-fixture](https://github.com/getmonoceros/monoceros-e2e-fixture)**
 
-Damit lässt es sich direkt als `--with-repo`-Ziel verwenden (statt
-„in den Container kopieren") und dient gleichzeitig als Fixture für
-die automatisierten End-to-End-Tests.
+That way it can be used directly as a `--with-repo` target (instead of
+"copying it into the container"), and at the same time serves as a
+fixture for the automated end-to-end tests.
 
-### Verwendung über die Workbench
+### Use via the workbench
 
 ```sh
-# Fixture beim Init in einen Container klonen + Ports vorbereiten:
-monoceros init demo --with=node --with-ports=3000,5173,6006,9229 \
+# Clone the fixture into a container at init time + prepare the ports:
+monoceros init demo --with-languages=node --with-ports=3000,5173,6006,9229 \
   --with-repo=https://github.com/getmonoceros/monoceros-e2e-fixture.git
 monoceros apply demo
 
-# Probe-Server im Container starten (landet unter
+# Start the probe server inside the container (ends up under
 # projects/monoceros-e2e-fixture/):
 monoceros run demo -- npm --prefix projects/monoceros-e2e-fixture run serve-ports
 ```
 
-### Traefik-Smoke vom Host
+### Traefik smoke test from the host
 
 ```sh
 monoceros port demo
@@ -39,5 +39,5 @@ curl -s http://demo.localhost/      | jq .port    # → 3000
 curl -s http://demo-5173.localhost/ | jq .port    # → 5173
 ```
 
-Vollständige Doku (Custom-Ports, Labels, erwartete Antwort) im
-[Fixture-Repo-README](https://github.com/getmonoceros/monoceros-e2e-fixture#readme).
+Full documentation (custom ports, labels, expected response) in the
+[fixture repo README](https://github.com/getmonoceros/monoceros-e2e-fixture#readme).

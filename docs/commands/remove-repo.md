@@ -1,7 +1,7 @@
 # `monoceros remove-repo`
 
-Inverse zu [`add-repo`](./add-repo.md). Entfernt einen Repo-Eintrag aus
-der Container-Konfig.
+The inverse of [`add-repo`](./add-repo.md). Removes a repo entry from
+the container config.
 
 ## Synopsis
 
@@ -9,35 +9,35 @@ der Container-Konfig.
 monoceros remove-repo <containername> <url-or-name> [--yes]
 ```
 
-Das `<url-or-name>`-Argument matched sowohl:
+The `<url-or-name>` argument matches either:
 
-- die volle URL des Eintrags (`git@github.com:foo/bar.git`,
-  `https://github.com/foo/bar.git`), als auch
-- den effektiven Folder-Namen unter `projects/` (`bar`, oder den
-  expliziten `--as=<…>` aus der yml).
+- the full URL of the entry (`git@github.com:foo/bar.git`,
+  `https://github.com/foo/bar.git`), or
+- the effective folder name under `projects/` (`bar`, or the explicit
+  `--as=<…>` from the yml).
 
-## Mechanik
+## Mechanics
 
-Der entsprechende Array-Eintrag in `repos:` wird aus der yml entfernt.
-Wenn nach dem Entfernen keine Repos mehr da sind, werden beim nächsten
-Apply auch die Git-Auth-Mounts (SSH-Agent-Forwarding,
-HTTPS-Credentials-Fetch) aus dem Devcontainer entfernt.
+The corresponding array entry in `repos:` is removed from the yml. If
+no repos remain after removal, the next apply also removes the Git auth
+mounts (SSH agent forwarding, HTTPS credential fetch) from the
+devcontainer.
 
-**Wichtig — der bestehende `projects/<folder>/`-Ordner wird NICHT
-gelöscht.** Lokale Edits sollen nicht durch ein `remove-repo` verloren
-gehen. Aufräumen ist manuell:
+**Important — the existing `projects/<folder>/` directory is NOT
+deleted.** Local edits should not be lost to a `remove-repo`. Cleanup
+is manual:
 
 ```sh
 monoceros remove-repo sandbox bar --yes
 monoceros apply sandbox
-rm -rf $MONOCEROS_HOME/container/sandbox/projects/bar   # manuell, wenn nicht mehr gebraucht
+rm -rf $MONOCEROS_HOME/container/sandbox/projects/bar   # manually, when no longer needed
 ```
 
-## Idempotenz
+## Idempotency
 
-URL/Name nicht in der Liste → no-change.
+URL/name not in the list → no change.
 
-## Verwandte Befehle
+## Related commands
 
-- `monoceros add-repo` — Inverse
-- `monoceros apply <name>` — Materialisierung
+- `monoceros add-repo` — the inverse
+- `monoceros apply <name>` — materialization

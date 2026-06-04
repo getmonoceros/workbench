@@ -1,20 +1,20 @@
-# Docker auf Linux einrichten
+# Setting up Docker on Linux
 
-> Draft, 2026-05-24. Ergänzt + verfeinert sich im Laufe von M5.
-> Ziel: alles was zum Docker-Setup für Monoceros relevant ist an
-> einer Stelle, statt verstreut in install.sh-Error-Boxen und
-> Backlog-Notizen.
+> Draft, 2026-05-24. Expanded and refined over the course of M5.
+> Goal: everything relevant to the Docker setup for Monoceros in
+> one place, instead of scattered across install.sh error boxes and
+> backlog notes.
 
-Diese Seite ist für Builder die **lokal auf einem Linux-Desktop**
-arbeiten (z.B. Ubuntu in einer VM, oder native Linux-Workstation).
+This page is for builders working **locally on a Linux desktop**
+(e.g. Ubuntu in a VM, or a native Linux workstation).
 
-Für macOS und Windows ist Docker Desktop der dokumentierte Pfad — da
-gibt es das hier beschriebene Gruppen-Drama nicht, weil Docker Desktop
-seine eigene Access-Mechanik mitbringt.
+For macOS and Windows, Docker Desktop is the documented path — none
+of the group drama described here applies there, because Docker
+Desktop brings its own access mechanism.
 
 ---
 
-## TL;DR — drei Befehle und fertig
+## TL;DR — three commands and you're done
 
 ```sh
 sudo -v
@@ -22,37 +22,37 @@ curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker $USER
 ```
 
-Das war's. **Kein `newgrp docker`**, kein Logout, kein Reboot.
-Monoceros' CLI erkennt den „User ist in `/etc/group`, aber meine
-Shell weiß nichts davon"-Zustand und fängt's intern ab (siehe
-[„Auto-Recovery in Monoceros"](#auto-recovery-in-monoceros) unten).
+That's it. **No `newgrp docker`**, no logout, no reboot.
+Monoceros' CLI detects the "the user is in `/etc/group`, but my
+shell doesn't know about it" state and handles it internally (see
+["Auto-recovery in Monoceros"](#auto-recovery-in-monoceros) below).
 
-Danach `curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash`
-und du bist durch.
+Then run `curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash`
+and you're through.
 
 ---
 
-## Was die drei Befehle bedeuten
+## What the three commands mean
 
 ### 1. `sudo -v`
 
-Cached das sudo-Passwort für die nächsten ~15 Minuten. Wirkt
-trivial, ist aber wichtig: ohne dieses Pre-Caching fragt sudo
-**später** im Block nach dem Passwort, und in einem Paste-Block
-würde der nachfolgende Befehl als „Tippeingabe für den Passwort-
-Prompt" interpretiert werden — er ginge silent unter.
+Caches the sudo password for the next ~15 minutes. It looks
+trivial, but it matters: without this pre-caching, sudo asks for
+the password **later** in the block, and in a pasted block the
+following command would be interpreted as "typed input for the
+password prompt" — it would silently get swallowed.
 
-Wenn du die Befehle einzeln tippst und brav auf jeden Prompt
-wartest, ist `sudo -v` redundant. In der Praxis kopiert man den
-Block, deshalb ist's drin.
+If you type the commands one by one and dutifully wait for each
+prompt, `sudo -v` is redundant. In practice you paste the block,
+which is why it's there.
 
 ### 2. `curl -fsSL https://get.docker.com | sudo sh`
 
-Installiert **Docker Engine im rootful Modus**. Das ist der von
-Monoceros unterstützte Pfad. Der Docker-Daemon läuft als root,
-managed von systemd, Socket unter `/run/docker.sock`.
+Installs **Docker Engine in rootful mode**. This is the path
+Monoceros supports. The Docker daemon runs as root, managed by
+systemd, with its socket at `/run/docker.sock`.
 
-Am Ende druckt das Skript einen Hinweis-Block:
+At the end the script prints a notice block:
 
 ```
 To run Docker as a non-privileged user, consider setting up
@@ -61,220 +61,219 @@ the Docker daemon in rootless mode for your user:
     dockerd-rootless-setuptool.sh install
 ```
 
-**Den Block ignorieren.** Das ist eine alternative
-Installations-Variante (rootless mode), kein Schritt der noch zu
-tun ist. Monoceros unterstützt rootless aktuell nicht (siehe
-[„Rootless Docker — nicht unterstützt"](#rootless-docker--nicht-unterstützt)).
+**Ignore that block.** It's an alternative installation variant
+(rootless mode), not a step that still needs doing. Monoceros does
+not currently support rootless (see
+["Rootless Docker — not supported"](#rootless-docker--nicht-unterstützt)).
 
 ### 3. `sudo usermod -aG docker $USER`
 
-Fügt deinen Benutzer in die `docker`-Gruppe ein. Der Daemon-Socket
-ist root-owned (Mode `0660`, Eigentümer `root:docker`); ohne
-Gruppen-Mitgliedschaft müsstest du jeden `docker`-Aufruf mit
-`sudo` machen — UX-Tod.
+Adds your user to the `docker` group. The daemon socket is
+root-owned (mode `0660`, owner `root:docker`); without group
+membership you'd have to prefix every `docker` call with `sudo` —
+a UX death.
 
-**Sicherheits-Kontext:** Wer in der docker-Gruppe ist, ist auf
-einer normalen Linux-Maschine **effektiv root**. Man kann einen
-Container mit `--privileged -v /:/host` starten und damit das
-gesamte Host-System modifizieren.
+**Security context:** anyone in the docker group is **effectively
+root** on a normal Linux machine. You can start a container with
+`--privileged -v /:/host` and thereby modify the entire host
+system.
 
-Auf einer **Single-User-Dev-VM** (dein Setup) ist das kein neues
-Sicherheits-Loch — du hast eh schon `sudo`-Rechte. Die docker-
-Gruppe ist nur ein bequemerer Weg dahin, kein zusätzlicher.
+On a **single-user dev VM** (your setup) this is not a new security
+hole — you already have `sudo` rights anyway. The docker group is
+just a more convenient way to get there, not an additional one.
 
-Auf einem **Multi-User-Server** wäre die Gruppe relevant: ein
-unprivilegierter Nutzer, dem du `docker` gibst, ist plötzlich
-root-äquivalent. Andere Bedrohungslage, anderes Setup — nicht
-Monoceros' Anwendungsfall.
+On a **multi-user server** the group would matter: an
+unprivileged user you grant `docker` to suddenly becomes
+root-equivalent. Different threat model, different setup — not
+Monoceros' use case.
 
 ---
 
-## Die GNOME-Session-Falle
+## The GNOME session trap
 
-Nach `sudo usermod -aG docker $USER` steht dein User in
-`/etc/group` — sofort, persistent. Was du tun **kannst**:
+After `sudo usermod -aG docker $USER`, your user is listed in
+`/etc/group` — immediately, persistently. What you **can** do:
 
 ```sh
 getent group docker
-# → docker:x:984:parallels   ✓ du bist drin
+# → docker:x:984:parallels   ✓ you're in
 ```
 
-Was du **nicht** kannst: `docker info` ausführen. Ergebnis:
+What you **can't** do: run `docker info`. Result:
 
 ```
 permission denied while trying to connect to the docker API
 at unix:///var/run/docker.sock
 ```
 
-**Warum?** Linux liest Gruppen-Memberships beim **Login** ein
-(über PAM) und legt sie als unveränderbare Liste in den Prozess-
-Credentials jedes neu gestarteten Prozesses ab. Es gibt **keinen
-Kernel-Syscall**, der einem laufenden Prozess von außen neue
-Gruppen-Memberships hinzufügen kann — das ist Absicht (sonst
-könnte ein böser Prozess sich selbst Privilegien geben).
+**Why?** Linux reads group memberships at **login** (via PAM) and
+stores them as an immutable list in the process credentials of
+every newly started process. There is **no kernel syscall** that
+can add new group memberships to a running process from the
+outside — and that's by design (otherwise a malicious process
+could grant itself privileges).
 
-Deine GNOME-Desktop-Session wurde gestartet **bevor** du `usermod`
-ausgeführt hast. Sie hat eine eingefrorene Gruppen-Liste **ohne**
-docker. Jeder Prozess, der von dieser Session abstammt — jedes
-Terminal-Fenster, jeder Editor, jeder Tab — erbt diese veraltete
-Liste.
+Your GNOME desktop session was started **before** you ran
+`usermod`. It has a frozen group list **without** docker. Every
+process descended from that session — every terminal window, every
+editor, every tab — inherits that stale list.
 
-### Was tatsächlich funktioniert
+### What actually works
 
-Drei Wege, um Docker-Zugriff in deine Shell zu kriegen, ohne neu
-zu booten:
+Three ways to get Docker access into your shell without rebooting:
 
-| Befehl                 | Wirkung                                                | Geltungsdauer        |
-| ---------------------- | ------------------------------------------------------ | -------------------- |
-| `newgrp docker`        | öffnet Sub-Shell mit docker-Gruppe primär gesetzt      | nur diese Sub-Shell  |
-| `sg docker -c "<cmd>"` | führt EINEN Befehl mit docker-Gruppe aus               | nur dieser Befehl    |
-| `su - $USER`           | startet frische PAM-Login-Session, fragt nach Passwort | nur dieser Sub-Shell |
+| Command                | Effect                                                  | Scope               |
+| ---------------------- | ------------------------------------------------------- | ------------------- |
+| `newgrp docker`        | opens a sub-shell with the docker group set as primary  | only this sub-shell |
+| `sg docker -c "<cmd>"` | runs ONE command with the docker group                  | only this command   |
+| `su - $USER`           | starts a fresh PAM login session, asks for the password | only this sub-shell |
 
-**Permanent für alle zukünftigen Terminals**: full GNOME-Session-
-Logout (nicht „Terminal schließen", sondern „aus der grafischen
-Session ausloggen"), dann wieder einloggen. Beim Login liest PAM
-`/etc/group` frisch ein.
+**Permanent for all future terminals**: a full GNOME session
+logout (not "close the terminal", but "log out of the graphical
+session"), then log back in. At login, PAM re-reads `/etc/group`
+fresh.
 
-Reboot tut's auch — ist aber overkill (Logout reicht).
+A reboot works too — but it's overkill (a logout is enough).
 
 ---
 
-## Auto-Recovery in Monoceros
+## Auto-recovery in Monoceros
 
-Hier kommt der Trick: **Monoceros wartet nicht darauf, dass du
-das Gruppen-Drama von Hand erledigst.**
+Here's the trick: **Monoceros doesn't wait for you to sort out the
+group drama by hand.**
 
-Beim Start jedes `monoceros …`-Aufrufs läuft ein Bootstrap
+At the start of every `monoceros …` call, a bootstrap runs
 (`packages/cli/src/devcontainer/docker-group-bootstrap.ts`):
 
-1. Probe: `docker info` — funktioniert?
-2. Wenn ja: nichts zu tun, weiter wie normal.
-3. Wenn nein **und** der User in `/etc/group`s docker-Zeile steht
-   (= `usermod` ist durchgelaufen, nur die Shell weiß's nicht):
-   monoceros re-exec'ed sich selbst via `sg docker -c "node …"`.
-   `sg` (shadow-utils) liest `/etc/group` frisch und führt den
-   Befehl mit aktiver docker-Gruppe aus.
-4. Wenn der User **nicht** in `/etc/group` steht: klare Fehler-
-   meldung mit `usermod`-Hinweis.
+1. Probe: `docker info` — does it work?
+2. If yes: nothing to do, carry on as normal.
+3. If no **and** the user is listed in `/etc/group`'s docker line
+   (= `usermod` ran, the shell just doesn't know yet): monoceros
+   re-execs itself via `sg docker -c "node …"`. `sg`
+   (shadow-utils) reads `/etc/group` fresh and runs the command
+   with the docker group active.
+4. If the user is **not** in `/etc/group`: a clear error message
+   with the `usermod` hint.
 
-Aus deiner Sicht: du tippst `monoceros apply hello`, es funktioniert.
-Bash sieht **einen** Befehl, History bekommt **eine** Zeile,
-↑-Pfeil funktioniert. Der `sg`-Sub-Prozess lebt nur so lange wie
-die monoceros-Ausführung, dann ist er weg.
+From your point of view: you type `monoceros apply hello` and it
+works. Bash sees **one** command, history gets **one** line, the
+↑ arrow works. The `sg` sub-process lives only as long as the
+monoceros execution, then it's gone.
 
-Overhead: zwei `spawnSync`-Aufrufe (`docker --version` +
-`docker info`) pro monoceros-Aufruf, zusammen ~50 ms.
+Overhead: two `spawnSync` calls (`docker --version` + `docker
+info`) per monoceros call, ~50 ms total.
 
-Nach dem nächsten natürlichen GNOME-Logout (Feierabend, Reboot,
-Update) propagiert sich die Gruppe ohnehin: `docker info` in der
-Probe klappt sofort, der `sg`-Re-Exec schaltet sich automatisch
-ab.
+After the next natural GNOME logout (end of day, reboot, update)
+the group propagates anyway: `docker info` in the probe succeeds
+immediately, and the `sg` re-exec automatically switches itself
+off.
 
-**Dasselbe in install.sh:** wenn du install.sh ausführst während
-deine Shell noch in der „usermod-aber-nicht-geladen"-Falle steckt,
-re-execed sich install.sh ebenfalls via `sg docker`. Das curl-bash-
-Setup ist tricky (stdin ist schon konsumiert), wir re-downloaden
-in einen tmpfile und exec'en `sg docker -c "bash $tmpfile"`.
+**Same thing in install.sh:** if you run install.sh while your
+shell is still stuck in the "usermod-but-not-loaded" trap,
+install.sh also re-execs itself via `sg docker`. The curl-bash
+setup is tricky (stdin is already consumed), so we re-download to
+a tmpfile and exec `sg docker -c "bash $tmpfile"`.
 
 ---
 
-## Rootless Docker — nicht unterstützt
+## Rootless Docker — not supported
 
-Docker hat einen rootless-Modus
-(`dockerd-rootless-setuptool.sh install`), in dem der Daemon als
-unprivilegierter User läuft. Klingt verlockend, ist für Monoceros'
-Devcontainer-Workflow aber problematisch:
+Docker has a rootless mode
+(`dockerd-rootless-setuptool.sh install`) in which the daemon runs
+as an unprivileged user. It sounds appealing, but it's problematic
+for Monoceros' devcontainer workflow:
 
-- **Bind-Mount-UID-Shift**: in rootless wird der Host-User auf
-  Container-UID 0 (root) gemappt; der Container-Default-User
-  (`node` mit UID 1000) auf Host-UID 65536+999. Files, die der
-  Container als `node` schreibt, landen auf dem Host mit einer
-  UID, die der Builder-User nicht editieren kann ohne sudo. Bricht
-  das „edit auf Host, run im Container"-Modell.
+- **Bind-mount UID shift**: in rootless, the host user is mapped to
+  container UID 0 (root); the container default user (`node` with
+  UID 1000) is mapped to host UID 65536+999. Files the container
+  writes as `node` land on the host with a UID the builder user
+  can't edit without sudo. This breaks the "edit on host, run in
+  container" model.
 
-- **`idmap`-Mount-Option, die das lösen würde**, existiert im
-  Linux-Kernel — aber **Docker exponiert sie nicht via `--mount`**
-  (verifiziert in [Docker bind-mounts docs](https://docs.docker.com/engine/storage/bind-mounts/)).
-  Podman tut's, Docker noch nicht. Ohne idmap kein sauberer Fix.
+- **The `idmap` mount option that would solve this** exists in the
+  Linux kernel — but **Docker doesn't expose it via `--mount`**
+  (verified in the [Docker bind-mounts docs](https://docs.docker.com/engine/storage/bind-mounts/)).
+  Podman does; Docker doesn't yet. Without idmap, there's no clean
+  fix.
 
-- **Workaround „Container als root laufen lassen"** würde
-  funktionieren (host-User mapped auf container-root, file-
-  ownership stimmt), bringt aber HOME-Pfad-Mismatches (Container-
-  Tools suchen Configs unter `/root/.x`, nicht `/home/node/.x`),
-  npm-as-root-Warnings und allgemeine Reibung.
+- **The "run the container as root" workaround** would work (host
+  user maps to container root, file ownership is correct), but it
+  brings HOME path mismatches (container tools look for configs
+  under `/root/.x`, not `/home/node/.x`), npm-as-root warnings, and
+  general friction.
 
-Wenn du rootless Docker explizit brauchst (Compliance, Multi-User-
-Server-Policy), ist Monoceros heute nicht das richtige Werkzeug.
-Falls echte Builder-Nachfrage kommt, kann das ein eigenes Feature
-oder eine ADR-Diskussion werden — aktuell ist's bewusst raus.
+If you explicitly need rootless Docker (compliance, multi-user
+server policy), Monoceros isn't the right tool today. If real
+builder demand shows up, this could become its own feature or an
+ADR discussion — for now it's deliberately out of scope.
 
-**Hinweis auf den Pfad zurück zu rootful**, falls du versehentlich
-rootless installiert hast:
+**A note on the path back to rootful**, in case you accidentally
+installed rootless:
 
 ```sh
-# Rootless deaktivieren
+# Disable rootless
 systemctl --user stop docker.service docker.socket 2>/dev/null || true
 dockerd-rootless-setuptool.sh uninstall
 rootlesskit rm -rf ~/.local/share/docker
 unset DOCKER_HOST DOCKER_CONTEXT
 
-# Rootful aktivieren (sollte vom get.docker.com-Install schon
-# da sein, sonst install.sh nochmal)
+# Enable rootful (should already be there from the get.docker.com
+# install, otherwise run install.sh again)
 sudo systemctl enable --now docker
 sudo usermod -aG docker $USER
 ```
 
-Plus: `~/.bashrc` / `~/.profile` auf `DOCKER_HOST` und
-`DOCKER_CONTEXT`-Reste checken — der rootless-Setup-Tool schreibt
-da gerne was rein, was sonst neue Shells weiter zum rootless-Socket
-schickt:
+Plus: check `~/.bashrc` / `~/.profile` for leftover `DOCKER_HOST`
+and `DOCKER_CONTEXT` entries — the rootless setup tool likes to
+write things there that otherwise keep sending new shells to the
+rootless socket:
 
 ```sh
 grep -E 'DOCKER_HOST|DOCKER_CONTEXT' ~/.bashrc ~/.profile 2>/dev/null
 ```
 
-Wenn da Treffer kommen → editieren oder per `sed -i` rausstreichen.
+If you get hits → edit them out or strip them with `sed -i`.
 
-Verifizieren:
+Verify:
 
 ```sh
-docker info | grep -i rootless   # → muss leer sein
+docker info | grep -i rootless   # → must be empty
 docker info | grep "Docker Root Dir"   # → /var/lib/docker
 ```
 
-Wenn `docker info` Permission-Denied wirft, hat deine aktuelle
-Shell die docker-Gruppe noch nicht geladen — einfach `newgrp docker`
-oder direkt `monoceros apply <name>` aufrufen, der Auto-Recovery-
-Bootstrap fängt's ab.
+If `docker info` throws permission-denied, your current shell
+hasn't loaded the docker group yet — just run `newgrp docker` or
+call `monoceros apply <name>` directly; the auto-recovery
+bootstrap will catch it.
 
 ---
 
-## Häufige Fehlermeldungen + Diagnose
+## Common error messages + diagnosis
 
 ### `permission denied while trying to connect to the docker API`
 
-Klassiker. Heißt: Docker-Daemon läuft, aber deine Shell hat keinen
-Zugriff. Mögliche Ursachen:
+A classic. It means: the Docker daemon is running, but your shell
+has no access. Possible causes:
 
-1. **User nicht in `docker`-Gruppe**: `getent group docker`. Wenn
-   du nicht in der letzten Spalte stehst, `sudo usermod -aG docker
-$USER` ausführen.
-2. **User ist in `docker`-Gruppe, aber Shell hat's nicht geladen**:
-   GNOME-Session-Falle. Monoceros-Auto-Recovery sollte das abfangen
-   — falls nicht: `newgrp docker` einmal manuell.
-3. **Docker rootless ohne dass du's wolltest**: `docker info | grep
--i rootless` → wenn da was steht, siehe Hinweis-Block oben.
+1. **User not in the `docker` group**: `getent group docker`. If
+   you're not in the last column, run `sudo usermod -aG docker
+$USER`.
+2. **User is in the `docker` group, but the shell hasn't loaded
+   it**: the GNOME session trap. Monoceros auto-recovery should
+   catch this — if not: `newgrp docker` once, manually.
+3. **Docker rootless without you wanting it**: `docker info | grep
+-i rootless` → if anything shows up, see the notice block above.
 
 ### `Cannot connect to the Docker daemon`
 
-Daemon läuft nicht. `sudo systemctl status docker` und ggf.
-`sudo systemctl start docker`. Wenn er nicht startet, im Journal
-suchen (`journalctl -u docker.service -n 50`).
+The daemon isn't running. `sudo systemctl status docker` and, if
+needed, `sudo systemctl start docker`. If it won't start, look in
+the journal (`journalctl -u docker.service -n 50`).
 
-### `getent group docker` ist leer
+### `getent group docker` is empty
 
-Die Gruppe wurde nicht angelegt. Ungewöhnlich nach
-`get.docker.com`. Manuell anlegen:
+The group wasn't created. Unusual after `get.docker.com`. Create
+it manually:
 
 ```sh
 sudo groupadd docker
@@ -283,12 +282,12 @@ sudo usermod -aG docker $USER
 
 ---
 
-## Referenzen
+## References
 
-- [ADR 0006 — HTTPS-only Repo-Auth](./adr/0006-https-only-repo-auth.md) —
-  warum SSH-Repo-Auth aus dem Scope ist (verwandtes Cross-Plattform-Thema)
+- [ADR 0006 — HTTPS-only repo auth](./adr/0006-https-only-repo-auth.md) —
+  why SSH repo auth is out of scope (a related cross-platform topic)
 - [Docker Engine Install — official docs](https://docs.docker.com/engine/install/)
 - [Docker Engine Post-Installation Steps](https://docs.docker.com/engine/install/linux-postinstall/) —
-  upstream-Doku der docker-Gruppen-Thematik
+  upstream docs on the docker group topic
 - [`packages/cli/src/devcontainer/docker-group-bootstrap.ts`](../packages/cli/src/devcontainer/docker-group-bootstrap.ts) —
-  Source des Auto-Recovery-Mechanismus
+  source of the auto-recovery mechanism

@@ -1,135 +1,131 @@
-# AI-Tools in Monoceros
+# AI Tools in Monoceros
 
-Monoceros bringt AI-Coding-Tools (Claude Code, Rovo Dev, GitHub
-Copilot etc.) als **Devcontainer-Features** in den Container. Pro
-Tool ein Feature, das install + Auth + Persistierung gebündelt
-mitbringt.
+Monoceros brings AI coding tools (Claude Code, Rovo Dev, GitHub
+Copilot, etc.) into the container as **devcontainer features**. One
+feature per tool, bundling install + auth + persistence.
 
-Dieses Dokument fasst zusammen:
+This document summarizes:
 
-- welche AI-Tool-Features heute live sind
-- wie das **Container-Briefing** (`AGENTS.md` / `CLAUDE.md` /
-  `.monoceros/commands.md`) den im Container laufenden AI-Tools sagt,
-  was tatsächlich verfügbar ist
-- was im selben Pattern später dazukommen soll
-- wie ein neues Tool-Feature gebaut wird
+- which AI tool features are live today
+- how the **container briefing** (`AGENTS.md` / `CLAUDE.md` /
+  `.monoceros/commands.md`) tells the AI tools running in the
+  container what is actually available
+- what is planned to follow in the same pattern
+- how to build a new tool feature
 
-Der konzeptionelle Überbau (warum Features, warum yml-Modell)
-steht in [concept.md](./concept.md). Der State-Modell-Hintergrund
-(warum jeder Container ein eigenes `home/` hat) in
+The conceptual framing (why features, why the yml model) lives in
+[concept.md](./concept.md). The state-model background (why each
+container has its own `home/`) is in
 [ADR 0003](./adr/0003-container-state-model.md).
 
-## Live heute
+## Live today
 
-| Feature       | Tool                                       | Auth-Mechanik                                                                        |
-| ------------- | ------------------------------------------ | ------------------------------------------------------------------------------------ |
-| `claude-code` | Anthropic Claude Code CLI                  | Subscription/OAuth via `claude` interaktiv, ODER `apiKey` für ANTHROPIC_API_KEY-Mode |
-| `atlassian`   | Atlassian-Stack: Rovo Dev (`acli`) + `twg` | `apiToken` für non-interactive Login bei beiden Sub-Tools                            |
-| `github-cli`  | GitHub CLI (`gh`)                          | `apiToken` als `GH_TOKEN` für transparente Auth                                      |
+| Feature       | Tool                                       | Auth mechanism                                                                      |
+| ------------- | ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `claude-code` | Anthropic Claude Code CLI                  | Subscription/OAuth via `claude` interactive, OR `apiKey` for ANTHROPIC_API_KEY mode |
+| `atlassian`   | Atlassian stack: Rovo Dev (`acli`) + `twg` | `apiToken` for non-interactive login on both sub-tools                              |
+| `github-cli`  | GitHub CLI (`gh`)                          | `apiToken` as `GH_TOKEN` for transparent auth                                       |
 
-Alle drei nutzen das gleiche Pattern:
+All three use the same pattern:
 
-1. **Feature-Install** lädt das Tool ins Container-Image
-   (npm/apt/curl je nach Tool).
-2. **Persistente Home-Subpfade** (`~/.claude`, `~/.config/acli`,
-   `~/.rovodev`, `~/.config/gh`, `~/.agents`) werden über
-   `x-monoceros.persistentHomePaths` deklariert und bind-gemountet
-   aus `<container-dir>/home/<subpath>`. Logins, Session-History,
-   Skills überleben damit jedes `monoceros apply`.
-3. **Auth-Optionen** kommen entweder pro Container in der yml
-   (`features[].options.apiToken: …`) oder global einmalig in
-   `monoceros-config.yml` unter
-   `defaults.features.<ref>.<option>`. Per-Container gewinnt beim
-   Merge.
-4. **Post-Create-Hook** macht den eigentlichen Login. Idempotent
-   für Tools die wir kontrollieren; bei Token-Rotation in der yml
-   propagiert die Änderung automatisch beim nächsten Apply.
+1. **Feature install** pulls the tool into the container image
+   (npm/apt/curl depending on the tool).
+2. **Persistent home subpaths** (`~/.claude`, `~/.config/acli`,
+   `~/.rovodev`, `~/.config/gh`, `~/.agents`) are declared via
+   `x-monoceros.persistentHomePaths` and bind-mounted from
+   `<container-dir>/home/<subpath>`. Logins, session history, and
+   skills survive every `monoceros apply`.
+3. **Auth options** come either per container in the yml
+   (`features[].options.apiToken: …`) or globally, once, in
+   `monoceros-config.yml` under
+   `defaults.features.<ref>.<option>`. Per-container wins on the
+   merge.
+4. **Post-create hook** does the actual login. Idempotent for tools
+   we control; on token rotation in the yml, the change propagates
+   automatically on the next apply.
 
-## Auth-Token im Klartext: was geschieht damit?
+## Auth tokens in plaintext: what happens to them?
 
-- **Während des Builds** werden Tokens via Feature-Options als
-  Build-Args an `docker build` durchgereicht. Der Build-Output
-  läuft durch unseren [Secret-Masker](../packages/cli/src/util/mask-secrets.ts),
-  der bekannte Token-Shapes (`ATATT…`, `ghp_…`, `sk-ant-…`, …)
-  mit Prefix + letzten 6 Zeichen darstellt. So bleibt der Token
-  identifizierbar, aber nicht ablesbar.
-- **Auf der Disk** liegen Tokens als Klartext in der Container-yml
-  und ggf. in der `monoceros-config.yml`. Diese Dateien sind
-  bewusst nicht in Git (`.gitignored` per Default). Wer Secrets
-  weiter absichern will: später optional `env:`-Indirection oder
-  Secret-Manager-Hook (siehe Backlog → „Vorgemerkt für später").
+- **During the build**, tokens are passed through to `docker build`
+  as build args via feature options. The build output runs through
+  our [secret masker](../packages/cli/src/util/mask-secrets.ts),
+  which renders known token shapes (`ATATT…`, `ghp_…`, `sk-ant-…`,
+  …) as prefix + last 6 characters. The token stays identifiable but
+  not readable.
+- **On disk**, tokens live in plaintext in the container yml and
+  possibly in `monoceros-config.yml`. These files are deliberately
+  kept out of Git (`.gitignored` by default). If you want to harden
+  secrets further: optional `env:` indirection or a secret-manager
+  hook may come later (see backlog → "Planned for later").
 
-## Container-Briefing — `AGENTS.md` / `CLAUDE.md`
+## Container briefing — `AGENTS.md` / `CLAUDE.md`
 
-Ein AI-Tool, das im Container läuft, weiß out-of-the-box nicht, was
-für ein Stack hier materialisiert wurde. Eine Java-Werkbank riskiert,
-dass Claude ein Node-Backend vorschlägt — schlicht weil Claude nicht
-weiß, dass kein Node da ist. Beim `apply` schreibt Monoceros deswegen
-drei Dateien an den Container-Workspace-Root, die das Briefing
-übernehmen.
+An AI tool running in the container does not know out of the box what
+stack was materialized here. A Java workbench risks Claude proposing
+a Node backend — simply because Claude doesn't know there's no Node.
+On `apply`, Monoceros therefore writes three files to the container
+workspace root that handle the briefing.
 
-### Was geschrieben wird
+### What gets written
 
 ```
 <container-dir>/
-├── AGENTS.md               ← Stack-Briefing + Verhaltens-Regeln
-├── CLAUDE.md               ← @AGENTS.md (Import-Stub)
+├── AGENTS.md               ← stack briefing + behavior rules
+├── CLAUDE.md               ← @AGENTS.md (import stub)
 └── .monoceros/
-    └── commands.md         ← komplette CLI-Referenz
+    └── commands.md         ← complete CLI reference
 ```
 
-- **`AGENTS.md`** — der eigentliche Briefing-Inhalt. Beschreibt:
-  - welche Sprachen, Services, Tools, Repos und Ports im Container
-    sind (aus der yml abgeleitet);
-  - das Monoceros-Modell selbst (deklarativ, container-isoliert,
-    Host-Erweiterung via `monoceros add-*` + `apply`);
-  - wie das AI-Tool auf fehlende Capabilities reagieren soll
-    (Vorschlag des passenden Host-Befehls als copy-paste-fähiger
-    Code-Block).
-- **`CLAUDE.md`** — der `@AGENTS.md`-Import zwischen Markern. Claude
-  Codes dokumentierter Mechanismus für AGENTS.md-Koexistenz. OpenCode
-  liest beide Dateien direkt und käme auch ohne diesen Stub aus. Die
-  Datei trägt Marker, damit Claude-Code-spezifische Regeln darunter
-  (die in der multi-tool `AGENTS.md` keinen Sinn ergeben würden)
-  beim Re-Apply nicht verloren gehen — siehe „User-Notizen überleben
-  Re-Apply" unten.
-- **`.monoceros/commands.md`** — Auto-generiert aus den citty-defs in
-  `packages/cli/src/commands/*.ts`. Eine H3 pro Subcommand mit
-  Signatur, Argumenten und Flags. `AGENTS.md` importiert sie via
-  `@.monoceros/commands.md` — so kann das AI-Tool die exakte
-  Befehls-Syntax nachschlagen, bevor es einen Vorschlag macht.
+- **`AGENTS.md`** — the actual briefing content. It describes:
+  - which languages, services, tools, repos, and ports are in the
+    container (derived from the yml);
+  - the Monoceros model itself (declarative, container-isolated,
+    host extension via `monoceros add-*` + `apply`);
+  - how the AI tool should react to missing capabilities (propose
+    the matching host command as a copy-pasteable code block).
+- **`CLAUDE.md`** — the `@AGENTS.md` import between markers. Claude
+  Code's documented mechanism for AGENTS.md coexistence. OpenCode
+  reads both files directly and would work without this stub. The
+  file carries markers so that Claude-Code-specific rules below it
+  (which would make no sense in the multi-tool `AGENTS.md`) are not
+  lost on re-apply — see "User notes survive re-apply" below.
+- **`.monoceros/commands.md`** — auto-generated from the citty defs in
+  `packages/cli/src/commands/*.ts`. One H3 per subcommand with
+  signature, arguments, and flags. `AGENTS.md` imports it via
+  `@.monoceros/commands.md` — so the AI tool can look up the exact
+  command syntax before making a suggestion.
 
-### Wie das Briefing zum AI-Tool kommt
+### How the briefing reaches the AI tool
 
-Die Dateien liegen **eine Ebene über** den Projekten. Claude Code,
-OpenCode und andere Tools, die hierarchisch von ihrem cwd nach oben
-walken, finden sie automatisch — egal von welchem `projects/<repo>/`
-aus die Session gestartet wird.
+The files live **one level above** the projects. Claude Code,
+OpenCode, and other tools that walk hierarchically upward from their
+cwd find them automatically — no matter which `projects/<repo>/` the
+session was started from.
 
-> **Beim ersten Claude-Start in einem Projekt:** Claude zeigt einen
-> Approval-Dialog "Allow external CLAUDE.md file imports?" — weil
-> `AGENTS.md` und `.monoceros/commands.md` außerhalb des
-> Projekt-Verzeichnisses liegen. **Akzeptieren ist sicher und nötig**:
-> die Dateien sind Monoceros-generiert, nicht von Dritten. Decline
-> ist **permanent** für dieses Projekt (kein Re-Prompt) — das
-> Briefing bleibt dann unsichtbar.
+> **On the first Claude start in a project:** Claude shows an
+> approval dialog "Allow external CLAUDE.md file imports?" — because
+> `AGENTS.md` and `.monoceros/commands.md` live outside the project
+> directory. **Accepting is safe and necessary**: the files are
+> Monoceros-generated, not from third parties. Declining is
+> **permanent** for this project (no re-prompt) — the briefing then
+> stays invisible.
 >
-> Pro Projekt einmal Approve. Bei drei Projekten unter `projects/`
-> heißt das drei einmalige Prompts.
+> Approve once per project. With three projects under `projects/`,
+> that means three one-time prompts.
 
-Codex (begrenzt durch git-root nach unten), Gemini CLI ("trusted
-root", noch ungeklärt) und GitHub Copilot (workspace-root only, in
-Multi-Root buggy) sehen das Briefing **heute nicht** — sie sind
-bewusst aufgeschoben.
+Codex (bounded by git-root downward), Gemini CLI ("trusted root",
+still unresolved), and GitHub Copilot (workspace-root only, buggy in
+multi-root) do **not** see the briefing **today** — they are
+deliberately deferred.
 
-### User-Notizen überleben Re-Apply
+### User notes survive re-apply
 
-`AGENTS.md` ist von HTML-Kommentar-Markern umgeben:
+`AGENTS.md` is surrounded by HTML-comment markers:
 
 ```markdown
 <!-- monoceros:begin -->
 
-… Monoceros-generierter Inhalt …
+… Monoceros-generated content …
 
 <!-- monoceros:end -->
 
@@ -138,38 +134,37 @@ bewusst aufgeschoben.
 (Anything outside the markers is yours. Apply preserves it.)
 ```
 
-Jedes `monoceros apply` ersetzt **nur** den Inhalt zwischen den
-Markern. Was du außerhalb schreibst (eigene Coding-Standards,
-Projekt-spezifische Erinnerungen), bleibt erhalten. Das gilt für
-**`AGENTS.md` und `CLAUDE.md`** — beide tragen Marker. Tool-übergreifende
-Inhalte gehören nach `AGENTS.md`; nur strikt Claude-Code-spezifische
-Sachen (die andere Tools nicht interpretieren) gehören in
-`CLAUDE.md`.
+Every `monoceros apply` replaces **only** the content between the
+markers. Whatever you write outside (your own coding standards,
+project-specific reminders) is preserved. This applies to **both
+`AGENTS.md` and `CLAUDE.md`** — both carry markers. Cross-tool
+content belongs in `AGENTS.md`; only strictly Claude-Code-specific
+things (that other tools won't interpret) belong in `CLAUDE.md`.
 
-`.monoceros/commands.md` ist 100% Monoceros-eigen und wird immer
-komplett neu geschrieben — kein Ort für User-Notizen.
+`.monoceros/commands.md` is 100% Monoceros-owned and is always
+rewritten in full — not a place for user notes.
 
-Alle drei Dateien sind in der container-root `.gitignore` —
-falls dort jemals `git init` läuft, landen sie nicht im Repo.
+All three files are in the container-root `.gitignore` — so if
+`git init` ever runs there, they don't end up in the repo.
 
-### Keine Credentials im Briefing
+### No credentials in the briefing
 
-Die Datei enthält bewusst **keine** Service-Credentials, weder
-Dev-Defaults aus dem Catalog noch Werte aus der `.env`. Das Briefing
-weist das AI-Tool an, den User in der laufenden Session zu fragen
-wenn es Credentials braucht, und sie nicht in versioniertes Material
-zu schreiben.
+The file deliberately contains **no** service credentials, neither
+dev defaults from the catalog nor values from the `.env`. The
+briefing instructs the AI tool to ask the user during the running
+session when it needs credentials, and not to write them into
+versioned material.
 
-Hintergrund: `AGENTS.md` wird zwar wie die `.env` als local-only
-behandelt und ist gitignored — aber sie ist eine zusätzliche
-Oberfläche (Screenshot, Paste, Share mit anderen AI-Tools). Die
-"keine Credentials"-Linie macht diese Oberfläche unkritisch.
+Background: `AGENTS.md` is treated as local-only like the `.env` and
+is gitignored — but it's an additional surface (screenshot, paste,
+share with other AI tools). The "no credentials" line keeps that
+surface low-risk.
 
-### Feature-Briefings manifest-gesteuert
+### Manifest-driven feature briefings
 
-Jedes Feature kann im eigenen `devcontainer-feature.json` deklarieren,
-mit welchen Zeilen es in der "Installed tools"-Sektion der `AGENTS.md`
-auftaucht. Bedingungen erlaubt:
+Each feature can declare, in its own `devcontainer-feature.json`,
+which lines it contributes to the "Installed tools" section of
+`AGENTS.md`. Conditions are allowed:
 
 ```json
 "x-monoceros": {
@@ -188,54 +183,53 @@ auftaucht. Bedingungen erlaubt:
 }
 ```
 
-- **`text`** — der Bullet-Inhalt (ohne `- ` davor). Markdown,
-  Inline-Code erlaubt.
-- **`whenOption`** — optional. Wenn gesetzt, wird die Zeile nur
-  emittiert, wenn die genannte Feature-Option zur Apply-Zeit
-  **truthy** ist (Boolean `true`, nicht-leerer String, Zahl ≠ 0).
-  Ohne `whenOption` ist die Zeile unbedingt.
-- Defaults werden aus den Feature-Manifest-Options gezogen; User-
-  Werte in der Container-yml gewinnen.
+- **`text`** — the bullet content (without the leading `- `).
+  Markdown and inline code are allowed.
+- **`whenOption`** — optional. When set, the line is only emitted if
+  the named feature option is **truthy** at apply time (boolean
+  `true`, non-empty string, number ≠ 0). Without `whenOption`, the
+  line is unconditional.
+- Defaults are pulled from the feature manifest options; user values
+  in the container yml win.
 
-Konsequenzen:
+Consequences:
 
-- Ein Feature mit zwei Sub-Tools (z. B. `atlassian` mit `rovodev` +
-  `twg`) hat zwei Zeilen, eine pro Sub-Tool. Wird eines abgeschaltet
-  (`twg: false`), verschwindet auch nur diese Zeile.
-- Wenn ein Feature ein `briefing`-Block deklariert aber **keine**
-  Zeile matched (alle `whenOption` sind falsy), wird das Feature
-  **stillschweigend weggelassen** — kein "Tool installiert" wenn
-  keins läuft.
-- Ohne `x-monoceros.briefing` fällt der Generator auf den
-  `displayName` aus dem Component-Katalog
-  (`packages/cli/templates/components/<name>.yml`) zurück, oder bei
-  Dritt-Features auf den letzten Pfad-Segment-Namen der OCI-Ref.
+- A feature with two sub-tools (e.g. `atlassian` with `rovodev` +
+  `twg`) has two lines, one per sub-tool. Disable one
+  (`twg: false`) and only that line disappears.
+- If a feature declares a `briefing` block but **no** line matches
+  (all `whenOption` are falsy), the feature is **silently omitted** —
+  no "tool installed" when none is running.
+- Without `x-monoceros.briefing`, the generator falls back to the
+  `displayName` from the component catalog
+  (`packages/cli/templates/components/<name>.yml`), or for
+  third-party features to the last path-segment name of the OCI ref.
 
-### Hintergrund
+### Background
 
-Design-Entscheid und Trade-offs:
-[ADR 0014 — AI-Tool-Briefing im Container-Workspace-Root](./adr/0014-ai-tool-briefing-im-workspace-root.md).
-Implementierung lebt unter `packages/cli/src/briefing/`.
+Design decision and trade-offs:
+[ADR 0014 — AI tool briefing in the container workspace root](./adr/0014-ai-tool-briefing-im-workspace-root.md).
+The implementation lives under `packages/cli/src/briefing/`.
 
-## Was später dazukommen soll
+## What's planned to follow
 
-Geplant:
+Planned:
 
-- **OpenCode** — sst's Open-Source-Multi-Modell-CLI
+- **OpenCode** — sst's open-source multi-model CLI
 - **Codex** — OpenAI Codex CLI
 - **GitHub Copilot CLI** — `gh extension install github/gh-copilot`
-- **Aider** — Python-basiertes Pair-Programming-CLI
+- **Aider** — Python-based pair-programming CLI
 
-Jedes wird im gleichen Muster gebaut wie `claude-code`:
-Install via package manager → `persistentHomePaths` für Auth-Dir
-→ optional `optionHints` im Manifest für die UX-Auth-Anzeige im
-`init`-Output.
+Each is built in the same pattern as `claude-code`: install via
+package manager → `persistentHomePaths` for the auth dir → optional
+`optionHints` in the manifest for the UX auth display in the `init`
+output.
 
-## Wie kommt ein neues Tool-Feature dazu?
+## How does a new tool feature get added?
 
-Kochrezept, am Beispiel eines fiktiven Tools `foo`:
+A recipe, using a fictional tool `foo` as the example:
 
-### 1. Feature-Verzeichnis
+### 1. Feature directory
 
 ```
 images/features/foo/
@@ -276,32 +270,33 @@ images/features/foo/
 }
 ```
 
-Wichtig:
+Important:
 
-- `x-monoceros.persistentHomePaths` — welche Subdirs unter
-  `/home/node/` der Container-Lifecycle persistent halten muss.
-- `x-monoceros.optionHints` — welche Options als kommentierte
-  Hint-Zeilen unter dem `options:`-Block in der generierten yml
-  auftauchen sollen. Standardmäßig die Auth-relevanten.
-- `x-monoceros.briefing.lines` — die Bullets, die in `AGENTS.md`
-  unter "Installed tools" auftauchen. Eine Zeile für ein simples
-  Tool; mehrere mit `whenOption`-Gating wenn das Feature mehrere
-  Sub-Tools über Bool-Options ein-/ausschaltet (siehe
-  [Container-Briefing](#container-briefing--agentsmd--claudemd)
-  weiter oben).
+- `x-monoceros.persistentHomePaths` — which subdirs under
+  `/home/node/` the container lifecycle must keep persistent.
+- `x-monoceros.optionHints` — which options should appear as
+  commented hint lines under the `options:` block in the generated
+  yml. By default, the auth-relevant ones.
+- `x-monoceros.briefing.lines` — the bullets that appear in
+  `AGENTS.md` under "Installed tools". One line for a simple tool;
+  multiple with `whenOption` gating when the feature toggles several
+  sub-tools on/off via boolean options (see
+  [container briefing](#container-briefing--agentsmd--claudemd)
+  above).
 
 ### 3. `install.sh`
 
-Läuft als root im Container während `docker build`. Lädt das
-Tool, validiert Install, dropt optional einen Post-Create-Hook
-unter `/usr/local/share/monoceros/post-create.d/foo.sh` ab — den
-ruft Monoceros' generierter `post-create.sh` beim Container-
-Start auf, mit den Bind-Mounts unter `/home/node/` schon aktiv.
+Runs as root in the container during `docker build`. Downloads the
+tool, validates the install, and optionally drops a post-create hook
+at `/usr/local/share/monoceros/post-create.d/foo.sh` — which
+Monoceros' generated `post-create.sh` calls on container start, with
+the bind mounts under `/home/node/` already active.
 
-### 4. Komponenten-Eintrag
+### 4. Component entry
 
-Optional, aber empfohlen — damit `monoceros init … --with-features=foo`
-funktioniert (und der Kurzname in `list-components` auftaucht):
+Optional but recommended — so that
+`monoceros init … --with-features=foo` works (and the short name
+shows up in `list-components`):
 
 ```
 templates/components/foo.yml
@@ -320,19 +315,17 @@ contributes:
 
 ### 5. Docs
 
-In dieser Datei einen Eintrag in der „Live heute"-Tabelle
-ergänzen, plus eine kurze Beschreibung wenn das Feature Spezial-
-Verhalten hat (z.B. wie sich `atlassian` mit Rovo-Dev+twg in
-einem Feature bündelt).
+Add an entry to the "Live today" table in this file, plus a short
+description if the feature has special behavior (e.g. how `atlassian`
+bundles Rovo Dev + twg into a single feature).
 
-## Verwandte Dokumente
+## Related documents
 
-- [concept.md](./concept.md) — der Überbau
+- [concept.md](./concept.md) — the framing
 - [adr/0003-container-state-model.md](./adr/0003-container-state-model.md)
-  — warum jeder Container ein eigenes `home/` hat
-- [commands/init.md](./commands/init.md) — `--with` und
-  Versions-Suffix
-- [commands/apply.md](./commands/apply.md) — was beim Apply
-  passiert
+  — why each container has its own `home/`
+- [commands/init.md](./commands/init.md) — `--with-*` flags and
+  version suffix
+- [commands/apply.md](./commands/apply.md) — what happens on apply
 - [images/features/README.md](../images/features/README.md) —
-  Workbench-interne Konventionen für Feature-Autoren
+  workbench-internal conventions for feature authors

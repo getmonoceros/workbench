@@ -1,7 +1,7 @@
 # `monoceros remove-language`
 
-Inverse zu [`add-language`](../README.md#hinzufügen). Entfernt einen
-Sprach-Eintrag aus der Container-Konfig.
+The inverse of [`add-language`](../README.md#hinzufügen). Removes a
+language entry from the container config.
 
 ## Synopsis
 
@@ -9,29 +9,29 @@ Sprach-Eintrag aus der Container-Konfig.
 monoceros remove-language <containername> <lang> [--yes]
 ```
 
-## Mechanik
+## Mechanics
 
-Editiert die yml unter `$MONOCEROS_HOME/container-configs/<name>.yml`:
-der Eintrag in `languages:` wird entfernt; wird die Liste leer, fällt
-das Feld komplett raus. Comment-preserving — andere Einträge und
-Kommentare bleiben unverändert.
+Edits the yml at `$MONOCEROS_HOME/container-configs/<name>.yml`: the
+entry in `languages:` is removed; if the list becomes empty, the field
+is dropped entirely. Comment-preserving — other entries and comments
+remain unchanged.
 
-Nach dem Aufruf muss `monoceros apply <containername>` laufen, damit
-der Container die Änderung übernimmt.
+After the call, `monoceros apply <containername>` must run so that the
+container picks up the change.
 
-## Idempotenz
+## Idempotency
 
-`remove-language sandbox python` zweimal in Folge → zweiter Aufruf ist
-no-change.
+`remove-language sandbox python` twice in a row → the second call is a
+no-op.
 
-## Beispiel
+## Example
 
 ```sh
 monoceros remove-language sandbox python --yes
 monoceros apply sandbox
 ```
 
-## Verwandte Befehle
+## Related commands
 
-- `monoceros add-language` — Inverse
-- `monoceros apply <name>` — Materialisierung nach der Edit
+- `monoceros add-language` — the inverse
+- `monoceros apply <name>` — materialization after the edit

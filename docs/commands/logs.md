@@ -1,41 +1,41 @@
 # `monoceros logs`
 
-Tailt die Compose-Logs des benannten Containers. Default: alle
-Services, mit `-f` (follow). `--no-follow` für einen einmaligen
-Dump.
+Tails the Compose logs of the named container. Default: all
+services, with `-f` (follow). Use `--no-follow` for a one-shot
+dump.
 
 ```sh
 monoceros logs <name> [--service <svc>] [--no-follow]
 ```
 
-## Zweck
+## Purpose
 
-Wenn etwas im Container schiefläuft — `monoceros logs sandbox`
-ist der direkte Weg zu den `docker compose logs`. Kein Wechsel
-in die Docker-CLI nötig.
+When something goes wrong inside the container — `monoceros logs sandbox`
+is the direct path to `docker compose logs`. No need to switch
+to the Docker CLI.
 
-## Mechanik
+## Mechanics
 
-Ein `docker compose logs -f` mit dem Compose-File und
-Project-Name des Containers. Standardmäßig follow-Mode (live),
-mit `--no-follow` einmaliger Dump und exit.
+A `docker compose logs -f` using the container's Compose file and
+project name. Follow mode (live) by default, or with `--no-follow`
+a one-shot dump and exit.
 
-## Argumente
+## Arguments
 
-| Argument | Bedeutung       |
+| Argument | Meaning         |
 | -------- | --------------- |
-| `<name>` | Container-Name. |
+| `<name>` | Container name. |
 
-## Optionen
+## Options
 
-| Option            | Bedeutung                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------ |
-| `--service <svc>` | Nur Logs eines Compose-Services (z.B. `--service postgres`). Default: alle Services.       |
-| `--no-follow`     | Einmaliger Dump statt `tail -f`-Verhalten. Useful in Scripts oder für eine schnelle Sicht. |
+| Option            | Meaning                                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `--service <svc>` | Logs of a single Compose service only (e.g. `--service postgres`). Default: all services. |
+| `--no-follow`     | One-shot dump instead of `tail -f` behavior. Useful in scripts or for a quick look.       |
 
-## Beispiele
+## Examples
 
-Live-Tail aller Services:
+Live-tail all services:
 
 ```sh
 $ monoceros logs sandbox
@@ -45,22 +45,22 @@ sandbox_devcontainer-workspace-1  | (workspace ready)
 ^C
 ```
 
-Nur Postgres, ohne follow:
+Postgres only, without follow:
 
 ```sh
 $ monoceros logs sandbox --service postgres --no-follow
 ```
 
-## Verwandte Befehle
+## Related commands
 
-- [`monoceros status <name>`](./status.md) — welche Services laufen
-  überhaupt
+- [`monoceros status <name>`](./status.md) — which services are
+  actually running
 - [`monoceros start <name>`](./start.md) / [`stop`](./stop.md) —
-  Lifecycle
+  lifecycle
 
-## Fail-Modi
+## Failure modes
 
-- **`No compose.yaml at <path>`** — Image-Mode-Container. Nutze
-  `docker logs <container-id>` für den Image-Mode-Equivalent.
-- **Leerer Output** — der Service ist nie gestartet, oder
-  Compose-Project existiert nicht (siehe `status`).
+- **`No compose.yaml at <path>`** — image-mode container. Use
+  `docker logs <container-id>` for the image-mode equivalent.
+- **Empty output** — the service never started, or the Compose
+  project does not exist (see `status`).

@@ -1,75 +1,75 @@
 # `monoceros add-service`
 
-Fügt einen Backing-Service (Datenbank, Cache, Objektspeicher, …) zur
-Container-Konfig hinzu. Idempotent, zeigt vor dem Schreiben einen Diff.
+Adds a backing service (database, cache, object store, …) to the
+container config. Idempotent, shows a diff before writing.
 
 ```sh
 monoceros add-service <name> <service-or-image> [--as=<service-name>] [--yes]
 ```
 
-## Zwei Wege, einen Service einzutragen
+## Two ways to register a service
 
-`<service-or-image>` wird so interpretiert:
+`<service-or-image>` is interpreted as follows:
 
-- **Kuratierter Name** (`postgres`, `mysql`, `redis`) → expandiert zu
-  einem **vollständigen, editierbaren Service-Block** mit Image,
-  Default-Port, persistentem `data:`-Volume, `healthcheck` (der
-  Workspace wartet via `depends_on` auf `service_healthy`, nicht nur
-  „Container gestartet") und `restart: unless-stopped`. Die env-Werte
-  rendern als `${VAR}`-Platzhalter; die Dev-Defaults
-  (`POSTGRES_USER=monoceros`, …) werden in `<name>.env` geseedet (siehe
-  „Secrets"). Sofort lauffähig; du passt danach an, was du brauchst.
+- **Curated name** (`postgres`, `mysql`, `redis`) → expands to a
+  **complete, editable service block** with image, default port,
+  persistent `data:` volume, `healthcheck` (the workspace waits via
+  `depends_on` for `service_healthy`, not just "container started"),
+  and `restart: unless-stopped`. The env values render as `${VAR}`
+  placeholders; the dev defaults (`POSTGRES_USER=monoceros`, …) are
+  seeded into `<name>.env` (see "Secrets"). Runnable right away; you
+  adjust afterward as needed.
 
-- **Beliebiges Image** (`rustfs/rustfs:latest`, `clickhouse/clickhouse-server:24`)
-  → trägt `name` + `image` aktiv ein und legt den Rest (`port`, `env`,
-  `volumes`, `healthcheck`) als **auskommentiertes Grundgerüst**
-  darunter ab. Monoceros kennt fremde Images nicht — du füllst aus, was
-  das Image braucht. Auf der Konsole erscheint ein Hinweis darauf.
+- **Arbitrary image** (`rustfs/rustfs:latest`, `clickhouse/clickhouse-server:24`)
+  → actively writes `name` + `image` and places the rest (`port`, `env`,
+  `volumes`, `healthcheck`) below as a **commented-out skeleton**.
+  Monoceros doesn't know third-party images — you fill in what the image
+  needs. A note about this is printed to the console.
 
-Der Service-Name (Compose-Service, DNS-Name im Netz, Daten-Verzeichnis)
-wird bei kuratierten Services der Name selbst, bei Images aus dem
-Image-Ref abgeleitet (`rustfs/rustfs:latest` → `rustfs`).
+For curated services the service name (Compose service, DNS name on the
+network, data directory) is the name itself; for images it's derived
+from the image ref (`rustfs/rustfs:latest` → `rustfs`).
 
-## Beispiele
+## Examples
 
 ```sh
-# Kuratiert: voller Block mit Dev-Defaults
+# Curated: full block with dev defaults
 monoceros add-service logoscraper postgres
 
-# Beliebiges Image: name + image + auskommentiertes Grundgerüst
+# Arbitrary image: name + image + commented-out skeleton
 monoceros add-service logoscraper rustfs/rustfs:latest
 
-# Denselben Service mehrfach — eigener Name pro Instanz
+# The same service multiple times — its own name per instance
 monoceros add-service logoscraper postgres --as=postgres-app
 monoceros add-service logoscraper postgres --as=postgres-analytics
 ```
 
-## Das Service-Modell
+## The service model
 
-Jeder Service-Eintrag ist ein Objekt. Felder:
+Each service entry is an object. Fields:
 
-| Feld          | Zweck                                                                                                   |
-| ------------- | ------------------------------------------------------------------------------------------------------- |
-| `name`        | Compose-Service-Name / DNS-Hostname / Daten-Verzeichnis. Eindeutig pro Container.                       |
-| `image`       | Docker-Image (Pflicht).                                                                                 |
-| `port`        | **Interner** Listen-Port → Default für `monoceros tunnel`. **Kein** Host-Mapping.                       |
-| `env`         | Umgebungsvariablen. `${VAR}` wird aus `<name>.env` aufgelöst (siehe unten).                             |
-| `volumes`     | `data:/pfad` (persistenter Bind-Mount unter `data/<name>/`) oder relativer Host-Pfad (`projects/…:/…`). |
-| `healthcheck` | Compose-Healthcheck. `test` als String oder `["CMD", …]`-Array.                                         |
-| `restart`     | `no` / `always` / `on-failure` / `unless-stopped`.                                                      |
-| `command`     | Override des Container-Commands.                                                                        |
+| Field         | Purpose                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------- |
+| `name`        | Compose service name / DNS hostname / data directory. Unique per container.                        |
+| `image`       | Docker image (required).                                                                           |
+| `port`        | **Internal** listen port → default for `monoceros tunnel`. **No** host mapping.                    |
+| `env`         | Environment variables. `${VAR}` is resolved from `<name>.env` (see below).                         |
+| `volumes`     | `data:/path` (persistent bind mount under `data/<name>/`) or relative host path (`projects/…:/…`). |
+| `healthcheck` | Compose healthcheck. `test` as a string or `["CMD", …]` array.                                     |
+| `restart`     | `no` / `always` / `on-failure` / `unless-stopped`.                                                 |
+| `command`     | Override the container command.                                                                    |
 
-Bewusst **nicht** dabei: `ports` (Host-Mappings) — Host-Exposition läuft
-über [`add-port`](./add-port.md) (HTTP via Traefik) bzw.
-[`tunnel`](./tunnel.md) (TCP). Und keine Docker Named Volumes — `data:`
-bindet auf die Host-Platte, damit Daten Teil von `remove`-Backups sind
+Deliberately **not** included: `ports` (host mappings) — host exposure
+goes through [`add-port`](./add-port.md) (HTTP via Traefik) or
+[`tunnel`](./tunnel.md) (TCP). And no Docker named volumes — `data:`
+binds to the host disk so data is part of `remove` backups
 ([ADR 0003](../adr/0003-container-state-model.md)).
 
-## Secrets: `${VAR}` und `<name>.env`
+## Secrets: `${VAR}` and `<name>.env`
 
-Werte wie Passwörter gehören nicht in die (teilbare) yml. Die env-Keys
-heissen in der yml so wie der `${VAR}`-Platzhalter — bei kuratierten
-Services ist das der env-Key selbst, also `POSTGRES_PASSWORD →
+Values like passwords don't belong in the (shareable) yml. In the yml the
+env keys are named the same as the `${VAR}` placeholder — for curated
+services that's the env key itself, i.e. `POSTGRES_PASSWORD →
 ${POSTGRES_PASSWORD}`:
 
 ```yaml
@@ -83,125 +83,124 @@ services:
 
 ```sh
 # container-configs/logoscraper.env  (gitignored)
-POSTGRES_PASSWORD=monoceros        # vom Seeding; hier auf ein echtes Secret ändern
+POSTGRES_PASSWORD=monoceros        # from seeding; change to a real secret here
 ```
 
-Kuratierte Services seeden ihre Dev-Defaults beim Eintragen automatisch
-(`add-service` meldet, welche Keys es angelegt hat) — der Container läuft
-also sofort, und du änderst einen Wert nur an einer Stelle. Eigene Images
-seeden nichts (Monoceros kennt ihre Variablen nicht); dort trägst du
-Platzhalter + `.env`-Keys von Hand ein.
+Curated services seed their dev defaults automatically when registered
+(`add-service` reports which keys it created) — so the container runs
+right away, and you change a value in only one place. Custom images seed
+nothing (Monoceros doesn't know their variables); there you enter
+placeholders + `.env` keys by hand.
 
-Den Container kopieren heisst: `<name>.yml` **und** `<name>.env`
-kopieren, die `.env` anpassen — gleiche Struktur, anderes Geheimnis.
+Copying the container means: copy both `<name>.yml` **and** `<name>.env`,
+then adjust the `.env` — same structure, different secret.
 
-Beim `apply` werden alle `${VAR}` aus `<name>.env` ersetzt — sowohl in
-**Service-Feldern** als auch in **Feature-Optionen**. So bleiben auch
-API-Tokens aus der yml draußen:
+On `apply` all `${VAR}` are replaced from `<name>.env` — both in
+**service fields** and in **feature options**. This keeps API tokens out
+of the yml too:
 
 ```yaml
 features:
   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
     options:
-      apiKey: ${ANTHROPIC_API_KEY} # Wert kommt aus <name>.env
+      apiKey: ${ANTHROPIC_API_KEY} # value comes from <name>.env
 ```
 
-Damit kann die yml weitergegeben werden, ohne Tokens mitzugeben. Fehlt
-eine Variable, bricht der Apply mit einer klaren, gesammelten
-Fehlermeldung ab (statt still einen leeren Wert zu setzen). `monoceros
-init` legt die `<name>.env` mit Infotext gleich an; sie reist mit
-`remove`-Backups mit und ist via `container-configs/.gitignore`
-(`*.env`) vom Versionieren ausgeschlossen.
+This way the yml can be shared without handing over tokens. If a variable
+is missing, the apply aborts with a clear, collected error message
+(instead of silently setting an empty value). `monoceros init` creates
+`<name>.env` with explanatory text right away; it travels with `remove`
+backups and is excluded from version control via
+`container-configs/.gitignore` (`*.env`).
 
-## `--as` — denselben Service mehrfach
+## `--as` — the same service multiple times
 
-`--as=<name>` übersteuert den Service-Namen. Nötig, um dasselbe Image
-mehr als einmal einzutragen (zwei Postgres-Server) oder um zwei Images,
-die denselben Namen ableiten, auseinanderzuhalten. Jede Instanz bekommt
-ein eigenes `data/<name>/`-Verzeichnis und einen eigenen DNS-Namen.
+`--as=<name>` overrides the service name. Needed to register the same
+image more than once (two Postgres servers) or to keep two images that
+derive the same name distinct. Each instance gets its own
+`data/<name>/` directory and its own DNS name.
 
-## Erreichbarkeit + Credentials
+## Reachability + credentials
 
-Aus dem Dev-Container ist der Service über seinen **Namen** als Hostname
-erreichbar (nicht `localhost`) auf seinem internen Port:
+From within the dev container the service is reachable via its **name**
+as the hostname (not `localhost`) on its internal port:
 
 ```
 postgresql://<user>:<pass>@<name>:5432/<db>
 ```
 
-Kuratierter Postgres mit den geseedeten Dev-Defaults
-(`monoceros`/`monoceros`/`monoceros` aus `<name>.env`):
+Curated Postgres with the seeded dev defaults
+(`monoceros`/`monoceros`/`monoceros` from `<name>.env`):
 
 ```
 postgresql://monoceros:monoceros@postgres:5432/monoceros
 ```
 
-Änderst du `POSTGRES_*` in der `.env`, ändert sich die URL entsprechend.
+If you change `POSTGRES_*` in the `.env`, the URL changes accordingly.
 
-Vom **Host** (DB-GUI etc.) gibt es kein `localhost:5432` — dafür
-[`monoceros tunnel <name> <service>`](./tunnel.md).
+From the **host** (DB GUI, etc.) there is no `localhost:5432` — use
+[`monoceros tunnel <name> <service>`](./tunnel.md) for that.
 
-## DB-Schema / Seed: Migration, nicht `init.sql`-Bind-Mount
+## DB schema / seed: migration, not an `init.sql` bind mount
 
-Naheliegend wäre, eine `init.sql` aus einem Repo in den Service zu
-bind-mounten (Postgres' `docker-entrypoint-initdb.d`). **Mach das nicht**
-in einem Monoceros-Container: Repos werden **im Container** geklont
-(post-create, nach Container-Start), liegen also **nicht** auf dem Host,
-bevor `compose up` den Service startet — die Bind-Mount-Quelle wäre leer,
-und das Schema würde nie eingespielt.
+The obvious approach would be to bind-mount an `init.sql` from a repo into
+the service (Postgres' `docker-entrypoint-initdb.d`). **Don't do that**
+in a Monoceros container: repos are cloned **inside the container**
+(post-create, after the container starts), so they're **not** on the host
+before `compose up` starts the service — the bind-mount source would be
+empty, and the schema would never be applied.
 
-Der robuste Weg ist ohnehin der, den echte Apps nutzen: **eine
-Migration**, die du **aus dem Workspace** gegen den Service fährst,
-nachdem dieser bereit ist. Der Workspace wartet beim Apply bereits auf
-`service_healthy` — wenn deine Migration läuft, nimmt die DB also
-Verbindungen an:
+The robust path is the one real apps use anyway: **a migration** that you
+run **from the workspace** against the service once it's ready. On apply
+the workspace already waits for `service_healthy` — so when your migration
+runs, the DB is accepting connections:
 
 ```sh
-# im Workspace, nachdem `monoceros apply` durch ist:
-npm run migrate            # oder: psql "$DATABASE_URL" -f db/schema.sql
+# in the workspace, after `monoceros apply` is done:
+npm run migrate            # or: psql "$DATABASE_URL" -f db/schema.sql
 ```
 
-Für Einmaliges, das **Superuser**-Rechte braucht (`CREATE EXTENSION`,
-Rollen), einmalig per [`monoceros shell`](./shell.md) /
-[`tunnel`](./tunnel.md) + `psql` einspielen.
+For one-off things that need **superuser** privileges (`CREATE EXTENSION`,
+roles), apply them once via [`monoceros shell`](./shell.md) /
+[`tunnel`](./tunnel.md) + `psql`.
 
-## Idempotenz + Kollision
+## Idempotency + collision
 
-- Gleicher Aufruf zweimal → no-change (vorhandener Service mit gleichem
-  Image bleibt unangetastet, deine Edits am Block überleben).
-- Gleicher Name, **anderes** Image → Fehler mit Hinweis auf `--as`.
+- Same call twice → no change (an existing service with the same image is
+  left untouched, your edits to the block survive).
+- Same name, **different** image → error with a hint to use `--as`.
 
-## Argumente + Optionen
+## Arguments + options
 
-| Argument / Option     | Bedeutung                                                                |
-| --------------------- | ------------------------------------------------------------------------ |
-| `<name>`              | Container-Name.                                                          |
-| `<service-or-image>`  | Kuratierter Name (`postgres`/`mysql`/`redis`) oder beliebiger Image-Ref. |
-| `--as=<service-name>` | Service-Namen übersteuern (mehrfach derselbe Service / Namenskollision). |
-| `--yes, -y`           | Diff-Confirm-Prompt überspringen (für Scripts).                          |
+| Argument / Option     | Meaning                                                                   |
+| --------------------- | ------------------------------------------------------------------------- |
+| `<name>`              | Container name.                                                           |
+| `<service-or-image>`  | Curated name (`postgres`/`mysql`/`redis`) or arbitrary image ref.         |
+| `--as=<service-name>` | Override the service name (same service multiple times / name collision). |
+| `--yes, -y`           | Skip the diff confirmation prompt (for scripts).                          |
 
-## Externe Services statt lokalem Compose-Service
+## External services instead of a local Compose service
 
-Bestehende DB ausserhalb des Containers (Production, geteilte Dev-DB):
-statt `add-service` in der yml von Hand:
+Existing DB outside the container (production, shared dev DB): instead of
+`add-service`, by hand in the yml:
 
 ```yaml
 externalServices:
   postgres: postgresql://user:pass@host:5432/dbname
 ```
 
-Beim Apply wird kein `postgres`-Compose-Service generiert — der
-Container greift direkt auf den externen Host zu.
+On apply no `postgres` Compose service is generated — the container
+accesses the external host directly.
 
-## Verwandte Befehle
+## Related commands
 
-- [`remove-service`](./remove-service.md) — Inverse (Daten-Verzeichnis bleibt)
-- [`tunnel`](./tunnel.md) — Service vom Host erreichen
-- [`monoceros apply <name>`](./apply.md) — Änderung wirksam machen
+- [`remove-service`](./remove-service.md) — the inverse (data directory remains)
+- [`tunnel`](./tunnel.md) — reach the service from the host
+- [`monoceros apply <name>`](./apply.md) — make the change take effect
 
-## Fail-Modi
+## Failure modes
 
 - **`A service named '<name>' already exists with a different image`** —
-  `--as=<other>` nutzen oder den bestehenden Service erst entfernen.
-- **`Invalid --as name …`** — Name muss `[a-z0-9][a-z0-9_-]*` sein.
-- **`No such config`** — Container-yml existiert nicht.
+  use `--as=<other>` or remove the existing service first.
+- **`Invalid --as name …`** — name must be `[a-z0-9][a-z0-9_-]*`.
+- **`No such config`** — the container yml doesn't exist.

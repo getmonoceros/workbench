@@ -9,56 +9,56 @@
 
 ---
 
-Das Produkt heißt **Monoceros**. Das Verzeichnis heißt
-`monoceros-workbench`, weil wir die Werkbank bauen — den Rahmen, in
-dem der Builder seinen Dev-Container baut, ohne dass die Werkbank
-selbst vorschreibt was drin liegt.
+The product is called **Monoceros**. The directory is called
+`monoceros-workbench`, because we build the workbench — the frame in
+which the builder builds their dev container, without the workbench
+itself dictating what goes inside.
 
-## Was Monoceros ist
+## What Monoceros is
 
-Eine **Werkbank für lokale, reproduzierbare Dev-Container mit AI-Coding-Tooling**.
-Builder beschreibt deklarativ, was im Container liegen soll
-(Sprache, Services, AI-Tools, Repos), Monoceros materialisiert das.
-Sprach- und Stack-agnostisch — Node, Python, Java, Rust, Go, .NET
-laufen alle.
+A **workbench for local, reproducible dev containers with AI coding
+tooling**. The builder describes declaratively what should be in the
+container (language, services, AI tools, repos), and Monoceros
+materializes it. Language- and stack-agnostic — Node, Python, Java,
+Rust, Go, and .NET all run.
 
-Die Differenzierung gegenüber Cloud-Codespaces / Cursor-Cloud:
+What sets it apart from cloud Codespaces / Cursor Cloud:
 
-- **lokal** — kein SaaS, kein Mietzwang, keine Datenabflüsse außer
-  bewusst gewählter
-- **deklarativ** — die yml ist die Wahrheit, der Container leitet sich
-  daraus ab; reproduzierbar zwischen Maschinen
-- **AI-Tools sind erstklassig** — Claude Code, OpenCode, Rovo Dev,
-  Codex, GitHub Copilot etc. landen als Devcontainer-Features im
-  Container
-- **Container-Isolation als Default** — alles läuft in einem
-  Linux-Container, nicht auf dem Host. Bewusst gemounteter Workspace
-  ist exponiert, der Rest des Hosts nicht.
+- **local** — no SaaS, no forced subscription, no data leaving the
+  machine except what you deliberately choose
+- **declarative** — the yml is the source of truth, the container is
+  derived from it; reproducible across machines
+- **AI tools are first-class** — Claude Code, OpenCode, Rovo Dev,
+  Codex, GitHub Copilot, etc. land in the container as devcontainer
+  features
+- **container isolation by default** — everything runs in a Linux
+  container, not on the host. A deliberately mounted workspace is
+  exposed, the rest of the host is not.
 
-Was Monoceros **nicht** ist:
+What Monoceros is **not**:
 
-- keine Cloud-Plattform, kein SaaS, kein fester Tech-Stack
-- keine eigene Web-UI
-- **kein Iteration-Workflow** — keine Plan/Generate/Review-Pipeline;
-  wenn so etwas kommt, dann als separates Projekt das auf der
-  Workbench aufsetzt
+- not a cloud platform, not SaaS, not a fixed tech stack
+- no built-in web UI
+- **no iteration workflow** — no plan/generate/review pipeline; if
+  something like that comes, it comes as a separate project that
+  builds on top of the workbench
 
-## CLI-Modell
+## CLI model
 
-Alle Befehle folgen der Form:
+All commands follow the form:
 
 ```sh
 monoceros <command> <containername> [<args> …]
 ```
 
-Layout unter `$MONOCEROS_HOME` (dev: `<workbench>/.local`, prod:
+Layout under `$MONOCEROS_HOME` (dev: `<workbench>/.local`, prod:
 `~/.monoceros`):
 
 ```
-container-configs/<name>.yml   ← yml-Profil (Quelle der Wahrheit)
-container/<name>/              ← materialisierter Dev-Container
-monoceros-config.yml           ← optionale globale Defaults
-monoceros-config.sample.yml    ← Marker + Vorlage (committed in dev)
+container-configs/<name>.yml   ← yml profile (source of truth)
+container/<name>/              ← materialized dev container
+monoceros-config.yml           ← optional global defaults
+monoceros-config.sample.yml    ← marker + template (committed in dev)
 ```
 
 Workflow:
@@ -66,67 +66,66 @@ Workflow:
 ```sh
 monoceros init <name> [--with-languages=… --with-features=… \
        --with-services=… --with-apt-packages=… --with-repos=… --with-ports=…]
-                                          # yml komponieren (ohne --with-*:
-                                          # dokumentierte Vorlage)
-monoceros list-components                 # Katalog der Komponenten anzeigen
+                                          # compose yml (without --with-*:
+                                          # documented template)
+monoceros list-components                 # show the component catalog
 monoceros apply <name>                    # → container/<name>/
-monoceros shell <name>                    # darin arbeiten
-monoceros add-feature <name> <ref>        # yml editieren
-monoceros apply <name>                    # neu bauen
-monoceros remove <name>                   # Container restlos abräumen (Backup default an)
-monoceros restore <backup-path>           # Container aus Backup wiederherstellen
+monoceros shell <name>                    # work inside it
+monoceros add-feature <name> <ref>        # edit the yml
+monoceros apply <name>                    # rebuild
+monoceros remove <name>                   # tear the container down completely (backup on by default)
+monoceros restore <backup-path>           # restore a container from a backup
 ```
 
-cwd ist irrelevant — alles geht über Konvention.
+cwd is irrelevant — everything goes through convention.
 
-## Lese-Reihenfolge für neue Sessions
+## Reading order for new sessions
 
-1. Diese Datei (kurzer Überblick)
-2. [`docs/concept.md`](docs/concept.md) — die Story der Workbench,
-   was Monoceros macht und ausdrücklich nicht macht
-3. [`docs/commands/README.md`](docs/commands/README.md) — was die
-   CLI heute kann
+1. This file (short overview)
+2. [`docs/concept.md`](docs/concept.md) — the story of the workbench,
+   what Monoceros does and explicitly does not do
+3. [`docs/commands/README.md`](docs/commands/README.md) — what the
+   CLI can do today
 
-## Konventionen
+## Conventions
 
-- **Alles im öffentlichen Repo auf Englisch** — Commit-Messages,
-  Source-Code-Doku (Kommentare, JSDoc) und User-Doku (README,
-  Konzept-Dokumente, Befehlsdocs unter `docs/commands/`, ADRs). Der
-  Workbench ist ein öffentliches Projekt mit globalem Publikum.
-  (Interne, deutschsprachige Strategie-Docs liegen im privaten
-  `monoceros-concept`-Repo — siehe lokale `.claude/CLAUDE.md`.)
-- **Pro neuer CLI-Befehl** eine MD-Datei unter `docs/commands/<name>.md`
-  im selben Commit wie der Code, und ein Verweis in
-  [`docs/commands/README.md`](docs/commands/README.md). Generierte
-  Solutions zeigen via README auf `/opt/monoceros-workbench/docs/commands/`
-- **Context7** ist die erste Anlaufstelle für externe Library-Versionen.
-  Tools: `mcp__context7__resolve-library-id` und
-  `mcp__context7__query-docs`. Niemals Versionsnummern aus dem Gedächtnis
-  schreiben — Archiv-Versionen sind per Definition veraltet
-- **Server-Prozesse niemals manuell starten/killen.** Sobald Dev-Server
-  in Spiel kommen, wird das via `.claude/launch.json` konfiguriert
-- **Keine globale git-Config ändern.** Pro Repo lokal, nichts darüber
-  hinaus
-- **ADRs** unter `docs/adr/` ablegen (Markdown, nummeriert, kurz).
-  Konzept-Dokumente in `docs/`, ADRs sind spezifischer
-- **Traefik-Proxy nach Dev-Smoke-Tests aufräumen.** Der
-  `monoceros-proxy`-Singleton ist maschinenweit und wird von
-  `ensureProxy()` **per Name** wiederverwendet (nicht pro Home, nicht
-  pro Port). Wenn du in `.local` (Dev) Port-Tests gemacht hast und der
-  Proxy läuft noch, reused ein anschließender Test gegen
-  `~/.monoceros` (Prod) genau diesen Container — er watcht dann das
-  `.local`-`traefik/dynamic` und Prod-Routen liefern stumm `404`.
-  Daher: nach `.local`-Smoke-Tests mit Ports `docker rm -f
-monoceros-proxy`, bevor du in einem anderen Home testest (und dem
-  Builder keine Proxy-Leiche hinterlässt). Details im README unter
-  „Ich entwickle am Workbench".
+- **Everything in the public repo is in English** — commit messages,
+  source-code docs (comments, JSDoc), and user docs (README, concept
+  documents, command docs under `docs/commands/`, ADRs). The workbench
+  is a public project with a global audience. (Internal,
+  German-language strategy docs live in the private
+  `monoceros-concept` repo — see the local `.claude/CLAUDE.md`.)
+- **One MD file per new CLI command** under `docs/commands/<name>.md`
+  in the same commit as the code, plus a reference in
+  [`docs/commands/README.md`](docs/commands/README.md). Generated
+  solutions point via the README to `/opt/monoceros-workbench/docs/commands/`
+- **Context7** is the first stop for external library versions.
+  Tools: `mcp__context7__resolve-library-id` and
+  `mcp__context7__query-docs`. Never write version numbers from
+  memory — archive versions are stale by definition
+- **Never start/kill server processes manually.** As soon as dev
+  servers come into play, configure that via `.claude/launch.json`
+- **Do not change the global git config.** Per repo, locally, nothing
+  beyond that
+- **Put ADRs** under `docs/adr/` (Markdown, numbered, short). Concept
+  documents go in `docs/`; ADRs are more specific
+- **Clean up the Traefik proxy after dev smoke tests.** The
+  `monoceros-proxy` singleton is machine-wide and is reused by
+  `ensureProxy()` **by name** (not per home, not per port). If you ran
+  port tests in `.local` (dev) and the proxy is still running, a
+  subsequent test against `~/.monoceros` (prod) reuses exactly that
+  container — it then watches the `.local` `traefik/dynamic` and prod
+  routes silently return `404`. So: after `.local` smoke tests with
+  ports, run `docker rm -f monoceros-proxy` before testing in a
+  different home (and so you don't leave a proxy corpse behind for the
+  builder). Details in the README under “Developing on the workbench”.
 
-## Stack der Workbench selbst (nicht der Container, die damit gebaut werden)
+## The workbench's own stack (not the containers built with it)
 
-- pnpm Workspaces
+- pnpm workspaces
 - TypeScript + Node.js 20+
-- Vitest für Tests
+- Vitest for tests
 - prettier + eslint via lint-staged + husky
 
-Die Workbench ist sprach-agnostisch _für die Container, die mit ihr
-gebaut werden_. Aber die Workbench-Codebasis selbst ist TypeScript.
+The workbench is language-agnostic _for the containers built with it_.
+But the workbench codebase itself is TypeScript.

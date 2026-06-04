@@ -1,95 +1,89 @@
-# ADR 0012 — Repos host-seitig vor `compose up` klonen
+# ADR 0012 — Clone repos host-side before `compose up`
 
-- Status: **reverted (2026-06-03)** — siehe „Revert" am Ende
-- Datum: 2026-06-02
+- Status: **reverted (2026-06-03)** — see "Revert" at the end
+- Date: 2026-06-02
 
-> **Revert-Hinweis (2026-06-03):** Diese Entscheidung wurde
-> zurückgenommen. Der host-seitige Clone (und der host-seitige
-> `git ls-remote`-Reachability-Pre-Flight) verlagerten Netz- und
-> Credential-Auflösung von der **Container**-Seite (die funktioniert)
-> auf die **Host**-Seite — und produzierten dadurch plattformübergreifend
-> falsche Vorab-Abbrüche: VS-Code-`GIT_ASKPASS` auf macOS, fehlende
-> github.com-DNS-Auflösung des Host-git auf einer Linux-VM. Der Host hat
-> nicht denselben Netz-/Auth-Kontext wie der Container. Beides ist
-> entfernt; Repos werden wieder ausschließlich **in-container** geklont
-> (post-create.sh) — der einzige Pfad, der auf allen Plattformen
-> funktioniert. Der eigentliche Anlass dieser ADR — ein Service, der eine
-> Repo-Datei bind-mountet (init.sql) und sie **vor** `compose up` braucht
-> — bleibt offen und gehört **container-seitig** gelöst (z. B. ein
-> Clone-Init-Schritt im Compose, von dem die Services per `depends_on`
-> abhängen), nicht über den Host. Siehe backlog.md.
+> **Revert note (2026-06-03):** This decision was reverted. The
+> host-side clone (and the host-side `git ls-remote` reachability
+> pre-flight) moved network and credential resolution from the
+> **container** side (which works) to the **host** side — and as a
+> result produced false early aborts across platforms: VS Code's
+> `GIT_ASKPASS` on macOS, and the host git's failure to resolve
+> github.com DNS on a Linux VM. The host does not share the same
+> network/auth context as the container. Both were removed; repos are
+> once again cloned exclusively **in-container** (post-create.sh) — the
+> only path that works on all platforms. The original motivation for
+> this ADR — a service that bind-mounts a repo file (init.sql) and needs
+> it **before** `compose up` — remains open and should be solved
+> **container-side** (e.g. a clone init step in Compose that services
+> depend on via `depends_on`), not via the host. See backlog.md.
 
 ---
 
-_Ursprünglicher Text (überholt):_
+_Original text (superseded):_
 
-## Kontext
+## Context
 
-Bis hierher wurden in der Container-yml deklarierte Repos
-(`repos:`) ausschließlich **in-container** geklont — die generierte
-`post-create.sh` führte `git clone` aus, nachdem `devcontainer up`
-den Container hochgefahren hatte. Das war konsistent (Checkout im
-Ziel-Linux, Credentials über das ins Container gemountete
-`.monoceros/git-credentials`) und genügte, solange Repos nur als
-Workspace-Inhalt gebraucht wurden.
+Up to this point, repos declared in the container yml (`repos:`) were
+cloned exclusively **in-container** — the generated `post-create.sh` ran
+`git clone` after `devcontainer up` had brought the container up. This
+was consistent (checkout in the target Linux, credentials via the
+`.monoceros/git-credentials` mounted into the container) and sufficient
+as long as repos were only needed as workspace content.
 
-Mit dem generischen Service-Modell (env/volumes pro Service, siehe
-backlog.md) kam ein neuer Fall dazu: ein Service kann eine **Datei aus
-einem geklonten Repo** bind-mounten, z.B. Postgres'
-`projects/app/init.sql` → `/docker-entrypoint-initdb.d/init.sql`.
+With the generic service model (env/volumes per service, see
+backlog.md), a new case appeared: a service can bind-mount a **file from
+a cloned repo**, e.g. Postgres's `projects/app/init.sql` →
+`/docker-entrypoint-initdb.d/init.sql`.
 
-Damit kollidiert die bisherige Reihenfolge fatal:
+This collides fatally with the existing ordering:
 
-1. `compose up` startet Postgres und bind-mountet
-   `projects/app/init.sql` — die Datei existiert noch nicht.
-2. Docker legt an der fehlenden Mount-Quelle ein **leeres
-   Verzeichnis** an.
-3. `post-create` läuft danach und will klonen — aber der Clone-Guard
-   `[ ! -d projects/app ]` sieht das von Docker angelegte Verzeichnis
-   und **überspringt den Clone**.
+1. `compose up` starts Postgres and bind-mounts
+   `projects/app/init.sql` — the file does not exist yet.
+2. Docker creates an **empty directory** at the missing mount source.
+3. `post-create` runs afterward and wants to clone — but the clone guard
+   `[ ! -d projects/app ]` sees the directory Docker created and
+   **skips the clone**.
 
-Ergebnis: Repo nie geklont, init.sql nie ausgeführt, `init.sql` ist
-ein leeres Verzeichnis. Die Bind-Mount-Quelle muss **vor** dem
-Container-Start existieren — der In-Container-Clone ist per Definition
-zu spät.
+Result: repo never cloned, init.sql never executed, `init.sql` is an
+empty directory. The bind-mount source must exist **before** the
+container starts — the in-container clone is by definition too late.
 
-## Entscheidung
+## Decision
 
-Repos werden **host-seitig im `apply` geklont, vor `compose up`** —
-nach dem Scaffold-Schreiben, in `<container>/projects/<path>/`.
+Repos are **cloned host-side during `apply`, before `compose up`** —
+after the scaffold is written, into `<container>/projects/<path>/`.
 
-- **Alle** Repos host-seitig (nicht nur die von Service-Volumes
-  referenzierten) — einheitliches Verhalten, keine zwei Clone-Pfade.
-  Die Checkout-Fidelity-Sorge (Zeilenenden, Exec-Bits), die historisch
-  _für_ den In-Container-Clone sprach, ist mit dem WSL-Only-Pivot
-  (ADR 0011) klein: der Host ist in allen drei unterstützten Setups
-  (macOS / Linux / WSL) unixoid.
-- **Idempotent**: ein vorhandenes `projects/<path>/` bleibt unangetastet
-  (lokale Änderungen überleben Re-Apply).
-- Der **In-Container-Clone in post-create bleibt** als Skip-Guard-
-  Fallback (`[ ! -d ]`) — er überspringt schlicht, was host-seitig
-  schon da ist. Kein Risiko, geringere Diff-Fläche.
-- **Auth**: der Host-Clone nutzt denselben Host-git + Credential-Helper
-  wie der bestehende Reachability-Pre-Flight (`git ls-remote`), der
-  unmittelbar davor läuft und die Credentials bereits validiert hat.
-  Kein eigener Credential-Pfad.
+- **All** repos host-side (not just those referenced by service
+  volumes) — uniform behavior, no two clone paths. The checkout-fidelity
+  concern (line endings, exec bits) that historically argued _for_ the
+  in-container clone is minor after the WSL-only pivot (ADR 0011): the
+  host is unix-like in all three supported setups (macOS / Linux / WSL).
+- **Idempotent**: an existing `projects/<path>/` is left untouched
+  (local changes survive re-apply).
+- The **in-container clone in post-create stays** as a skip-guard
+  fallback (`[ ! -d ]`) — it simply skips whatever is already there
+  host-side. No risk, smaller diff surface.
+- **Auth**: the host clone uses the same host git + credential helper as
+  the existing reachability pre-flight (`git ls-remote`), which runs
+  immediately before it and has already validated the credentials. No
+  separate credential path.
 
-## Konsequenzen
+## Consequences
 
-- Service-Bind-Mounts aus Repo-Dateien (init.sql, Config) funktionieren
-  wie erwartet — die Datei ist beim Container-Start da.
-- Der Clone wird damit zur **echten host-seitigen Fail-Fast-Schranke**:
-  schlägt er fehl, bricht `apply` vor `compose up` mit der echten
-  git-Meldung ab. Das macht den separaten Reachability-Pre-Flight
-  weitgehend redundant; er bleibt vorerst als schnelles Frühwarn-Signal
-  bestehen, könnte aber später auf Warn-only reduziert oder entfernt
-  werden.
-- Der Host muss `git` haben (hat er — der Pre-Flight nutzt es bereits).
+- Service bind-mounts from repo files (init.sql, config) work as
+  expected — the file is present when the container starts.
+- The clone thereby becomes a **real host-side fail-fast gate**: if it
+  fails, `apply` aborts before `compose up` with the actual git message.
+  This makes the separate reachability pre-flight largely redundant; it
+  stays for now as a fast early-warning signal, but could later be
+  reduced to warn-only or removed.
+- The host must have `git` (it does — the pre-flight already uses it).
 
-## Verworfen
+## Rejected
 
-- **Nur service-referenzierte Repos host-seitig klonen** — zwei
-  Clone-Pfade, inkonsistent, mehr Komplexität für keinen Gewinn.
-- **In-Container-Clone ganz entfernen** — größerer Eingriff in
-  post-create + Tests für minimalen Gewinn; der Skip-Guard-Fallback
-  kostet nichts.
+- **Clone only service-referenced repos host-side** — two clone paths,
+  inconsistent, more complexity for no gain.
+- **Remove the in-container clone entirely** — a larger change to
+  post-create + tests for minimal gain; the skip-guard fallback costs
+  nothing.

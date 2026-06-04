@@ -1,179 +1,173 @@
-# ADR 0006 — HTTPS-only Repo-Auth
+# ADR 0006 — HTTPS-only repo auth
 
 - Status: accepted
-- Datum: 2026-05-23
+- Date: 2026-05-23
 
-## Kontext
+## Context
 
-Monoceros klont Git-Repos in `projects/<path>/` während der
-`post-create`-Phase des Dev-Containers. Konfiguriert werden die
-Repos via `init --with-repo=<url>` oder `monoceros add-repo <name>
-<url>` und persistiert in der Container-yml unter `repos:`.
+Monoceros clones Git repos into `projects/<path>/` during the
+`post-create` phase of the dev container. Repos are configured via
+`init --with-repo=<url>` or `monoceros add-repo <name> <url>` and
+persisted in the container yml under `repos:`.
 
-Beim End-to-End-Walkthrough für M4 Task 9 (auf Linux nativ und macOS
-Docker Desktop) trat eine Reihe von Reibungspunkten auf, die alle
-auf einen gemeinsamen Punkt zurückgehen: **SSH-Style-URLs
-(`git@github.com:…`, `ssh://…`) erzwingen Host-OS-spezifische Auth-
-Mechaniken, die der „deklarativ + reproduzierbar"-Versprechen aus
-[`docs/concept.md`](../concept.md) widersprechen.**
+During the end-to-end walkthrough for M4 Task 9 (native Linux and
+macOS Docker Desktop), a series of friction points came up that all
+trace back to one common issue: **SSH-style URLs
+(`git@github.com:…`, `ssh://…`) force host-OS-specific auth
+mechanics that contradict the "declarative + reproducible" promise
+from [`docs/concept.md`](../concept.md).**
 
-Konkret beobachtet:
+Specifically observed:
 
-- **macOS Docker Desktop**: Der host-seitige `SSH_AUTH_SOCK` lebt
-  unter `/private/tmp/com.apple.launchd.<id>/Listeners`, einem launchd-
-  managed Pfad der nicht in Docker Desktops File-Sharing-Liste
-  steht. Direkter Bind-Mount des Sockets scheitert mit
+- **macOS Docker Desktop**: The host-side `SSH_AUTH_SOCK` lives
+  under `/private/tmp/com.apple.launchd.<id>/Listeners`, a launchd-
+  managed path that is not in Docker Desktop's file-sharing list.
+  A direct bind mount of the socket fails with
   `bind source path does not exist`. Workaround: Docker Desktop's
-  bundled SSH-Agent-Proxy (`/run/host-services/ssh-auth.sock`) —
-  aber der ist nur verfügbar wenn der Builder "Use SSH agent" in
-  Docker Desktop → Settings → Resources togglet. Manueller GUI-
-  Konfig-Schritt verletzt die deklarative Annahme.
+  bundled SSH agent proxy (`/run/host-services/ssh-auth.sock`) —
+  but that is only available if the builder toggles "Use SSH agent"
+  in Docker Desktop → Settings → Resources. A manual GUI config
+  step violates the declarative assumption.
 
-- **Windows Docker Desktop**: Der Windows SSH-Agent liefert einen
-  Named Pipe (`\\.\pipe\openssh-ssh-agent`), keinen Unix-Socket.
-  Bind-Mount im Linux-Container-Modus geht direkt nicht. Auch hier
-  gibt's einen Docker-Desktop-Toggle als Workaround, derselbe
-  manuelle Setup-Schritt.
+- **Windows Docker Desktop**: The Windows SSH agent exposes a named
+  pipe (`\\.\pipe\openssh-ssh-agent`), not a Unix socket. A bind
+  mount in Linux container mode does not work directly. Here too
+  there is a Docker Desktop toggle as a workaround — the same manual
+  setup step.
 
-- **Linux native**: Funktioniert ohne Setup — `SSH_AUTH_SOCK` ist
-  direkt mountbar, kein VM-Sandboxing. Asymmetrie zwischen den drei
-  Plattformen.
+- **Native Linux**: Works without setup — `SSH_AUTH_SOCK` is
+  directly mountable, no VM sandboxing. An asymmetry between the
+  three platforms.
 
-- **Multi-Identity (mehrere GitHub-Accounts pro Builder)**: Verlangt
-  entweder `~/.ssh/config`-Host-Aliases mit URL-Umschreibung
-  (`git@github-work:org/repo.git` statt der echten GitHub-URL) oder
-  per-Repo `core.sshCommand`-Pinning. Beides müsste Monoceros
-  sauber wrappen — der Bauplan wäre ein neues `sshKey:`-Schema-Feld
-  auf drei Ebenen, mounted Key-Files pro unique Key, Pre-Flight-
-  Checks (Key vorhanden, nicht passphrase-encrypted, korrekte
-  Permissions), Konsistenz-Constraint zwischen `sshKey` und
-  `user.email` … einige Hundert Zeilen Code plus Test-Surface plus
-  Doku.
+- **Multi-identity (multiple GitHub accounts per builder)**:
+  Requires either `~/.ssh/config` host aliases with URL rewriting
+  (`git@github-work:org/repo.git` instead of the real GitHub URL) or
+  per-repo `core.sshCommand` pinning. Monoceros would have to wrap
+  either cleanly — the blueprint would be a new `sshKey:` schema
+  field on three levels, mounted key files per unique key, pre-flight
+  checks (key present, not passphrase-encrypted, correct
+  permissions), a consistency constraint between `sshKey` and
+  `user.email` … several hundred lines of code plus test surface plus
+  docs.
 
-- **Passphrase-encrypted Keys**: Im non-interaktiven post-create-
-  Kontext gibt's keinen sauberen Weg, die Passphrase einzuspielen.
-  Würde explizit als „nicht supported" dokumentiert werden müssen.
+- **Passphrase-encrypted keys**: In the non-interactive post-create
+  context there is no clean way to supply the passphrase. It would
+  have to be documented explicitly as "not supported".
 
-Parallel dazu gibt es bereits einen funktionierenden HTTPS-Auth-Pfad
-(M1, Commit `3aaaf72`): `apply` ruft host-seitig `git credential
-fill protocol=https host=<host>` für jeden unique HTTPS-Host und
-schreibt die Antworten nach
-`<container-dir>/.monoceros/git-credentials`. Im Container
-konfiguriert post-create.sh `git config --global credential.helper
-"store --file=…"` mit demselben Pfad. Beim Clone findet git die
-Credentials, authentifiziert, klont. Das funktioniert
-**plattformübergreifend ohne Docker-Desktop-Settings**, weil
-Bind-Mounts unter dem Container-Root standardmäßig erreichbar sind.
+In parallel, there is already a working HTTPS auth path (M1, commit
+`3aaaf72`): `apply` runs `git credential fill protocol=https
+host=<host>` on the host for each unique HTTPS host and writes the
+responses to `<container-dir>/.monoceros/git-credentials`. Inside the
+container, post-create.sh configures `git config --global
+credential.helper "store --file=…"` with the same path. On clone,
+git finds the credentials, authenticates, and clones. This works
+**across platforms without Docker Desktop settings**, because bind
+mounts under the container root are reachable by default.
 
-Es gibt im realistischen Builder-Umfeld 2026 quasi keinen Git-Host,
-der ausschließlich SSH supportet: GitHub.com, GitLab.com,
-Bitbucket.org, selbstgehostetes Gitea, selbstgehostetes GitLab,
-Bitbucket Server — alle unterstützen HTTPS first-class mit Personal-
-Access-Tokens, Deploy-Tokens oder App-Passwords als Auth. Der
-host-side Credential-Helper (`osxkeychain`, `libsecret`, `wincred`,
-oder `gh auth setup-git` für GitHub) liefert für jeden dieser Hosts
-die richtige Antwort.
+In a realistic builder environment in 2026 there is essentially no
+Git host that supports SSH exclusively: GitHub.com, GitLab.com,
+Bitbucket.org, self-hosted Gitea, self-hosted GitLab, Bitbucket
+Server — all support HTTPS first-class with personal access tokens,
+deploy tokens, or app passwords for auth. The host-side credential
+helper (`osxkeychain`, `libsecret`, `wincred`, or `gh auth setup-git`
+for GitHub) returns the right answer for each of these hosts.
 
-## Entscheidung
+## Decision
 
-**Monoceros unterstützt Repo-URLs ausschließlich im HTTPS-Format.**
-SSH-style URLs (`git@host:…`, `ssh://…`, `git://…`) werden auf
-Schema-Ebene abgelehnt (`config/schema.ts` REPO_URL_RE verlangt
-`^https://`).
+**Monoceros supports repo URLs only in HTTPS format.** SSH-style
+URLs (`git@host:…`, `ssh://…`, `git://…`) are rejected at the schema
+level (`config/schema.ts` REPO_URL_RE requires `^https://`).
 
-Begründung — Kompromiss zwischen Coverage und Komplexität:
+Rationale — a trade-off between coverage and complexity:
 
-- **Was wir aufgeben**: SSH-Style-URLs aus dem Clone-Dialog von
-  GitHub/GitLab/etc. — Builder muss bewusst die HTTPS-URL kopieren,
-  nicht die SSH-URL. Edge-Case-Hosts, die nur SSH supporten
-  (selbstgehostete Gitea ohne HTTP-Frontend o.ä.), werden nicht
-  abgedeckt. Builder-Muskelgedächtnis das auf SSH-URLs gepolt ist
-  muss umlernen.
+- **What we give up**: SSH-style URLs from the clone dialog of
+  GitHub/GitLab/etc. — the builder has to deliberately copy the
+  HTTPS URL, not the SSH URL. Edge-case hosts that support only SSH
+  (self-hosted Gitea without an HTTP frontend, etc.) are not covered.
+  Builder muscle memory wired for SSH URLs has to relearn.
 
-- **Was wir gewinnen**: Konsistentes Verhalten zwischen Linux, macOS
-  Docker Desktop, Windows Docker Desktop. Keine Host-GUI-
-  Konfigurationsschritte. Keine schema-Erweiterung für `sshKey`-
-  Felder auf drei Ebenen. Keine Passphrase-Edge-Cases. Keine
-  Multi-Identity-Wiring per `core.sshCommand`. Keine SSH-Agent-
-  Forwarding-Plattform-Spezifik. Per-Repo-`git.user`-Identität
-  funktioniert weiterhin (Task 8) — Multi-Identity-Use-Cases bleiben
-  abgedeckt, weil Commit-Identität von SSH-Key-Wahl unabhängig ist.
+- **What we gain**: Consistent behavior across Linux, macOS Docker
+  Desktop, and Windows Docker Desktop. No host GUI configuration
+  steps. No schema extension for `sshKey` fields on three levels. No
+  passphrase edge cases. No multi-identity wiring via
+  `core.sshCommand`. No platform-specific SSH agent forwarding.
+  Per-repo `git.user` identity still works (Task 8) — multi-identity
+  use cases stay covered, because commit identity is independent of
+  the SSH key choice.
 
-Konkret im Schema:
+Concretely in the schema:
 
 ```ts
 // REPO_URL_RE: must start with https://
 const REPO_URL_RE = /^https:\/\/[A-Za-z0-9@:/+_~.#=&?-]+$/;
 ```
 
-Fehlermeldung bei Verstoß:
+Error message on violation:
 
 > Invalid repo URL. Only HTTPS URLs are supported (`https://...`).
 > SSH-style URLs (`git@host:...`, `ssh://...`) are not in scope —
 > see ADR 0006.
 
-## Folgen
+## Consequences
 
-- **`packages/cli/src/create/scaffold.ts`**: SSH-Agent-Forwarding-
-  Infrastruktur (`hasSshRepo`, `sshAgentMountSource`,
+- **`packages/cli/src/create/scaffold.ts`**: SSH agent forwarding
+  infrastructure (`hasSshRepo`, `sshAgentMountSource`,
   `buildRepoAuthMounts`, `buildRepoAuthEnv`, `SSH_AGENT_TARGET`,
-  `GIT_SSH_COMMAND`) komplett entfernt. Auch der Compose-yaml-
-  Generator setzt kein `SSH_AUTH_SOCK`/`GIT_SSH_COMMAND` mehr.
-  ContainerEnv und `mounts` im devcontainer.json sind frei von
-  SSH-Spezifika.
+  `GIT_SSH_COMMAND`) removed entirely. The Compose yaml generator no
+  longer sets `SSH_AUTH_SOCK`/`GIT_SSH_COMMAND` either. ContainerEnv
+  and `mounts` in devcontainer.json are free of SSH specifics.
 
-- **Defense-in-Depth in `devcontainer/credentials.ts`**: Die
-  `uniqueHttpsHosts`-Funktion filtert weiterhin non-HTTPS-URLs
-  defensiv heraus. Das schadet nicht — Schema fängt SSH-URLs vor
-  dem Runtime-Layer ab, aber der Filter ist Belt-and-Suspenders für
-  fehlerhafte Test-Fixtures oder zukünftige Caller.
+- **Defense in depth in `devcontainer/credentials.ts`**: The
+  `uniqueHttpsHosts` function still filters out non-HTTPS URLs
+  defensively. That does no harm — the schema catches SSH URLs before
+  the runtime layer, but the filter is belt-and-suspenders for faulty
+  test fixtures or future callers.
 
-- **Doku** (`README.md`, `docs/commands/add-repo.md`): explizite
-  Aussage „Repo URLs müssen HTTPS sein, SSH ist nicht in Scope". Pro
-  Major-Provider ein Hinweis wo die HTTPS-URL zu finden ist (im
-  GitHub-Clone-Dialog: HTTPS-Tab).
+- **Docs** (`README.md`, `docs/commands/add-repo.md`): an explicit
+  statement that "repo URLs must be HTTPS, SSH is not in scope". For
+  each major provider, a note on where to find the HTTPS URL (in the
+  GitHub clone dialog: the HTTPS tab).
 
-- **Provider-Deklaration** (Schema-Feld `repos[].provider`,
-  `RepoEntrySchema`): kanonische Hosts (`github.com`, `gitlab.com`,
-  `bitbucket.org`) werden auto-erkannt. Alle anderen HTTPS-Hosts
-  (selbstgehostetes GitLab unter `git.firma.de`, Gitea/Forgejo unter
-  `code.acme.com`, Bitbucket Data Center …) verlangen einen expliziten
-  `provider:`-Eintrag, sonst bricht der Apply-Pre-Flight mit einer
-  klaren Fehlermeldung ab. Hintergrund: aus dem Hostname allein lässt
-  sich kein verlässlicher Provider-Schluss ziehen — eine frühere
-  Heuristik (`startsWith('gitlab.')`) hat genau die selbst gehosteten
-  Fälle übersehen, die am häufigsten den Provider-Hinweis brauchen.
-  Unterstützte Provider-Werte: `github` (Cloud + Enterprise),
-  `gitlab` (Cloud + Self-Hosted), `bitbucket` (Cloud + Data Center),
-  `gitea` (deckt auch Forgejo ab — gleiche API + UI). `monoceros
-add-repo` setzt das Feld via `--provider=…`-Flag; `monoceros init
---with-repo` akzeptiert nur kanonische Hosts, weil Provider-Eingabe
-  via CLI-Flag in `init` selten genug ist, um die Syntax nicht damit
-  zu belasten.
+- **Provider declaration** (schema field `repos[].provider`,
+  `RepoEntrySchema`): canonical hosts (`github.com`, `gitlab.com`,
+  `bitbucket.org`) are auto-detected. All other HTTPS hosts
+  (self-hosted GitLab at `git.firma.de`, Gitea/Forgejo at
+  `code.acme.com`, Bitbucket Data Center …) require an explicit
+  `provider:` entry, otherwise the apply pre-flight aborts with a
+  clear error message. Background: the hostname alone does not allow
+  a reliable provider inference — an earlier heuristic
+  (`startsWith('gitlab.')`) missed exactly the self-hosted cases that
+  most often need the provider hint. Supported provider values:
+  `github` (Cloud + Enterprise), `gitlab` (Cloud + Self-Hosted),
+  `bitbucket` (Cloud + Data Center), `gitea` (also covers Forgejo —
+  same API + UI). `monoceros add-repo` sets the field via the
+  `--provider=…` flag; `monoceros init --with-repo` accepts only
+  canonical hosts, because provider input via a CLI flag in `init` is
+  rare enough that it is not worth burdening the syntax with it.
 
-- **Backlog M5 Task 4 (Test-Plan-Rewrite)**: Die in M4 Task 9
-  hinzugefügte „SSH-Repo-
-  Strecke explizit testen" wird gestrichen. Stattdessen: „HTTPS-Repo
-  - Clone + Commit + Push" als Pflichtfall pro Plattform, plus
-    „SSH-URL in der yml → klare Fehlermeldung" als Validations-Test.
+- **Backlog M5 Task 4 (test plan rewrite)**: The "explicitly test
+  the SSH repo path" item added in M4 Task 9 is dropped. Instead:
+  "HTTPS repo — clone + commit + push" as a mandatory case per
+  platform, plus "SSH URL in the yml → clear error message" as a
+  validation test.
 
-## Re-Evaluation falls echte Builder-Nachfrage
+## Re-evaluation if there is real builder demand
 
-Wenn ein Builder bei Monoceros aufschlägt und sagt „mein primärer
-Workflow geht über SSH-Auth und ich kann/will nicht auf HTTPS
-umsteigen", liegt der Design-Entwurf aus dem Diskussions-Thread
-(Chat-Verlauf 2026-05-23) auf dem Tisch:
+If a builder shows up to Monoceros and says "my primary workflow
+goes through SSH auth and I can't/won't switch to HTTPS", the design
+draft from the discussion thread (chat history 2026-05-23) is on the
+table:
 
-- `sshKey:`-Feld in `defaults.git`, Container-`git`, `repos[].git`
-  mit Fallback-Hierarchie
-- Pre-Flight-Check auf Key-Existenz + Permissions + nicht-encrypted
-- Bind-Mount unter `~/.ssh/<key>` pro unique Key
-- Per-Repo `core.sshCommand "ssh -i ~/.ssh/<key> -o IdentitiesOnly=yes"`
-  im post-create.sh nach Clone und Persist
-- Konsistenz-Doku: `sshKey` + `user.email` müssen dieselbe GitHub-
-  Identität repräsentieren
+- `sshKey:` field in `defaults.git`, container `git`, `repos[].git`
+  with a fallback hierarchy
+- pre-flight check for key existence + permissions + not encrypted
+- bind mount under `~/.ssh/<key>` per unique key
+- per-repo `core.sshCommand "ssh -i ~/.ssh/<key> -o IdentitiesOnly=yes"`
+  in post-create.sh after clone and persist
+- consistency docs: `sshKey` + `user.email` must represent the same
+  GitHub identity
 
-Geschätzter Aufwand: ~250–300 LOC + vergleichbar viel Test-Surface,
-plus eigene ADR (0006a o.ä.) die die Trade-offs neu bewertet.
-Heute nicht relevant — würde bei realer Nachfrage als eigenes
-Backlog-Item aufgemacht.
+Estimated effort: ~250–300 LOC + a comparable amount of test surface,
+plus a dedicated ADR (0006a or similar) that re-evaluates the
+trade-offs. Not relevant today — if there is real demand it would be
+opened as its own backlog item.

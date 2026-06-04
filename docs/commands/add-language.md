@@ -1,54 +1,54 @@
 # `monoceros add-language`
 
-Fügt eine Sprach-Toolchain zur Container-Konfig hinzu. Idempotent,
-zeigt vor dem Schreiben einen Diff.
+Adds a language toolchain to the container config. Idempotent,
+shows a diff before writing.
 
 ```sh
 monoceros add-language <name> <lang>[:version] [--yes]
 ```
 
-## Zweck
+## Purpose
 
-Editiert die yml unter
-`$MONOCEROS_HOME/container-configs/<name>.yml`. Trägt `<lang>` (oder
-`<lang>:<version>`) im `languages:`-Block ein. Der Container muss
-danach mit `monoceros apply <name>` neu materialisiert werden, damit
-die Sprache als Devcontainer-Feature im Container landet.
+Edits the yml at
+`$MONOCEROS_HOME/container-configs/<name>.yml`. Adds `<lang>` (or
+`<lang>:<version>`) to the `languages:` block. Afterwards the
+container must be re-materialized with `monoceros apply <name>` so
+that the language lands in the container as a devcontainer feature.
 
-## Mechanik
+## Mechanics
 
-1. **Schema-Validierung** der yml (catch eines Sub-Fehlers früh).
-2. **Catalog-Check**: `<lang>` muss in der kuratierten Liste
-   `node, python, java, go, rust, dotnet` stehen. Unbekannte Werte
-   werden mit Liste der erlaubten Sprachen abgewiesen.
-3. **Diff-Vorschau** vor dem Schreiben (mit `--yes` übersprungen).
-4. **AST-Mutation**: schreibt das `languages:`-Feld comment-
-   preserving; existierende Kommentare und Layout bleiben erhalten.
+1. **Schema validation** of the yml (catches a follow-up error early).
+2. **Catalog check**: `<lang>` must be in the curated list
+   `node, python, java, go, rust, dotnet`. Unknown values
+   are rejected with a list of the allowed languages.
+3. **Diff preview** before writing (skipped with `--yes`).
+4. **AST mutation**: writes the `languages:` field comment-
+   preserving; existing comments and layout are kept.
 
-## Argumente
+## Arguments
 
-| Argument | Bedeutung                                                                |
-| -------- | ------------------------------------------------------------------------ |
-| `<name>` | Container-Name.                                                          |
-| `<lang>` | Sprach-Name aus dem Katalog, optional mit `:version`-Suffix (`java:17`). |
+| Argument | Meaning                                                                          |
+| -------- | -------------------------------------------------------------------------------- |
+| `<name>` | Container name.                                                                  |
+| `<lang>` | Language name from the catalog, optionally with a `:version` suffix (`java:17`). |
 
-## Optionen
+## Options
 
-| Option      | Bedeutung                                       |
-| ----------- | ----------------------------------------------- |
-| `--yes, -y` | Diff-Confirm-Prompt überspringen (für Scripts). |
+| Option      | Meaning                                          |
+| ----------- | ------------------------------------------------ |
+| `--yes, -y` | Skip the diff confirmation prompt (for scripts). |
 
-## Versions-Suffix
+## Version suffix
 
-Das `:version`-Suffix wird beim `apply` an das upstream-
-Devcontainer-Feature als `version`-Option durchgereicht:
+The `:version` suffix is passed through to the upstream
+devcontainer feature as the `version` option during `apply`:
 
 ```sh
 $ monoceros add-language sandbox java:17
 $ monoceros apply sandbox
 ```
 
-Erzeugt im `devcontainer.json`:
+Produces in `devcontainer.json`:
 
 ```json
 "features": {
@@ -56,30 +56,30 @@ Erzeugt im `devcontainer.json`:
 }
 ```
 
-Sonderfall `node`: ohne Version (`node`) bleibt es ein Built-in
-der Basis-Image-Runtime (Node 22, keine Feature-Installation).
-`node:<version>` schaltet auf das upstream-Feature um.
+Special case `node`: without a version (`node`) it stays a built-in
+of the base image runtime (Node 22, no feature installation).
+`node:<version>` switches over to the upstream feature.
 
-## Idempotenz
+## Idempotency
 
-`add-language sandbox python` zweimal in Folge → der zweite Aufruf
-ist ein no-change (Datei wird nicht angefasst, Confirm-Prompt
-sagt klar dass nichts zu tun ist).
+`add-language sandbox python` twice in a row → the second call
+is a no-change (the file is not touched, the confirm prompt
+states clearly that there is nothing to do).
 
-Wenn `python` schon ohne Version in der yml steht und du
-`python:3.12` hinzufügst: der erste Eintrag wird ersetzt.
+If `python` is already in the yml without a version and you add
+`python:3.12`: the first entry is replaced.
 
-## Verwandte Befehle
+## Related commands
 
-- [`remove-language`](./remove-language.md) — Inverse
-- [`monoceros apply <name>`](./apply.md) — Änderung wirksam machen
-- [`monoceros init <name> --with=<lang>:<version>`](./init.md) —
-  Sprache schon beim Init mit Version eintragen
+- [`remove-language`](./remove-language.md) — the inverse
+- [`monoceros apply <name>`](./apply.md) — make the change effective
+- [`monoceros init <name> --with-languages=<lang>:<version>`](./init.md) —
+  add the language with a version already at init time
 
-## Fail-Modi
+## Failure modes
 
-- **`Unknown language: <name>`** — Tippfehler oder Sprache nicht
-  im Katalog. Liste der erlaubten Werte in der Fehlermeldung.
-- **`No such config`** — Container-yml unter
-  `container-configs/<name>.yml` existiert nicht. `monoceros init`
-  vorher.
+- **`Unknown language: <name>`** — typo or a language not
+  in the catalog. The error message lists the allowed values.
+- **`No such config`** — the container yml at
+  `container-configs/<name>.yml` does not exist. Run `monoceros init`
+  first.

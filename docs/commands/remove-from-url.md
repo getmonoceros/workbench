@@ -1,7 +1,7 @@
 # `monoceros remove-from-url`
 
-Inverse zu [`add-from-url`](./add-from-url.md). Entfernt einen
-Install-URL-Eintrag aus der Container-Konfig.
+Inverse of [`add-from-url`](./add-from-url.md). Removes an
+install-URL entry from the container config.
 
 ## Synopsis
 
@@ -9,31 +9,31 @@ Install-URL-Eintrag aus der Container-Konfig.
 monoceros remove-from-url <containername> <url> [--yes]
 ```
 
-Die URL muss exakt der in der Konfig hinterlegten entsprechen.
+The URL must exactly match the one stored in the config.
 
-## Mechanik
+## Mechanics
 
-yml-Eintrag in `installUrls:` wird entfernt. Im nächsten `apply` fällt
-der URL-Aufruf aus `.devcontainer/post-create.sh` raus.
+The yml entry in `installUrls:` is removed. On the next `apply`, the
+URL call drops out of `.devcontainer/post-create.sh`.
 
-**Achtung — das Install-Script-Ergebnis bleibt im Container.** Wenn der
-ursprüngliche Install ein Binary installiert hat, ist das nach
-`remove-from-url` + `apply` zwar nicht mehr Teil des Build-Prozesses,
-aber im bestehenden Container weiterhin vorhanden, bis dieser
-re-created wird. Für einen vollständig sauberen Zustand:
+**Caution — the install script's result stays in the container.** If
+the original install installed a binary, after `remove-from-url` +
+`apply` it is no longer part of the build process, but it remains
+present in the existing container until that container is re-created.
+For a fully clean state:
 
 ```sh
 monoceros remove-from-url sandbox https://example.com/install --yes
-monoceros down sandbox       # Container weg, Volumes bleiben
-monoceros apply sandbox      # neu hochfahren, ohne den Install-Step
+monoceros down sandbox       # container gone, volumes kept
+monoceros apply sandbox      # bring it back up, without the install step
 ```
 
-## Idempotenz
+## Idempotency
 
-URL nicht in der Liste → no-change.
+URL not in the list → no-change.
 
-## Verwandte Befehle
+## Related commands
 
-- `monoceros add-from-url` — Inverse
-- `monoceros down <name>` — Container neu erzeugen
-- `monoceros apply <name>` — Materialisierung
+- `monoceros add-from-url` — inverse
+- `monoceros down <name>` — re-create the container
+- `monoceros apply <name>` — materialization

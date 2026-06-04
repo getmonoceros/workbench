@@ -1,24 +1,24 @@
 # `monoceros add-repo`
 
-Registriert ein Git-Repository, das beim nächsten Container-Build nach
-`projects/<path>/` geklont wird.
+Registers a Git repository that gets cloned to `projects/<path>/` on
+the next container build.
 
-## Zweck
+## Purpose
 
-Eine Solution besteht aus einem Workspace-Wrapper (`.devcontainer/`,
-`.monoceros/`, `home/`) und einem oder mehreren Code-Repos in
-`projects/`. `add-repo` macht diese Repos deklarativ — einmal
-hinzufügen, danach klont jeder Container-Rebuild und jeder neue
-Builder, der die Solution übernimmt, automatisch dieselben Sourcen.
+A solution consists of a workspace wrapper (`.devcontainer/`,
+`.monoceros/`, `home/`) and one or more code repos in `projects/`.
+`add-repo` makes these repos declarative — add them once, and from then
+on every container rebuild and every new builder who takes over the
+solution automatically clones the same sources.
 
-Was es **nicht** ist:
+What it is **not**:
 
-- Kein `git clone` ad-hoc (das passiert beim nächsten `monoceros apply`,
-  nicht beim `add-repo`-Aufruf selbst).
-- Kein Push-Mechanismus (im Container `git push` wie üblich — Auth
-  funktioniert über den Host-Credential-Helper, siehe unten).
-- Keine SSH-Auth (siehe [ADR 0006](../adr/0006-https-only-repo-auth.md) —
-  Monoceros unterstützt HTTPS-URLs).
+- Not an ad-hoc `git clone` (that happens on the next `monoceros apply`,
+  not on the `add-repo` call itself).
+- Not a push mechanism (inside the container use `git push` as usual —
+  auth works via the host credential helper, see below).
+- No SSH auth (see [ADR 0006](../adr/0006-https-only-repo-auth.md) —
+  Monoceros supports HTTPS URLs).
 
 ## Synopsis
 
@@ -28,24 +28,25 @@ monoceros add-repo <containername> <url> [--path=<folder>] \
                    [--provider=github|gitlab|bitbucket|gitea] [--yes]
 ```
 
-## Optionen
+## Options
 
-| Flag                  | Bedeutung                                                                                                                                                                                                                                                                                                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--path=<folder>`     | Override des Zielpfads unter `projects/`. Subfolders erlaubt (`apps/web`). Default: aus URL abgeleitet (`bar.git` → `bar`).                                                                                                                                                                                                                                           |
-| `--git-name=<name>`   | Per-Repo Git-Committer-Name. Override für das Container-Level `git.user.name`. Mit `--git-email` koppeln.                                                                                                                                                                                                                                                             |
-| `--git-email=<email>` | Per-Repo Git-Committer-Email. Mit `--git-name` koppeln. Beide gemeinsam oder gar nicht. Akzeptiert auch einen `${VAR}`-Platzhalter (aufgelöst aus `<name>.env`); ein literaler Wert wird sofort auf gültiges Format geprüft.                                                                                                                                          |
-| `--provider=<name>`   | Git-Provider-Hinweis (`github` \| `gitlab` \| `bitbucket` \| `gitea`). **Pflicht für Hosts außerhalb von `github.com` / `gitlab.com` / `bitbucket.org`.** Steuert, welche CLI-Setup-Anleitung der Pre-Flight zeigt, wenn Credentials fehlen. Für die drei kanonischen Hosts überflüssig (auto-detect). `gitea` deckt auch Forgejo ab — gleiche API, gleicher UI-Flow. |
-| `--yes` / `-y`        | Confirm-Prompt überspringen.                                                                                                                                                                                                                                                                                                                                          |
+| Flag                  | Meaning                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--path=<folder>`     | Override the target path under `projects/`. Subfolders allowed (`apps/web`). Default: derived from the URL (`bar.git` → `bar`).                                                                                                                                                                                                                              |
+| `--git-name=<name>`   | Per-repo Git committer name. Overrides the container-level `git.user.name`. Pair with `--git-email`.                                                                                                                                                                                                                                                         |
+| `--git-email=<email>` | Per-repo Git committer email. Pair with `--git-name`. Both together or not at all. Also accepts a `${VAR}` placeholder (resolved from `<name>.env`); a literal value is checked for valid format immediately.                                                                                                                                                |
+| `--provider=<name>`   | Git provider hint (`github` \| `gitlab` \| `bitbucket` \| `gitea`). **Required for hosts other than `github.com` / `gitlab.com` / `bitbucket.org`.** Controls which CLI setup instructions the pre-flight shows when credentials are missing. Redundant for the three canonical hosts (auto-detected). `gitea` also covers Forgejo — same API, same UI flow. |
+| `--yes` / `-y`        | Skip the confirmation prompt.                                                                                                                                                                                                                                                                                                                                |
 
-## Mechanik
+## Mechanics
 
-1. Die Container-yml `$MONOCEROS_HOME/container-configs/<containername>.yml`
-   bekommt einen Eintrag in `repos:`. Reihenfolge bleibt erhalten —
-   wenn Klone aufeinander aufbauen, in der gewünschten Reihenfolge
-   hinzufügen. Kommentare und andere Felder bleiben unangetastet.
-2. Beim nächsten `monoceros apply <containername>` regeneriert sich
-   `.devcontainer/post-create.sh`. Pro Repo kommt ein Idempotenz-Block:
+1. The container yml `$MONOCEROS_HOME/container-configs/<containername>.yml`
+   gets an entry in `repos:`. Order is preserved — if clones build on
+   each other, add them in the desired order. Comments and other fields
+   are left untouched.
+2. On the next `monoceros apply <containername>`,
+   `.devcontainer/post-create.sh` regenerates. Each repo gets an
+   idempotency block:
    ```bash
    if [ ! -d "projects/bar" ]; then
      echo "→ Cloning bar from https://github.com/foo/bar.git…"
@@ -54,53 +55,53 @@ monoceros add-repo <containername> <url> [--path=<folder>] \
      echo "→ projects/bar already exists, skipping clone"
    fi
    ```
-   Falls per-Repo `git.user` gesetzt ist, kommen direkt danach zwei
-   `git -C projects/bar config user.name/email`-Zeilen.
-3. `<containername>.code-workspace` bekommt einen zusätzlichen Folder-
-   Root für `projects/<path>/`. Beim Öffnen in VS Code erscheint das
-   Repo als eigene Spalte im Explorer.
-4. Beim Container-Build läuft `git clone`. Auth via HTTPS-Credentials
-   die von `monoceros apply` aus dem Host-Git-Credential-System gezogen
-   werden (siehe Auth-Sektion unten).
+   If a per-repo `git.user` is set, two
+   `git -C projects/bar config user.name/email` lines follow right after.
+3. `<containername>.code-workspace` gets an additional folder root for
+   `projects/<path>/`. When opened in VS Code, the repo appears as its
+   own column in the Explorer.
+4. On the container build, `git clone` runs. Auth happens via HTTPS
+   credentials that `monoceros apply` pulls from the host Git credential
+   system (see the Auth section below).
 
-## URL-Format
+## URL format
 
-**HTTPS-only.** Akzeptierte URLs:
+**HTTPS-only.** Accepted URLs:
 
-| URL                                                  | Folder unter `projects/` |
+| URL                                                  | Folder under `projects/` |
 | ---------------------------------------------------- | ------------------------ |
 | `https://github.com/foo/bar.git`                     | `bar`                    |
 | `https://github.com/foo/bar`                         | `bar`                    |
 | `https://gitlab.com/group/sub/repo.git`              | `repo`                   |
 | `https://github.com/foo/bar.git` + `--path=apps/web` | `apps/web`               |
 
-SSH-URLs (`git@github.com:…`, `ssh://…`) werden vom Schema abgelehnt
-mit klarer Fehlermeldung. Siehe
-[ADR 0006](../adr/0006-https-only-repo-auth.md) für die Begründung —
-zusammengefasst: HTTPS deckt alle realistischen Git-Hosts ab (GitHub,
-GitLab, Gitea, Bitbucket — alle haben Personal-Access-Tokens) und
-vermeidet plattformspezifische SSH-Agent-Forwarding-Komplexität auf
-macOS und Windows Docker Desktop.
+SSH URLs (`git@github.com:…`, `ssh://…`) are rejected by the schema
+with a clear error message. See
+[ADR 0006](../adr/0006-https-only-repo-auth.md) for the rationale — in
+short: HTTPS covers every realistic Git host (GitHub, GitLab, Gitea,
+Bitbucket — all of them have personal access tokens) and avoids
+platform-specific SSH agent forwarding complexity on macOS and Windows
+Docker Desktop.
 
-**Du nimmst die URL aus dem "Clone" / "Clone or download"-Dialog des
-Git-Hosts** — meistens gibt's dort einen HTTPS-Tab neben dem SSH-Tab.
+**Take the URL from the Git host's "Clone" / "Clone or download"
+dialog** — there's usually an HTTPS tab next to the SSH tab.
 
-## Idempotenz
+## Idempotency
 
-- **Selbe URL, selber Path** → no-op.
-- **Selbe URL, anderer Path** → neuer Eintrag (zweiter Klon des Repos
-  in einen anderen Folder — selten, aber zulässig).
-- **Selber Path, andere URL** → Validierungsfehler beim Apply
-  („Duplicate repo path"). Mit `--path` einen davon umbenennen.
-- **Wenn der Folder unter `projects/<path>/` schon existiert** → der
-  Clone-Step skippt; deine lokalen Änderungen bleiben unangetastet.
-  Auch nach `monoceros apply` mit Container-Rebuild.
+- **Same URL, same path** → no-op.
+- **Same URL, different path** → new entry (a second clone of the repo
+  into a different folder — rare, but allowed).
+- **Same path, different URL** → validation error on apply
+  ("Duplicate repo path"). Rename one of them with `--path`.
+- **If the folder under `projects/<path>/` already exists** → the clone
+  step is skipped; your local changes are left untouched. Even after a
+  `monoceros apply` with a container rebuild.
 
-## Path-Derivation
+## Path derivation
 
-Aus URL wird der Default-Path automatisch abgeleitet (Last-Segment,
-`.git` entfernt). Override via `--path=<folder>` wenn der Default-Name
-ungünstig ist oder Subfolder gewünscht sind:
+The default path is derived automatically from the URL (last segment,
+`.git` stripped). Override it via `--path=<folder>` when the default
+name is awkward or you want subfolders:
 
 ```sh
 monoceros add-repo sandbox https://github.com/foo/bar.git              # → projects/bar
@@ -108,9 +109,9 @@ monoceros add-repo sandbox https://github.com/foo/bar.git --path=ui    # → pro
 monoceros add-repo sandbox https://github.com/foo/web.git --path=apps/web   # → projects/apps/web
 ```
 
-## Beispiele
+## Examples
 
-Einzelnes öffentliches Repo:
+Single public repo:
 
 ```sh
 monoceros add-repo sandbox https://github.com/foo/bar.git
@@ -118,14 +119,14 @@ monoceros apply sandbox
 ls $MONOCEROS_HOME/container/sandbox/projects/bar/
 ```
 
-Mit Subfolder-Pfad:
+With a subfolder path:
 
 ```sh
 monoceros add-repo sandbox https://github.com/foo/web.git --path=apps/web
 monoceros apply sandbox
 ```
 
-Mehrere Repos:
+Multiple repos:
 
 ```sh
 monoceros add-repo sandbox https://github.com/myorg/api.git
@@ -134,23 +135,22 @@ monoceros add-repo sandbox https://github.com/myorg/types.git --path=shared
 monoceros apply sandbox
 ```
 
-Self-hosted GitLab (`provider` ist Pflicht, sonst weiß der Pre-Flight
-nicht, welche CLI-Anleitung er zeigen soll):
+Self-hosted GitLab (`provider` is required, otherwise the pre-flight
+doesn't know which CLI instructions to show):
 
 ```sh
 monoceros add-repo dev https://git.firma.de/team/app.git --provider=gitlab
 monoceros apply dev
 ```
 
-Self-hosted Gitea (oder Forgejo — gleicher Provider-Wert, gleicher
-Auth-Flow):
+Self-hosted Gitea (or Forgejo — same provider value, same auth flow):
 
 ```sh
-monoceros add-repo dev https://gitea.deine-firma.de/team/app.git --provider=gitea
+monoceros add-repo dev https://gitea.example.com/team/app.git --provider=gitea
 monoceros apply dev
 ```
 
-Per-Repo Committer-Identität (work vs personal):
+Per-repo committer identity (work vs. personal):
 
 ```sh
 monoceros add-repo dev https://github.com/conciso/api.git \
@@ -159,87 +159,86 @@ monoceros add-repo dev https://github.com/kamann-info/blog.git \
   --git-name="Thorsten Kamann" --git-email=thorsten@kamann.info
 ```
 
-Layout im materialisierten Container danach:
+Layout in the materialized container afterward:
 
 ```
 $MONOCEROS_HOME/container/sandbox/
   home/  .devcontainer/  .monoceros/
   sandbox.code-workspace
   projects/
-    api/      ← geklont
-    shared/   ← geklont
-    web/      ← geklont
-    apps/web/ ← geklont (Subfolder)
+    api/      ← cloned
+    shared/   ← cloned
+    web/      ← cloned
+    apps/web/ ← cloned (subfolder)
 ```
 
-## Validierung
+## Validation
 
-- **URL**: muss mit `https://` anfangen, nur URL-safe Zeichen. SSH-
-  Style-URLs (`git@host:…`, `ssh://…`, `git://…`) werden mit
-  Fehlermeldung abgelehnt.
-- **Path**: muss `[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*` matchen. Slashes
-  für Subfolders erlaubt, kein führendes / trailing `/`, keine `..`-
-  oder `.`-Segmente.
-- **Git-Identität**: `--git-name` und `--git-email` nur gemeinsam.
-  Email muss `<...>@<...>.<...>` matchen.
-- **Provider**: Nur `github` / `gitlab` / `bitbucket` erlaubt. Bei
-  Host `github.com` / `gitlab.com` / `bitbucket.org` ist der Wert
-  redundant (auto-detect) und darf höchstens dem kanonischen Provider
-  entsprechen — Widerspruch wird abgelehnt. Bei anderen Hosts ist
-  `--provider` Pflicht, sonst Fehlermeldung.
+- **URL**: must start with `https://`, URL-safe characters only.
+  SSH-style URLs (`git@host:…`, `ssh://…`, `git://…`) are rejected with
+  an error message.
+- **Path**: must match `[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*`. Slashes for
+  subfolders are allowed, no leading/trailing `/`, no `..` or `.`
+  segments.
+- **Git identity**: `--git-name` and `--git-email` only together. Email
+  must match `<...>@<...>.<...>`.
+- **Provider**: Only `github` / `gitlab` / `bitbucket` allowed. For host
+  `github.com` / `gitlab.com` / `bitbucket.org` the value is redundant
+  (auto-detected) and may at most match the canonical provider — a
+  contradiction is rejected. For other hosts, `--provider` is required,
+  otherwise an error message.
 
 ## Auth
 
-### HTTPS-Credentials
+### HTTPS credentials
 
-Bei jedem `monoceros apply` läuft host-seitig `git credential fill`
-pro unique Host (`github.com`, `gitlab.com`, deine Gitea-Instanz, …):
+On every `monoceros apply`, `git credential fill` runs host-side per
+unique host (`github.com`, `gitlab.com`, your Gitea instance, …):
 
-- Host-git fragt deinen lokalen Credential-Helper (macOS-Keychain,
-  Windows Credential Manager, Linux libsecret, `gh auth setup-git` für
-  GitHub specifically) — das ist OS-Detail, das du nie merkst, weil
-  dein Host das schon konfiguriert hat.
-- Resultat: Username + Token landen in
-  `<container-dir>/.monoceros/git-credentials` (Mode `0o600`).
-- Im Container ist `credential.helper = store --file=<workspace>/.monoceros/git-credentials`
-  konfiguriert → liest die Datei → klont/pusht ohne Prompt.
+- Host git asks your local credential helper (macOS Keychain, Windows
+  Credential Manager, Linux libsecret, `gh auth setup-git` for GitHub
+  specifically) — this is an OS detail you never notice because your
+  host has already configured it.
+- Result: username + token land in
+  `<container-dir>/.monoceros/git-credentials` (mode `0o600`).
+- Inside the container, `credential.helper = store --file=<workspace>/.monoceros/git-credentials`
+  is configured → reads the file → clones/pushes without a prompt.
 
-Wenn dein Host-Helper für einen Host noch nichts gespeichert hat,
-prompted die Host-Helper-UI während `monoceros apply` (Keychain-Popup,
-GCM-Window, Terminal-Prompt — je nach OS). Nach diesem einmaligen
-Schritt ist's gespeichert und Folge-Applies sind silent.
+If your host helper hasn't stored anything for a host yet, the host
+helper UI prompts during `monoceros apply` (Keychain popup, GCM window,
+terminal prompt — depending on the OS). After this one-time step it's
+stored and subsequent applies are silent.
 
-Die Credentials-Datei wird **bei jedem Apply neu geschrieben** — stale
-Tokens (revoked, expired) werden automatisch durch fresh-vom-Host-
-gefetchte ersetzt.
+The credentials file is **rewritten on every apply** — stale tokens
+(revoked, expired) are automatically replaced by freshly host-fetched
+ones.
 
-**Wenn host-seitig kein Credential-Helper konfiguriert ist**:
-`git credential fill` returnt leer, Container-Clone scheitert mit
-„could not read Username for `<host>`: No such device or address".
-Setup-Anleitung pro OS findest du in der `monoceros init`-Doku unter
-„Voraussetzungen".
+**If no credential helper is configured host-side**: `git credential
+fill` returns empty, the container clone fails with "could not read
+Username for `<host>`: No such device or address". Per-OS setup
+instructions are in the `monoceros init` docs under "Prerequisites".
 
-### Commit-Identität (`user.name` / `user.email`)
+### Commit identity (`user.name` / `user.email`)
 
-Auflösung pro Repo (höchste Priorität gewinnt):
+Resolution per repo (highest priority wins):
 
-1. Per-Repo `git.user` aus der Container-yml (gesetzt via
+1. Per-repo `git.user` from the container yml (set via
    `--git-name`/`--git-email`)
-2. Container-Level `git.user`
-3. `defaults.git.user` aus `~/.monoceros/monoceros-config.yml`
-4. Host-seitiges `git config --global --get user.name/email`
-5. Persisted in `.monoceros/gitconfig` (von früherem Apply)
-6. Interaktiver Prompt (falls TTY)
+2. Container-level `git.user`
+3. `defaults.git.user` from `~/.monoceros/monoceros-config.yml`
+4. Host-side `git config --global --get user.name/email`
+5. Persisted in `.monoceros/gitconfig` (from an earlier apply)
+6. Interactive prompt (if TTY)
 
-post-create.sh setzt `git -C projects/<path> config user.name/email`
-direkt nach dem Clone, sodass die Per-Repo-Identität ab dem ersten
-Commit greift.
+post-create.sh sets `git -C projects/<path> config user.name/email`
+right after the clone, so the per-repo identity takes effect from the
+first commit.
 
-#### `${VAR}` aus `<name>.env`
+#### `${VAR}` from `<name>.env`
 
-`git.user.name` / `git.user.email` (per-Repo **und** Container-Level)
-dürfen `${VAR}`-Platzhalter tragen, die beim Apply aus `<name>.env`
-aufgelöst werden — so liegt die Identität nicht in der teilbaren yml:
+`git.user.name` / `git.user.email` (per-repo **and** container-level)
+may carry `${VAR}` placeholders that are resolved from `<name>.env` on
+apply — that way the identity doesn't live in the shareable yml:
 
 ```yaml
 repos:
@@ -256,83 +255,82 @@ GIT_USER_NAME=Thorsten Kamann
 GIT_USER_EMAIL=thorsten.kamann@conciso.de
 ```
 
-Die Kaskade bleibt erhalten: **fehlt** eine der Vars in der `.env`,
-wird der per-Repo-Override **komplett verworfen** (alles-oder-nichts,
-keine Misch-Identität) und das Repo fällt auf die nächste Stufe zurück
-(monoceros-config → Host → Prompt). Auf Container-Ebene wird **pro Feld**
-zurückgefallen. Ein aufgelöster, aber ungültiger Wert
-(`GIT_USER_EMAIL=quatsch`) bricht den Apply mit klarer Meldung ab — der
-Format-Check sitzt bewusst **nach** der Auflösung, nicht beim Parsen.
+The cascade is preserved: if one of the vars is **missing** from the
+`.env`, the per-repo override is **discarded entirely** (all-or-nothing,
+no mixed identity) and the repo falls back to the next level
+(monoceros-config → host → prompt). At the container level, fallback
+happens **per field**. A resolved but invalid value
+(`GIT_USER_EMAIL=quatsch`) aborts the apply with a clear message — the
+format check deliberately sits **after** resolution, not at parse time.
 
-`add-repo --git-email` akzeptiert ebenfalls einen `${VAR}`-Platzhalter;
-ein literaler Wert wird am Eingang sofort auf gültiges Format geprüft.
+`add-repo --git-email` also accepts a `${VAR}` placeholder; a literal
+value is checked for valid format immediately on input.
 
-**Scaffold beim ersten Repo:** Hat der Container noch keine `git.user`,
-legt `add-repo` (wie `init`) automatisch einen Container-`git.user` mit
-`${GIT_USER_NAME}`/`${GIT_USER_EMAIL}`-Platzhaltern an und seedet die
-leeren Keys in `<name>.env`. Eine bereits vorhandene `git.user` (literal
-oder Platzhalter) bleibt unangetastet. Leere Keys → die Kaskade füllt die
-Identität beim Apply.
+**Scaffolding on the first repo:** If the container doesn't have a
+`git.user` yet, `add-repo` (like `init`) automatically creates a
+container-level `git.user` with `${GIT_USER_NAME}`/`${GIT_USER_EMAIL}`
+placeholders and seeds the empty keys into `<name>.env`. An existing
+`git.user` (literal or placeholder) is left untouched. Empty keys → the
+cascade fills in the identity on apply.
 
-## On-the-fly-Clone bei laufendem Container
+## On-the-fly clone with a running container
 
-Wenn der Container für den Namen gerade läuft, klont `add-repo` den
-Repo direkt nach `projects/<path>/` im Container — kein `monoceros
-apply` nötig. Mechanik:
+If the container for the name is currently running, `add-repo` clones
+the repo directly into `projects/<path>/` in the container — no
+`monoceros apply` needed. Mechanics:
 
-1. Container über Docker-Label `devcontainer.local_folder` finden.
-   Nicht laufend → Fall-back: nur yml aktualisieren, Hinweis zeigt
-   den `apply`-Befehl für später.
-2. Host-seitige HTTPS-Credentials für den Repo-Host abholen
-   (gleicher Mechanismus wie beim Apply-Pre-Flight). Keine
-   Credentials → yml bleibt aktualisiert, Hinweis zeigt was zu tun
-   ist (`gh auth login` etc.).
-3. `docker exec` im laufenden Container: `mkdir -p projects/<parent>`,
-   dann `git clone <url> projects/<path>`. Idempotent — wenn der
-   Folder schon existiert, wird übersprungen.
-4. Wenn `--git-name`/`--git-email` gesetzt war: `git -C projects/<path>
-config user.name/email` direkt nach dem Clone.
+1. Find the container via the Docker label
+   `devcontainer.local_folder`. Not running → fallback: only update the
+   yml, with a note showing the `apply` command for later.
+2. Fetch host-side HTTPS credentials for the repo host (same mechanism
+   as the apply pre-flight). No credentials → the yml stays updated,
+   with a note showing what to do (`gh auth login` etc.).
+3. `docker exec` in the running container: `mkdir -p projects/<parent>`,
+   then `git clone <url> projects/<path>`. Idempotent — if the folder
+   already exists, it's skipped.
+4. If `--git-name`/`--git-email` was set: `git -C projects/<path> config
+user.name/email` right after the clone.
 
-Alle Fehler im on-the-fly-Pfad lassen die yml-Änderung **bestehen**
-— ein späterer `monoceros apply` holt nach. Die yml ist die Wahrheit;
-der Container-Klon ist Bequemlichkeit.
+All errors in the on-the-fly path leave the yml change **in place** — a
+later `monoceros apply` catches up. The yml is the truth; the container
+clone is a convenience.
 
-## Verwandte Befehle
+## Related commands
 
-- `monoceros init <name> --with-repo=<url>` — Repo direkt beim Erstellen
-  der Container-yml mit reinziehen. Löst auch den Identity-Prompt
-  aus wenn nötig.
-- `monoceros apply <name>` — Container neu bauen, falls der
-  on-the-fly-Clone nicht greift (Container war nicht da, etc.).
-- `monoceros run <name> -- git status` — Git-Operationen im Container.
-- `monoceros remove-repo <name> <url-or-path>` — Inverse.
+- `monoceros init <name> --with-repo=<url>` — pull a repo in directly
+  when creating the container yml. Also triggers the identity prompt if
+  needed.
+- `monoceros apply <name>` — rebuild the container if the on-the-fly
+  clone didn't kick in (container wasn't there, etc.).
+- `monoceros run <name> -- git status` — Git operations in the
+  container.
+- `monoceros remove-repo <name> <url-or-path>` — the inverse.
 
-## Fail-Modi
+## Failure modes
 
-- **`Invalid repo URL. Only HTTPS URLs are supported`** — du hast eine
-  SSH-Style-URL hingeschrieben. Nimm die HTTPS-Variante aus dem Clone-
-  Dialog des Git-Hosts.
-- **`Invalid repo path`** — Path enthält verbotene Zeichen oder
-  `..`/`.`-Segmente. Charset prüfen, kein führendes/trailing `/`.
-- **`Duplicate repo path`** — zwei Repos beanspruchen denselben
-  `projects/<path>/`-Slot. Mit `--path` einen davon umbenennen.
-- **Clone scheitert mit `could not read Username for '<host>'`** —
-  host-seitig kein Credential-Helper, oder Helper hat keinen Eintrag
-  für diesen Host. Auf macOS `gh auth setup-git` für GitHub, oder
-  manuell `git config --global credential.helper osxkeychain` + einmal
-  `git ls-remote <https-url>` zum Speichern eines Tokens.
-- **Clone scheitert mit `Repository not found`** — URL falsch oder
-  Repo privat _und_ Token hat keine Zugriffsrechte. Token-Scopes auf
-  GitHub prüfen (mindestens `repo` für private Repos).
+- **`Invalid repo URL. Only HTTPS URLs are supported`** — you wrote an
+  SSH-style URL. Use the HTTPS variant from the Git host's clone dialog.
+- **`Invalid repo path`** — path contains forbidden characters or
+  `..`/`.` segments. Check the charset, no leading/trailing `/`.
+- **`Duplicate repo path`** — two repos claim the same
+  `projects/<path>/` slot. Rename one of them with `--path`.
+- **Clone fails with `could not read Username for '<host>'`** — no
+  credential helper host-side, or the helper has no entry for this host.
+  On macOS use `gh auth setup-git` for GitHub, or manually `git config
+--global credential.helper osxkeychain` plus a one-time `git ls-remote
+<https-url>` to store a token.
+- **Clone fails with `Repository not found`** — wrong URL, or the repo
+  is private _and_ the token has no access rights. Check the token
+  scopes on GitHub (at least `repo` for private repos).
 
-- **`Cannot reach declared repo: …` beim `monoceros apply`** —
-  Pre-Flight Stage 2 hat host-seitig `git ls-remote <url>`
-  ausgeführt und einen Fehler bekommen. Drei häufige Ursachen:
-  - **Repository not found / may not have access** → URL prüfen (case-
-    sensitive), Workspace-Mitgliedschaft prüfen, Token-Scope erweitern
-    (GitHub: `repo`, GitLab: `read_repository`, Bitbucket: repo read).
-  - **Authentication failed** (Creds präsent, abgelehnt) → Token
-    abgelaufen oder revoked. Neu generieren, `gh auth login` /
-    `glab auth login` neu durchlaufen.
-  - **Could not resolve host** → DNS / VPN / offline. Bei
-    Firmen-Hosts: VPN check.
+- **`Cannot reach declared repo: …` on `monoceros apply`** — pre-flight
+  stage 2 ran `git ls-remote <url>` host-side and got an error. Three
+  common causes:
+  - **Repository not found / may not have access** → check the URL
+    (case-sensitive), check workspace membership, broaden the token
+    scope (GitHub: `repo`, GitLab: `read_repository`, Bitbucket: repo
+    read).
+  - **Authentication failed** (creds present, rejected) → token expired
+    or revoked. Regenerate, re-run `gh auth login` / `glab auth login`.
+  - **Could not resolve host** → DNS / VPN / offline. For company hosts:
+    check the VPN.

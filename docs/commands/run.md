@@ -1,47 +1,46 @@
 # `monoceros run`
 
-Führt einen einmaligen Befehl im benannten Container aus und gibt
-dessen Exit-Code zurück. Bringt den Container vorher automatisch
-hoch falls nötig.
+Runs a one-off command in the named container and returns its
+exit code. Brings the container up automatically beforehand if
+needed.
 
 ```sh
 monoceros run <name> -- <cmd> [args …]
 ```
 
-## Zweck
+## Purpose
 
-Für alles was kein interaktives Bash braucht: Build-Skripte,
-einzelne CLI-Aufrufe, Health-Checks. Im Gegensatz zu
-`monoceros shell` ist der Container danach wieder bei sich selbst,
-ohne hängende Sitzung.
+For anything that doesn't need an interactive bash: build scripts,
+single CLI calls, health checks. Unlike `monoceros shell`, the
+container is back to itself afterward, with no lingering session.
 
-Häufige Anwendungsfälle:
+Common use cases:
 
 - `monoceros run sandbox -- pnpm test`
 - `monoceros run sandbox -- gh pr create`
-- `monoceros run sandbox -- claude` (interaktiv möglich; siehe
-  „Interaktive Inner-Befehle" unten)
+- `monoceros run sandbox -- claude` (interactive is possible; see
+  "Interactive inner commands" below)
 
-## Mechanik
+## Mechanics
 
-1. **Container-Check**: wie bei `shell`. Wenn `.devcontainer/`
-   nicht existiert → `Run \`monoceros apply <name>\` first`-Fehler.
-2. **Implizites Hochfahren**: `devcontainer up` quiet (no-op wenn
-   schon läuft).
+1. **Container check**: same as `shell`. If `.devcontainer/`
+   doesn't exist → `Run \`monoceros apply <name>\` first` error.
+2. **Implicit startup**: `devcontainer up` quiet (no-op if
+   already running).
 3. **Exec**: `devcontainer exec --workspace-folder … <cmd> [args]`.
-   stdio inherit, sodass der innere Befehl direkten TTY-Zugriff hat.
-   Exit-Code wird zurückpropagiert.
+   stdio inherit, so the inner command has direct TTY access.
+   The exit code is propagated back.
 
-## Argumente
+## Arguments
 
-| Argument   | Bedeutung                                                                                                                                             |
+| Argument   | Meaning                                                                                                                                               |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<name>`   | Container-Name.                                                                                                                                       |
-| `-- <cmd>` | Alles nach `--` ist der innere Befehl + seine Argumente. `--` ist nötig, damit Monoceros nicht versucht, Flags wie `--help` selbst zu interpretieren. |
+| `<name>`   | Container name.                                                                                                                                       |
+| `-- <cmd>` | Everything after `--` is the inner command plus its arguments. The `--` is required so Monoceros doesn't try to interpret flags like `--help` itself. |
 
-## Beispiele
+## Examples
 
-Einfach:
+Simple:
 
 ```sh
 $ monoceros run sandbox -- pnpm test
@@ -50,51 +49,51 @@ $ monoceros run sandbox -- pnpm test
 …
 ```
 
-Mit eigenen Flags:
+With your own flags:
 
 ```sh
 $ monoceros run sandbox -- gh pr list --state open
 ```
 
-## Interaktive Inner-Befehle
+## Interactive inner commands
 
-`monoceros run` läuft mit `stdio: 'inherit'` und reicht dadurch ein
-echtes TTY weiter. Interaktive Inner-Befehle wie `claude`, `acli
-rovodev run`, `psql` funktionieren genauso wie in einer
-`monoceros shell`-Sitzung. Beenden mit dem inneren Befehl beendet
-auch den `run`-Aufruf.
+`monoceros run` runs with `stdio: 'inherit'` and thereby passes
+through a real TTY. Interactive inner commands like `claude`, `acli
+rovodev run`, and `psql` work exactly as they do in a
+`monoceros shell` session. Exiting the inner command also ends the
+`run` call.
 
-## Shell-Builtins (`cd`, `export`, ...)
+## Shell builtins (`cd`, `export`, ...)
 
-`monoceros run` reicht das Argument-Array verbatim an
-`docker exec` weiter — ohne Shell dazwischen. `cd`, `export`,
-`source` etc. sind Bash-Builtins und keine Binaries auf `$PATH`,
-also schlagen sie fehl mit `executable file not found`:
+`monoceros run` passes the argument array verbatim to
+`docker exec` — with no shell in between. `cd`, `export`,
+`source`, etc. are bash builtins and not binaries on `$PATH`, so
+they fail with `executable file not found`:
 
 ```sh
 $ monoceros run sandbox -- cd projects && claude
 OCI runtime exec failed: exec: "cd": executable file not found
 ```
 
-Wenn du Shell-Builtins brauchst, ruf explizit eine Shell auf:
+If you need shell builtins, invoke a shell explicitly:
 
 ```sh
 $ monoceros run sandbox -- bash -lc 'cd projects && claude'
 ```
 
-Die Single-Quotes sind wichtig, sonst zerlegt deine Host-Shell die
-`&&`-Pipeline und das `claude` würde host-seitig laufen.
+The single quotes matter; otherwise your host shell splits the
+`&&` pipeline and `claude` would run on the host side.
 
-## Verwandte Befehle
+## Related commands
 
-- [`monoceros shell <name>`](./shell.md) — interaktive Bash-Sitzung
-- [`monoceros apply <name>`](./apply.md) — Container bauen + hochfahren
+- [`monoceros shell <name>`](./shell.md) — interactive bash session
+- [`monoceros apply <name>`](./apply.md) — build and start the container
 
-## Fail-Modi
+## Failure modes
 
-- **`No command provided`** — kein `--` gefolgt von einem Befehl
-  übergeben.
-- **`No .devcontainer/ at <path>`** — Container nie materialisiert.
-- **`OCI runtime exec failed`** — der innere Befehl existiert nicht
-  im Container. Häufig bei Shell-Builtins (siehe oben) oder bei
-  einem Tool, das nicht durch ein Feature installiert wurde.
+- **`No command provided`** — no `--` followed by a command was
+  passed.
+- **`No .devcontainer/ at <path>`** — container was never materialized.
+- **`OCI runtime exec failed`** — the inner command doesn't exist
+  in the container. Common with shell builtins (see above) or with
+  a tool that wasn't installed by a feature.

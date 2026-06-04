@@ -1,14 +1,13 @@
 # `monoceros completion <shell>`
 
-Druckt ein Shell-Completion-Skript nach stdout. Unterstützt sind
-**bash**, **zsh** und **pwsh** (PowerShell).
+Prints a shell completion script to stdout. Supported shells are
+**bash**, **zsh**, and **pwsh** (PowerShell).
 
-In aller Regel musst du diesen Befehl nicht von Hand aufrufen: das
-[`install.sh`](../../install.sh) bzw.
-[`install.ps1`](../../install.ps1) im Workbench-Root erledigt die
-Completion-Einrichtung automatisch beim Setup. Manueller Aufruf nur,
-wenn du die Einrichtung neu anstoßen oder in ein anderes Verzeichnis
-schreiben willst.
+As a rule you won't need to call this command by hand: the
+[`install.sh`](../../install.sh) and
+[`install.ps1`](../../install.ps1) scripts in the workbench root set up
+completion automatically during setup. Run it manually only if you want
+to re-trigger the setup or write to a different directory.
 
 ```sh
 monoceros completion zsh  > "${fpath[1]}/_monoceros"        # zsh
@@ -21,71 +20,73 @@ monoceros completion pwsh > $HOME\.config\monoceros\completion.ps1
 Add-Content $PROFILE ". $HOME\.config\monoceros\completion.ps1"
 ```
 
-## Architektur — dünner Wrapper + CLI-Engine
+## Architecture — thin wrapper + CLI engine
 
-Das gedruckte Skript ist ein **dünner Wrapper**. Die eigentliche
-Completion-Logik lebt in der CLI selbst hinter dem internen Befehl
-`monoceros __complete --line "<buffer>" --point <N>`. Der Wrapper
-macht nur:
+The printed script is a **thin wrapper**. The actual completion logic
+lives in the CLI itself, behind the internal command
+`monoceros __complete --line "<buffer>" --point <N>`. The wrapper only
+does the following:
 
-1. Die aktuelle Eingabezeile + Cursor-Position aus den Shell-Variablen
-   abgreifen (`COMP_LINE`/`COMP_POINT` in bash, `BUFFER`/`CURSOR` in
-   zsh, der AST-Extent in pwsh).
-2. Beides an `monoceros __complete` durchreichen.
-3. Die zurückkommenden Kandidaten (eine pro Zeile) an den Completion-
-   Mechanismus der Shell geben.
+1. Grab the current input line and cursor position from the shell
+   variables (`COMP_LINE`/`COMP_POINT` in bash, `BUFFER`/`CURSOR` in
+   zsh, the AST extent in pwsh).
+2. Pass both to `monoceros __complete`.
+3. Hand the returned candidates (one per line) to the shell's
+   completion mechanism.
 
-Konsequenz: das Wrapper-Skript enthält **keine** hartkodierte
-Befehlsliste mehr. Die Quelle der Wahrheit ist die CLI. Ein
-Workbench-Update bringt neue Befehle / Flags / Werte automatisch in
-die Completion — ohne dass das Wrapper-Skript neu generiert werden
-muss (siehe „Re-generieren" unten).
+Consequence: the wrapper script no longer contains **any** hard-coded
+command list. The source of truth is the CLI. A workbench update brings
+new commands / flags / values into completion automatically — without
+the wrapper script having to be regenerated (see "Regenerating" below).
 
-## Was completiert wird
+## What gets completed
 
-- **Befehlsname** (Position 1) — alle Subcommands (`init`, `apply`,
-  `add-feature`, …), prefix-gefiltert gegen das, was schon getippt
-  ist.
-- **Container-Name** — bei Befehlen, die einen existierenden Container
-  erwarten (`apply`, `shell`, `run`, `logs`, `start`, `stop`,
-  `status`, `remove`, alle `add-*`/`remove-*`-Editoren): die Namen aus
+- **Command name** (position 1) — all subcommands (`init`, `apply`,
+  `add-feature`, …), prefix-filtered against what has already been
+  typed.
+- **Container name** — for commands that expect an existing container
+  (`apply`, `shell`, `run`, `logs`, `start`, `stop`, `status`,
+  `remove`, all `add-*`/`remove-*` editors): the names from
   `$MONOCEROS_HOME/container-configs/*.yml`.
-- **Flag-Namen** — pro Befehl die akzeptierten Flags, sobald du mit
-  `-` anfängst. Boolean-Flags (`--yes`/`-y`, `--default`, `--no-backup`)
-  kommen ohne `=`, Value-Flags (`--with`, `--with-repo`, `--with-ports`,
-  `--path`, `--provider`, …) kommen **mit** Trailing-`=`, damit die
-  Shell kein Auto-Space dahinter setzt (sonst entstünde
+- **Flag names** — per command, the accepted flags, as soon as you
+  start with `-`. Boolean flags (`--yes`/`-y`, `--default`,
+  `--no-backup`) come without `=`; value flags (`--with-languages`,
+  `--with-features`, `--with-services`, `--with-repo`, `--with-ports`,
+  `--path`, `--provider`, …) come **with** a trailing `=`, so the shell
+  doesn't insert an auto-space after them (otherwise you'd get
   `--with-ports =3000`).
-- **Flag-Werte** —
-  - `monoceros init <name> --with=<TAB>` → der Komponenten-Katalog
-    (Sprachen, Services, Features inkl. Sub-Components wie
-    `atlassian/twg`).
-  - Komma-getrennte Listen: `--with=node,<TAB>` schlägt die nächsten
-    Werte vor und hängt sie hinter das Komma.
+- **Flag values** —
+  - `monoceros init <name> --with-languages=<TAB>` →
+    `monoceros init <name> --with-features=<TAB>` →
+    `monoceros init <name> --with-services=<TAB>` → the component
+    catalog (languages, services, features including sub-components
+    like `atlassian/twg`).
+  - Comma-separated lists: `--with-languages=node,<TAB>` suggests the
+    next values and appends them after the comma.
   - `monoceros add-repo <name> <url> --provider=<TAB>` → `github`,
     `gitlab`, `bitbucket`, `gitea`.
-- **Feature-Kurznamen** — `monoceros add-feature <name> <TAB>` /
-  `remove-feature <name> <TAB>` → die Feature-Komponenten aus dem
-  Katalog (`atlassian`, `atlassian/twg`, `claude`, `github`).
-- **Feature-Options nach `--`** —
-  `monoceros add-feature <name> <feature> -- <TAB>` → die Option-Keys
-  aus dem Feature-Manifest. Bei `key=<TAB>` für Boolean-Optionen:
-  `key=true` / `key=false`. Bereits gesetzte Keys fallen aus der
-  Vorschlagsliste.
+- **Feature short names** — `monoceros add-feature <name> <TAB>` /
+  `remove-feature <name> <TAB>` → the feature components from the
+  catalog (`atlassian`, `atlassian/twg`, `claude`, `github`).
+- **Feature options after `--`** —
+  `monoceros add-feature <name> <feature> -- <TAB>` → the option keys
+  from the feature manifest. For `key=<TAB>` on boolean options:
+  `key=true` / `key=false`. Keys that are already set drop out of the
+  suggestion list.
 - **`monoceros completion <TAB>`** → `bash`, `zsh`, `pwsh`.
 
-Nicht completiert: `init <NAME>` (frischer Name — Vorschläge aus
-existierenden Configs würden zu Kollisionen einladen), `restore <PATH>`
-(Backup-Pfad — Freiform), `--with-repo`/`--with-ports`-Werte (URLs
-und freie Portnummern — kein sinnvoller Kandidatenpool).
+Not completed: `init <NAME>` (a fresh name — suggesting from existing
+configs would invite collisions), `restore <PATH>` (backup path — free
+form), `--with-repo`/`--with-ports` values (URLs and arbitrary port
+numbers — no meaningful candidate pool).
 
-## Container-Namen-Quelle
+## Container-name source
 
-Der Engine liest das `MONOCEROS_HOME`-Env wenn gesetzt, sonst fällt
-sie auf `$HOME/.monoceros` zurück — identisch zur Resolution der CLI
-selbst. Wer im Workbench-Checkout entwickelt und auch dort
-Container-Namen completed haben will, setzt sich
-`MONOCEROS_HOME="$PWD/.local"` in der Shell.
+The engine reads the `MONOCEROS_HOME` env var if set, otherwise it
+falls back to `$HOME/.monoceros` — identical to the CLI's own
+resolution. If you develop inside the workbench checkout and want
+container-name completion there too, set
+`MONOCEROS_HOME="$PWD/.local"` in your shell.
 
 ## Installation — bash
 
@@ -93,17 +94,17 @@ Container-Namen completed haben will, setzt sich
 mkdir -p ~/.bash_completion.d
 monoceros completion bash > ~/.bash_completion.d/monoceros
 echo 'source ~/.bash_completion.d/monoceros' >> ~/.bashrc
-# neues Terminal öffnen, oder: source ~/.bashrc
+# open a new terminal, or: source ~/.bashrc
 ```
 
-Wenn dein System bereits `bash-completion` als Paket installiert hat
-(typisch unter Homebrew / Debian), schreib das Skript einfach in das
-von `bash-completion` durchgesuchte Verzeichnis.
+If your system already has `bash-completion` installed as a package
+(typical under Homebrew / Debian), just write the script into the
+directory that `bash-completion` scans.
 
-Bash-Eigenheit: bei mehreren Kandidaten mit gemeinsamem Präfix
-completed das erste Tab nur bis zum Präfix und zeigt erst das zweite
-Tab die volle Liste. Wer das erste Tab direkt listen lassen will,
-setzt einmalig in `~/.bashrc`:
+bash quirk: with multiple candidates that share a common prefix, the
+first Tab only completes up to the prefix and only the second Tab shows
+the full list. If you want the first Tab to list directly, set this
+once in `~/.bashrc`:
 
 ```sh
 bind 'set show-all-if-ambiguous on'
@@ -111,47 +112,47 @@ bind 'set show-all-if-ambiguous on'
 
 ## Installation — zsh
 
-`zsh` lädt Completion-Files namens `_<command>` automatisch, sofern
-ihr Verzeichnis im `$fpath` steht und `compinit` aufgerufen wurde.
+`zsh` loads completion files named `_<command>` automatically, as long
+as their directory is on `$fpath` and `compinit` has been called.
 
 ```sh
-# wenn du Oh-My-Zsh hast, ist ~/.oh-my-zsh/completions im fpath:
+# if you have Oh My Zsh, ~/.oh-my-zsh/completions is on the fpath:
 monoceros completion zsh > ~/.oh-my-zsh/completions/_monoceros
 
-# vanille-zsh:
+# vanilla zsh:
 mkdir -p ~/.zsh/completions
 monoceros completion zsh > ~/.zsh/completions/_monoceros
-# einmalig in ~/.zshrc ergänzen:
+# add once to ~/.zshrc:
 #   fpath=(~/.zsh/completions $fpath)
 #   autoload -Uz compinit && compinit
 #   zstyle ':completion:*' menu select
 #   unsetopt LIST_AMBIGUOUS
 ```
 
-Die letzten zwei Zeilen sind das zsh-Pendant zu bash's
-`show-all-if-ambiguous`: `unsetopt LIST_AMBIGUOUS` lässt das erste Tab
-direkt die Kandidatenliste zeigen statt nur den gemeinsamen Präfix
-einzufügen, `menu select` schaltet Pfeiltasten-Navigation im Menü
-frei. `install.sh` schreibt beide Zeilen bei der zsh-Einrichtung
-automatisch mit.
+The last two lines are the zsh counterpart to bash's
+`show-all-if-ambiguous`: `unsetopt LIST_AMBIGUOUS` makes the first Tab
+show the candidate list directly instead of just inserting the common
+prefix, and `menu select` enables arrow-key navigation in the menu.
+`install.sh` writes both lines automatically during zsh setup.
 
-Neues Terminal, `monoceros <TAB>` zeigt die Subcommands. `monoceros
-apply <TAB>` zeigt deine Container-Namen.
+New terminal, `monoceros <TAB>` shows the subcommands. `monoceros
+apply <TAB>` shows your container names.
 
-## Re-generieren nach Updates
+## Regenerating after updates
 
-Weil der Wrapper dünn ist und die Logik in der CLI lebt, musst du das
-Skript nach einem Workbench-Update **normalerweise nicht** neu
-generieren — neue Befehle / Flags / Werte tauchen automatisch auf,
-sobald die aktualisierte CLI auf dem `$PATH` liegt.
+Because the wrapper is thin and the logic lives in the CLI, you
+**normally don't** need to regenerate the script after a workbench
+update — new commands / flags / values show up automatically as soon as
+the updated CLI is on `$PATH`.
 
-Neu schreiben musst du nur, wenn sich die **Wrapper-Mechanik** selbst
-ändert (selten — z. B. eine neue Shell-Integration). `install.sh` /
-`install.ps1` regenerieren das Wrapper-Skript bei jedem Lauf, also ist
-ein erneuter Install-Durchlauf der dokumentierte Weg, falls doch nötig.
+You only need to rewrite it if the **wrapper mechanics** themselves
+change (rare — e.g. a new shell integration). `install.sh` /
+`install.ps1` regenerate the wrapper script on every run, so re-running
+the installer is the documented way if it ever is necessary.
 
-## Verwandte Befehle
+## Related commands
 
-- [`list-components`](./list-components.md) — listet die Komponenten,
-  die `init --with=…` und `add-feature` verstehen. Diese Komponenten
-  werden via Tab vervollständigt (siehe „Was completiert wird").
+- [`list-components`](./list-components.md) — lists the components that
+  `init --with-languages=…` / `--with-features=…` / `--with-services=…`
+  and `add-feature` understand. These components are completed via Tab
+  (see "What gets completed").

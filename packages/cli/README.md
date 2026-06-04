@@ -1,18 +1,18 @@
 # `@getmonoceros/workbench`
 
-CLI für [Monoceros](https://github.com/getmonoceros/workbench) —
-eine Werkbank für lokale, reproduzierbare Dev-Container mit
-AI-Coding-Tooling als erstklassige Bürger (Claude Code, Atlassian
-CLIs, GitHub CLI; weitere folgen).
+CLI for [Monoceros](https://github.com/getmonoceros/workbench) —
+a workbench for local, reproducible dev containers with
+AI coding tooling as first-class citizens (Claude Code, Atlassian
+CLIs, GitHub CLI; more to come).
 
-## Voraussetzungen
+## Requirements
 
-- **Docker** — erreichbar als Daemon, nicht nur installiert
-- **Node ≥ 20** (mit `npm`)
+- **Docker** — reachable as a daemon, not just installed
+- **Node ≥ 20** (with `npm`)
 
-Wer eines davon nicht hat, kann Monoceros nicht installieren. Die
-Install-Skripte (`install.sh`, `install.ps1`) im Repo-Root prüfen
-das vorab und geben plattform-spezifische Anleitung aus.
+If you don't have one of these, you can't install Monoceros. The
+install scripts (`install.sh`, `install.ps1`) in the repo root check
+this up front and print platform-specific guidance.
 
 ## Installation
 
@@ -26,29 +26,28 @@ curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install
 iwr -useb https://raw.githubusercontent.com/getmonoceros/workbench/main/install.ps1 | iex
 ```
 
-Das Skript prüft Docker + Node, installiert das Paket global via
-`npm install -g`, und richtet die Shell-Completion für deine Shell
-ein.
+The script checks Docker + Node, installs the package globally via
+`npm install -g`, and sets up shell completion for your shell.
 
-## Erste Schritte
+## Getting started
 
 ```sh
-monoceros init hello --with=node,claude
-# Tokens / Defaults in ~/.monoceros/monoceros-config.yml eintragen
+monoceros init hello --with-languages=node --with-features=claude
+# Add tokens / defaults to ~/.monoceros/monoceros-config.yml
 monoceros apply hello
 monoceros shell hello
 ```
 
-Tab-Completion einmalig einrichten:
+Set up tab completion once:
 
 ```sh
 monoceros completion zsh > ~/.oh-my-zsh/completions/_monoceros   # zsh
 monoceros completion bash > ~/.bash_completion.d/monoceros       # bash
 ```
 
-Volle Befehlsreferenz unter
+Full command reference at
 [docs/commands/](https://github.com/getmonoceros/workbench/tree/main/docs/commands).
 
-## Lizenz
+## License
 
-MIT — siehe `LICENSE` im Repository-Root.
+MIT — see `LICENSE` in the repository root.

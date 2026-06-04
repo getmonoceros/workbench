@@ -1,114 +1,111 @@
-# Monoceros auf Windows einrichten
+# Setting up Monoceros on Windows
 
-Monoceros läuft auf Windows **inside WSL** — also als Linux-Tool in
-einer WSL-2-Distro (typisch Ubuntu). Docker Desktop stellt den
-Daemon, WSL stellt die Linux-Umgebung, in der Monoceros installiert
-und betrieben wird. Es gibt keinen separaten Windows-Host-Installer
-mehr — die alte `install.ps1`-Variante hatte zu viele Reibungspunkte
-(Drive-Letter-Case, cmd.exe-Quoting, GCM-Auth-Dance, Traefik-File-
-Watch-Defekt auf gRPC-FUSE-Bind-Mounts) und ist mit 1.12 entfallen.
+Monoceros runs on Windows **inside WSL** — that is, as a Linux tool in
+a WSL 2 distro (typically Ubuntu). Docker Desktop provides the daemon,
+WSL provides the Linux environment in which Monoceros is installed and
+run. There is no separate Windows host installer anymore — the old
+`install.ps1` variant had too many friction points (drive-letter case,
+cmd.exe quoting, the GCM auth dance, broken Traefik file-watching on
+gRPC-FUSE bind mounts) and was dropped in 1.12.
 
-Auf macOS und nativ-Linux ist der Pfad ein anderer; für native Linux
-siehe [`docker-on-linux.md`](docker-on-linux.md).
-
----
-
-## Worauf Docker Desktop auf Windows aufsetzt
-
-Docker Desktop läuft auf Windows über das **WSL-2-Backend**. Das
-bedeutet drei Bausteine, die zusammenpassen müssen:
-
-1. **Hardware-Virtualisierung** (VT-x / AMD-V) — im BIOS aktiviert.
-2. **WSL 2** — die Plattform _und_ mindestens eine installierte
-   Linux-Distro.
-3. **Docker Desktop** selbst, im WSL-2-Modus.
-
-Fehlt Baustein 2, startet Docker Desktop nicht und meldet — etwas
-irreführend — „Virtualization support not detected", obwohl die
-Virtualisierung an sich in Ordnung ist.
+On macOS and native Linux the path is different; for native Linux see
+[`docker-on-linux.md`](docker-on-linux.md).
 
 ---
 
-## Setup-Schritte
+## What Docker Desktop builds on, on Windows
 
-Der getestete Ablauf auf einer frischen Maschine. **Nur Schritt 1
-braucht eine Admin-PowerShell**, der Rest läuft als normaler User in
-der WSL-Distro.
+Docker Desktop runs on Windows via the **WSL 2 backend**. That means
+three building blocks that have to line up:
 
-### Schritt 1: WSL 2 + Ubuntu installieren
+1. **Hardware virtualization** (VT-x / AMD-V) — enabled in the BIOS.
+2. **WSL 2** — the platform _and_ at least one installed Linux distro.
+3. **Docker Desktop** itself, in WSL 2 mode.
 
-PowerShell als Administrator öffnen (Rechtsklick → „Als
-Administrator ausführen") und:
+If building block 2 is missing, Docker Desktop won't start and reports
+— somewhat misleadingly — "Virtualization support not detected," even
+though virtualization itself is fine.
+
+---
+
+## Setup steps
+
+The tested sequence on a fresh machine. **Only step 1 needs an admin
+PowerShell**; the rest runs as a normal user in the WSL distro.
+
+### Step 1: Install WSL 2 + Ubuntu
+
+Open PowerShell as Administrator (right-click → "Run as
+administrator") and:
 
 ```powershell
 wsl --install
 ```
 
-Das aktiviert die nötigen Windows-Features, installiert **Ubuntu**
-und setzt **WSL 2 als Default**. Wenn die Linux-Shell aufgeht, mit
-`exit` verlassen. Verlangt Windows einen Neustart, jetzt neu starten.
+This enables the required Windows features, installs **Ubuntu**, and
+sets **WSL 2 as the default**. When the Linux shell comes up, leave it
+with `exit`. If Windows asks for a restart, restart now.
 
-### Schritt 2: Docker Desktop installieren
+### Step 2: Install Docker Desktop
 
-Eine **neue, normale PowerShell** (ohne Admin):
+In a **new, normal PowerShell** (no admin):
 
 ```powershell
 winget install Docker.DockerDesktop --override "install --user --accept-license"
 ```
 
-`--override "install --user --accept-license"` installiert per-user
-(nach `%LOCALAPPDATA%\Programs\DockerDesktop`) ohne UAC/Admin. Ohne
-das Flag würde winget den All-Users-Pfad nehmen und Admin
-anfordern.
+`--override "install --user --accept-license"` installs per-user (to
+`%LOCALAPPDATA%\Programs\DockerDesktop`) without UAC/admin. Without the
+flag, winget would take the all-users path and request admin.
 
-Docker Desktop starten und warten, bis das Wal-Symbol nicht mehr
-animiert. Die Anmelde-Aufforderung kannst du überspringen.
+Start Docker Desktop and wait until the whale icon stops animating.
+You can skip the sign-in prompt.
 
-### Schritt 3: Docker Desktop's WSL Integration aktivieren
+### Step 3: Enable Docker Desktop's WSL integration
 
-In Docker Desktop: **Settings → Resources → WSL Integration** →
-Toggle für **Ubuntu** anschalten, Apply & Restart.
+In Docker Desktop: **Settings → Resources → WSL Integration** → turn
+on the toggle for **Ubuntu**, then Apply & Restart.
 
-Damit ist der `docker`-Befehl IN der WSL-Distro verfügbar und redet
-mit dem gleichen Daemon wie ein Windows-Docker (das wir aber gar
-nicht installieren).
+This makes the `docker` command available INSIDE the WSL distro,
+talking to the same daemon as a Windows Docker would (which we don't
+install at all).
 
-> **Wichtig:** **NICHT** zusätzlich `apt install docker.io` o.ä. in
-> der WSL-Distro ausführen — das wäre ein zweiter, konkurrierender
-> Docker-Daemon. Docker Desktop + WSL Integration ist der einzige
-> unterstützte Weg.
+> **Important:** Do **NOT** additionally run `apt install docker.io` or
+> similar inside the WSL distro — that would be a second, competing
+> Docker daemon. Docker Desktop + WSL integration is the only
+> supported way.
 
-### Schritt 4: Node + npm in WSL installieren
+### Step 4: Install Node + npm in WSL
 
-Aus WSL Ubuntu heraus:
+From inside WSL Ubuntu:
 
 ```sh
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs npm
 ```
 
-NodeSource bringt eine aktuelle Node-Version, `nodejs npm` zusammen
-installieren stellt sicher, dass beide auf Linux-Seite landen (sonst
-springt PATH-Interop ein und liefert das Windows-npm aus dem
-Docker-Desktop-Bundle, was uns nicht hilft).
+NodeSource provides a current Node version; installing `nodejs npm`
+together makes sure both land on the Linux side (otherwise PATH interop
+kicks in and serves the Windows npm from the Docker Desktop bundle,
+which doesn't help us).
 
-Verifizieren:
+Verify:
 
 ```sh
 which node && which npm
 ```
 
-Beides sollte auf `/usr/bin/...` zeigen, nicht auf `/mnt/c/...`.
+Both should point to `/usr/bin/...`, not `/mnt/c/...`.
 
-### Schritt 5: Monoceros installieren
+### Step 5: Install Monoceros
 
-Aus WSL Ubuntu heraus, derselbe Befehl wie auf nativ-Linux:
+From inside WSL Ubuntu, the same command as on native Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
 ```
 
-Verifizieren:
+Verify:
 
 ```sh
 monoceros --version
@@ -116,44 +113,44 @@ monoceros --version
 
 ---
 
-## Wo arbeiten? Tipps für den WSL-Workflow
+## Where to work? Tips for the WSL workflow
 
-- **Windows Terminal mit Ubuntu-Profil** ist der natürlichste
-  Einstieg. Im Default startet Ubuntu im Linux-Home (`~`), nicht in
-  einem `/mnt/c/...`-Windows-Pfad. Falls du WSL aus PowerShell
-  startest: `wsl ~` statt `wsl`, sonst landest du in der aktuellen
-  PowerShell-cwd.
+- **Windows Terminal with an Ubuntu profile** is the most natural
+  entry point. By default Ubuntu starts in the Linux home (`~`), not in
+  a `/mnt/c/...` Windows path. If you start WSL from PowerShell: use
+  `wsl ~` instead of `wsl`, otherwise you land in the current
+  PowerShell cwd.
 
-- **VS Code mit dem WSL-Remote-Extension** lässt dich direkt im
-  WSL-Filesystem arbeiten und Dev-Container darin öffnen.
+- **VS Code with the WSL Remote extension** lets you work directly in
+  the WSL filesystem and open dev containers in it.
 
-- **Browser-Zugriff** auf Container-Ports funktioniert ohne weitere
-  Konfiguration: Docker Desktop's WSL Integration spiegelt von WSL
-  gebundene Ports automatisch auf die Windows-Loopback-Adresse,
-  also gehen `http://<container>.localhost/`-URLs aus
-  Chrome/Edge/Firefox auf Windows direkt zum WSL-seitigen Traefik.
+- **Browser access** to container ports works without further
+  configuration: Docker Desktop's WSL integration automatically mirrors
+  ports bound from WSL onto the Windows loopback address, so
+  `http://<container>.localhost/` URLs from Chrome/Edge/Firefox on
+  Windows go straight to the WSL-side Traefik.
 
 ---
 
-## Fall: „Virtualization support not detected"
+## Case: "Virtualization support not detected"
 
-Symptom: Docker Desktop startet nicht, meldet „Virtualization support
-not detected" — **obwohl** die Virtualisierung im BIOS aktiviert ist
-und `wsl --version` sauber durchläuft.
+Symptom: Docker Desktop won't start and reports "Virtualization support
+not detected" — **even though** virtualization is enabled in the BIOS
+and `wsl --version` runs cleanly.
 
-Ursache: Die WSL-**Plattform** ist installiert, aber es gibt **keine
-WSL-2-Distro**. `wsl --version` zeigt nur die Plattform-Version, nicht
-ob eine Distro vorhanden ist. Docker Desktops WSL-2-Backend hat damit
-kein Fundament.
+Cause: The WSL **platform** is installed, but there is **no WSL 2
+distro**. `wsl --version` only shows the platform version, not whether
+a distro is present. Docker Desktop's WSL 2 backend has no foundation
+that way.
 
-Prüfen:
+Check:
 
 ```powershell
 wsl -l -v
 ```
 
-Wenn die Liste leer ist oder nur eine WSL-1-Distro zeigt, ist das die
-Ursache. Reparatur in einer **PowerShell als Administrator:**
+If the list is empty or shows only a WSL 1 distro, that's the cause.
+Fix it in a **PowerShell as Administrator:**
 
 ```powershell
 wsl --set-default-version 2
@@ -161,55 +158,55 @@ wsl --update
 wsl --install -d Ubuntu
 ```
 
-Danach **Neustart**, Docker Desktop starten und die Distro unter
-**Settings → Resources → WSL Integration** aktivieren.
+Then **restart**, start Docker Desktop, and enable the distro under
+**Settings → Resources → WSL Integration**.
 
-> Den Schalter „Use the WSL 2 based engine" suchst du in neueren
-> Docker-Desktop-Versionen vergeblich — WSL 2 ist dort das einzige
-> Backend (Hyper-V gibt es u.a. auf Windows Home gar nicht). Der
-> Schalter ist absichtlich weg, kein Fehler.
-
----
-
-## Fall: keine Adminrechte (managed/Firmen-Laptop)
-
-Der Per-User-Docker-Install aus Schritt 2 braucht keinen Admin. Aber:
-
-**Wichtiger Haken:** `wsl --install` selbst **braucht Admin**. Der
-gesamte No-Admin-Pfad funktioniert also nur, wenn **WSL bereits
-aktiviert** ist (z.B. von der IT vorinstalliert). Ist WSL noch gar
-nicht da und du hast keinen Admin, führt kein Weg an der IT vorbei.
-
-Einschränkungen des Docker-Per-User-Modus:
-
-- **nur WSL-2-Backend** (kein Hyper-V) — für Monoceros genau richtig
-- **keine Windows-Container**
+> Don't bother looking for the "Use the WSL 2 based engine" switch in
+> newer Docker Desktop versions — WSL 2 is the only backend there
+> (Hyper-V isn't even available on Windows Home, among others). The
+> switch is intentionally gone, not a bug.
 
 ---
 
-## Adminrechte — was braucht was?
+## Case: no admin rights (managed/corporate laptop)
 
-| Befehl                                                              | Admin nötig? |
-| ------------------------------------------------------------------- | ------------ |
-| `wsl --install`                                                     | ja           |
-| `wsl --update`                                                      | ja           |
-| `wsl --set-default-version 2`                                       | empfohlen \* |
-| `wsl --install -d Ubuntu`                                           | empfohlen \* |
-| `winget install Docker.DockerDesktop --override "install --user …"` | nein         |
-| `sudo apt install -y nodejs npm` (innerhalb WSL)                    | nein \*\*    |
-| Monoceros-Installer (`install.sh` innerhalb WSL)                    | nein         |
+The per-user Docker install from step 2 needs no admin. But:
 
-\* Technisch nicht zwingend, aber da der WSL-Setup-Block ohnehin in
-einer Admin-PowerShell läuft, ist „alles als Admin" die einfache
-Ansage.
+**Important catch:** `wsl --install` itself **needs admin**. So the
+whole no-admin path only works if **WSL is already enabled** (e.g.
+preinstalled by IT). If WSL isn't there at all and you have no admin,
+there's no way around IT.
 
-\*\* `sudo` darin ist eine WSL-User-Berechtigung, kein Windows-Admin.
+Limitations of Docker per-user mode:
+
+- **WSL 2 backend only** (no Hyper-V) — exactly right for Monoceros
+- **no Windows containers**
 
 ---
 
-## WSL wieder restlos entfernen
+## Admin rights — what needs what?
 
-Alles in einer **PowerShell als Administrator**, in dieser Reihenfolge:
+| Command                                                             | Admin needed?  |
+| ------------------------------------------------------------------- | -------------- |
+| `wsl --install`                                                     | yes            |
+| `wsl --update`                                                      | yes            |
+| `wsl --set-default-version 2`                                       | recommended \* |
+| `wsl --install -d Ubuntu`                                           | recommended \* |
+| `winget install Docker.DockerDesktop --override "install --user …"` | no             |
+| `sudo apt install -y nodejs npm` (inside WSL)                       | no \*\*        |
+| Monoceros installer (`install.sh` inside WSL)                       | no             |
+
+\* Not strictly required technically, but since the WSL setup block
+runs in an admin PowerShell anyway, "everything as admin" is the simple
+rule.
+
+\*\* `sudo` in there is a WSL user permission, not Windows admin.
+
+---
+
+## Removing WSL completely
+
+Everything in a **PowerShell as Administrator**, in this order:
 
 ```powershell
 wsl --shutdown
@@ -219,19 +216,19 @@ Disable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-
 Disable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
 ```
 
-Danach **Neustart**. Zeigt `wsl -l -v` mehr als nur „Ubuntu", für
-jeden weiteren Eintrag `wsl --unregister <Name>` ausführen, bevor du
-`wsl --uninstall` machst.
+Then **restart**. If `wsl -l -v` shows more than just "Ubuntu", run
+`wsl --unregister <Name>` for each additional entry before you do
+`wsl --uninstall`.
 
-> `wsl --unregister` löscht **unwiderruflich** alle Daten der Distro.
-> Und: Docker Desktop läuft auf genau diesen beiden Features — wer sie
-> abschaltet, killt damit auch Docker Desktops Backend.
+> `wsl --unregister` **irreversibly** deletes all of the distro's data.
+> And: Docker Desktop runs on exactly these two features — disabling
+> them also kills Docker Desktop's backend.
 
 ---
 
-## Referenzen
+## References
 
 - [Install Docker Desktop on Windows — Docker Docs](https://docs.docker.com/desktop/setup/install/windows-install/)
 - [Understand permission requirements for Windows — Docker Docs](https://docs.docker.com/desktop/setup/install/windows-permission-requirements/)
 - [How to install Linux on Windows with WSL — Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
-- [`docker-on-linux.md`](docker-on-linux.md) — das Pendant für native Linux
+- [`docker-on-linux.md`](docker-on-linux.md) — the counterpart for native Linux

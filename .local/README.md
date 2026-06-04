@@ -1,38 +1,38 @@
-# Workbench-lokales `MONOCEROS_HOME`
+# Workbench-local `MONOCEROS_HOME`
 
-Dieser Ordner ist die Wurzel für die Monoceros-Daten während der
-Entwicklung des Workbench-Repos selbst. Alles drinnen ist ephemer und
-gitignored — **außer** dieser README und der Sample-Config nebenan.
+This folder is the root for Monoceros data while developing the
+workbench repo itself. Everything inside is ephemeral and gitignored —
+**except** this README and the sample config next to it.
 
-Beim Aufruf von `monoceros …` aus dem Workbench-Checkout sucht das
-CLI ein File namens `monoceros-config.sample.yml` aufwärts vom
-Binary; findet es dieses File, gilt der enthaltende Ordner als
-`MONOCEROS_HOME`. Außerhalb des Workbench-Checkouts (z. B. nach
-`npm install -g @getmonoceros/workbench`) gibt es diese Marker-Datei
-nicht; dann gilt die `MONOCEROS_HOME`-Env-Var oder der Fallback
-`~/.monoceros`.
+When you run `monoceros …` from the workbench checkout, the CLI
+searches upward from the binary for a file named
+`monoceros-config.sample.yml`; if it finds that file, the containing
+folder is treated as `MONOCEROS_HOME`. Outside the workbench checkout
+(e.g. after `npm install -g @getmonoceros/workbench`) this marker file
+does not exist; in that case the `MONOCEROS_HOME` env var applies, or
+the fallback `~/.monoceros`.
 
 ## Layout
 
 ```
 .local/
-├── README.md                          ← diese Datei (committed)
-├── monoceros-config.yml               ← deine persönlichen Defaults (gitignored)
-├── monoceros-config.sample.yml        ← Sample/Marker (committed)
+├── README.md                          ← this file (committed)
+├── monoceros-config.yml               ← your personal defaults (gitignored)
+├── monoceros-config.sample.yml        ← sample/marker (committed)
 ├── container-configs/
-│   └── <name>.yml                     ← yml-Profile (`monoceros init`)
+│   └── <name>.yml                     ← yml profiles (`monoceros init`)
 └── container/
-    └── <name>/                        ← materialisierte Dev-Container
+    └── <name>/                        ← materialized dev containers
                                          (`monoceros apply <name>`)
 ```
 
 ## Cleanup
 
-Komplett aufräumen:
+Clean up completely:
 
 ```sh
 rm -rf .local/container .local/container-configs .local/monoceros-config.yml
 ```
 
-Die committeden Dateien (README, sample) bleiben dabei erhalten,
-solange du sie nicht explizit löschst.
+The committed files (README, sample) are kept, as long as you do not
+delete them explicitly.

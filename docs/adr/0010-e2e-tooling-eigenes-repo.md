@@ -1,87 +1,85 @@
-# ADR 0010 — E2E-Tooling in eigenem Repo, maintainer-facing
+# ADR 0010 — E2E tooling in its own repo, maintainer-facing
 
 - Status: accepted
-- Datum: 2026-05-28
+- Date: 2026-05-28
 
-## Kontext
+## Context
 
-M5 Task 4 (ursprünglich „Test-Plan-Rewrite") wurde am 2026-05-28
-umgewidmet zu einem automatisierten E2E-Testmodul (siehe Backlog).
-Die Hand-Test-Anleitung in `docs/test-plan.md` ist gegen ein
-längst überholtes CLI-Modell verdrahtet; eine Aktualisierung
-Zeile-für-Zeile lohnt nicht.
+M5 Task 4 (originally "test-plan rewrite") was repurposed on 2026-05-28
+into an automated E2E test module (see backlog).
+The manual test instructions in `docs/test-plan.md` are wired against a
+long-obsolete CLI model; updating them line by line isn't worth it.
 
-Der naheliegende Gedanke wäre eine **GH-Actions-Matrix** gewesen,
-die Linux / macOS / Windows parallel durchspielt. Das hat sich aus
-mehreren Gründen als der falsche Hammer erwiesen:
+The obvious idea would have been a **GH Actions matrix** that runs
+Linux / macOS / Windows in parallel. That turned out to be the wrong
+hammer for several reasons:
 
-- **macOS- und Windows-Runner haben Docker nicht out of the box.**
-  Linux-Runner: Docker nativ, schnell. macOS: colima oder Docker
-  Desktop via Brew installieren — 3-5 min Setup, fragil. Windows:
-  Docker Desktop nur in bestimmten Runner-Images, Linux-Container-
-  Mode muss umgeschaltet werden.
-- **Die Bugs, die wir wirklich fangen wollen, sind plattform-
-  spezifische Tooling-Quirks** (macOS Docker Desktop launchd-
-  Sockets, Windows wincred, UTF-8 in PowerShell, EACCES auf
-  privilegierten Ports unter Linux ohne CAP_NET_BIND_SERVICE).
-  Die treten auf **echten** Maschinen auf, nicht in der bereinigten
-  Runner-Umgebung.
-- **Builder-Realität ≠ Runner-Realität.** Wer nachher Monoceros
-  benutzt, hat es per `install.sh` / `install.ps1` auf seiner
-  Maschine installiert, und ruft `monoceros …` von dort. CI-Runs
-  in Sandbox-Containern simulieren das nicht.
+- **macOS and Windows runners don't have Docker out of the box.**
+  Linux runners: Docker native, fast. macOS: install colima or Docker
+  Desktop via Brew — 3-5 min setup, fragile. Windows:
+  Docker Desktop only in certain runner images, Linux container
+  mode has to be switched on.
+- **The bugs we actually want to catch are platform-specific
+  tooling quirks** (macOS Docker Desktop launchd
+  sockets, Windows wincred, UTF-8 in PowerShell, EACCES on
+  privileged ports under Linux without CAP_NET_BIND_SERVICE).
+  These show up on **real** machines, not in the sanitized
+  runner environment.
+- **Builder reality ≠ runner reality.** Whoever ends up using Monoceros
+  has installed it via `install.sh` / `install.ps1` on their
+  machine, and runs `monoceros …` from there. CI runs
+  in sandbox containers don't simulate that.
 
-## Verworfen: CI-Matrix-Sweep als Hauptpfad
+## Rejected: CI matrix sweep as the main path
 
-Drei OSes × 5 Szenarien × Setup-Aufwand pro Run = sehr teuer, sehr
-fragil, sagt am Ende wenig über die echte Builder-Experience aus.
+Three OSes × 5 scenarios × setup cost per run = very expensive, very
+fragile, and in the end says little about the real builder experience.
 
-## Entscheidung
+## Decision
 
-Ein **maintainer-facing E2E-Tool**, das auf den drei realen
-Builder-Maschinen läuft (Thorstens Linux-Rechner, Mac, Windows-
-Laptop), Monoceros über die **public CLI-Schnittstelle** ansteuert
-und ein definiertes Set von Szenarien durchspielt. Als Add-on zur
-Workbench, nicht eingebaut.
+A **maintainer-facing E2E tool** that runs on the three real
+builder machines (Thorsten's Linux box, Mac, Windows
+laptop), drives Monoceros through the **public CLI interface**,
+and runs a defined set of scenarios. An add-on to the
+workbench, not built in.
 
-### Repo-Trennung
+### Repo separation
 
-Das Tool lebt in einem **eigenen Repo** (`getmonoceros/monoceros-e2e`,
-finaler Name beim Anlegen). Drei Gründe:
+The tool lives in its **own repo** (`getmonoceros/monoceros-e2e`,
+final name decided at creation time). Three reasons:
 
-1. **Schnittstellen-Kontrakt** — wenn das E2E-Tool im gleichen Repo
-   wie der CLI-Code lebt, ist die Versuchung groß, interne Module
-   zu importieren statt die CLI aufzurufen. Trennung erzwingt die
-   Diszplin: das Tool kennt nur Subcommands, Argumente und
-   Exit-Codes — exakt was ein Builder auch hat.
-2. **Unabhängiger Release-Zyklus** — neue Szenarien können
-   geshippt werden, ohne dass ein CLI-Release nötig ist.
-3. **Klarheit** — das Workbench-Repo bleibt fokussiert auf das
-   Produkt; das Tool, mit dem _wir_ es testen, ist eine separate
-   Sache.
+1. **Interface contract** — if the E2E tool lives in the same repo
+   as the CLI code, the temptation is strong to import internal
+   modules instead of calling the CLI. Separation enforces the
+   discipline: the tool only knows subcommands, arguments, and
+   exit codes — exactly what a builder has too.
+2. **Independent release cycle** — new scenarios can be
+   shipped without needing a CLI release.
+3. **Clarity** — the workbench repo stays focused on the
+   product; the tool _we_ use to test it is a separate
+   thing.
 
 ### Surface: `monoceros e2e <…>`
 
-Trotz Repo-Trennung soll der Aufruf für den Maintainer **`monoceros e2e
-<scenario>`** sein, nicht `monoceros-e2e <scenario>`. Eine Surface,
-ein Mental-Model. Realisiert via **git-style Plugin-Discovery**:
+Despite the repo separation, the invocation for the maintainer should be
+**`monoceros e2e <scenario>`**, not `monoceros-e2e <scenario>`. One surface,
+one mental model. Realized via **git-style plugin discovery**:
 
-- `monoceros` selbst kennt nur einen kleinen Dispatcher: wenn das
-  erste Argument `e2e` ist und ein Binary `monoceros-e2e` im
-  `PATH` liegt, werden die restlichen Argumente an das Binary
-  durchgereicht.
-- Existiert das Binary nicht: klare Fehlermeldung mit
-  Install-Curl-Befehl.
-- Die `__complete`-Engine bietet `e2e` als Subcommand an, wenn
-  das Binary installiert ist (Detection via `which`/`where`).
+- `monoceros` itself only knows a small dispatcher: if the
+  first argument is `e2e` and a binary `monoceros-e2e` is on the
+  `PATH`, the remaining arguments are passed through to the binary.
+- If the binary doesn't exist: a clear error message with the
+  install curl command.
+- The `__complete` engine offers `e2e` as a subcommand when
+  the binary is installed (detected via `which`/`where`).
 
-Vorbild: `git foo` → `git-foo`, `kubectl plugin`-System.
+Models: `git foo` → `git-foo`, the `kubectl plugin` system.
 
 ### Installation
 
-Analog zur Workbench: `install.sh` / `install.ps1`-Bouncer im E2E-
-Repo, der das npm-Paket global installiert. Auf einer Workbench-
-Installation:
+Analogous to the workbench: an `install.sh` / `install.ps1` bouncer in the E2E
+repo that installs the npm package globally. On a workbench
+installation:
 
 ```sh
 # Linux / macOS
@@ -91,99 +89,99 @@ curl -fsSL https://getmonoceros.github.io/e2e/install.sh | bash
 iwr -useb https://getmonoceros.github.io/e2e/install.ps1 | iex
 ```
 
-Update-Pfad: Skript erneut aufrufen.
+Update path: run the script again.
 
-### Szenarien
+### Scenarios
 
-Initial fünf, geschrieben als TypeScript-Funktionen (volle Sprache,
-beliebige Asserts) — _nicht_ als YAML/JSON-DSL. Die Asserts
-variieren genug („TCP-Probe", „HTTP-200", „`docker ps -a` muss
-leer sein nach remove"), dass eine DSL bald an Grenzen käme.
+Initially five, written as TypeScript functions (full language,
+arbitrary asserts) — _not_ as a YAML/JSON DSL. The asserts
+vary enough ("TCP probe", "HTTP 200", "`docker ps -a` must
+be empty after remove") that a DSL would soon hit its limits.
 
-| Szenario            | Was es beweist                           | Zeit     |
-| ------------------- | ---------------------------------------- | -------- |
-| `minimal`           | init → apply → run → remove Lifecycle    | ~1 min   |
-| `with-services`     | Compose + Service-Netzwerk via TCP-Probe | ~2 min   |
-| `with-port`         | Traefik-Routing via Fixture-Repo + HTTP  | ~2 min   |
-| `with-tunnel`       | TCP-Tunnel + Node-Probe vom Host         | ~2-3 min |
-| `image-mode-zombie` | `remove` räumt Image-Mode-Container ab   | ~1.5 min |
+| Scenario            | What it proves                          | Time     |
+| ------------------- | --------------------------------------- | -------- |
+| `minimal`           | init → apply → run → remove lifecycle   | ~1 min   |
+| `with-services`     | Compose + service network via TCP probe | ~2 min   |
+| `with-port`         | Traefik routing via fixture repo + HTTP | ~2 min   |
+| `with-tunnel`       | TCP tunnel + Node probe from the host   | ~2-3 min |
+| `image-mode-zombie` | `remove` clears image-mode containers   | ~1.5 min |
 
-Drei Mechanik-Entscheidungen:
+Three mechanics decisions:
 
-- **Postgres-Reachability** in `with-services` wird via Bash-
-  builtin `</dev/tcp/postgres/5432` geprüft, nicht via `psql`-Client.
-  Sagt nur „TCP geht", spart aber den Tool-Footprint im Workspace.
-- **HTTP-Probe** in `with-port` benutzt das vorhandene Fixture-Repo
-  `getmonoceros/monoceros-e2e-fixture` (`serve-ports.mjs`), das
-  genau für diesen Zweck angelegt wurde.
-- **Tunnel-Probe** in `with-tunnel` ist ein TCP-Connect aus Node
-  heraus, _nicht_ `psql` vom Host — vermeidet cross-OS-Host-Deps
+- **Postgres reachability** in `with-services` is checked via the Bash
+  builtin `</dev/tcp/postgres/5432`, not via the `psql` client.
+  It only says "TCP works", but it saves the tool footprint in the workspace.
+- The **HTTP probe** in `with-port` uses the existing fixture repo
+  `getmonoceros/monoceros-e2e-fixture` (`serve-ports.mjs`), which
+  was created for exactly this purpose.
+- The **tunnel probe** in `with-tunnel` is a TCP connect from Node,
+  _not_ `psql` from the host — it avoids cross-OS host deps
   (apt / brew / scoop).
 
-### Lifecycle pro Szenario
+### Lifecycle per scenario
 
-- Default: Setup → Asserts → Teardown (`monoceros remove --no-backup
+- Default: setup → asserts → teardown (`monoceros remove --no-backup
 --yes`).
-- `--keep`: kein automatisches Remove, der Container bleibt für
-  manuelle Inspektion stehen. Output zeigt den Container-Namen
-  - Remove-Befehl.
-- `--interactive`: nach den Asserts auf User-Bestätigung warten,
-  bevor Remove läuft.
-- Ctrl+C: alles bleibt stehen, kein Aufräum-Versuch. Inkonsistenter
-  State wird beim **nächsten** Start abgeräumt.
+- `--keep`: no automatic remove, the container stays around for
+  manual inspection. Output shows the container name
+  - the remove command.
+- `--interactive`: wait for user confirmation after the asserts,
+  before remove runs.
+- Ctrl+C: everything stays in place, no cleanup attempt. Inconsistent
+  state is cleared on the **next** start.
 
-### Pre-Flight-Cleanup
+### Pre-flight cleanup
 
-Container und yml-Profile, die die Szenarien anlegen, folgen einer
-fixen Namenskonvention:
+Containers and yml profiles that the scenarios create follow a
+fixed naming convention:
 
 ```
 e2e-<scenario>-<YYYY-MM-DD-HHMM>
 ```
 
-Beispiel: `e2e-minimal-2026-05-28-1830`. Vor jedem Test-Start
-(egal ob einzeln oder via `--all`):
+Example: `e2e-minimal-2026-05-28-1830`. Before every test start
+(whether single or via `--all`):
 
-1. Liste `$MONOCEROS_HOME/container-configs/e2e-*.yml` → jeweils
+1. List `$MONOCEROS_HOME/container-configs/e2e-*.yml` → for each,
    `monoceros remove --no-backup --yes <name>`.
-2. Notbremse für Zombies, die `monoceros remove` nicht (mehr)
-   kennt: `docker ps -aq --filter "name=^e2e-"` → `docker rm -f`.
+2. Emergency brake for zombies that `monoceros remove` no longer
+   knows about: `docker ps -aq --filter "name=^e2e-"` → `docker rm -f`.
 
-Damit kann der Maintainer Ctrl+C jederzeit drücken, ohne State zu
-korrumpieren — der nächste Aufruf räumt eh auf.
+That way the maintainer can hit Ctrl+C at any time without corrupting
+state — the next invocation cleans up anyway.
 
-### Output-Format
+### Output format
 
-- **Pretty-Print** (default) — farbig, mit Step-für-Step-Status,
-  Timing pro Szenario.
-- **GitHub-Annotations** wenn `GITHUB_ACTIONS=true` detected —
-  `::error::` / `::notice::`-Marker, die im PR-UI als Inline-
-  Annotation auftauchen.
-- Kein JUnit-XML — kein Test-Aggregator in der Pipeline, der das
-  konsumieren würde.
+- **Pretty-print** (default) — colored, with step-by-step status,
+  per-scenario timing.
+- **GitHub annotations** when `GITHUB_ACTIONS=true` is detected —
+  `::error::` / `::notice::` markers that show up in the PR UI as inline
+  annotations.
+- No JUnit XML — there's no test aggregator in the pipeline that
+  would consume it.
 
-### CI-Integration
+### CI integration
 
-Smoketest-Job auf Linux-Runner only, läuft auf jedem main-Push und
-PR (über die Reusable-Precheck-Mechanik bzw. als eigener Job).
-Führt **nur das `minimal`-Szenario** aus — proof-of-life dass die
-CLI baseline-funktional ist. macOS und Windows bleiben manuelle
-Strecken auf den Builder-Maschinen.
+Smoke-test job on Linux runner only, runs on every main push and
+PR (via the reusable precheck mechanism or as its own job).
+Runs **only the `minimal` scenario** — proof of life that the
+CLI is baseline-functional. macOS and Windows remain manual
+runs on the builder machines.
 
-Aufwand-Argument: Linux-Smoke ist ~1 min Runner-Zeit. macOS/Windows-
-Smoketest würde 5-10 min Setup pro Run dazuholen und nur eine
-Teilmenge der echten Builder-Quirks fangen. Schlechte Trade.
+Effort argument: the Linux smoke test is ~1 min of runner time. A macOS/Windows
+smoke test would add 5-10 min of setup per run and only catch a
+subset of the real builder quirks. Bad trade.
 
-## Konsequenzen
+## Consequences
 
-- **Workbench-Repo bekommt minimal-invasive Änderungen**:
-  Plugin-Dispatch (`commands/e2e.ts`, einige Zeilen) und ein
-  optionaler Eintrag in der Completion-Spec. Ansonsten unverändert.
-- **Neues Repo** `getmonoceros/monoceros-e2e` mit eigenem Release-
-  Workflow, eigenem npm-Paket, eigenem install.sh/install.ps1.
-- **Builder-OS-Coverage** entsteht über echte Maschinen, nicht
-  über CI-Matrix. Das skaliert nicht beliebig, aber für drei OSes
-  bei einem Maintainer ist es genau richtig.
-- **Vorbild für künftige Tools**: wenn weitere maintainer-facing
-  Tools auftauchen (z.B. `monoceros doctor` für Diagnose), ist das
-  Muster „eigenes Repo, git-style Plugin" wiederverwendbar.
+- **The workbench repo gets minimally invasive changes**:
+  plugin dispatch (`commands/e2e.ts`, a few lines) and an
+  optional entry in the completion spec. Otherwise unchanged.
+- **A new repo** `getmonoceros/monoceros-e2e` with its own release
+  workflow, its own npm package, its own install.sh/install.ps1.
+- **Builder OS coverage** comes from real machines, not
+  from a CI matrix. That doesn't scale arbitrarily, but for three OSes
+  with a single maintainer it's exactly right.
+- **A model for future tools**: when more maintainer-facing
+  tools come up (e.g. `monoceros doctor` for diagnostics), the
+  "own repo, git-style plugin" pattern is reusable.

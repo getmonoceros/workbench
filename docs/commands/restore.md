@@ -1,54 +1,51 @@
 # `monoceros restore`
 
-Stellt einen Container aus einem `monoceros remove`-Backup wieder
-her. Kopiert die yml-Quelle und das Container-Verzeichnis zurück
-nach `$MONOCEROS_HOME`, sodass `monoceros apply <name>` den
-Container danach wieder hochfahren kann.
+Restores a container from a `monoceros remove` backup. Copies the yml
+source and the container directory back into `$MONOCEROS_HOME`, so
+`monoceros apply <name>` can bring the container back up afterward.
 
 ```sh
 monoceros restore <backup-path>
 ```
 
-## Zweck
+## Purpose
 
-`monoceros remove` schreibt vor dem Löschen ein Backup nach
-`container-backups/<name>-<timestamp>/`. `restore` ist der
-Gegenbefehl: nimmt so ein Verzeichnis, packt es wieder in das
-`$MONOCEROS_HOME`-Layout zurück.
+`monoceros remove` writes a backup to
+`container-backups/<name>-<timestamp>/` before deleting. `restore` is
+the inverse command: it takes such a directory and puts it back into
+the `$MONOCEROS_HOME` layout.
 
-Wann wirst du das brauchen?
+When will you need this?
 
-- Container versehentlich gelöscht.
-- Container für ein anderes Setup pausiert und später wieder
-  reaktiviert.
-- Container von einer Maschine auf eine andere übertragen
-  (Backup-Verzeichnis kopieren, dann auf der Zielmaschine
-  `monoceros restore` aufrufen).
+- Container deleted by accident.
+- Container paused for a different setup and reactivated later.
+- Container moved from one machine to another (copy the backup
+  directory, then run `monoceros restore` on the target machine).
 
-## Mechanik
+## Mechanics
 
-1. **Backup einlesen**: prüft dass `<backup-path>` ein Verzeichnis
-   ist, sucht eine `*.yml` im Root, leitet daraus den Container-
-   Namen ab (Datei `<name>.yml`).
-2. **Überlebenscheck**: refuses to clobber. Bricht mit einer
-   klaren Fehlermeldung ab, wenn
-   - `$MONOCEROS_HOME/container-configs/<name>.yml` schon existiert
-   - oder `$MONOCEROS_HOME/container/<name>/` schon existiert
-     (und das Backup einen Container-Ordner enthält). Lösung:
-     `monoceros remove <name>` zuerst.
-3. **Kopieren**: `<backup>/<name>.yml` → `container-configs/<name>.yml`,
-   `<backup>/container/` → `container/<name>/` (rekursiv). Inklusive
+1. **Read the backup**: checks that `<backup-path>` is a directory,
+   looks for a `*.yml` in the root, and derives the container name from
+   it (file `<name>.yml`).
+2. **Survival check**: refuses to clobber. Aborts with a clear error
+   message if
+   - `$MONOCEROS_HOME/container-configs/<name>.yml` already exists
+   - or `$MONOCEROS_HOME/container/<name>/` already exists (and the
+     backup contains a container folder). Fix: run
+     `monoceros remove <name>` first.
+3. **Copy**: `<backup>/<name>.yml` → `container-configs/<name>.yml`,
+   `<backup>/container/` → `container/<name>/` (recursively). Including
    `home/`, `projects/`, `data/`, `.monoceros/`.
-4. **Hint**: gibt aus, dass `monoceros apply <name>` als nächster
-   Schritt fehlt — die Docker-Objekte legt restore nicht selbst an.
+4. **Hint**: prints that `monoceros apply <name>` is the missing next
+   step — restore does not create the Docker objects itself.
 
-## Argumente
+## Arguments
 
-| Argument        | Bedeutung                                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------------------------- |
-| `<backup-path>` | Pfad zu einem Backup-Verzeichnis (typischerweise `<MONOCEROS_HOME>/container-backups/<name>-<timestamp>/`). |
+| Argument        | Meaning                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `<backup-path>` | Path to a backup directory (typically `<MONOCEROS_HOME>/container-backups/<name>-<timestamp>/`). |
 
-## Beispiel
+## Example
 
 ```sh
 $ ls ~/.monoceros/container-backups/
@@ -62,20 +59,20 @@ $ monoceros restore ~/.monoceros/container-backups/sandbox-2026-05-19T11-41-42-5
 $ monoceros apply sandbox
 ```
 
-## Verwandte Befehle
+## Related commands
 
-- [`monoceros remove <name>`](./remove.md) — Container wegräumen
-  (schreibt das Backup, das `restore` einliest)
-- [`monoceros apply <name>`](./apply.md) — den restaurierten
-  Container hochfahren
+- [`monoceros remove <name>`](./remove.md) — tear down a container
+  (writes the backup that `restore` reads)
+- [`monoceros apply <name>`](./apply.md) — bring the restored
+  container back up
 
-## Fail-Modi
+## Failure modes
 
-- **`Backup not found`** — Pfad existiert nicht. Vertippt?
-- **`Backup path is not a directory`** — Pfad zeigt auf eine Datei.
-- **`Backup at … doesn't contain a *.yml`** — das Backup ist nicht
-  von `monoceros remove`. Restore erwartet eine einzelne `<name>.yml`
-  im Root.
-- **`Refusing to restore: … already exists`** — am Ziel existiert
-  bereits ein Container mit demselben Namen. `monoceros remove`
-  zuerst, dann `restore` erneut.
+- **`Backup not found`** — path does not exist. Typo?
+- **`Backup path is not a directory`** — path points to a file.
+- **`Backup at … doesn't contain a *.yml`** — the backup is not from
+  `monoceros remove`. Restore expects a single `<name>.yml` in the
+  root.
+- **`Refusing to restore: … already exists`** — a container with the
+  same name already exists at the target. Run `monoceros remove`
+  first, then `restore` again.

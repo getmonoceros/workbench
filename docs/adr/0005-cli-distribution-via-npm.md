@@ -1,158 +1,155 @@
-# ADR 0005 — CLI-Distribution via npm
+# ADR 0005 — CLI distribution via npm
 
 - Status: accepted
-- Datum: 2026-05-20
-- Amendment 2026-06-01: § „Install-Skripte als Bouncer" — `install.ps1`
-  abgelöst, Windows-Pfad läuft seit 1.12 über WSL. Siehe
-  [ADR 0011](0011-wsl-only-auf-windows.md). Der `install.sh`-Teil der
-  Sektion bleibt unverändert gültig und gilt für macOS / Linux / WSL.
+- Date: 2026-05-20
+- Amendment 2026-06-01: § "Install scripts as bouncers" — `install.ps1`
+  retired, the Windows path has run through WSL since 1.12. See
+  [ADR 0011](0011-wsl-only-auf-windows.md). The `install.sh` part of the
+  section remains valid as-is and applies to macOS / Linux / WSL.
 
-## Kontext
+## Context
 
-ADR 0004 hatte für die CLI plattformspezifische Tarballs vorgesehen
+ADR 0004 had planned platform-specific tarballs for the CLI
 (`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`,
-`windows-x64`) plus Install-Skripte als Wrapper. Die Idee dahinter
-war „Docker ist die einzige Host-Voraussetzung" — der CLI-Build
-sollte Node intern mitbringen, sodass User ohne Node-Installation
-auskommen.
+`windows-x64`) plus install scripts as wrappers. The idea behind it
+was "Docker is the only host prerequisite" — the CLI build was
+supposed to bundle Node internally so that users could get by without
+a Node installation.
 
-Beim Detaillieren tauchten zwei Probleme auf:
+While working out the details, two problems surfaced:
 
-1. **Devcontainer-CLI ist ein eingebetteter Node-Subprozess.**
-   Monoceros referenziert `@devcontainers/cli` als npm-Dependency und
-   spawnt deren JS-Bin via `node <path>` (siehe
+1. **The devcontainer CLI is an embedded Node subprocess.**
+   Monoceros references `@devcontainers/cli` as an npm dependency and
+   spawns its JS bin via `node <path>` (see
    [`packages/cli/src/devcontainer/cli.ts`](../../packages/cli/src/devcontainer/cli.ts)).
-   Ein Single-Executable-Build via Node-SEA oder Bun könnte unseren
-   eigenen Code bundlen — aber `process.execPath` würde dann auf
-   unser eigenes Binary zeigen, nicht auf ein generisches Node, und
-   SEA hat per Design keinen zweiten Entry-Point. Ohne signifikanten
-   Architekturumbau (devcontainer-cli in-process, Subprocess-
-   Isolation und Secret-Masking verlieren) oder eine
-   Zweit-SEA-Konstruktion (Tarball-Größe verdoppelt) bleibt Node als
-   Voraussetzung ohnehin notwendig.
+   A single-executable build via Node SEA or Bun could bundle our own
+   code — but then `process.execPath` would point at our own binary,
+   not at a generic Node, and SEA has no second entry point by design.
+   Without a significant architectural overhaul (devcontainer-cli
+   in-process, losing subprocess isolation and secret masking) or a
+   second SEA construction (doubling the tarball size), Node remains a
+   prerequisite anyway.
 
-2. **Die CLI ist pure JS.** Es gibt keinen plattformspezifischen
-   Code, keine Native-Bindings, kein Binary-Layer. Fünf plattform-
-   spezifische Tarballs zu bauen, nur um Node zu vermeiden,
-   dupliziert Arbeit, die die npm-Registry kostenlos macht.
+2. **The CLI is pure JS.** There is no platform-specific code, no
+   native bindings, no binary layer. Building five platform-specific
+   tarballs just to avoid Node duplicates work that the npm registry
+   does for free.
 
-## Entscheidung
+## Decision
 
-CLI-Distribution erfolgt über die npm-Registry als
-`@getmonoceros/workbench`. Ein Artefakt pro Version, plattform-
-übergreifend, ohne Binary-Bundling.
+CLI distribution happens via the npm registry as
+`@getmonoceros/workbench`. One artifact per version, cross-platform,
+without binary bundling.
 
-**Voraussetzungen auf der User-Maschine:**
+**Prerequisites on the user's machine:**
 
-- **Docker** (Daemon erreichbar — wir prüfen `docker info`, nicht
-  nur die Binary-Existenz)
-- **Node ≥ 20** (mit `npm` aus derselben Installation)
+- **Docker** (daemon reachable — we check `docker info`, not just the
+  existence of the binary)
+- **Node ≥ 20** (with `npm` from the same installation)
 
-Wenn beides fehlt, kann Monoceros nicht installiert werden. Punkt.
-Wir versuchen nicht, Docker oder Node selbst zu installieren — der
-User behält die Kontrolle, was sich seinen Weg in seine Toolchain
-bahnt.
+If either is missing, Monoceros cannot be installed. Full stop. We do
+not try to install Docker or Node ourselves — the user stays in
+control of what makes its way into their toolchain.
 
-**Install-Skripte als Bouncer.** Im Repo-Root liegen
-[`install.sh`](../../install.sh) (macOS + Linux) und
-[`install.ps1`](../../install.ps1) (Windows). Jedes prüft der Reihe
-nach Docker und Node, gibt bei Fehlen eine plattform-spezifische
-Anleitung mit Links + exit 1 aus, und führt sonst
-`npm install -g @getmonoceros/workbench` aus. Aus User-Sicht:
+**Install scripts as bouncers.** The repo root holds
+[`install.sh`](../../install.sh) (macOS + Linux) and
+[`install.ps1`](../../install.ps1) (Windows). Each one checks Docker
+and Node in turn, prints a platform-specific guide with links + exit 1
+if something is missing, and otherwise runs
+`npm install -g @getmonoceros/workbench`. From the user's point of
+view:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
 ```
 
-(oder das PowerShell-Pendant). Bei fehlender Voraussetzung
-Nachinstallieren und erneut ausführen.
+(or the PowerShell equivalent). If a prerequisite is missing, install
+it and run again.
 
-**Was die Skripte NICHT tun:**
+**What the scripts do NOT do:**
 
-- Sie installieren weder Docker noch Node automatisch.
-- Sie machen keine `nvm`/`fnm`/`volta`-Setups im Hintergrund.
-- Sie ändern keine System-Konfiguration außer dem `npm install -g`-
-  Aufruf (der wiederum von der npm-Konfiguration des Users abhängt
-  — Standardmäßig User-Scope auf Windows, System-Scope auf
-  Unix-Setups via Homebrew/apt).
+- They install neither Docker nor Node automatically.
+- They do not perform `nvm`/`fnm`/`volta` setups in the background.
+- They change no system configuration beyond the `npm install -g`
+  call (which in turn depends on the user's npm configuration — by
+  default user scope on Windows, system scope on Unix setups via
+  Homebrew/apt).
 
-**Node-Installations-Hinweise** in den Skripten listen beide
-gebräuchlichen Pfade auf — System-Pakete (`brew install node`,
-`winget install OpenJS.NodeJS`, `apt install nodejs`) und Per-User-
-Manager (`nvm`, `fnm`, `volta`, Direkt-ZIP) — ohne dass das Skript
-selbst eine Wahl trifft.
+**Node installation hints** in the scripts list both common paths —
+system packages (`brew install node`, `winget install OpenJS.NodeJS`,
+`apt install nodejs`) and per-user managers (`nvm`, `fnm`, `volta`,
+direct ZIP) — without the script itself making a choice.
 
-**Release-Mechanik** folgt dem Muster aus ADR 0004 § „Version-
-getriggerte Pipelines". Der CLI-Release-Workflow
+**Release mechanics** follow the pattern from ADR 0004 §
+"Version-triggered pipelines". The CLI release workflow
 (`release-cli.yml`):
 
-- Trigger: `paths: ['packages/cli/**']` auf `main`, plus
+- Trigger: `paths: ['packages/cli/**']` on `main`, plus
   `workflow_dispatch`
-- Liest die Version aus `packages/cli/package.json`
-- Vergleicht gegen die npm-Registry (`npm view @getmonoceros/workbench@<version>`)
-- Bei neu: `npm publish --access public`, sonst skip
+- Reads the version from `packages/cli/package.json`
+- Compares against the npm registry (`npm view @getmonoceros/workbench@<version>`)
+- If new: `npm publish --access public`, otherwise skip
 
-Auth über **npm Trusted Publishing** (OIDC) — kein langlebiger Token
-im Repository, keine 2FA-Bypass-Sonderform. Der Workflow tauscht
-einen kurzlebigen OIDC-Token von GitHub gegen einen Publish-Token
-des npm-Registries, das die Beziehung zwischen Workflow und Paket
-in den Trusted-Publisher-Einstellungen des Pakets kennt. Provenance-
-Attestation wird automatisch mitgesigned.
+Auth via **npm Trusted Publishing** (OIDC) — no long-lived token in
+the repository, no special 2FA-bypass form. The workflow exchanges a
+short-lived OIDC token from GitHub for a publish token from the npm
+registry, which knows the relationship between workflow and package
+from the package's trusted-publisher settings. Provenance attestation
+is signed along automatically.
 
-Caveat: npm Trusted Publishing setzt voraus, dass das Paket bereits
-existiert (siehe [npm/cli#8544](https://github.com/npm/cli/issues/8544)).
-Der allererste Publish von `@getmonoceros/workbench@1.0.0` läuft
-daher manuell von der Maintainer-Maschine (`npm login` mit 2FA →
-`npm publish --access public`). Danach wird der Trusted Publisher
-auf npmjs.com konfiguriert und alle weiteren Releases laufen
-automatisch über den Workflow.
+Caveat: npm Trusted Publishing requires that the package already
+exists (see [npm/cli#8544](https://github.com/npm/cli/issues/8544)).
+The very first publish of `@getmonoceros/workbench@1.0.0` therefore
+runs manually from the maintainer's machine (`npm login` with 2FA →
+`npm publish --access public`). After that, the trusted publisher is
+configured on npmjs.com and all further releases run automatically
+through the workflow.
 
-## Konsequenzen
+## Consequences
 
-- **ADR 0004 § „Plattform-Matrix für die CLI" ist abgelöst.** Die
-  fünf Tarballs verschwinden, die Build-Werkzeug-Diskussion (Bun vs
-  SEA vs pkg) entfällt. Der Rest von ADR 0004 (drei Artefakt-Typen,
-  Version-Detection, kein Staging) bleibt gültig.
-- **`packages/cli/package.json` braucht Publish-Setup:**
-  `private: true` raus; `version`, `description`, `bin`, `files`
-  (nur `dist/`, `package.json`, `README`), `repository`, `homepage`,
-  `license`, `engines` ausfüllen; `prepublishOnly`-Script mit
-  Typecheck + Test; `build`-Script auf `tsup` (oder gleichwertig)
-  für `dist/`-Output.
-- **CLI-Tool-Install-Pfad** liegt jetzt wo immer npm sein globales
-  Prefix konfiguriert hat (`/usr/local/lib/node_modules/`,
-  `%APPDATA%\npm\node_modules\`, Homebrew-Cellar, etc.). Monoceros
-  selbst kennt diesen Pfad nicht und braucht ihn nicht zu kennen —
-  npm legt den `bin`-Shim auf den PATH und das war's.
-- **Backlog M4 Task 5** wird kleiner und konkreter: ein npm-Publish-
-  Workflow plus zwei Bouncer-Skripte, statt einer
-  Plattform-Matrix-Build-Pipeline.
-- **Bootstrap-Sequenz für den ersten Publish:**
-  1. Lokal `cd packages/cli && npm login && npm publish --access public`
-     — claimt den `@getmonoceros`-Scope und legt
-     `@getmonoceros/workbench@1.0.0` an.
-  2. Trusted Publisher auf
-     <https://www.npmjs.com/package/@getmonoceros/workbench/access>
-     konfigurieren: Org `getmonoceros`, Repo `workbench`, Workflow
+- **ADR 0004 § "Platform matrix for the CLI" is superseded.** The
+  five tarballs go away, the build-tooling discussion (Bun vs SEA vs
+  pkg) is moot. The rest of ADR 0004 (three artifact types, version
+  detection, no staging) remains valid.
+- **`packages/cli/package.json` needs publish setup:** remove
+  `private: true`; fill in `version`, `description`, `bin`, `files`
+  (only `dist/`, `package.json`, `README`), `repository`, `homepage`,
+  `license`, `engines`; add a `prepublishOnly` script with typecheck
+  - test; point the `build` script at `tsup` (or equivalent) for
+    `dist/` output.
+- **The CLI tool install path** now lives wherever npm has configured
+  its global prefix (`/usr/local/lib/node_modules/`,
+  `%APPDATA%\npm\node_modules\`, Homebrew Cellar, etc.). Monoceros
+  itself does not know this path and does not need to know it — npm
+  puts the `bin` shim on the PATH and that's it.
+- **Backlog M4 Task 5** becomes smaller and more concrete: an npm
+  publish workflow plus two bouncer scripts, instead of a
+  platform-matrix build pipeline.
+- **Bootstrap sequence for the first publish:**
+  1. Locally `cd packages/cli && npm login && npm publish --access public`
+     — claims the `@getmonoceros` scope and creates
+     `@getmonoceros/workbench@1.0.0`.
+  2. Configure the trusted publisher at
+     <https://www.npmjs.com/package/@getmonoceros/workbench/access>:
+     org `getmonoceros`, repo `workbench`, workflow
      `release-cli.yml`.
-  3. Ab dem nächsten Versions-Bump publisht der Workflow ohne
-     Token-Setup auf der Repo-Seite.
+  3. From the next version bump on, the workflow publishes without
+     token setup on the repo side.
 
-## Nicht-Ziele dieser ADR
+## Non-goals of this ADR
 
-- **Userspace-spezifische Windows-Distribution.** Wir bauen keine
-  Sonderbehandlung für Locked-Down-Corporate-Windows ohne Admin-
-  Rechte. Wenn der User Docker auf seiner Maschine ans Laufen kriegt
-  — Docker Desktop braucht prinzipiell Admin — läuft alles andere
-  via Userspace-Node-Optionen wie üblich. Wenn nicht, ist das ein
-  Showstopper vor Monoceros, kein Monoceros-Problem.
-- **Brew-Tap / WinGet-Manifest / Scoop-Bucket.** Wrapper über die
-  npm-Distribution, die später entstehen können, falls echte
-  Nachfrage entsteht. Erstmal direkter Install-Pfad.
-- **Auto-Update der installierten CLI.** Manuell via
-  `npm update -g @getmonoceros/workbench` oder Re-Run des
-  Install-Skripts. Auto-Update-Mechanik kommt in einer späteren
-  Etappe falls überhaupt.
-- **Bundling von Devcontainer-CLI in monoceros' Codebase.** Bleibt
-  npm-Dependency wie bisher, kommt durch `npm install -g`
-  automatisch mit.
+- **Userspace-specific Windows distribution.** We do not build
+  special handling for locked-down corporate Windows without admin
+  rights. If the user gets Docker running on their machine — Docker
+  Desktop fundamentally needs admin — everything else runs via
+  userspace Node options as usual. If not, that is a showstopper
+  before Monoceros, not a Monoceros problem.
+- **Brew tap / WinGet manifest / Scoop bucket.** Wrappers over the
+  npm distribution that can emerge later if there is real demand. For
+  now, the direct install path.
+- **Auto-update of the installed CLI.** Manually via
+  `npm update -g @getmonoceros/workbench` or re-running the install
+  script. Auto-update mechanics come in a later stage, if at all.
+- **Bundling the devcontainer CLI into the monoceros codebase.**
+  Stays an npm dependency as before, comes along automatically via
+  `npm install -g`.

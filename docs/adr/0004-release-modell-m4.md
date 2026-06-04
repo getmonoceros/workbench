@@ -1,80 +1,80 @@
-# ADR 0004 — Release-Modell: N unabhängige Deployments, Version-getriggert
+# ADR 0004 — Release model: N independent deployments, version-triggered
 
 - Status: accepted
-- Datum: 2026-05-19
+- Date: 2026-05-19
 
-## Kontext
+## Context
 
-Mit M4 verlässt Monoceros den „ich klone das Workbench-Repo und
-arbeite drin"-Status. Ein Builder, der das Repo nie gesehen hat, soll
-das Tool installieren und Container hochfahren können. Das wirft
-Fragen auf, die der M4-Brief nur halb beantwortet hatte:
+With M4, Monoceros leaves the "I clone the workbench repo and work
+inside it" stage. A builder who has never seen the repo should be able
+to install the tool and spin up containers. That raises questions the
+M4 brief only half-answered:
 
-- Was genau wird wohin distribuiert?
-- Wer triggert wann ein Release?
-- Wie weiß die CI, ob es für eine bestimmte Komponente etwas zu tun
-  gibt?
-- Brauchen wir eine Staging-Umgebung?
-- Was kommt physisch auf den Rechner des Nutzers — und was zieht
-  Docker zur Laufzeit?
-- Windows zählt als Zielplattform.
+- What exactly gets distributed where?
+- Who triggers a release, and when?
+- How does CI know whether there's anything to do for a given
+  component?
+- Do we need a staging environment?
+- What physically lands on the user's machine — and what does Docker
+  pull at runtime?
+- Windows counts as a target platform.
 
-Beim Versuch, das pragmatisch via Skript + manuellem Publish zu
-machen (siehe rückgängig gemachter Commit `ac1c081`), wurde klar, dass
-der Brief implizit „eine CLI plus eine Feature-Library" annahm — also
-zwei Deployments. Das stimmt nicht. Heute sind es fünf Deployments
-(CLI + Runtime-Image + drei Features), und mit jedem weiteren Feature
-auf der Backlog-Liste wächst die Zahl. „Feature" ist eine Kategorie,
-aber kein gemeinsames Release-Artefakt.
+When trying to do this pragmatically via a script plus manual publish
+(see the reverted commit `ac1c081`), it became clear that the brief
+implicitly assumed "one CLI plus one feature library" — that is, two
+deployments. That's not right. Today there are five deployments (CLI +
+runtime image + three features), and the number grows with every
+additional feature on the backlog. "Feature" is a category, but not a
+shared release artifact.
 
-## Entscheidung
+## Decision
 
-### Artefakt-Typen und unabhängige Versionierung
+### Artifact types and independent versioning
 
-Es gibt drei Typen von Release-Artefakten. Jede Instanz eines Typs
-ist ein eigenständiges Deployment mit eigener Versionsnummer, eigenem
-Release-Zyklus und eigenem CI-Trigger.
+There are three types of release artifacts. Each instance of a type is
+a standalone deployment with its own version number, its own release
+cycle, and its own CI trigger.
 
 | Typ               | Versionsquelle                                               | Distributionsziel                                          |
 | ----------------- | ------------------------------------------------------------ | ---------------------------------------------------------- |
-| **CLI**           | `packages/cli/package.json` `version`                        | GitHub Releases mit plattformspezifischen Artefakten       |
-| **Runtime-Image** | `images/runtime/VERSION` (neu anzulegen)                     | `ghcr.io/getmonoceros/monoceros-runtime:<version>`         |
+| **CLI**           | `packages/cli/package.json` `version`                        | GitHub Releases with platform-specific artifacts           |
+| **Runtime image** | `images/runtime/VERSION` (to be created)                     | `ghcr.io/getmonoceros/monoceros-runtime:<version>`         |
 | **Feature**       | `images/features/<name>/devcontainer-feature.json` `version` | `ghcr.io/getmonoceros/monoceros-features/<name>:<version>` |
 
-Heute heißt das fünf Deployments — eine CLI, ein Runtime-Image, drei
-Features (`claude-code`, `atlassian`, `github-cli`). Jedes weitere
-Feature unter `images/features/` ist ein zusätzliches Deployment. Sie
-entwickeln sich getrennt: `claude-code` springt von `1.1.0` auf
-`1.5.0` weil Anthropic was geändert hat, während `atlassian` über
-Monate auf `0.3.0` stehen bleibt. Die CLI hat ihren eigenen SemVer-
-Track unabhängig von allem.
+Today that means five deployments — one CLI, one runtime image, three
+features (`claude-code`, `atlassian`, `github-cli`). Every additional
+feature under `images/features/` is one more deployment. They evolve
+separately: `claude-code` jumps from `1.1.0` to `1.5.0` because
+Anthropic changed something, while `atlassian` stays at `0.3.0` for
+months. The CLI has its own SemVer track, independent of everything.
 
-### Version-getriggerte Pipelines
+### Version-triggered pipelines
 
-Eine Pipeline publisht eine Komponente **genau dann, wenn die in der
-Quelle deklarierte Version noch nicht im Registry liegt**. Kein
-„hat sich seit letzten Commit etwas geändert?", kein expliziter Tag,
-keine manuelle Auslösung. Wer was rausgeben will, bumpt die Version,
-committet, mergt nach `main` — Rest erledigt sich.
+A pipeline publishes a component **exactly when the version declared in
+the source is not yet in the registry**. No "has anything changed since
+the last commit?", no explicit tag, no manual trigger. Whoever wants to
+ship something bumps the version, commits, merges to `main` — the rest
+takes care of itself.
 
-Erkannt wird das mit zwei Stufen:
+This is detected in two stages:
 
-1. **Pfad-Trigger** spart sich Workflow-Runs, wenn nichts Relevantes
-   geändert wurde. Pro Workflow `paths:`-Filter — zum Beispiel
-   `images/features/**` für den Features-Workflow.
-2. **Version-Vergleich im Workflow** entscheidet pro Artefakt, ob
-   wirklich publisht wird:
-   - OCI-Artefakte (Features, Runtime-Image):
-     `docker manifest inspect <ref>` — exit 0 = liegt da, skip;
-     exit non-0 = neu, publishen.
-   - GitHub-Release-Artefakte (CLI): `gh release view <tag>` analog.
+1. **Path trigger** saves workflow runs when nothing relevant changed.
+   A `paths:` filter per workflow — for example `images/features/**`
+   for the features workflow.
+2. **Version comparison within the workflow** decides per artifact
+   whether to actually publish:
+   - OCI artifacts (features, runtime image):
+     `docker manifest inspect <ref>` — exit 0 = already there, skip;
+     exit non-0 = new, publish.
+   - GitHub release artifacts (CLI): `gh release view <tag>`
+     analogously.
 
-Das ist idempotent: Re-Runs des Workflows machen nichts, weil keine
-Versionsnummer noch fehlt. Es ist explizit im Workflow-Log
-sichtbar, welche Komponenten publisht wurden und welche übersprungen.
-Es ist race-safe.
+This is idempotent: re-running the workflow does nothing, because no
+version number is missing anymore. It's explicitly visible in the
+workflow log which components were published and which were skipped.
+It's race-safe.
 
-### Drei Workflow-Dateien
+### Three workflow files
 
 ```
 .github/workflows/
@@ -84,99 +84,96 @@ Es ist race-safe.
 └── release-features.yml ← Alle Features (paths: images/features/**)
 ```
 
-Drei Release-Workflows, aber **N Deployments** — der Features-Workflow
-iteriert über `images/features/*/` und behandelt jeden Unterordner als
-eigenes Artefakt. Wenn morgen `images/features/opencode/` dazukommt,
-ändert sich an `release-features.yml` keine Zeile; der Loop findet das
-neue Verzeichnis automatisch.
+Three release workflows, but **N deployments** — the features workflow
+iterates over `images/features/*/` and treats each subdirectory as its
+own artifact. If `images/features/opencode/` is added tomorrow, not a
+single line in `release-features.yml` changes; the loop finds the new
+directory automatically.
 
-Diese Bündelung gilt nur für Features, weil sie strukturell identisch
-sind (gleiche Publish-CLI, gleiches Registry-Schema, gleiche
-Versionierungs-Konvention). CLI und Runtime-Image haben eigene
-Workflows, weil ihre Build-Steps und Artefakt-Typen unterschiedlich
-genug sind, dass eine Verallgemeinerung künstliche Kopplung wäre.
+This bundling applies only to features, because they are structurally
+identical (same publish CLI, same registry schema, same versioning
+convention). The CLI and runtime image have their own workflows,
+because their build steps and artifact types differ enough that a
+generalization would be artificial coupling.
 
-### Keine Staging-Umgebung
+### No staging environment
 
-Wir bauen keine separate Staging-Org, kein paralleles Registry-
-Namespace, keine zweite Distributionspipeline. Eine Staging-Umgebung
-würde die Infrastruktur verdoppeln (jeder Workflow zweimal, jede
-Visibility-Einstellung zweimal, jede Doku doppelt) für einen
-Mehrwert, den drei kleinere Mechanismen sauberer abdecken:
+We're not building a separate staging org, no parallel registry
+namespace, no second distribution pipeline. A staging environment would
+double the infrastructure (every workflow twice, every visibility
+setting twice, every doc duplicated) for a benefit that three smaller
+mechanisms cover more cleanly:
 
-- **Precheck** (`precheck.yml`) — lint, typecheck, vitest, format-
-  check auf jedem PR und Push nach `main`. Source-Hygiene, kein Build
-  oder Integration. Code muss grün sein, um auf `main` zu landen.
-  Die drei Release-Workflows (`release-cli.yml`, `release-features.yml`,
-  `release-runtime.yml`) rufen Precheck per `workflow_call` als
-  vorgeschalteten Job auf und gaten ihren Publish über
-  `needs: precheck` — damit kann ein roter Precheck keinen Release
-  durchwinken. Direkter `push:`-Trigger auf Precheck bleibt, damit
-  jeder main-Commit eine sichtbare Quality-Gate-Anzeige bekommt,
-  auch wenn keine Release-Pfadfilter greifen.
-- **Lokale Smoke-Strecke** — `pnpm sandbox:reset` baut Runtime-Image
-  lokal, scaffolded Sandbox, fährt Container hoch. Wer ein Feature
-  oder das Image ändert, fährt das vor dem Merge einmal durch.
-- **SemVer-Pre-Release-Tags** — wenn wir was schrittweise ausrollen
-  wollen, geht das mit `<name>:<version>-rc.<n>` (z. B.
-  `claude-code:1.2.0-rc.1`) im selben Registry-Namespace. Der
-  schwebende Major-Tag (`:1`) wandert dabei explizit **nicht** auf
-  RC-Versionen; Builder, die testen wollen, pinnen die RC manuell in
-  ihre yml. Geht alles gut, kommt die reguläre `1.2.0`, der Major-
-  Tag wandert mit, und yml-Pins gehen wieder auf den Major-Tag.
+- **Precheck** (`precheck.yml`) — lint, typecheck, vitest, format
+  check on every PR and push to `main`. Source hygiene, no build or
+  integration. Code must be green to land on `main`. The three release
+  workflows (`release-cli.yml`, `release-features.yml`,
+  `release-runtime.yml`) call precheck via `workflow_call` as an
+  upstream job and gate their publish through `needs: precheck` — so a
+  red precheck can't wave a release through. The direct `push:` trigger
+  on precheck stays, so every main commit gets a visible quality-gate
+  indicator even when no release path filters match.
+- **Local smoke run** — `pnpm sandbox:reset` builds the runtime image
+  locally, scaffolds a sandbox, spins up the container. Whoever changes
+  a feature or the image runs this once before merging.
+- **SemVer pre-release tags** — when we want to roll something out
+  gradually, that works with `<name>:<version>-rc.<n>` (e.g.
+  `claude-code:1.2.0-rc.1`) in the same registry namespace. The
+  floating major tag (`:1`) explicitly does **not** move to RC
+  versions; builders who want to test pin the RC manually in their yml.
+  If all goes well, the regular `1.2.0` follows, the major tag moves
+  with it, and yml pins go back to the major tag.
 
-Eine echte Staging-Stufe wird interessant, sobald die CLI-Build-
-Pipeline komplex wird (Cross-Compile, macOS-Notarization, Windows-
-Code-Signing) und Fehler dort die Installationserfahrung aller
-Builder kaputtmachen würden. Dann ggf. ein `MONOCEROS_CHANNEL=next`-
-Schalter im Install-Skript, der das jeweils letzte Pre-Release lädt
-statt der Stable. Das ist Folge-Arbeit, nicht M4-Scope.
+A real staging stage gets interesting once the CLI build pipeline
+becomes complex (cross-compile, macOS notarization, Windows code
+signing) and errors there would break the installation experience for
+all builders. At that point, possibly a `MONOCEROS_CHANNEL=next` switch
+in the install script that loads the latest pre-release instead of the
+stable one. That's follow-up work, not M4 scope.
 
-### Was beim Builder lokal landet — und was nicht
+### What lands locally on the builder's machine — and what doesn't
 
-Beim Install kommt **nur die CLI selbst** auf den Rechner: das
-Paket mit unserem `dist/`, dem Templates-Verzeichnis
-(`templates/components/`, das `monoceros init --with=…` komponiert)
-und der User-Doku (`docs/commands/`, auf die generierte
-Solution-READMEs verlinken). Wohin npm das schreibt, hängt von der
-npm-Konfiguration des Users ab (`/usr/local/lib/node_modules/`,
-`%APPDATA%\npm\node_modules\`, Homebrew-Cellar, etc.); der
-`bin`-Eintrag aus `package.json` legt den `monoceros`-Shim auf den
-PATH. Monoceros selbst kennt diesen Pfad nicht und braucht ihn
-nicht zu kennen. Siehe ADR 0005 für die Distribution-Entscheidung.
+On install, **only the CLI itself** comes onto the machine: the package
+with our `dist/`, the templates directory (`templates/components/`,
+which `monoceros init --with=…` composes) and the user docs
+(`docs/commands/`, which generated solution READMEs link to). Where npm
+writes that depends on the user's npm configuration
+(`/usr/local/lib/node_modules/`, `%APPDATA%\npm\node_modules\`, the
+Homebrew cellar, etc.); the `bin` entry from `package.json` puts the
+`monoceros` shim on the PATH. Monoceros itself doesn't know this path
+and doesn't need to. See ADR 0005 for the distribution decision.
 
-Das Runtime-Image und die Features sind **keine Dateien auf der
-Builder-Disk**. Docker zieht das Runtime-Image beim ersten
-`monoceros apply` aus GHCR, das devcontainer-cli zieht die im yml
-referenzierten Features ebenfalls dann. Beides cached Docker im
-eigenen Image-Store (`/var/lib/docker/...`, bzw. die Docker-
-Desktop-VM). Monoceros verwaltet diesen Cache nicht.
+The runtime image and the features are **not files on the builder's
+disk**. Docker pulls the runtime image from GHCR on the first
+`monoceros apply`; the devcontainer-cli pulls the features referenced in
+the yml at that point too. Docker caches both in its own image store
+(`/var/lib/docker/...`, or the Docker Desktop VM). Monoceros does not
+manage this cache.
 
-Nutzer-State liegt komplett getrennt vom Tool:
+User state lives completely separate from the tool:
 
 | Plattform    | Nutzer-State-Pfad           |
 | ------------ | --------------------------- |
 | macOS, Linux | `~/.monoceros/`             |
 | Windows      | `%USERPROFILE%\.monoceros\` |
 
-`monoceros-config.yml`, `container-configs/<name>.yml`, materialisierte
-`container/<name>/`-Bäume mit `home/`, `projects/`, `data/`. Update
-oder Deinstallation des CLI-Tools fasst diesen Pfad **niemals** an.
-Node's `os.homedir()` löst beide Plattformen out-of-the-box korrekt
-auf.
+`monoceros-config.yml`, `container-configs/<name>.yml`, materialized
+`container/<name>/` trees with `home/`, `projects/`, `data/`. Updating
+or uninstalling the CLI tool **never** touches this path. Node's
+`os.homedir()` resolves both platforms correctly out of the box.
 
-### Plattform-Matrix für die CLI
+### Platform matrix for the CLI
 
-> **Abgelöst am 2026-05-20** durch
-> [ADR 0005 — CLI-Distribution via npm](./0005-cli-distribution-via-npm.md).
-> Beim Detaillieren stellte sich heraus, dass Monoceros intern
-> `@devcontainers/cli` als Node-Subprozess spawnt und daher ohne
-> erheblichen Architekturumbau ohnehin Node auf dem Host braucht.
-> Damit verliert die Plattform-Matrix mit fünf vorgebauten Binaries
-> ihren Zweck — die CLI wird stattdessen als npm-Paket verteilt.
-> Der untenstehende Abschnitt ist nur als historische Notiz erhalten.
+> **Superseded on 2026-05-20** by
+> [ADR 0005 — CLI distribution via npm](./0005-cli-distribution-via-npm.md).
+> While working out the details, it turned out that Monoceros internally
+> spawns `@devcontainers/cli` as a Node subprocess and therefore needs
+> Node on the host anyway, short of a substantial architectural
+> overhaul. That makes the platform matrix with five pre-built binaries
+> pointless — the CLI is distributed as an npm package instead. The
+> section below is kept only as a historical note.
 
-GitHub-Release pro CLI-Version enthält fünf Artefakte:
+A GitHub release per CLI version contains five artifacts:
 
 - `monoceros-macos-arm64.tar.gz`
 - `monoceros-macos-x64.tar.gz`
@@ -184,58 +181,57 @@ GitHub-Release pro CLI-Version enthält fünf Artefakte:
 - `monoceros-linux-x64.tar.gz`
 - `monoceros-windows-x64.zip`
 
-Plus zwei Install-Skripte im Repo-Root, die das passende Artefakt
-herunterladen und entpacken:
+Plus two install scripts in the repo root that download and unpack the
+matching artifact:
 
-- `install.sh` für macOS und Linux (bash, curl-pipe-bash-tauglich)
-- `install.ps1` für Windows (PowerShell)
+- `install.sh` for macOS and Linux (bash, curl-pipe-bash-capable)
+- `install.ps1` for Windows (PowerShell)
 
-Wie genau die Tarballs gebaut werden (Single-Binary via `bun --compile`
-oder via Node-SEA, oder klassisch mit Node-Dependency) ist
-Implementierungsdetail des CLI-Workflows, nicht Architekturentscheid.
-Default-Empfehlung bleibt Single-Binary, weil sich „User muss Node
-installieren" mit einem CLI-Tool-Anspruch beißt — aber finale Wahl
-fällt im Implementierungsticket.
+How exactly the tarballs are built (single binary via `bun --compile`
+or via Node SEA, or classically with a Node dependency) is an
+implementation detail of the CLI workflow, not an architecture
+decision. The default recommendation remains a single binary, because
+"the user has to install Node" clashes with the expectations of a CLI
+tool — but the final choice is made in the implementation ticket.
 
-## Konsequenzen
+## Consequences
 
-- Der M4-Brief (`docs/m4-brief.md`) ist mit dieser ADR obsolet. Er
-  beschreibt einen früheren Stand, in dem die Distributions-Frage
-  „npm install -g" angenommen wurde. Wir lassen ihn als Hand-Over-
-  Notiz stehen, weil er den Pivot-Stand vom 2026-05-19 dokumentiert,
-  aber operative Wahrheit ist ab jetzt diese ADR.
-- Der zwischenzeitliche `scripts/publish-features.sh` (Commit
-  `ac1c081`) wird zurückgenommen — er passte zum manuell-erst-CI-
-  später-Modell, das wir verwerfen.
-- Das `images/runtime/VERSION`-File ist neu, muss vor dem ersten
-  Runtime-Image-Push angelegt werden.
-- Die Backlog-M4-Task-Liste wird auf das neue Modell umgeschnitten:
-  Task 2 wird „Features-Workflow", Task 3 wird „Runtime-Workflow",
-  Task 4 wird „CLI-Release-Workflow inkl. Install-Skripte",
-  Task 7 (CI-Skeleton) wird zu „Precheck" und ist eigenständig.
-- Windows ist explizit im Scope. Konsequenzen für die CLI-
-  Implementierung (Pfad-Resolution, Binary-Build, Install-Skript)
-  müssen ab jetzt mitgedacht werden — kein nachträglicher
-  „Windows-Support-Sprint".
-- Die ✅-Marker in der M4-DoD des Backlogs bleiben aspirational
-  („so sieht Done aus"), nicht ausgeführt. Wenn M4 abgeschlossen
-  ist, werden sie nicht entfernt, sondern bestätigt.
+- The M4 brief (`docs/m4-brief.md`) is obsolete with this ADR. It
+  describes an earlier state in which the distribution question was
+  assumed to be "npm install -g". We leave it in place as a hand-over
+  note, because it documents the pivot state of 2026-05-19, but the
+  operative truth from now on is this ADR.
+- The interim `scripts/publish-features.sh` (commit `ac1c081`) is
+  reverted — it fit the manual-first-CI-later model, which we discard.
+- The `images/runtime/VERSION` file is new and must be created before
+  the first runtime image push.
+- The backlog M4 task list is recut to the new model: task 2 becomes
+  "features workflow", task 3 becomes "runtime workflow", task 4
+  becomes "CLI release workflow including install scripts", task 7
+  (CI skeleton) becomes "precheck" and is standalone.
+- Windows is explicitly in scope. Consequences for the CLI
+  implementation (path resolution, binary build, install script) must
+  be considered from now on — no after-the-fact "Windows support
+  sprint".
+- The ✅ markers in the backlog's M4 DoD remain aspirational ("this is
+  what done looks like"), not executed. When M4 is complete, they are
+  not removed but confirmed.
 
-## Nicht-Ziele dieser ADR
+## Non-goals of this ADR
 
-- **Konkrete YAML-Workflow-Files** — entstehen in den jeweiligen
-  Implementierungs-Commits. Diese ADR fixt die Logik (Pfad-Trigger +
-  Version-Detection + Idempotenz), nicht die Action-Syntax.
-- **Brew-Tap / WinGet-Manifest / Scoop-Bucket** — sind Wrapper
-  über die GitHub-Releases-Tarballs, die kommen können sobald wir
-  echte Nutzer und Demand sehen. Erstmal direkter Install-Pfad.
-- **Auto-Update der installierten CLI** — heute manuell via Re-Run
-  des Install-Skripts. Auto-Update-Mechanik kommt in einer späteren
-  Etappe falls überhaupt.
-- **Single-Binary-Build-Toolwahl** (`bun --compile` vs. Node-SEA
-  vs. `pkg`) — Implementierungsdetail, gehört in die CLI-Workflow-
-  PR und nicht in diese ADR.
-- **Wann genau die GHCR-Pakete von `private` auf `public` flippen** —
-  ist ein einmaliger UI-Klick pro Paket, nach dem ersten erfolgreichen
-  Workflow-Run. Die ADR sagt nichts dazu, weil's keine
-  Design-Entscheidung ist.
+- **Concrete YAML workflow files** — these emerge in the respective
+  implementation commits. This ADR fixes the logic (path trigger +
+  version detection + idempotency), not the action syntax.
+- **Brew tap / WinGet manifest / Scoop bucket** — these are wrappers
+  over the GitHub Releases tarballs and can come once we see real users
+  and demand. For now, the direct install path.
+- **Auto-update of the installed CLI** — today manual via re-running
+  the install script. Auto-update mechanics come in a later stage, if
+  at all.
+- **Single-binary build tool choice** (`bun --compile` vs. Node SEA
+  vs. `pkg`) — implementation detail, belongs in the CLI workflow PR
+  and not in this ADR.
+- **Exactly when the GHCR packages flip from `private` to `public`** —
+  this is a one-time UI click per package, after the first successful
+  workflow run. The ADR says nothing about it, because it's not a design
+  decision.

@@ -1,43 +1,43 @@
 # `monoceros start`
 
-Fährt den benannten Container hoch. Im Compose-Modus startet das
-gleichzeitig den Workspace-Container und alle Compose-Services
+Brings the named container up. In Compose mode this simultaneously
+starts the workspace container and all Compose services
 (`postgres`, `mysql`, `redis`).
 
 ```sh
 monoceros start <name>
 ```
 
-## Zweck
+## Purpose
 
-Wenn du den Container mit `monoceros stop` pausiert hast und ihn
-wieder brauchst — `start` macht ihn an, ohne neu zu bauen. Im
-Gegensatz zu `monoceros apply`:
+When you've paused the container with `monoceros stop` and need it
+again — `start` turns it back on without rebuilding. Compared to
+`monoceros apply`:
 
-| Aspekt                                      | `apply` | `start` |
-| ------------------------------------------- | ------- | ------- |
-| Liest die yml und schreibt das Scaffold neu | ja      | nein    |
-| Räumt den alten Container vorher weg        | ja      | nein    |
-| Baut bei geänderten Features das Image neu  | ja      | nein    |
-| Startet den Container hoch                  | ja      | ja      |
+| Aspect                                   | `apply` | `start` |
+| ---------------------------------------- | ------- | ------- |
+| Reads the yml and rewrites the scaffold  | yes     | no      |
+| Removes the old container first          | yes     | no      |
+| Rebuilds the image when features changed | yes     | no      |
+| Brings the container up                  | yes     | yes     |
 
-Kurz: `start` ist der billige Lifecycle-Wakeup. `apply` ist die
-volle „yml-Änderungen anwenden"-Operation.
+In short: `start` is the cheap lifecycle wakeup. `apply` is the full
+"apply yml changes" operation.
 
-## Mechanik
+## Mechanics
 
-Hinter den Kulissen ein `devcontainer up --workspace-folder <root>`.
-Im Compose-Modus inkludiert das den `workspace`-Service plus alle
-`runServices` aus der `devcontainer.json` (die aus den `services:`
-in der yml generiert wurde).
+Behind the scenes this is a `devcontainer up --workspace-folder <root>`.
+In Compose mode that includes the `workspace` service plus all
+`runServices` from the `devcontainer.json` (which was generated from
+the `services:` in the yml).
 
-## Argumente
+## Arguments
 
-| Argument | Bedeutung       |
+| Argument | Meaning         |
 | -------- | --------------- |
-| `<name>` | Container-Name. |
+| `<name>` | Container name. |
 
-## Beispiel
+## Example
 
 ```sh
 $ monoceros start sandbox
@@ -49,21 +49,20 @@ $ monoceros start sandbox
 ✔ sandbox is up.
 ```
 
-## Verwandte Befehle
+## Related commands
 
-- [`monoceros stop <name>`](./stop.md) — Compose-Services pausieren
-  ohne sie zu entfernen
-- [`monoceros status <name>`](./status.md) — anzeigen, was läuft
-- [`monoceros apply <name>`](./apply.md) — yml-Änderungen anwenden +
-  neu bauen + hochfahren (statt nur hochfahren)
-- [`monoceros remove <name>`](./remove.md) — Container restlos
-  wegräumen
+- [`monoceros stop <name>`](./stop.md) — pause Compose services
+  without removing them
+- [`monoceros status <name>`](./status.md) — show what's running
+- [`monoceros apply <name>`](./apply.md) — apply yml changes + rebuild
+  - bring up (instead of just bringing up)
+- [`monoceros remove <name>`](./remove.md) — remove the container
+  completely
 
-## Fail-Modi
+## Failure modes
 
-- **`No .devcontainer/ at <path>`** — Container nie materialisiert.
-  `monoceros apply <name>` vorher.
-- **Port-Konflikt** — wenn ein anderer Prozess oder Container die
-  forwarded Ports (3000, 4000) belegt, schlägt der Workspace-Start
-  fehl. Stop den blockenden Prozess oder editiere `forwardPorts`
-  in der yml.
+- **`No .devcontainer/ at <path>`** — the container was never
+  materialized. Run `monoceros apply <name>` first.
+- **Port conflict** — if another process or container occupies the
+  forwarded ports (3000, 4000), the workspace start fails. Stop the
+  blocking process or edit `forwardPorts` in the yml.

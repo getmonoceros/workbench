@@ -1,124 +1,124 @@
 # `monoceros add-port`
 
-Trägt einen oder mehrere Ports in die Container-Konfig ein.
-Idempotent, zeigt vor dem Schreiben einen Diff.
+Adds one or more ports to the container config.
+Idempotent, shows a diff before writing.
 
 ```sh
 monoceros add-port <name> [--yes] [--default] -- <port> [<port> …]
 ```
 
-## Zweck
+## Purpose
 
-`add-port` schreibt den Port in die yml unter
-`$MONOCEROS_HOME/container-configs/<name>.yml` **und** legt parallel
-die Traefik-Dynamic-Config unter
-`$MONOCEROS_HOME/traefik/dynamic/<name>.yml` ab. Der Singleton-Proxy
-wird bei Bedarf hochgefahren (`ensureProxy()` — idempotent). Hot-
-Reload: Traefik picks up die Datei innerhalb ~100 ms, **kein**
-Container-Restart, **kein** Proxy-Restart. Siehe
+`add-port` writes the port into the yml at
+`$MONOCEROS_HOME/container-configs/<name>.yml` **and** writes the
+Traefik dynamic config alongside it at
+`$MONOCEROS_HOME/traefik/dynamic/<name>.yml`. The singleton proxy is
+started on demand (`ensureProxy()` — idempotent). Hot reload: Traefik
+picks up the file within ~100 ms, **no** container restart, **no**
+proxy restart. See
 [ADR 0007](../adr/0007-port-management-traefik.md).
 
-## Mechanik
+## Mechanics
 
-1. **Validierung**: jeder Port muss eine ganze Zahl zwischen `1` und
-   `65535` sein. Tippfehler (Buchstaben, Floats, Werte außerhalb des
-   Bereichs) werden mit dem konkreten Eingabewert zurückgewiesen.
-2. **Dedup** auf CLI-Ebene: `add-port sandbox -- 3000 3000` wird zu
+1. **Validation**: every port must be an integer between `1` and
+   `65535`. Typos (letters, floats, out-of-range values) are rejected
+   with the offending input value.
+2. **Dedup** at the CLI level: `add-port sandbox -- 3000 3000` becomes
    `[3000]`.
-3. **Diff-Vorschau** vor dem Schreiben (mit `--yes` übersprungen).
-4. **AST-Mutation**: schreibt das `routing.ports`-Feld comment-
-   preserving. Der `routing:`-Block wird beim ersten Aufruf angelegt
-   (vorher ist er kommentiert im Init-Output enthalten). Existierende
-   Einträge werden gegen Short-Form (`- 3000`) **und** Long-Form
-   (`- port: 3000`) abgeglichen, damit Idempotenz egal ist welche
-   Form der Builder von Hand verwendet hat.
+3. **Diff preview** before writing (skipped with `--yes`).
+4. **AST mutation**: writes the `routing.ports` field while preserving
+   comments. The `routing:` block is created on the first call (before
+   that it is included, commented out, in the init output). Existing
+   entries are matched against both short form (`- 3000`) **and** long
+   form (`- port: 3000`), so idempotency holds regardless of which
+   form the builder used by hand.
 
-Das resultierende yml-Layout:
+The resulting yml layout:
 
 ```yaml
 routing:
   ports:
-    # erster Eintrag = <name>.localhost
+    # first entry = <name>.localhost
     - 3000
     - 5173
-  # default false; auf true setzen, um VS Code's eigene Forwards parallel
-  # zu Traefik zu aktivieren
+  # default false; set to true to enable VS Code's own forwards in
+  # parallel to Traefik
   vscodeAutoForward: false
 ```
 
-## Argumente
+## Arguments
 
-| Argument           | Bedeutung                                          |
-| ------------------ | -------------------------------------------------- |
-| `<name>`           | Container-Name.                                    |
-| `<port> [<port>…]` | Ein oder mehrere Ports nach `--`, jeweils 1–65535. |
+| Argument           | Meaning                                     |
+| ------------------ | ------------------------------------------- |
+| `<name>`           | Container name.                             |
+| `<port> [<port>…]` | One or more ports after `--`, each 1–65535. |
 
-## Optionen
+## Options
 
-| Option      | Bedeutung                                                                      |
-| ----------- | ------------------------------------------------------------------------------ |
-| `--yes, -y` | Diff-Confirm-Prompt überspringen (für Scripts).                                |
-| `--default` | Genannten Port zum Default-Routen-Ziel machen (Position 0 in `routing.ports`). |
+| Option      | Meaning                                                                       |
+| ----------- | ----------------------------------------------------------------------------- |
+| `--yes, -y` | Skip the diff confirmation prompt (for scripts).                              |
+| `--default` | Make the given port the default route target (position 0 in `routing.ports`). |
 
-## Hostname-Schema
+## Hostname scheme
 
-- `<container>.localhost` → Default-Port (erster Eintrag in
+- `<container>.localhost` → default port (first entry in
   `routing.ports`)
-- `<container>-<port>.localhost` → expliziter interner Port
+- `<container>-<port>.localhost` → explicit internal port
 
-Wenn der Traefik-Host-Port über `monoceros-config.yml` von 80
-abweicht (siehe `routing.hostPort`), wird er den URLs angehängt:
+If the Traefik host port differs from 80 via `monoceros-config.yml`
+(see `routing.hostPort`), it is appended to the URLs:
 `http://<container>.localhost:<port>/`.
 
-Beispiel: nach `monoceros add-port sandbox -- 3000 5173 6006`:
+Example: after `monoceros add-port sandbox -- 3000 5173 6006`:
 
-| URL                             | Routet auf                           |
+| URL                             | Routes to                            |
 | ------------------------------- | ------------------------------------ |
-| `http://sandbox.localhost`      | `http://sandbox:3000` (Default-Port) |
+| `http://sandbox.localhost`      | `http://sandbox:3000` (default port) |
 | `http://sandbox-3000.localhost` | `http://sandbox:3000`                |
 | `http://sandbox-5173.localhost` | `http://sandbox:5173`                |
 | `http://sandbox-6006.localhost` | `http://sandbox:6006`                |
 
-`*.localhost` löst per RFC 6761 auf jedem modernen OS automatisch auf
-127.0.0.1 auf — kein `hosts`-File-Eingriff nötig.
+`*.localhost` resolves to 127.0.0.1 automatically on every modern OS
+per RFC 6761 — no `hosts` file changes needed.
 
-## Default-Port wechseln
+## Changing the default port
 
-Der erste Eintrag in `routing.ports` doppelt sich als
-`<container>.localhost`-Route. Um einen anderen Port zum Default zu
-machen, ohne Liste neu aufzubauen:
+The first entry in `routing.ports` doubles as the
+`<container>.localhost` route. To make a different port the default
+without rebuilding the list:
 
 ```sh
 monoceros add-port sandbox -y --default -- 5173
 ```
 
-Wirkung:
+Effect:
 
-- Port schon in der Liste → wird an Position 0 verschoben, restliche
-  Reihenfolge bleibt erhalten
-- Port noch nicht in der Liste → wird vorne eingefügt
-- Port ist schon der Default → no-change
+- Port already in the list → moved to position 0, the rest of the
+  order is preserved
+- Port not yet in the list → inserted at the front
+- Port is already the default → no change
 
-Mehr als ein Port mit `--default` ist ein Fehler — welcher von mehreren
-soll Default sein? Bei Bedarf zwei Aufrufe: erst `--default`, dann der
-Rest ohne Flag.
+More than one port with `--default` is an error — which of several
+should be the default? If needed, use two calls: first `--default`,
+then the rest without the flag.
 
-## Idempotenz
+## Idempotency
 
-`add-port sandbox -- 3000` zweimal in Folge → der zweite Aufruf ist
-ein no-change. `add-port sandbox -- 3000 5173` nach einem ersten
-`add-port sandbox -- 3000` ergänzt nur den fehlenden Port 5173.
+`add-port sandbox -- 3000` twice in a row → the second call is a
+no-change. `add-port sandbox -- 3000 5173` after an initial
+`add-port sandbox -- 3000` only adds the missing port 5173.
 
-## Verwandte Befehle
+## Related commands
 
-- [`remove-port`](./remove-port.md) — Inverse
-- [`monoceros apply <name>`](./apply.md) — refreshed beim nächsten
-  Apply die Routes konsistent zur yml (zustands-driven)
+- [`remove-port`](./remove-port.md) — the inverse
+- [`monoceros apply <name>`](./apply.md) — on the next apply, refreshes
+  the routes to be consistent with the yml (state-driven)
 
-## Fail-Modi
+## Failure modes
 
-- **`Invalid port: <value>`** — Wert ist keine ganze Zahl oder liegt
-  außerhalb 1–65535.
-- **`No ports given`** — die Argumentliste nach `--` ist leer.
-- **`No such config`** — Container-yml existiert nicht. `monoceros init`
-  vorher.
+- **`Invalid port: <value>`** — value is not an integer or lies
+  outside 1–65535.
+- **`No ports given`** — the argument list after `--` is empty.
+- **`No such config`** — the container yml does not exist. Run
+  `monoceros init` first.

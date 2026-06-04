@@ -1,108 +1,107 @@
-# ADR 0009 — TCP-Tunnels via Foreground-socat-Sidecar
+# ADR 0009 — TCP Tunnels via a Foreground socat Sidecar
 
 - Status: accepted
-- Datum: 2026-05-28
+- Date: 2026-05-28
 
-## Kontext
+## Context
 
-[ADR 0007](./0007-port-management-traefik.md) liefert
-**HTTP-Routing**: deklarierte Ports im `routing.ports`-Block werden
-vom Traefik-Singleton hinter `<name>.localhost` ausgespielt,
-persistent über `apply`-Läufe hinweg. Das ist die richtige
-Antwort für Web-Apps, die der Builder dauerhaft erreichen will.
+[ADR 0007](./0007-port-management-traefik.md) provides
+**HTTP routing**: ports declared in the `routing.ports` block are
+served by the Traefik singleton behind `<name>.localhost`,
+persistent across `apply` runs. That is the right answer for web
+apps the builder wants to reach permanently.
 
-Drei Use-Cases bleiben damit ungelöst:
+Three use cases remain unsolved:
 
-1. **TCP-Services (postgres, mysql, redis, …)** vom Host aus
-   erreichen. Traefik ist HTTP-only; `psql -h localhost -p 5432`
-   muss aber direkt auf den Service-Port treffen.
-2. **Ad-hoc HTTP-Apps**, die _nicht_ in `routing.ports` stehen,
-   einmalig prüfen — ohne einen `apply`-Rebuild und ohne die yml
-   anzufassen.
-3. **Per-Container-Tooling** (`pgcli`, GUI-DB-Clients, REST-Clients)
-   ohne `monoceros shell` zu nehmen.
+1. **Reaching TCP services (postgres, mysql, redis, …)** from the
+   host. Traefik is HTTP-only, but `psql -h localhost -p 5432`
+   needs to hit the service port directly.
+2. **Ad-hoc HTTP apps** that are _not_ listed in `routing.ports`,
+   checked once — without an `apply` rebuild and without touching
+   the yml.
+3. **Per-container tooling** (`pgcli`, GUI DB clients, REST clients)
+   without resorting to `monoceros shell`.
 
-Alle drei sind situativ — der Builder will sie für die Dauer einer
-Aufgabe, nicht permanent. Eine yml-Mitschrift wäre falsche
-Persistenz.
+All three are situational — the builder wants them for the duration
+of a task, not permanently. Recording them in the yml would be the
+wrong kind of persistence.
 
-## Verworfen: Persistente Sidecars mit yml-Mitschrieb
+## Rejected: Persistent sidecars recorded in the yml
 
-Der Original-Backlog-Entwurf sah vor, Tunnels als Container-yml-
-Einträge zu führen (`tunnels:` neben `routing.ports`), per
-`monoceros tunnel <name>` zu starten, per `monoceros tunnel <name>
---stop` zu beenden und implizit bei `monoceros stop`/`remove`
-mit zu räumen. Sidecars wären über `monoceros start <name>`
-wieder hochgekommen.
+The original backlog draft proposed managing tunnels as container
+yml entries (`tunnels:` alongside `routing.ports`), starting them
+with `monoceros tunnel <name>`, stopping them with `monoceros tunnel
+<name> --stop`, and cleaning them up implicitly on `monoceros
+stop`/`remove`. Sidecars would have come back up via `monoceros
+start <name>`.
 
-**Warum verworfen:**
+**Why rejected:**
 
-- Zwei Lifecycle-Modelle nebeneinander (persistent für HTTP via
-  Traefik, persistent für TCP via Sidecar) sind ein Konzept zu
-  viel. Builder muss zwei Mental-Models pflegen.
-- Listing-Subcommand (`monoceros status` mit Tunnel-Spalte? Eigener
-  `tunnel --list`?) wird notwendig, sobald Tunnels überleben.
-- Räumungslogik in `remove`/`stop` muss Edge-Cases abdecken
-  („Tunnel zeigt ins Leere, weil Container down — was tun?").
-- Das Mental-Model passt nicht zum Tool-Vorbild: `kubectl
-port-forward` und `ssh -L` sind Foreground-Befehle. Builder, die
-  diese kennen, erwarten dasselbe.
+- Two lifecycle models side by side (persistent for HTTP via
+  Traefik, persistent for TCP via sidecar) is one concept too many.
+  The builder would have to maintain two mental models.
+- A listing subcommand (`monoceros status` with a tunnel column? A
+  dedicated `tunnel --list`?) becomes necessary as soon as tunnels
+  survive.
+- Cleanup logic in `remove`/`stop` has to cover edge cases ("the
+  tunnel points nowhere because the container is down — now what?").
+- The mental model does not match the tooling precedent: `kubectl
+port-forward` and `ssh -L` are foreground commands. Builders who
+  know those expect the same.
 
-## Verworfen: SSH-basierter Tunnel im Dev-Container
+## Rejected: SSH-based tunnel in the dev container
 
-sshd im Container starten, key-basierte Auth, ein `ssh -L`-Aufruf
-vom Host. Vorteil: ein Tunnel kann mehrere Ports auf einmal.
-Nachteil: sshd + Key-Verwaltung im Dev-Container ist Over-Engineering
-für Local-Dev. Die Builder-Workstation hat schon Docker-Zugriff —
-warum den Umweg über SSH? Re-aufrufbar, falls Remote-Dev-Container
-(über das Netzwerk) später Thema werden.
+Start sshd in the container, key-based auth, an `ssh -L` call from
+the host. Advantage: one tunnel can carry multiple ports at once.
+Disadvantage: sshd + key management in the dev container is
+over-engineering for local dev. The builder's workstation already
+has Docker access — why detour through SSH? Worth revisiting if
+remote dev containers (over the network) become a topic later.
 
-## Entscheidung
+## Decision
 
-**Ein Foreground-Prozess pro Tunnel, ein Tunnel pro Aufruf,
-Ctrl+C beendet.** Implementation über einen kurzlebigen
-`alpine/socat`-Sidecar, der in das Docker-Network des Ziel-
-Containers joint und einen Host-Port auf den internen Port
-forwardet.
+**One foreground process per tunnel, one tunnel per invocation,
+Ctrl+C to stop.** Implemented via a short-lived `alpine/socat`
+sidecar that joins the Docker network of the target container and
+forwards a host port to the internal port.
 
-### CLI-Form
+### CLI form
 
 ```sh
 monoceros tunnel <name> <service-or-port> [--local-port=<n>] [--local-address=<addr>]
 ```
 
-- `<service-or-port>` ist entweder ein Service-Name aus dem
-  `services:`-Block der Container-yml (`postgres`, `mysql`, `redis`
-  — vgl. `monoceros list-components`) oder eine interne Port-Nummer
-  (`8080`).
-- `--local-port` setzt den Host-Port. Default ist 1:1 (postgres →
-  5432 → 5432, Port 8080 → 8080). Bei Belegung des Default-Ports
-  bricht der Befehl mit klarem Fehler ab; der Builder leitet
-  explizit um.
-- `--local-address` setzt das Listen-Interface auf dem Host.
-  Default `127.0.0.1` (nur Loopback — vom selben Rechner erreichbar,
-  nicht aus dem LAN). `--local-address=0.0.0.0` bindet auf alle
-  Interfaces; sinnvoll z. B. für Tests vom Mobilgerät im selben
-  WLAN. Bewusster Opt-in, weil die LAN-Exposition eine
-  Sicherheits-Konsequenz hat.
+- `<service-or-port>` is either a service name from the `services:`
+  block of the container yml (`postgres`, `mysql`, `redis` — cf.
+  `monoceros list-components`) or an internal port number (`8080`).
+- `--local-port` sets the host port. The default is 1:1 (postgres →
+  5432 → 5432, port 8080 → 8080). If the default port is already in
+  use, the command aborts with a clear error; the builder remaps it
+  explicitly.
+- `--local-address` sets the listen interface on the host. The
+  default is `127.0.0.1` (loopback only — reachable from the same
+  machine, not from the LAN). `--local-address=0.0.0.0` binds on all
+  interfaces; useful, for example, for testing from a mobile device
+  on the same Wi-Fi. A deliberate opt-in, because LAN exposure has a
+  security consequence.
 
 ### Lifecycle
 
-1. **Start:** `monoceros tunnel hello postgres` blockiert im
-   Terminal mit einer Info-Zeile
+1. **Start:** `monoceros tunnel hello postgres` blocks in the
+   terminal with an info line
    (`Tunnel: localhost:5432 → hello/postgres:5432, Ctrl+C to stop`).
-2. **Stop:** Ctrl+C signalisiert den `docker run`-Subprozess; der
-   socat-Container hat `--rm` und verschwindet beim Exit.
-3. **Mehrere parallele Tunnels:** mehrere Terminals (oder `&`).
-   Bewusst keine `--for-services=postgres,mysql`-Kollektion in
-   einem Aufruf — Log-Multiplex bringt mehr Verwirrung als der
-   Komfort wert ist, und `--local-port`-Kollisionen wären
-   semantisch nicht eindeutig auflösbar.
+2. **Stop:** Ctrl+C signals the `docker run` subprocess; the socat
+   container has `--rm` and disappears on exit.
+3. **Multiple parallel tunnels:** multiple terminals (or `&`).
+   Deliberately no `--for-services=postgres,mysql` collection in a
+   single call — log multiplexing causes more confusion than the
+   convenience is worth, and `--local-port` collisions would not be
+   semantically resolvable in an unambiguous way.
 
-### Topologie
+### Topology
 
-Der Sidecar joint das Docker-Network des Ziel-Containers und
-ruft den Service per DNS-Name auf:
+The sidecar joins the Docker network of the target container and
+reaches the service by DNS name:
 
 ```
 docker run --rm -i \
@@ -113,44 +112,44 @@ docker run --rm -i \
   TCP:<target-host>:<internal-port>
 ```
 
-Das socat-Image ist auf eine konkrete Version gepinnt
-(`alpine/socat:1.8.0.3`) — Reproducibility schlägt
-Floating-Latest. Ein Bump erfolgt explizit per ADR-Update.
+The socat image is pinned to a concrete version
+(`alpine/socat:1.8.0.3`) — reproducibility beats floating-latest. A
+bump happens explicitly via an ADR update.
 
-Network und Target-Host hängen vom Container-Mode ab:
+Network and target host depend on the container mode:
 
-| Mode                                 | Network                   | Target-Host (DNS)          |
-| ------------------------------------ | ------------------------- | -------------------------- |
-| Compose, Service-Name (`postgres`)   | `<projectName>_default`   | Compose-Service-Name       |
-| Compose, Port (Workspace)            | `<projectName>_default`   | `workspace`                |
-| Image-Mode mit `routing.ports`, Port | `monoceros-proxy`         | `<container-name>` (Alias) |
-| Image-Mode ohne `routing.ports`      | (Bridge-IP via `inspect`) | Container-IP               |
+| Mode                                  | Network                   | Target host (DNS)          |
+| ------------------------------------- | ------------------------- | -------------------------- |
+| Compose, service name (`postgres`)    | `<projectName>_default`   | Compose service name       |
+| Compose, port (workspace)             | `<projectName>_default`   | `workspace`                |
+| Image mode with `routing.ports`, port | `monoceros-proxy`         | `<container-name>` (alias) |
+| Image mode without `routing.ports`    | (bridge IP via `inspect`) | container IP               |
 
-Der letzte Fall ist die Notlösung: ohne `routing.ports` ist der
-Container auf Dockers Default-Bridge ohne DNS, also lookup-en wir
-die IP einmal beim Start und targeten sie direkt.
+The last case is the fallback: without `routing.ports` the
+container is on Docker's default bridge with no DNS, so we look up
+the IP once at start and target it directly.
 
-### Was bewusst draußen bleibt
+### What is deliberately left out
 
-- **Listing-Befehl** — `ps`/Terminal-Tabs sind das Listing.
-- **`tunnel --stop`** — Ctrl+C ist der Stop.
-- **yml-Persistenz** — keine `tunnels:`-Section in der Container-
-  yml. Tunnel-Konfig ist immer der CLI-Aufruf.
-- **TLS** — TCP-Layer; Ende-zu-Ende-Verschlüsselung ist Sache des
-  Service-Protokolls (postgres SSL, redis TLS, …).
+- **Listing command** — `ps`/terminal tabs are the listing.
+- **`tunnel --stop`** — Ctrl+C is the stop.
+- **yml persistence** — no `tunnels:` section in the container yml.
+  Tunnel config is always the CLI invocation.
+- **TLS** — this is the TCP layer; end-to-end encryption is the
+  service protocol's job (postgres SSL, redis TLS, …).
 
-## Konsequenzen
+## Consequences
 
-- Tunnel-Code lebt unter `packages/cli/src/tunnel/` (eigenes
-  Modul neben `proxy/`), keine yml-Schema-Erweiterung.
-- `alpine/socat` ist ein zusätzliches Image, das beim ersten
-  `tunnel`-Aufruf gepullt wird. Klein (~5 MB), gut gepflegt,
-  Single-Purpose — vertretbarer Footprint.
-- Ein abgestürzter `monoceros tunnel`-Prozess (kill -9 statt
-  Ctrl+C) lässt den socat-Container kurz hängen, bis Docker
-  per `--rm` aufräumt. Im Worst-Case sieht der Builder einen
-  `monoceros-tunnel-…`-Container in `docker ps` — kein State-
-  Leak, da `--rm` beim nächsten Exit-Signal greift.
-- Vorbild für künftige situative Sidecar-Befehle: wenn weitere
-  „lebt nur während der Befehl läuft"-Tools auftauchen, ist das
-  Muster dokumentiert.
+- Tunnel code lives under `packages/cli/src/tunnel/` (its own module
+  alongside `proxy/`), with no yml schema extension.
+- `alpine/socat` is an additional image, pulled on the first
+  `tunnel` call. Small (~5 MB), well maintained, single-purpose — a
+  defensible footprint.
+- A crashed `monoceros tunnel` process (kill -9 instead of Ctrl+C)
+  leaves the socat container hanging briefly until Docker cleans it
+  up via `--rm`. Worst case, the builder sees a
+  `monoceros-tunnel-…` container in `docker ps` — no state leak,
+  since `--rm` takes effect on the next exit signal.
+- A precedent for future situational sidecar commands: if more
+  "lives only while the command runs" tools show up, the pattern is
+  documented.

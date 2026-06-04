@@ -1,43 +1,43 @@
-# ADR 0013 — `monoceros apply` mit Phasen-Anzeige und Log-Datei
+# ADR 0013 — `monoceros apply` with phase display and log file
 
 - Status: **accepted**
-- Datum: 2026-06-03
-- Umgesetzt in: 296dc39 (Step 1 — Log-Datei), cac6478 (Step 2 — Spinner + `--verbose` + Summary), Folge-Commits für Layout-Polishing + SIGINT-Handling.
+- Date: 2026-06-03
+- Implemented in: 296dc39 (Step 1 — log file), cac6478 (Step 2 — spinner + `--verbose` + summary), follow-up commits for layout polishing + SIGINT handling.
 
-> **Offen geblieben** (bewusst nicht gebaut, kein Bedarf):
+> **Left open** (deliberately not built, no need):
 >
-> - **Pull-Skip via `docker image inspect`** — der Spinner mit Phase
->   `starting container…` deckt den Pull-Fall heute mit ab; die
->   irreführende `pulling…`-Phase taucht ohnehin nicht mehr separat
->   auf (wir starten direkt bei `starting container…`).
-> - **Containerseitige Recovery bei SIGINT** — der Handler räumt
->   Spinner, Log und Cursor; der halb-erstellte Docker-Container wird
->   beim nächsten `apply` via `--remove-existing-container` / der
->   Compose-Pre-Cleanup eingesammelt. Aktive `docker rm -f`-Logik im
->   Handler wäre Race-anfällig (welcher Container existiert wann),
->   daher absichtlich nicht implementiert.
+> - **Pull skip via `docker image inspect`** — the spinner with the
+>   `starting container…` phase already covers the pull case today; the
+>   misleading `pulling…` phase no longer shows up separately anyway
+>   (we start directly at `starting container…`).
+> - **Container-side recovery on SIGINT** — the handler cleans up the
+>   spinner, the log, and the cursor; the half-created Docker container
+>   gets collected on the next `apply` via `--remove-existing-container`
+>   / the Compose pre-cleanup. Active `docker rm -f` logic in the handler
+>   would be race-prone (which container exists when), so it is
+>   deliberately not implemented.
 
-## Kontext
+## Context
 
-`monoceros apply` führt heute `@devcontainers/cli` als Subprozess aus
-und streamt dessen Output 1:1 nach `stderr`. Das produziert pro Apply
-zwischen den `▸ Container`- und `▸ Next steps`-Sections ein Block aus
-ISO-Timestamp-Zeilen, dem vollständigen `docker run …`-Aufruf inkl.
-metadata-JSON und dem postCreate-Output — fachlich korrekt, aber
-unsortiert und für den Builder weder scanbar noch hilfreich. Eine
-vorgeschaltete `ℹ`-Warnung kündigt heute zusätzlich an, dass der
-erste Apply ~1–2 min dauert; die ist sinnvoll, taucht aber auch im
-Erfolgsfall jedes Mal auf und konkurriert visuell mit echten Hinweisen.
+`monoceros apply` today runs `@devcontainers/cli` as a subprocess and
+streams its output verbatim to `stderr`. Per apply, this produces a
+block between the `▸ Container` and `▸ Next steps` sections consisting
+of ISO timestamp lines, the full `docker run …` invocation including
+metadata JSON, and the postCreate output — technically correct, but
+unsorted and neither scannable nor helpful for the builder. An
+up-front `ℹ` warning additionally announces today that the first apply
+takes ~1–2 min; that is useful, but it also shows up every time on
+success and competes visually with real hints.
 
-Im **Fehlerfall** geht der eigentliche Fehlertext im selben Stream
-unter — die `✘`-Meldung steht irgendwo zwischen tausend Timestamps.
-Es gibt aktuell kein persistiertes Log, an das man den Builder
-verweisen könnte ("schau mal hier rein").
+In the **error case**, the actual error text gets lost in the same
+stream — the `✘` message sits somewhere among a thousand timestamps.
+There is currently no persisted log we could point the builder to
+("take a look in here").
 
-## Entscheidung
+## Decision
 
-Wir trennen **Statusanzeige** (knapp, im TTY) von **Rohlog**
-(vollständig, auf Disk). Layout:
+We separate the **status display** (terse, in the TTY) from the **raw
+log** (complete, on disk). Layout:
 
 ```
 ▸ Container
@@ -50,11 +50,11 @@ Wir trennen **Statusanzeige** (knapp, im TTY) von **Rohlog**
 ℹ log: ~/.monoceros/container/<name>/logs/apply-<name>-2026-06-03T15-15-21.log
 ```
 
-**Phasen-Detection.** Aus dem `@devcontainers/cli`-Output mappen wir
-auf eine kleine Zustandsmaschine. Jeder Zustand zeigt einen kurzen
-Text neben dem Spinner an — das ist der eigentliche Mehrwert: der
-Builder sieht, _was_ gerade passiert, nicht nur _dass_ etwas passiert.
-Erkannte Phasen (initiale Liste, erweiterbar):
+**Phase detection.** From the `@devcontainers/cli` output we map onto
+a small state machine. Each state shows a short text next to the
+spinner — that is the real added value: the builder sees _what_ is
+happening right now, not just _that_ something is happening. Detected
+phases (initial list, extensible):
 
 | Trigger im Stream                              | Phase                      |
 | ---------------------------------------------- | -------------------------- |
@@ -64,39 +64,38 @@ Erkannte Phasen (initiale Liste, erweiterbar):
 | `Running the postCreateCommand`                | `running postCreate…`      |
 | `outcome":"success"` in der JSON-Endzeile      | → Erfolg                   |
 
-Die Detection ist bewusst **fragil-aber-pragmatisch**: bricht ein
-Match, fallen wir auf einen generischen „working…"-Text zurück. Der
-Spinner bleibt korrekt, nur die Beschriftung wird ungenau. Das ist
-besser als entweder gar kein Text (langweilig) oder ein vollständig
-geparster Output (Wartungslast bei jedem devcontainer-cli-Update).
+Detection is deliberately **fragile-but-pragmatic**: if a match
+breaks, we fall back to a generic "working…" text. The spinner stays
+correct, only the label becomes imprecise. That is better than either
+no text at all (boring) or fully parsed output (maintenance burden on
+every devcontainer-cli update).
 
-**Log-Datei.** Pfad:
+**Log file.** Path:
 
 ```
 ~/.monoceros/container/<name>/logs/apply-<name>-<ISO-datetime>.log
 ```
 
-- Unter `container/<name>/` — geht beim `remove` mit weg, paßt zum
-  „alles unter container/<name>"-Modell.
-- Im Unterordner `logs/` — perspektivisch landen dort weitere
-  Audit-Logs (siehe Backlog-Eintrag „Audit-Logging").
-- Dateiname enthält Befehl + Container-Name + Zeitstempel, damit
-  der Pfad auch außerhalb seines Verzeichnisses selbsterklärend ist
-  (`cat ~/Downloads/apply-foo-….log` bleibt eindeutig, wenn der Builder
-  die Datei woandershin kopiert).
-- Inhalt: vollständiger devcontainer-cli-stdout/stderr, dazu am
-  Anfang ein kurzer Kopf mit Monoceros-Version, Container-Name,
-  yml-Pfad, Host-Info und der **bisher in der TTY angezeigten
-  Pull-Vorwarnung** (siehe unten).
+- Under `container/<name>/` — gets removed along with `remove`, fits
+  the "everything under container/<name>" model.
+- In the `logs/` subfolder — going forward, more audit logs will land
+  there (see the backlog entry "Audit logging").
+- The filename contains command + container name + timestamp, so that
+  the path is self-explanatory even outside its directory
+  (`cat ~/Downloads/apply-foo-….log` stays unambiguous when the builder
+  copies the file somewhere else).
+- Content: the full devcontainer-cli stdout/stderr, plus a short header
+  at the start with the Monoceros version, container name, yml path,
+  host info, and the **pull pre-warning previously shown in the TTY**
+  (see below).
 
-**Vorwarnung umziehen.** Der heutige ℹ-Hinweis
-(„Pulling runtime image and building feature layers. First apply
-takes ~1–2 min …") wandert komplett ins Log. Im TTY ist er redundant,
-weil der Spinner mit `pulling runtime image…` ohnehin sichtbar macht,
-was passiert. Builder, die mehr Kontext wollen, finden den Hinweis
-am Logkopf.
+**Move the pre-warning.** Today's ℹ hint ("Pulling runtime image and
+building feature layers. First apply takes ~1–2 min …") moves entirely
+into the log. In the TTY it is redundant, because the spinner with
+`pulling runtime image…` already makes visible what is happening.
+Builders who want more context find the hint at the log header.
 
-**Fehlerfall.** Bricht `devcontainer-cli` mit non-zero ab:
+**Error case.** If `devcontainer-cli` aborts with a non-zero exit:
 
 ```
 ✘ postCreate failed (exit 1)
@@ -109,59 +108,58 @@ am Logkopf.
 ℹ full log: ~/.monoceros/container/<name>/logs/apply-<name>-….log
 ```
 
-Wir zeigen das **Tail** des Logs (nicht den ganzen Stream), damit die
-Diagnose sofort sichtbar ist, aber der Scroll-Back nicht zugeschüttet
-wird. Der Logpfad steht direkt darunter.
+We show the **tail** of the log (not the whole stream), so the
+diagnosis is immediately visible but the scrollback is not buried. The
+log path sits directly below it.
 
-**`--verbose`.** `monoceros apply <name> --verbose` schaltet den
-Spinner ab und streamt den devcontainer-cli-Output wie heute roh
-nach stderr. Zweck: Workbench-eigenes Debugging, CI ohne TTY,
-Bug-Reports gegen `@devcontainers/cli`. Die Log-Datei wird in diesem
-Modus zusätzlich geschrieben — wer roh streamen will, will gewöhnlich
-auch das Artefakt haben.
+**`--verbose`.** `monoceros apply <name> --verbose` turns off the
+spinner and streams the devcontainer-cli output raw to stderr as it
+does today. Purpose: workbench-internal debugging, CI without a TTY,
+bug reports against `@devcontainers/cli`. The log file is written in
+this mode as well — whoever wants the raw stream usually also wants
+the artifact.
 
-**TTY-Detection.** Ohne TTY (CI, Piped stdout) fallen wir
-automatisch auf den `--verbose`-Modus zurück. Spinner in nicht-TTY-
-Streams sind nutzlos und verschmutzen Logs.
+**TTY detection.** Without a TTY (CI, piped stdout) we automatically
+fall back to `--verbose` mode. Spinners in non-TTY streams are useless
+and pollute logs.
 
-**Pull vs. cached.** Vor dem `devcontainer up` führen wir
-`docker image inspect ghcr.io/getmonoceros/monoceros-runtime:<tag>`
-aus. Liegt das Image vor, überspringen wir die `pulling…`-Phase
-optisch — der Spinner startet direkt bei `starting container…`.
-Macht den Happy Path ruhiger und vermeidet die irreführende
-Pull-Anzeige, wenn nichts gepullt wird.
+**Pull vs. cached.** Before the `devcontainer up` we run
+`docker image inspect ghcr.io/getmonoceros/monoceros-runtime:<tag>`.
+If the image is present, we visually skip the `pulling…` phase — the
+spinner starts directly at `starting container…`. This makes the happy
+path quieter and avoids the misleading pull display when nothing is
+pulled.
 
-## Konsequenzen
+## Consequences
 
-- Die `▸ Container`-Section ist im Erfolgsfall vier Zeilen lang
-  (eine pro Phase, eine fürs `✔`, eine für den Logpfad) statt
-  unbestimmter Block.
-- Audit-Pfad ist etabliert — `container/<name>/logs/` ist der Ort, an
-  dem Monoceros Lebenszeichen ablegt. Folge-Commands (`remove`,
-  `add-feature`, `restore`) können hier mitloggen, ohne neuen
-  Designentscheid.
-- `--verbose` ist die einzige unterstützte Form, den Roh-Stream live
-  zu sehen. Wer das gewöhnt ist, muss umdenken; im Gegenzug wird die
-  Default-Ausgabe deutlich lesbarer.
-- Phasen-Mapping ist eine kleine, abgrenzbare Komponente, die in
-  Vitest mit aufgezeichneten devcontainer-cli-Outputs getestet werden
-  kann (Fixture-Dateien checken wir mit ein).
-- Bei einem Major-Update von `@devcontainers/cli` mit geänderten
-  Log-Strings degradiert die Anzeige auf den Fallback-Text — Logfile
-  bleibt korrekt, kein funktionaler Schaden.
+- The `▸ Container` section is four lines long on success (one per
+  phase, one for the `✔`, one for the log path) instead of an
+  indeterminate block.
+- The audit path is established — `container/<name>/logs/` is the place
+  where Monoceros records signs of life. Follow-up commands (`remove`,
+  `add-feature`, `restore`) can log here too, without a new design
+  decision.
+- `--verbose` is the only supported way to watch the raw stream live.
+  Whoever is used to it has to rethink; in exchange the default output
+  becomes much more readable.
+- The phase mapping is a small, isolable component that can be tested
+  in Vitest with recorded devcontainer-cli outputs (we check the
+  fixture files in).
+- On a major update of `@devcontainers/cli` with changed log strings,
+  the display degrades to the fallback text — the log file stays
+  correct, no functional damage.
 
-## Verworfen
+## Rejected
 
-- **Volle strukturierte JSON-Erfassung des devcontainer-cli-Outputs**
-  via `--log-format json` (falls jemals stabil verfügbar) — Mehrwert
-  zu klein, Bindung an Upstream-Format zu eng. Heuristische
-  Phasen-Detection reicht.
-- **Logfile zentral unter `~/.monoceros/logs/`** statt pro Container
-  — Logs überleben dann `remove`, aber: (a) Lifecycle-Frage (wer
-  räumt auf?), (b) Auffinden ist schwerer ohne Index. Pro-Container
-  ist der einfachere Default; ein zentrales Audit-Log kann später
-  zusätzlich entstehen, ohne diese ADR zu invalidieren.
-- **Spinner-Phasen ohne Beschreibungstext** — robuster, aber
-  langweilig und unterscheidet sich nicht von einer simplen
-  „working…"-Anzeige. Der ganze Sinn der Phasen ist die Information
-  _was_ gerade läuft.
+- **Full structured JSON capture of the devcontainer-cli output** via
+  `--log-format json` (if ever stably available) — too little added
+  value, too tight a coupling to the upstream format. Heuristic phase
+  detection is enough.
+- **Log file centrally under `~/.monoceros/logs/`** instead of
+  per-container — logs then survive `remove`, but: (a) lifecycle
+  question (who cleans up?), (b) finding them is harder without an
+  index. Per-container is the simpler default; a central audit log can
+  be added later without invalidating this ADR.
+- **Spinner phases without descriptive text** — more robust, but boring
+  and indistinguishable from a simple "working…" display. The whole
+  point of the phases is the information about _what_ is running.

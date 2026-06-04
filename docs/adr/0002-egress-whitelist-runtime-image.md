@@ -1,159 +1,157 @@
-# ADR 0002 — Egress-Whitelist im Runtime-Image (iptables, hostname-Snapshot beim Start)
+# ADR 0002 — Egress whitelist in the runtime image (iptables, hostname snapshot at startup)
 
-- Status: deferred (Mechanik im Image, aber **Default = off** seit 2026-05-10)
-- Datum: 2026-05-10
+- Status: deferred (mechanism is in the image, but **default = off** since 2026-05-10)
+- Date: 2026-05-10
 
-## Update 2026-05-10 — Warum jetzt deferred
+## Update 2026-05-10 — Why deferred now
 
-Die Mechanik (iptables-Allowlist über Hostname-Snapshot beim Start) ist
-im Image enthalten und für statische Targets verifiziert. In der
-Praxis bricht sie an zwei Stellen, die unsere primären Workflows
-ausmachen:
+The mechanism (iptables allowlist built from a hostname snapshot at
+startup) is included in the image and verified for static targets. In
+practice it breaks in two places that make up our primary workflows:
 
-1. **VS Code Dev Containers**: VS Code Server zieht Extensions
-   (Marketplace + rotierende `*.vscode-unpkg.net`-CDN-IPs) und
-   Settings-Sync-Daten. Hostname-Snapshot fängt CDN-Rotation nicht
-   ab — Folge: minutenlange TCP-Timeouts beim ersten Reopen,
-   teilweise schlagende Extension-Installs. Selbst mit erweiterter
-   Allowlist greift der Filter nicht zuverlässig.
-2. **VS Code Claude-Code-Extension**: ruft _nicht_ das
-   `/usr/local/bin/claude`-Binary, sondern hat eigenen Stack via
-   `@anthropic-ai/claude-agent-sdk` mit eigenen Subprocess-Spawns.
-   Damit greift weder ein UID-basierter Filter (Extension läuft als
-   `node`, wie alles andere im VS Code Server) noch ein Wrapper-um-
-   die-CLI.
+1. **VS Code Dev Containers**: the VS Code Server pulls extensions
+   (Marketplace + rotating `*.vscode-unpkg.net` CDN IPs) and
+   settings-sync data. A hostname snapshot does not capture CDN
+   rotation — the result is minutes-long TCP timeouts on the first
+   reopen, with some extension installs failing outright. Even with an
+   extended allowlist, the filter does not work reliably.
+2. **VS Code Claude Code extension**: it does _not_ call the
+   `/usr/local/bin/claude` binary but has its own stack via
+   `@anthropic-ai/claude-agent-sdk` with its own subprocess spawns.
+   As a result, neither a UID-based filter (the extension runs as
+   `node`, like everything else in the VS Code Server) nor a wrapper
+   around the CLI applies.
 
-**Konsequenz:** Default-Mode des Entrypoints wechselt auf `off`. Die
-Mechanik bleibt im Image (für CI / Headless / explizit per `enforce`
-opt-in), aber neue Solutions sind nicht mehr per Default
-egress-gefiltert. Damit funktioniert der VS-Code-Workflow ungestört.
+**Consequence:** the entrypoint's default mode switches to `off`. The
+mechanism stays in the image (for CI / headless / explicit opt-in via
+`enforce`), but new solutions are no longer egress-filtered by
+default. This lets the VS Code workflow run undisturbed.
 
-**Was als nächstes:** zwei Optionen werden im Backlog getrackt:
+**What's next:** two options are tracked in the backlog:
 
-- **Audit-Log** statt Block: niederschwellig — DNS- und/oder
-  iptables-LOG-Target schreibt mit, was rausgeht. Keine Aktion auf den
-  Datenverkehr, nur Observability. Liefert Material für später.
-- **HTTPS-Forward-Proxy-Sidecar**: die strukturell richtige Lösung,
-  weil sie Hostnames pro Request neu auflöst und unabhängig vom
-  Aufrufer-Kontext greift. Wird relevant wenn der Schutzbedarf wieder
-  hochkommt (Multi-User, public release).
+- **Audit log** instead of block: low-effort — a DNS and/or iptables
+  LOG target records what goes out. No action on the traffic, just
+  observability. Provides material for later.
+- **HTTPS forward proxy sidecar**: the structurally correct solution,
+  because it re-resolves hostnames per request and applies regardless
+  of the caller's context. Becomes relevant when the protection need
+  rises again (multi-user, public release).
 
-Die ursprüngliche Entscheidung unten bleibt als Doku stehen — sie
-beschreibt korrekt was im Image lebt. Sie ist nur nicht mehr der
-Default.
+The original decision below remains as documentation — it correctly
+describes what lives in the image. It is just no longer the default.
 
 ---
 
-## Kontext
+## Context
 
-Der Use-Case der Workbench ist „Claude Code läuft längere Zeit unter
-geringer Aufsicht". Container-Isolation alleine reicht dafür nicht —
-ein kompromittierter Agent kann beliebige HTTPS-Calls absetzen, npm-
-Pakete ihre Telemetrie verschicken, und MCP-Server beliebige Hosts
-erreichen. Das Konzept-Dokument
-([`docs/concept.md`](../concept.md)) sieht daher Egress-Whitelisting
-als Teil der Sicherheits-Differenzierung vor.
+The workbench's use case is "Claude Code runs for an extended time
+under light supervision." Container isolation alone is not enough for
+that — a compromised agent can make arbitrary HTTPS calls, npm
+packages can send their telemetry, and MCP servers can reach arbitrary
+hosts. The concept document
+([`docs/concept.md`](../concept.md)) therefore foresees egress
+whitelisting as part of the security differentiation.
 
-Ein Vorgänger-Stand hatte den Punkt schon beschrieben, aber nie
-implementiert. Wir bauen die Komponente neu.
+A predecessor version had already described the point but never
+implemented it. We are building the component anew.
 
-## Erwogene Optionen
+## Options considered
 
-1. **iptables im Workspace-Container** — `cap_add: [NET_ADMIN]`,
-   Entrypoint setzt `OUTPUT`-Chain-Rules, Default-Policy `DROP`.
-2. **HTTPS-Forward-Proxy als Sidecar** — eigener Compose-Service mit
-   z. B. `tinyproxy`/`squid`, Workspace-Container hat
-   `HTTPS_PROXY`-Env, direkter Egress sonst gesperrt. Proxy
-   entscheidet pro `CONNECT`-Host.
-3. **eBPF-basiertes Egress-Filtering** — präziser, aber benötigt
-   Host-Kernel-Privilegien (`bpf` cap), schlecht portierbar zwischen
-   Linux-Varianten und Apple-Silicon-Docker.
-4. **Userspace-Library-Hook** (z. B. LD_PRELOAD über libc-DNS) —
-   fragil, Bypass durch beliebige Static-Linkage.
+1. **iptables in the workspace container** — `cap_add: [NET_ADMIN]`,
+   the entrypoint sets `OUTPUT` chain rules, default policy `DROP`.
+2. **HTTPS forward proxy as a sidecar** — a separate Compose service
+   using, e.g., `tinyproxy`/`squid`; the workspace container has an
+   `HTTPS_PROXY` env, with direct egress otherwise blocked. The proxy
+   decides per `CONNECT` host.
+3. **eBPF-based egress filtering** — more precise, but requires
+   host-kernel privileges (`bpf` cap), poorly portable across Linux
+   variants and Apple Silicon Docker.
+4. **Userspace library hook** (e.g., LD_PRELOAD over libc DNS) —
+   fragile, bypassable via any static linkage.
 
-## Entscheidung
+## Decision
 
-**Variante 1 (iptables im Workspace-Container)** als v1.
+**Option 1 (iptables in the workspace container)** as v1.
 
-Mechanik:
+Mechanism:
 
-- Image basiert auf `mcr.microsoft.com/devcontainers/typescript-node:22-bookworm`.
-- Apt-Pakete `iptables`, `iproute2`, `dnsutils`, `gosu` zusätzlich.
-- Default-Allowlist in `/etc/monoceros/egress-allow.default.txt` ins
-  Image gebakt (Anthropic-API, npm-Registry, GitHub, ghcr, Debian-
-  Repos, PyPI).
-- Per-Solution-Override:
-  `/workspaces/<solution>/.monoceros/egress-allow.txt`, beim Start
-  zusätzlich gemergt.
-- Entrypoint läuft als root, resolvt Hostnames zu A-Records via
-  `getent ahostsv4`, fügt für jede IP eine `ACCEPT`-Rule in
-  `OUTPUT`. Loopback, conntrack-related/established, DNS (UDP/TCP
-  53), und RFC1918-Bereiche (Compose-Network) sind unconditional
-  erlaubt. Default-Policy danach `DROP`.
-- IPv6 wird komplett geblockt (`ip6tables -P OUTPUT DROP`), damit
-  kein paralleler Egress-Pfad offen bleibt.
-- Anschließend dropt der Entrypoint via `gosu node` auf den
-  Unprivileged-User und exec'd `CMD`.
+- The image is based on `mcr.microsoft.com/devcontainers/typescript-node:22-bookworm`.
+- Additional apt packages `iptables`, `iproute2`, `dnsutils`, `gosu`.
+- A default allowlist baked into the image at
+  `/etc/monoceros/egress-allow.default.txt` (Anthropic API, npm
+  registry, GitHub, ghcr, Debian repos, PyPI).
+- Per-solution override:
+  `/workspaces/<solution>/.monoceros/egress-allow.txt`, additionally
+  merged at startup.
+- The entrypoint runs as root, resolves hostnames to A records via
+  `getent ahostsv4`, and adds an `ACCEPT` rule in `OUTPUT` for each
+  IP. Loopback, conntrack-related/established, DNS (UDP/TCP 53), and
+  RFC1918 ranges (the Compose network) are unconditionally allowed.
+  The default policy afterwards is `DROP`.
+- IPv6 is blocked entirely (`ip6tables -P OUTPUT DROP`), so no
+  parallel egress path stays open.
+- The entrypoint then drops to the unprivileged user via
+  `gosu node` and execs `CMD`.
 
-Drei Modi via `MONOCEROS_EGRESS`-Env:
+Three modes via the `MONOCEROS_EGRESS` env:
 
-- `enforce` (Default): Rules aktiv, Policy `DROP`.
-- `warn`: Rules gesetzt, Policy bleibt `ACCEPT`. Counter via
-  `iptables -L OUTPUT -nv` zeigen, wer was wohin schickt.
-- `off`: Skip-Setup, unrestricted Egress.
+- `enforce` (default): rules active, policy `DROP`.
+- `warn`: rules set, policy stays `ACCEPT`. Counters via
+  `iptables -L OUTPUT -nv` show who sends what and where.
+- `off`: skip setup, unrestricted egress.
 
-## Begründung
+## Rationale
 
-Variante 1 ist die kleinste Implementation, die echten Schutz
-liefert:
+Option 1 is the smallest implementation that provides real
+protection:
 
-- **Im Image, nicht im Compose-Setup**: jede Solution erbt automatisch
-  die Default-Härtung, ohne dass per-solution-`compose.yaml` Logik
-  aktiv eingesetzt werden muss. Der Builder muss nur `cap_add:
-[NET_ADMIN]` aufnehmen — der Rest ist Image-intern.
-- **Kein Sidecar-Container**: keine zusätzliche Service-Definition,
-  kein Proxy-Konfigurations-Drift, kein extra Entrypoint pro Solution.
-- **Standard-Tooling**: `iptables` und `gosu` sind Linux-Bordmittel,
-  keine Black Box.
+- **In the image, not in the Compose setup**: every solution
+  automatically inherits the default hardening without per-solution
+  `compose.yaml` logic having to be actively wired in. The builder
+  only has to include `cap_add: [NET_ADMIN]` — the rest is internal to
+  the image.
+- **No sidecar container**: no additional service definition, no proxy
+  configuration drift, no extra entrypoint per solution.
+- **Standard tooling**: `iptables` and `gosu` are stock Linux tools,
+  not a black box.
 
-## Konsequenzen
+## Consequences
 
-**Akzeptierte Trade-offs:**
+**Accepted trade-offs:**
 
-- **CDN-IP-Drift**: Hostnames werden einmalig beim Container-Start
-  aufgelöst. Hosts mit rotierenden CDNs (npm via Cloudflare, GitHub
-  via Fastly) können IPs ändern, sodass die Rules über die
-  Container-Lebenszeit veralten. Mitigation: Container regelmäßig
-  neu erzeugen (`docker compose down && monoceros start`). Dauerhaft
-  besser ist Variante 2 — siehe Migration weiter unten.
-- **DNS unbeschränkt**: UDP/TCP 53 ist auf jede Adresse erlaubt,
-  damit Hostname-Auflösung im laufenden Container funktioniert. Ein
-  Angreifer mit Code im Container kann via DNS-Tunneling Daten
-  exfiltrieren. Akzeptable Lücke für v1; sonst müssten wir einen
-  In-Container-DNS-Resolver mit eigener Allowlist pflegen.
-- **Privates Netz unbeschränkt**: RFC1918-Ranges sind ACCEPT, weil
-  Compose-interne Services (postgres, redis) erreicht werden müssen.
-  Bedeutet: ein bösartiger Agent könnte versuchen, andere lokale
-  Compose-Stacks oder den Host (Docker-Bridge) anzugreifen. Akzeptiert
-  weil das eine andere Threat-Class ist (lateral movement, nicht
-  Egress).
+- **CDN IP drift**: hostnames are resolved once at container startup.
+  Hosts with rotating CDNs (npm via Cloudflare, GitHub via Fastly) can
+  change IPs, so the rules go stale over the container's lifetime.
+  Mitigation: recreate the container regularly
+  (`docker compose down && monoceros start`). The durably better
+  option is Option 2 — see migration below.
+- **DNS unrestricted**: UDP/TCP 53 is allowed to any address, so
+  hostname resolution works in the running container. An attacker with
+  code in the container could exfiltrate data via DNS tunneling. An
+  acceptable gap for v1; otherwise we would have to maintain an
+  in-container DNS resolver with its own allowlist.
+- **Private network unrestricted**: RFC1918 ranges are ACCEPT, because
+  Compose-internal services (postgres, redis) must be reachable. This
+  means a malicious agent could try to attack other local Compose
+  stacks or the host (Docker bridge). Accepted because that is a
+  different threat class (lateral movement, not egress).
 
-**Migrations-Pfad zu Variante 2 (HTTPS-Proxy-Sidecar):**
+**Migration path to Option 2 (HTTPS proxy sidecar):**
 
-Wenn (a) CDN-Drift zu Praxisproblemen führt oder (b) feinere
-Inhaltskontrolle gewollt ist (siehe Backlog-Item „HTTPS-Content-
-Filter"), wechseln wir auf Variante 2 als Layer **über** Variante 1.
-Der Workspace-Container behält seine iptables-Rules, bekommt
-zusätzlich `HTTPS_PROXY`/`HTTP_PROXY`-Env-Vars, und der Compose-
-Stack erhält einen `egress`-Service mit Proxy-Software. Variante 1
-bleibt als Schutz gegen Tools, die `HTTPS_PROXY` ignorieren.
+If (a) CDN drift causes practical problems or (b) finer content
+control is wanted (see the backlog item "HTTPS content filter"), we
+switch to Option 2 as a layer **on top of** Option 1. The workspace
+container keeps its iptables rules, additionally gets
+`HTTPS_PROXY`/`HTTP_PROXY` env vars, and the Compose stack gains an
+`egress` service running proxy software. Option 1 remains as
+protection against tools that ignore `HTTPS_PROXY`.
 
-## Verifikation
+## Verification
 
-- Allowed Host (`api.anthropic.com:443`): `/dev/tcp` connect succeeds.
-- Disallowed Host (`example.com:443`, `cloudflare.com:443`): connect
+- Allowed host (`api.anthropic.com:443`): `/dev/tcp` connect succeeds.
+- Disallowed host (`example.com:443`, `cloudflare.com:443`): connect
   blocked.
-- Ohne `NET_ADMIN`: Entrypoint loggt Warnung, fällt auf unrestricted
-  Egress zurück (kein silent fail-open).
-- Override-Datei wird gemergt, zusätzliche Hosts kommen durch.
-- `MONOCEROS_EGRESS=warn` und `=off` verhalten sich wie spezifiziert.
+- Without `NET_ADMIN`: the entrypoint logs a warning and falls back to
+  unrestricted egress (no silent fail-open).
+- The override file is merged; additional hosts get through.
+- `MONOCEROS_EGRESS=warn` and `=off` behave as specified.

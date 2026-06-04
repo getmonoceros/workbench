@@ -1,18 +1,18 @@
 # `monoceros add-feature`
 
-Hängt ein beliebiges Devcontainer-Feature an die Solution an.
+Adds an arbitrary devcontainer feature to the solution.
 
-## Zweck
+## Purpose
 
-Schlägt die Lücke zwischen `add-language` (kuratierte Sprachen) und
-`add-apt-packages` (reine apt-Installation) — für Tools, die ihr
-eigenes Devcontainer-Feature haben und damit mehr machen als nur
+Bridges the gap between `add-language` (curated languages) and
+`add-apt-packages` (plain apt installation) — for tools that ship their
+own devcontainer feature and therefore do more than just
 `apt-get install`:
 
-- Eigene apt-Repos einrichten (z. B. GitHub-CLI, Microsoft Edge, HashiCorp Vault)
-- Binaries direkt herunterladen und installieren (`kubectl`, `helm`, `terraform`)
-- Side-Container-Setup (z. B. `docker-in-docker`)
-- Shell-/IDE-Integration konfigurieren (`common-utils`, `git-lfs`)
+- Set up their own apt repos (e.g. GitHub CLI, Microsoft Edge, HashiCorp Vault)
+- Download and install binaries directly (`kubectl`, `helm`, `terraform`)
+- Side-container setup (e.g. `docker-in-docker`)
+- Configure shell/IDE integration (`common-utils`, `git-lfs`)
 
 ## Synopsis
 
@@ -20,28 +20,28 @@ eigenes Devcontainer-Feature haben und damit mehr machen als nur
 monoceros add-feature <containername> <feature> [--yes] [-- <key>=<value> …]
 ```
 
-- `<containername>` — Konfig-Name unter
+- `<containername>` — config name under
   `$MONOCEROS_HOME/container-configs/<name>.yml`
-- `<feature>` — entweder ein **Katalog-Kurzname** aus
-  `monoceros list-components` (z. B. `atlassian`, `atlassian/twg`,
-  `claude`, `github`) oder eine **vollständige OCI-Ref** (z. B.
+- `<feature>` — either a **catalog short name** from
+  `monoceros list-components` (e.g. `atlassian`, `atlassian/twg`,
+  `claude`, `github`) or a **full OCI ref** (e.g.
   `ghcr.io/devcontainers/features/docker-in-docker:2`).
-  Beim Kurznamen bringt das Feature seine Katalog-Default-Optionen mit;
-  die werden durch `-- key=value`-Paare überschrieben.
-- Optionen nach `--` als `key=value`-Paare
+  With a short name, the feature brings its catalog default options;
+  those are overridden by `-- key=value` pairs.
+- Options after `--` as `key=value` pairs
 
-## Optionen
+## Options
 
-| Flag           | Bedeutung                   |
-| -------------- | --------------------------- |
-| `--yes` / `-y` | Confirm-Prompt überspringen |
+| Flag           | Meaning                 |
+| -------------- | ----------------------- |
+| `--yes` / `-y` | Skip the confirm prompt |
 
-## Credential-Optionen + `${VAR}`
+## Credential options + `${VAR}`
 
-Kuratierte Features deklarieren ihre Credential-Optionen (`apiToken`,
-`apiKey`, …) im Manifest. `add-feature` schreibt sie als **aktive
-`${VAR}`-Platzhalter** in den `options:`-Block und **seedet die passenden
-Keys in `<name>.env`** (gitignored) — identisch zu `init`:
+Curated features declare their credential options (`apiToken`,
+`apiKey`, …) in the manifest. `add-feature` writes them as **active
+`${VAR}` placeholders** into the `options:` block and **seeds the matching
+keys into `<name>.env`** (gitignored) — identical to `init`:
 
 ```yaml
 features:
@@ -55,72 +55,71 @@ features:
 ```
 
 ```sh
-# container-configs/<name>.env  (Keys vorab geseedet, nur Werte fehlen)
+# container-configs/<name>.env  (keys seeded in advance, only values missing)
 ATLASSIAN_INSTANCE=
 ATLASSIAN_API_TOKEN=
 …
 ```
 
-Var-Name = `<FEATURE>_<OPTION>` (einheitlich). Du füllst den Wert in die
-`.env`, `monoceros apply` setzt ihn ein — so bleibt die yml teilbar, ohne
-Tokens mitzugeben. **Leer gelassen = nicht gesetzt:** ein leerer (oder
-fehlender) `${VAR}` löst beim Apply zu „weglassen" auf — die Option fällt
-auf einen `defaults.features`-Wert aus `monoceros-config.yml` zurück oder
-bleibt ungesetzt (z. B. leerer `apiKey` → OAuth-Login). Nichts muss
-auskommentiert werden. `remove-feature` fasst die `.env` nicht an.
+Var name = `<FEATURE>_<OPTION>` (consistent). You fill in the value in the
+`.env`, `monoceros apply` substitutes it — that way the yml stays shareable
+without shipping tokens. **Left empty = not set:** an empty (or
+missing) `${VAR}` resolves to "omit" at apply time — the option falls
+back to a `defaults.features` value from `monoceros-config.yml` or
+stays unset (e.g. empty `apiKey` → OAuth login). Nothing needs to be
+commented out. `remove-feature` does not touch the `.env`.
 
-## Feature-Katalog
+## Feature catalog
 
-Es gibt keinen einzelnen "offiziellen" Index, aber drei verlässliche Quellen:
+There is no single "official" index, but three reliable sources:
 
-1. [containers.dev/features](https://containers.dev/features) — Suchbare
-   Übersicht über alle bekannten Features mit Publisher und Beschreibung.
+1. [containers.dev/features](https://containers.dev/features) — A searchable
+   overview of all known features with publisher and description.
 2. [`devcontainers/features`](https://github.com/devcontainers/features) —
-   Microsoft-kurierte Features. Standard für Sprachen, gh, docker-in-docker,
+   Microsoft-curated features. The standard for languages, gh, docker-in-docker,
    kubectl, aws-cli, terraform, common-utils, git, …
 3. [`devcontainers-contrib/features`](https://github.com/devcontainers-contrib/features) —
-   Community-kurierte Features. Long-Tail-Tooling: apt-packages,
+   Community-curated features. Long-tail tooling: apt-packages,
    npm-packages, pre-commit, direnv, starship-shell, …
 
-Jedes Feature hat ein eigenes README im Quell-Repo, das die akzeptierten
-Optionen dokumentiert — die einzige verlässliche Spec für das jeweilige
-Feature.
+Each feature has its own README in the source repo that documents the
+accepted options — the only reliable spec for that particular feature.
 
-## Was `:2` heißt (Versions-Tag)
+## What `:2` means (version tag)
 
-Devcontainer-Features sind OCI-Artefakte, publiziert auf `ghcr.io`. Der
-Tag entspricht der Major-Version:
+Devcontainer features are OCI artifacts, published on `ghcr.io`. The
+tag corresponds to the major version:
 
 ```
 ghcr.io/devcontainers/features/docker-in-docker:2
                                                 ^
-                                                Major-Version 2
+                                                major version 2
 ```
 
-Pin auf eine konkrete Major-Version (`:1`, `:2`) für Reproduzierbarkeit
-— die Feature-Autoren versprechen Backwards-Compat innerhalb eines
-Majors. `:latest` zeigt auf den aktuellsten verfügbaren Major und
-kann ohne Vorwarnung brechen.
+Pin to a concrete major version (`:1`, `:2`) for reproducibility
+— the feature authors promise backwards compatibility within a
+major. `:latest` points to the newest available major and
+can break without warning.
 
-## Optionen-Syntax (Smart-Coercion)
+## Options syntax (smart coercion)
 
-Optionen kommen nach `--` als `key=value`-Tokens. Der Wert wird typ-
-gecoerced, weil Devcontainer-Features die richtigen JSON-Typen
-erwarten (`{ "moby": true }`, nicht `{ "moby": "true" }`):
+Options come after `--` as `key=value` tokens. The value is
+type-coerced, because devcontainer features expect the right JSON types
+(`{ "moby": true }`, not `{ "moby": "true" }`):
 
-| Eingabe            | Wert in `devcontainer.json`                      |
-| ------------------ | ------------------------------------------------ |
-| `key=true`         | `true` (Boolean)                                 |
-| `key=false`        | `false` (Boolean)                                |
-| `key=42`           | `42` (Number)                                    |
-| `key=-7`           | `-7` (Number)                                    |
-| `key=latest`       | `"latest"` (String)                              |
-| `key=1.2.3`        | `"1.2.3"` (String — Dot lässt es String bleiben) |
-| `key=/usr/local/x` | `"/usr/local/x"` (String)                        |
+| Input              | Value in `devcontainer.json`                   |
+| ------------------ | ---------------------------------------------- |
+| `key=true`         | `true` (boolean)                               |
+| `key=false`        | `false` (boolean)                              |
+| `key=42`           | `42` (number)                                  |
+| `key=-7`           | `-7` (number)                                  |
+| `key=latest`       | `"latest"` (string)                            |
+| `key=1.2.3`        | `"1.2.3"` (string — the dot keeps it a string) |
+| `key=/usr/local/x` | `"/usr/local/x"` (string)                      |
 
-## Beispiele
+## Examples
 
-Einfaches Feature ohne Optionen:
+A simple feature without options:
 
 ```sh
 monoceros add-feature sandbox ghcr.io/devcontainers/features/github-cli:1 --yes
@@ -128,7 +127,7 @@ monoceros apply sandbox
 monoceros run sandbox -- gh --version
 ```
 
-Mit Optionen:
+With options:
 
 ```sh
 monoceros add-feature sandbox ghcr.io/devcontainers/features/docker-in-docker:2 \
@@ -136,7 +135,7 @@ monoceros add-feature sandbox ghcr.io/devcontainers/features/docker-in-docker:2 
 monoceros apply sandbox
 ```
 
-Mehrere Features akkumulieren:
+Accumulating multiple features:
 
 ```sh
 monoceros add-feature sandbox ghcr.io/devcontainers/features/github-cli:1 --yes
@@ -145,55 +144,55 @@ monoceros add-feature sandbox ghcr.io/devcontainers/features/aws-cli:1 --yes
 monoceros apply sandbox
 ```
 
-Beim Container-Build laufen alle Features in Reihe — Reihenfolge wird
-vom Devcontainer-CLI nach Feature-Spec-Dependencies bestimmt.
+At container build time all features run in sequence — the order is
+determined by the devcontainer CLI based on feature-spec dependencies.
 
-## Idempotenz und Options-Konflikt
+## Idempotency and option conflicts
 
-- **Selbe Ref, identische Options** → no-op, kein Schreibvorgang.
-- **Selbe Ref, abweichende Options** → **Fehler.** Begründung: stilles
-  Überschreiben einer getuneten Options-Map ist gefährlich. Wenn du
-  Options ändern willst, erst
-  `monoceros remove-feature <name> <ref>`, dann `add-feature` neu.
-- **Andere Ref** → Feature wird hinzugefügt, Liste akkumuliert.
+- **Same ref, identical options** → no-op, no write.
+- **Same ref, differing options** → **error.** Rationale: silently
+  overwriting a tuned options map is dangerous. If you want to
+  change options, first run
+  `monoceros remove-feature <name> <ref>`, then `add-feature` again.
+- **Different ref** → the feature is added, the list accumulates.
 
-## Validierung
+## Validation
 
-Feature-Refs müssen dem OCI-Pattern `<host>/<path>:<tag>` entsprechen:
+Feature refs must match the OCI pattern `<host>/<path>:<tag>`:
 
 ```
 ^[a-z0-9.-]+(/[a-z0-9._-]+)+:[a-z0-9._-]+$
 ```
 
-Blockt Shell-Metacharacters und Leerzeichen — schützt davor, dass eine
-unsaubere Ref direkt in `devcontainer.json` landet und vom Build-Tool
-falsch interpretiert wird.
+Blocks shell metacharacters and whitespace — protects against an
+unsanitized ref landing directly in `devcontainer.json` and being
+misinterpreted by the build tool.
 
-## Verwandte Befehle
+## Related commands
 
-- `monoceros add-language <name> <lang>` — kuratierte Sprach-Features
-  (Python, Java, Go, Rust, .NET). Ergonomischer als der volle Feature-Ref.
-- `monoceros add-apt-packages <name> -- <pkg> …` — wenn das Tool kein
-  eigenes Feature hat und schlicht `apt install` reicht.
-- `monoceros remove-feature <name> <ref>` — Inverse, auch der Weg
-  Options zu ändern.
-- `monoceros apply <name>` — Container neu bauen, damit das Feature
-  drinlandet.
+- `monoceros add-language <name> <lang>` — curated language features
+  (Python, Java, Go, Rust, .NET). More ergonomic than the full feature ref.
+- `monoceros add-apt-packages <name> -- <pkg> …` — when the tool has no
+  feature of its own and a plain `apt install` is enough.
+- `monoceros remove-feature <name> <ref>` — the inverse, and also the way
+  to change options.
+- `monoceros apply <name>` — rebuild the container so the feature
+  actually lands in it.
 
-## Fail-Modi
+## Failure modes
 
-- **`Invalid devcontainer feature ref`** — Ref entspricht nicht dem
-  OCI-Pattern. Häufige Ursachen: Tag vergessen (`…/feature` statt
-  `…/feature:1`), Tippfehler im Pfad, Leerzeichen.
+- **`Invalid devcontainer feature ref`** — the ref does not match the
+  OCI pattern. Common causes: forgotten tag (`…/feature` instead of
+  `…/feature:1`), typo in the path, whitespace.
 - **`Feature ${ref} is already configured with different options`** —
-  Du versuchst dieselbe Ref mit anderen Options-Values hinzuzufügen.
-  Lösung: erst `monoceros remove-feature <name> <ref>`, dann
-  `add-feature` neu.
-- **`Invalid option: "…". Expected key=value`** — Token nach `--` ist
-  kein `key=value`-Paar. Schreibweise prüfen, evtl. shell-Quoting
+  you are trying to add the same ref with different option values.
+  Fix: first run `monoceros remove-feature <name> <ref>`, then
+  `add-feature` again.
+- **`Invalid option: "…". Expected key=value`** — a token after `--` is
+  not a `key=value` pair. Check the spelling, possibly the shell quoting
   (`"key=value with spaces"`).
-- **Container-Build scheitert mit "Failed to fetch feature"** — die
-  Ref ist syntaktisch ok, aber das Feature ist nicht erreichbar (Tippo
-  im Pfad, Netzwerk-Problem, GHCR temporär down). Diagnose: Ref im
-  Browser öffnen (`https://ghcr.io/…`) oder
-  `docker pull <ref>` host-seitig.
+- **Container build fails with "Failed to fetch feature"** — the
+  ref is syntactically fine, but the feature is unreachable (typo in
+  the path, network problem, GHCR temporarily down). Diagnosis: open the
+  ref in a browser (`https://ghcr.io/…`) or run
+  `docker pull <ref>` on the host side.

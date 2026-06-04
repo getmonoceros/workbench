@@ -1,78 +1,77 @@
 # `monoceros stop`
 
-Pausiert die Compose-Services des benannten Containers. Daten und
-Container-Layer bleiben erhalten; ein `monoceros start` weckt
-denselben Zustand wieder auf.
+Pauses the Compose services of the named container. Data and
+container layers are preserved; a `monoceros start` brings the same
+state back to life.
 
 ```sh
 monoceros stop <name> [--service <svc>]
 ```
 
-## Zweck
+## Purpose
 
-Wenn du mit dem Container gerade nicht arbeitest und ihm CPU/RAM
-zurückgeben willst — aber später wieder genau da weiter willst
-wo du aufgehört hast.
+For when you're not currently working with the container and want to
+give it back its CPU/RAM — but later want to pick up exactly where you
+left off.
 
-Wichtig was `stop` **nicht** macht:
+What `stop` does **not** do, importantly:
 
-- Räumt keine Container weg (anders als `remove`)
-- Räumt keine Daten weg
-- Räumt keine Docker-Images weg
-- Sparpotential beim Festplattenplatz: praktisch keines
+- Doesn't remove any containers (unlike `remove`)
+- Doesn't remove any data
+- Doesn't remove any Docker images
+- Disk space savings: essentially none
 
-Wenn du wirklich Platz brauchst → [`monoceros remove`](./remove.md).
+If you really need space → [`monoceros remove`](./remove.md).
 
-## Mechanik
+## Mechanics
 
-`docker compose stop` darunter. Die Container bleiben in `Exited`-
-Status, ihre Volumes und das Compose-Netzwerk bleiben unverändert.
-Daten liegen ohnehin als Bind-Mounts unter `container/<name>/data/`
-auf der Host-Disk (siehe [ADR 0003](../adr/0003-container-state-model.md))
-und sind komplett unabhängig vom Lifecycle.
+`docker compose stop` underneath. The containers stay in `Exited`
+status; their volumes and the Compose network remain unchanged. Data
+lives as bind mounts under `container/<name>/data/` on the host disk
+anyway (see [ADR 0003](../adr/0003-container-state-model.md)) and is
+completely independent of the lifecycle.
 
-## Argumente
+## Arguments
 
-| Argument | Bedeutung       |
+| Argument | Meaning         |
 | -------- | --------------- |
-| `<name>` | Container-Name. |
+| `<name>` | Container name. |
 
-## Optionen
+## Options
 
-| Option            | Bedeutung                                                                              |
-| ----------------- | -------------------------------------------------------------------------------------- |
-| `--service <svc>` | Nur einen Compose-Service stoppen (z.B. `--service postgres`). Default: alle Services. |
+| Option            | Meaning                                                                           |
+| ----------------- | --------------------------------------------------------------------------------- |
+| `--service <svc>` | Stop only one Compose service (e.g. `--service postgres`). Default: all services. |
 
-## Beispiele
+## Examples
 
-Alles pausieren:
+Pause everything:
 
 ```sh
 $ monoceros stop sandbox
 ✔ Stopped sandbox_devcontainer
 ```
 
-Nur den DB-Container, Workspace weiter laufen lassen:
+Only the DB container, leaving the workspace running:
 
 ```sh
 $ monoceros stop sandbox --service postgres
 ✔ Stopped postgres
 ```
 
-## Verwandte Befehle
+## Related commands
 
-- [`monoceros start <name>`](./start.md) — wieder hochfahren
-- [`monoceros status <name>`](./status.md) — anzeigen welche Services
-  gerade laufen oder gestoppt sind
-- [`monoceros remove <name>`](./remove.md) — restlos wegräumen
-  (Backup default an)
+- [`monoceros start <name>`](./start.md) — bring it back up
+- [`monoceros status <name>`](./status.md) — show which services are
+  currently running or stopped
+- [`monoceros remove <name>`](./remove.md) — remove it entirely
+  (backup on by default)
 
-## Fail-Modi
+## Failure modes
 
-- **`No compose.yaml at <path>`** — der Container ist im
-  Image-Mode (keine Compose-Services konfiguriert). `stop` greift
-  dann nicht, weil es nichts zu stoppen gibt; nutze Docker direkt
-  oder schreibe einen Service in die yml.
-- **Compose-Service unbekannt** — `--service foo` wird durch
-  `docker compose` selbst gemeldet wenn `foo` nicht in
-  `compose.yaml` ist.
+- **`No compose.yaml at <path>`** — the container is in image mode
+  (no Compose services configured). `stop` then doesn't apply because
+  there's nothing to stop; use Docker directly or add a service to
+  the yml.
+- **Unknown Compose service** — `--service foo` is reported by
+  `docker compose` itself when `foo` is not in `compose.yaml`.

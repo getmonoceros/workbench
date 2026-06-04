@@ -1,41 +1,41 @@
 # `monoceros apply`
 
-Materialisiert eine Container-Konfig nach
-`$MONOCEROS_HOME/container/<name>/` und fährt den Dev-Container hoch.
+Materializes a container config into
+`$MONOCEROS_HOME/container/<name>/` and brings the dev container up.
 
 ```sh
 monoceros apply <name>
 ```
 
-## Zweck
+## Purpose
 
-`monoceros apply` ist der Schritt, der eine yml-Konfig konkret aufs
-Dateisystem schreibt:
+`monoceros apply` is the step that writes a yml config concretely to
+the filesystem:
 
-1. Liest `$MONOCEROS_HOME/container-configs/<name>.yml`.
-2. Validiert Schema (Felder, Regex-Constraints) und Catalog (existieren
-   die referenzierten Sprachen/Services?).
-3. Generiert in `$MONOCEROS_HOME/container/<name>/`:
-   - `.devcontainer/devcontainer.json`, ggf. `compose.yaml`
+1. Reads `$MONOCEROS_HOME/container-configs/<name>.yml`.
+2. Validates schema (fields, regex constraints) and catalog (do the
+   referenced languages/services exist?).
+3. Generates into `$MONOCEROS_HOME/container/<name>/`:
+   - `.devcontainer/devcontainer.json`, plus `compose.yaml` if applicable
    - `.devcontainer/post-create.sh`
    - `<name>.code-workspace`
    - `.claude/settings.json`
    - `.monoceros/.gitignore`
    - **`AGENTS.md`** + **`CLAUDE.md`** + **`.monoceros/commands.md`** —
-     Container-Briefing für AI-Tools im Container (siehe
+     container briefing for AI tools inside the container (see
      [`docs/ai-tools.md`](../ai-tools.md#container-briefing--agentsmd--claudemd)).
-4. Schreibt `.monoceros/state.json` mit `origin: <name>`,
+4. Writes `.monoceros/state.json` with `origin: <name>`,
    `schemaVersion`, `monocerosCliVersion`, `materializedAt`.
-5. Holt host-seitig die Git-Identity (siehe Priorität unten) und für
-   HTTPS-Repos die Credentials.
-6. Fährt den Container hoch — Compose-Mode mit Force-Remove +
-   `devcontainer up`, Image-Mode mit
+5. Fetches the Git identity host-side (see priority below) and, for
+   HTTPS repos, the credentials.
+6. Brings the container up — compose mode with force-remove plus
+   `devcontainer up`, image mode with
    `devcontainer up --remove-existing-container`.
 
-Idempotent: ein zweiter Apply mit derselben Konfig überschreibt die
-Scaffold-Files und startet den Container neu.
+Idempotent: a second apply with the same config overwrites the
+scaffold files and restarts the container.
 
-cwd ist irrelevant — der Befehl funktioniert von überall.
+cwd is irrelevant — the command works from anywhere.
 
 ## Synopsis
 
@@ -43,53 +43,50 @@ cwd ist irrelevant — der Befehl funktioniert von überall.
 monoceros apply <name> [--verbose]
 ```
 
-## Argumente
+## Arguments
 
-| Argument    | Bedeutung                                                                                                                 |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `<name>`    | Konfig-Name. Resolves zu `$MONOCEROS_HOME/container-configs/<name>.yml`.                                                  |
-| `--verbose` | Streamt den rohen `@devcontainers/cli`-Output statt einer Spinner-Anzeige. Auto-an, wenn stderr keine TTY ist (CI, Pipe). |
+| Argument    | Meaning                                                                                                                |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `<name>`    | Config name. Resolves to `$MONOCEROS_HOME/container-configs/<name>.yml`.                                               |
+| `--verbose` | Streams the raw `@devcontainers/cli` output instead of a spinner display. Auto-on when stderr is not a TTY (CI, pipe). |
 
-## Safety-Check
+## Safety check
 
-Der Zielordner `$MONOCEROS_HOME/container/<name>/` muss entweder leer
-sein oder bereits eine `state.json` mit passendem `origin: <name>`
-tragen. Andernfalls Error — schützt davor, dass ein bestehender
-Dev-Container, der zu einer **anderen** Konfig gehört, versehentlich
-überschrieben wird.
+The target directory `$MONOCEROS_HOME/container/<name>/` must either be
+empty or already carry a `state.json` with a matching `origin: <name>`.
+Otherwise it errors — this protects against accidentally overwriting an
+existing dev container that belongs to a **different** config.
 
-## Git-Identity-Auflösung
+## Git identity resolution
 
-In dieser Reihenfolge wird `user.name` / `user.email` für den
-Container ermittelt:
+`user.name` / `user.email` for the container are determined in this
+order:
 
-1. **Container-yml** `git.user` (höchste Priorität — explizite
-   Per-Container-Wahl)
+1. **Container yml** `git.user` (highest priority — explicit
+   per-container choice)
 2. **`$MONOCEROS_HOME/monoceros-config.yml`** `defaults.git.user`
-   (workbench-weite Defaults)
+   (workbench-wide defaults)
 3. **Host** `git config --global --get user.name|email`
-4. **Wert aus früherem Apply** in `.monoceros/gitconfig`
-5. **Interaktiver Prompt** (nur in TTY-Sessions; sonst undefined)
+4. **Value from an earlier apply** in `.monoceros/gitconfig`
+5. **Interactive prompt** (TTY sessions only; otherwise undefined)
 
-Wenn der Prompt greift (Stufe 5 ist die einzige Quelle), fragt
-Monoceros zusätzlich, wo die eingegebenen Werte persistiert werden
-sollen:
+When the prompt kicks in (stage 5 is the only source), Monoceros also
+asks where the entered values should be persisted:
 
-- **`g` (Global)** — `monoceros-config.yml` `defaults.git.user`. Wird
-  zum Default für jeden Container auf dieser Maschine. Default-Wahl,
-  weil sie meistens passt.
-- **`c` (Container)** — `<name>.yml` `git.user`. Nur dieser Container.
-- **`b` (Beide)** — globaler Default plus container-spezifischer
-  Override.
+- **`g` (Global)** — `monoceros-config.yml` `defaults.git.user`. Becomes
+  the default for every container on this machine. The default choice,
+  because it usually fits.
+- **`c` (Container)** — `<name>.yml` `git.user`. This container only.
+- **`b` (Both)** — global default plus a container-specific override.
 
-In nicht-interaktiven Sessions (CI, Scripts) wird `g` automatisch
-gewählt — die Werte bleiben sonst nur in `.monoceros/gitconfig`
-dieses Containers und müssten beim nächsten neuen Container neu
-eingegeben werden.
+In non-interactive sessions (CI, scripts) `g` is chosen automatically —
+otherwise the values would stay only in this container's
+`.monoceros/gitconfig` and would have to be re-entered for the next new
+container.
 
-## Beispiele
+## Examples
 
-Erst-Setup:
+First setup:
 
 ```sh
 $ monoceros init nodejs-github sandbox
@@ -97,37 +94,37 @@ $ monoceros apply sandbox
 ✔ Materialized config 'sandbox' into …/container/sandbox. Starting container…
 ```
 
-Edit + Re-Apply:
+Edit + re-apply:
 
 ```sh
 $ monoceros add-service sandbox postgres --yes
 $ monoceros apply sandbox
 ```
 
-Zweite Konfig im selben Home:
+A second config in the same home:
 
 ```sh
 $ monoceros init python data-pipeline
 $ monoceros apply data-pipeline
 ```
 
-Beide Container koexistieren unter `$MONOCEROS_HOME/container/`.
+Both containers coexist under `$MONOCEROS_HOME/container/`.
 
-## Verwandte Befehle
+## Related commands
 
-- `monoceros init` — Konfig erstellen ([init.md](./init.md))
-- `monoceros add-*` / `monoceros remove-*` — Konfig editieren
-  (Comment-preserving). Nach jedem Aufruf `monoceros apply <name>`
-  zum Materialisieren.
-- `monoceros down <name> [--volumes]` — Container entfernen vor einem
-  destruktiven Re-Apply.
+- `monoceros init` — create a config ([init.md](./init.md))
+- `monoceros add-*` / `monoceros remove-*` — edit a config
+  (comment-preserving). After each call run `monoceros apply <name>`
+  to materialize.
+- `monoceros down <name> [--volumes]` — remove the container before a
+  destructive re-apply.
 
-## Ausgabe
+## Output
 
-Im Default-Modus (TTY, ohne `--verbose`) zeigt der Container-Abschnitt
-einen Spinner mit Phasen-Beschriftung statt des rohen
-`@devcontainers/cli`-Outputs, gefolgt von einem Inventar dessen, was
-gerade im Container materialisiert wurde:
+In default mode (TTY, without `--verbose`) the container section shows
+a spinner with phase labels instead of the raw `@devcontainers/cli`
+output, followed by an inventory of what was just materialized in the
+container:
 
 ```
 ▸ Container
@@ -146,101 +143,98 @@ gerade im Container materialisiert wurde:
   log: ~/.monoceros/container/<name>/logs/apply-<name>-<…>.log
 ```
 
-Der Summary-Block listet nur die Sektionen, die in der yml gesetzt
-sind — leere fallen raus. Features und Repos werden mit ihrem Kurznamen
-gezeigt (letzte Pfad-Komponente, ohne `:tag`), damit die Zeilen nicht
-durch GHCR-URLs aufgebläht werden.
+The summary block lists only the sections that are set in the yml —
+empty ones are dropped. Features and repos are shown by their short
+name (last path component, without `:tag`), so the lines don't get
+bloated by GHCR URLs.
 
-Erkannte Phasen:
+Recognized phases:
 
-| Trigger im Stream               | Phase                      |
+| Trigger in stream               | Phase                      |
 | ------------------------------- | -------------------------- |
 | `Start: Run: docker build`      | `building feature layers…` |
 | `Start: Run: docker run`        | `starting container…`      |
 | `Running the postCreateCommand` | `running postCreate…`      |
 
-Bricht ein Apply ab, ersetzt der Spinner den Erfolgsfall durch ein
-`✘ apply failed`-Block mit den letzten ~15 Zeilen des
-`devcontainer-cli`-Streams (damit man die echte Diagnose sieht) und
-dem Verweis auf die Log-Datei.
+If an apply aborts, the spinner replaces the success case with a
+`✘ apply failed` block containing the last ~15 lines of the
+`devcontainer-cli` stream (so you see the real diagnosis) and a
+reference to the log file.
 
-`--verbose` schaltet den Spinner ab und streamt den vollständigen
-Output live wie früher. Verwende es zum Debuggen der Workbench selbst
-oder wenn du den postCreate-Output schritt-für-schritt mitverfolgen
-willst. Wird in nicht-TTY-Umgebungen (CI, gepipte Ausgabe) automatisch
-aktiviert.
+`--verbose` turns the spinner off and streams the full output live as
+before. Use it to debug the workbench itself or when you want to follow
+the postCreate output step by step. It is enabled automatically in
+non-TTY environments (CI, piped output).
 
-## Log-Datei
+## Log file
 
-Jeder Apply schreibt **zusätzlich** zur Terminal-Ausgabe ein vollständiges
-Transkript nach:
+Every apply writes a full transcript **in addition** to the terminal
+output, to:
 
 ```
-$MONOCEROS_HOME/container/<name>/logs/apply-<name>-<ISO-Zeitstempel>.log
+$MONOCEROS_HOME/container/<name>/logs/apply-<name>-<ISO-timestamp>.log
 ```
 
-Inhalt: ein kleiner Kopf (Befehl, Startzeit, CLI-Version, Konfig-Pfad,
-Host) plus alles, was sonst auf dem Terminal käme — inklusive des
-kompletten `@devcontainers/cli`-Streams (Pull-, Build-, Container-Start-
-und postCreate-Output) und der „First apply takes ~1–2 min"-Vorwarnung,
-die im Spinner-Modus nur noch im Log landet. ANSI-Farbcodes sind
-entfernt, damit `cat` und `grep` direkt funktionieren.
+Contents: a small header (command, start time, CLI version, config
+path, host) plus everything that would otherwise appear on the terminal
+— including the complete `@devcontainers/cli` stream (pull, build,
+container start, and postCreate output) and the "First apply takes
+~1–2 min" pre-warning, which in spinner mode now only lands in the log.
+ANSI color codes are stripped so that `cat` and `grep` work directly.
 
-Am Ende des Apply-Outputs verweist eine `log: …`-Zeile auf die Datei —
-auch im Fehlerfall. Der Ordner `logs/` lebt unter `container/<name>/`
-und wird bei `monoceros remove <name>` mit aufgeräumt.
+At the end of the apply output, a `log: …` line points to the file —
+also in the failure case. The `logs/` folder lives under
+`container/<name>/` and is cleaned up along with `monoceros remove <name>`.
 
-## AI-Tool-Briefing
+## AI tool briefing
 
-Jedes Apply (re)generiert drei Dateien am Container-Workspace-Root,
-damit Claude Code & Co. im Container den realen Stack kennen:
+Every apply (re)generates three files at the container workspace root,
+so that Claude Code & co. know the real stack inside the container:
 
-- `AGENTS.md` — Stack-Inventar (Sprachen, Services, Tools, Repos,
-  Ports) plus Verhaltens-Regeln (deklaratives Modell,
-  Erweiterungs-Befehle).
-- `CLAUDE.md` — `@AGENTS.md`-Import zwischen denselben Markern.
-- `.monoceros/commands.md` — komplette CLI-Referenz, via
-  `@.monoceros/commands.md` aus `AGENTS.md` gezogen.
+- `AGENTS.md` — stack inventory (languages, services, tools, repos,
+  ports) plus behavior rules (declarative model, extension commands).
+- `CLAUDE.md` — `@AGENTS.md` import between the same markers.
+- `.monoceros/commands.md` — complete CLI reference, pulled via
+  `@.monoceros/commands.md` from `AGENTS.md`.
 
-`AGENTS.md` und `CLAUDE.md` sind beide von HTML-Kommentar-Markern
-umgeben. Apply überschreibt nur den Inhalt **zwischen** den Markern —
-User-Ergänzungen darüber/darunter bleiben über `apply` hinweg
-erhalten. `.monoceros/commands.md` ist zu 100 % Monoceros-eigen und
-wird immer komplett neu geschrieben.
+`AGENTS.md` and `CLAUDE.md` are both surrounded by HTML comment markers.
+Apply overwrites only the content **between** the markers — user
+additions above/below are preserved across `apply`. `.monoceros/commands.md`
+is 100% Monoceros-owned and is always rewritten completely.
 
-Beim ersten Claude-Start in einem Projekt erscheint einmalig ein
-"Allow external CLAUDE.md file imports?"-Dialog — akzeptieren, die
-Dateien sind Monoceros-generiert. Voller Mechanismus in
+On the first Claude start in a project, an "Allow external CLAUDE.md
+file imports?" dialog appears once — accept it, the files are
+Monoceros-generated. Full mechanism in
 [`docs/ai-tools.md`](../ai-tools.md#container-briefing--agentsmd--claudemd).
 
-## Fail-Modi
+## Failure modes
 
-- **`No such config: <path>`** — die Konfig existiert nicht.
-  Lösung: `monoceros init <template> <name>` first.
-- **`already materialized from config 'X', not 'Y'`** — Zielordner
-  gehört zu einer anderen Konfig. Lösung: `monoceros apply X`
-  (re-apply gegen die ursprüngliche Konfig) oder Ordner löschen.
-- **`Refusing to materialize into non-empty directory`** — Zielordner
-  hat fremde Inhalte und keine state.json. Lösung: Ordner löschen
-  oder anderen Konfig-Namen wählen.
-- **`Unknown language: X` / `Unknown service: X`** — Catalog-Eintrag
-  fehlt. Schema-Validierung ist passiert, aber der Wert ist nicht in
-  der Liste der unterstützten Sprachen/Services.
-- **`Invalid config name`** — Name enthält Slash, Space oder
-  Shell-Meta-Zeichen. Nur `[A-Za-z0-9._-]+` erlaubt.
-- **`Missing Git credentials for <host>`** — der Apply holt für jeden
-  `repos:`-Host **host-seitig** die HTTPS-Credentials (über den
-  Credential-Helper) und mountet sie in den Container, damit der Clone
-  dort authentifiziert ist. Findet er keine, bricht er **vor** dem
-  Docker-Build mit provider-spezifischen Hinweisen ab (z. B.
-  `gh auth login`). Das ist ein **lokaler** Check (kein Netzzugriff auf
-  den Git-Host) — er prüft nur, ob ein Credential vorhanden ist.
-- **Repo-Clone schlägt fehl** — Repos werden **im Container** geklont
-  (post-create.sh, mit dem gemounteten Credential-Helper). Schlägt ein
-  Clone fehl (falsches/abgelaufenes Token, getippter URL, Host nicht
-  erreichbar), erscheint die echte git-Meldung im Container-Build-Log.
-  Häufige Fälle: `could not read Username` → kein Credential; `Invalid
-username or token` → Token abgelaufen / ohne Org-Zugriff (GitHub-SSO!)
-  / ohne `repo`-Scope. Den Clone nutzt die **Container**-Umgebung —
-  Host-spezifische Eigenheiten (VPN-DNS, VS-Code-`GIT_ASKPASS`) spielen
-  hier bewusst keine Rolle mehr.
+- **`No such config: <path>`** — the config does not exist.
+  Fix: `monoceros init <template> <name>` first.
+- **`already materialized from config 'X', not 'Y'`** — the target
+  folder belongs to a different config. Fix: `monoceros apply X`
+  (re-apply against the original config) or delete the folder.
+- **`Refusing to materialize into non-empty directory`** — the target
+  folder has foreign content and no state.json. Fix: delete the folder
+  or choose a different config name.
+- **`Unknown language: X` / `Unknown service: X`** — a catalog entry is
+  missing. Schema validation passed, but the value is not in the list
+  of supported languages/services.
+- **`Invalid config name`** — the name contains a slash, space, or
+  shell metacharacter. Only `[A-Za-z0-9._-]+` is allowed.
+- **`Missing Git credentials for <host>`** — for each `repos:` host the
+  apply fetches the HTTPS credentials **host-side** (via the credential
+  helper) and mounts them into the container, so the clone there is
+  authenticated. If it finds none, it aborts **before** the Docker build
+  with provider-specific hints (e.g. `gh auth login`). This is a
+  **local** check (no network access to the Git host) — it only checks
+  whether a credential is present.
+- **Repo clone fails** — repos are cloned **inside the container**
+  (post-create.sh, with the mounted credential helper). If a clone fails
+  (wrong/expired token, mistyped URL, host unreachable), the real git
+  message appears in the container build log. Common cases:
+  `could not read Username` → no credential; `Invalid username or token`
+  → token expired / without org access (GitHub SSO!) / without `repo`
+  scope. The clone uses the **container** environment — host-specific
+  quirks (VPN DNS, VS Code `GIT_ASKPASS`) deliberately no longer play a
+  role here.

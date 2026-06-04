@@ -1,23 +1,22 @@
 # `monoceros list-components`
 
-Gibt den Komponenten-Katalog aus, den
-[`monoceros init`](./init.md) für sein `--with=…`-Flag versteht.
+Prints the component catalog that
+[`monoceros init`](./init.md) understands for its `--with-*` flags.
 
 ```sh
 monoceros list-components
 ```
 
-## Zweck
+## Purpose
 
-Wenn der Builder nicht mehr weiß, **welche Bausteine** es gibt,
-ist `list-components` der schnellste Weg zur Antwort —
-schneller als `init` ohne `--with` (dokumentierte Vorlage lesen)
-und schneller als die Quellen unter
-[`templates/components/`](../../templates/components/) selbst zu
-öffnen.
+When the builder no longer remembers **which building blocks** exist,
+`list-components` is the fastest way to the answer — faster than
+`init` without `--with-*` (reading the documented template) and faster
+than opening the sources under
+[`templates/components/`](../../templates/components/) yourself.
 
-Der Output ist explizit Tab-getrennt, damit sich die Liste
-problemlos in andere Tools pipen lässt:
+The output is deliberately tab-separated so the list can be piped into
+other tools without trouble:
 
 ```
 # language
@@ -41,19 +40,19 @@ claude             Anthropic Claude Code CLI
 github             GitHub CLI (gh)
 ```
 
-Die linke Spalte ist genau der Name, den `monoceros init --with=…`
-erwartet. Komma-getrennt mehrere Komponenten kombinierbar:
+The left column is exactly the name that the `monoceros init`
+`--with-*` flags expect. Multiple components can be combined comma-separated:
 
 ```sh
-monoceros init sandbox --with=node,postgres,github,claude
+monoceros init sandbox --with-languages=node --with-services=postgres --with-features=github,claude
 ```
 
-## Argumente
+## Arguments
 
-Keine — der Befehl liest immer den vollen Katalog der laufenden
-Workbench.
+None — the command always reads the full catalog of the running
+workbench.
 
-## Verwandte Befehle
+## Related commands
 
-- [`monoceros init`](./init.md) — Komponenten in eine fertige
-  yml komponieren oder eine dokumentierte Vorlage erzeugen
+- [`monoceros init`](./init.md) — compose components into a finished
+  yml or generate a documented template
