@@ -689,6 +689,9 @@ describe('runApply', () => {
       [
         'schemaVersion: 1',
         'name: dbhost',
+        // Pinned so the IDE-state named volumes are emitted — the test
+        // asserts DB data is NOT among them (ADR 0015/0017 gate).
+        'runtimeVersion: 1.1.0',
         'services:',
         '  - name: postgres',
         '    image: postgres:18',

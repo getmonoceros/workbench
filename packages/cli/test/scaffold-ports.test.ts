@@ -28,8 +28,8 @@ describe('VS Code IDE-state volumes (ADR 0015)', () => {
     ]);
   });
 
-  it('image-mode mounts both volumes as type=volume on the .vscode-server sub-dirs', () => {
-    const dc = buildDevcontainerJson(base);
+  it('image-mode mounts both volumes as type=volume on the .vscode-server sub-dirs (pinned runtime)', () => {
+    const dc = buildDevcontainerJson({ ...base, runtimeVersion: '1.1.0' });
     if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
     expect(dc.mounts).toContain(
       'source=monoceros-sandbox-vscode-extensions,target=/home/node/.vscode-server/extensions,type=volume',
@@ -39,9 +39,10 @@ describe('VS Code IDE-state volumes (ADR 0015)', () => {
     );
   });
 
-  it('compose-mode references both volumes on workspace and declares them with pinned names', () => {
+  it('compose-mode references both volumes on workspace and declares them with pinned names (pinned runtime)', () => {
     const yaml = buildComposeYaml({
       ...base,
+      runtimeVersion: '1.1.0',
       services: [resolveService(expandCuratedService('postgres'))],
     });
     expect(yaml).toContain(
@@ -54,6 +55,33 @@ describe('VS Code IDE-state volumes (ADR 0015)', () => {
     expect(yaml).toMatch(
       /^volumes:\n {2}monoceros-sandbox-vscode-extensions:\n {4}name: monoceros-sandbox-vscode-extensions/m,
     );
+  });
+
+  it('emits NO IDE volumes when the runtime is unpinned or below the minimum (capability gate)', () => {
+    // Unpinned (legacy) — image-mode.
+    const unpinned = buildDevcontainerJson(base);
+    if (!('runArgs' in unpinned)) throw new Error('expected image-mode shape');
+    expect((unpinned.mounts ?? []).join('\n')).not.toContain('.vscode-server');
+
+    // Below the minimum (1.0.0 < 1.1.0) — compose-mode: no volume refs,
+    // and no top-level `volumes:` block at all.
+    const yaml = buildComposeYaml({
+      ...base,
+      runtimeVersion: '1.0.0',
+      services: [resolveService(expandCuratedService('postgres'))],
+    });
+    expect(yaml).not.toContain('.vscode-server');
+    expect(yaml).not.toMatch(/^volumes:/m);
+  });
+
+  it('resolves the image from the pinned runtimeVersion', () => {
+    const dc = buildDevcontainerJson({ ...base, runtimeVersion: '1.1.0' });
+    if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
+    expect(dc.image).toBe('ghcr.io/getmonoceros/monoceros-runtime:1.1.0');
+    // Unpinned falls back to the legacy floating major tag.
+    const legacy = buildDevcontainerJson(base);
+    if (!('runArgs' in legacy)) throw new Error('expected image-mode shape');
+    expect(legacy.image).toBe('ghcr.io/getmonoceros/monoceros-runtime:1');
   });
 });
 

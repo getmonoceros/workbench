@@ -48,6 +48,9 @@ export function solutionConfigToCreateOptions(
 
   const result: CreateOptions = {
     name: config.name,
+    ...(config.runtimeVersion !== undefined
+      ? { runtimeVersion: config.runtimeVersion }
+      : {}),
     languages: [...config.languages],
     // Normalize every services[] entry (curated string or explicit
     // object) to the canonical ResolvedService shape. `${VAR}` values

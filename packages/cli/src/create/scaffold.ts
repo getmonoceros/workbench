@@ -3,12 +3,13 @@ import path from 'node:path';
 import { workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 import {
-  BASE_IMAGE,
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
   SERVICE_CATALOG,
   knownLanguages,
   parseLanguageSpec,
+  resolveRuntimeImage,
+  runtimeSupportsIdeVolumes,
 } from './catalog.js';
 import type { CreateOptions } from './types.js';
 
@@ -190,6 +191,9 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
   const ports = opts.ports ? [...new Set(opts.ports)] : undefined;
   return {
     name: opts.name,
+    ...(opts.runtimeVersion !== undefined
+      ? { runtimeVersion: opts.runtimeVersion }
+      : {}),
     languages,
     services,
     postgresUrl: opts.postgresUrl,
@@ -639,15 +643,17 @@ export function buildDevcontainerJson(
     };
   }
 
-  // Image-mode mounts: per-feature persistent-home binds, plus the
-  // always-on VS Code IDE-state volumes (extensions + user settings).
-  const mounts: string[] = [
-    ...homeMounts,
-    ...ideStateVolumes(opts.name).map(
-      (v) => `source=${v.volume},target=${v.target},type=volume`,
-    ),
-  ];
-  const mountsField = { mounts };
+  // Image-mode mounts: per-feature persistent-home binds, plus the VS
+  // Code IDE-state volumes (extensions + user settings) — but only when
+  // the pinned runtime supports them (ADR 0015/0017); otherwise they'd
+  // break on an image without the node-owned dirs.
+  const ideMounts = runtimeSupportsIdeVolumes(opts.runtimeVersion)
+    ? ideStateVolumes(opts.name).map(
+        (v) => `source=${v.volume},target=${v.target},type=volume`,
+      )
+    : [];
+  const mounts: string[] = [...homeMounts, ...ideMounts];
+  const mountsField = mounts.length > 0 ? { mounts } : {};
 
   // Image-mode workspaces: pin both `workspaceMount` AND
   // `workspaceFolder` explicitly so VS Code's Dev Containers
@@ -692,7 +698,7 @@ export function buildDevcontainerJson(
 
   return {
     name: opts.name,
-    image: BASE_IMAGE,
+    image: resolveRuntimeImage(opts.runtimeVersion),
     remoteUser: 'node',
     ...workspaceMountField,
     ...mountsField,
@@ -749,8 +755,12 @@ export function buildComposeYaml(
   const hasPorts = (opts.ports?.length ?? 0) > 0;
   const lines: string[] = ['services:'];
 
+  const ideVolumes = runtimeSupportsIdeVolumes(opts.runtimeVersion)
+    ? ideStateVolumes(opts.name)
+    : [];
+
   lines.push('  workspace:');
-  lines.push(`    image: ${BASE_IMAGE}`);
+  lines.push(`    image: ${resolveRuntimeImage(opts.runtimeVersion)}`);
   lines.push("    command: 'sleep infinity'");
   // No `user:` directive here — the runtime image's entrypoint runs as
   // root to set up iptables, then drops to the `node` user via gosu
@@ -792,9 +802,9 @@ export function buildComposeYaml(
     }
   }
   // VS Code IDE-state persistence (extensions + user settings) via named
-  // volumes — see ideStateVolumes / ADR 0015. Declared at the top-level
-  // `volumes:` block below.
-  for (const v of ideStateVolumes(opts.name)) {
+  // volumes — see ideStateVolumes / ADR 0015. Gated on the pinned
+  // runtime version; declared at the top-level `volumes:` block below.
+  for (const v of ideVolumes) {
     lines.push(`      - ${v.volume}:${v.target}`);
   }
   for (const svc of opts.services) {
@@ -846,11 +856,14 @@ export function buildComposeYaml(
   // Top-level declaration of the IDE-state named volumes. `name:` pins
   // the exact Docker volume name (no compose project prefix) so the
   // names match image-mode and `monoceros remove` can delete them
-  // deterministically.
-  lines.push('volumes:');
-  for (const v of ideStateVolumes(opts.name)) {
-    lines.push(`  ${v.volume}:`);
-    lines.push(`    name: ${v.volume}`);
+  // deterministically. Only emitted when the pinned runtime supports
+  // them (else there are no IDE volumes to declare).
+  if (ideVolumes.length > 0) {
+    lines.push('volumes:');
+    for (const v of ideVolumes) {
+      lines.push(`  ${v.volume}:`);
+      lines.push(`    name: ${v.volume}`);
+    }
   }
 
   if (hasPorts) {

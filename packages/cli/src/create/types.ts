@@ -82,6 +82,15 @@ export interface CreateOptions {
   name: string;
   languages: string[];
   services: ResolvedService[];
+  /**
+   * Pinned runtime-image version (e.g. `1.1.0`), from the yml's
+   * `runtimeVersion`. The scaffold resolves it to a concrete image ref
+   * via `resolveRuntimeImage` and gates image-version-dependent config
+   * (e.g. the IDE-state volumes) on it. When absent, the scaffold falls
+   * back to the legacy floating image and emits no version-gated config;
+   * `apply` separately rejects an unpinned yml. See ADR 0017.
+   */
+  runtimeVersion?: string;
   postgresUrl?: string;
   /**
    * Additional Debian/Ubuntu apt packages to install via the
