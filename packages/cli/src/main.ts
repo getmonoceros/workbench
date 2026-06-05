@@ -28,6 +28,7 @@ import { startCommand } from './commands/start.js';
 import { statusCommand } from './commands/status.js';
 import { stopCommand } from './commands/stop.js';
 import { tunnelCommand } from './commands/tunnel.js';
+import { upgradeCommand } from './commands/upgrade.js';
 import { CLI_VERSION } from './version.js';
 
 export const main = defineCommand({
@@ -47,6 +48,7 @@ export const main = defineCommand({
     stop: stopCommand,
     status: statusCommand,
     apply: applyCommand,
+    upgrade: upgradeCommand,
     remove: removeCommand,
     restore: restoreCommand,
     'add-service': addServiceCommand,
