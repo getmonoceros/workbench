@@ -12,7 +12,11 @@ monoceros apply <name>
 `monoceros apply` is the step that writes a yml config concretely to
 the filesystem:
 
-1. Reads `$MONOCEROS_HOME/container-configs/<name>.yml`.
+1. Reads `$MONOCEROS_HOME/container-configs/<name>.yml`. The yml must
+   pin a runtime image version (`runtimeVersion:`); apply reuses it
+   verbatim and never bumps it. An unpinned yml is rejected with a hint
+   to run [`monoceros upgrade`](./upgrade.md) (or add `runtimeVersion:`
+   by hand). See [ADR 0017](../adr/0017-per-container-image-pinning.md).
 2. Validates schema (fields, regex constraints) and catalog (do the
    referenced languages/services exist?).
 3. Generates into `$MONOCEROS_HOME/container/<name>/`:
@@ -31,7 +35,8 @@ the filesystem:
      container briefing for AI tools inside the container (see
      [`docs/ai-tools.md`](../ai-tools.md#container-briefing--agentsmd--claudemd)).
 4. Writes `.monoceros/state.json` with `origin: <name>`,
-   `schemaVersion`, `monocerosCliVersion`, `materializedAt`.
+   `schemaVersion`, `monocerosCliVersion`, `materializedAt`, and
+   `runtimeImage` (the resolved image this apply built against).
 5. Fetches the Git identity host-side (see priority below) and, for
    HTTPS repos, the credentials.
 6. Brings the container up — compose mode with force-remove plus
