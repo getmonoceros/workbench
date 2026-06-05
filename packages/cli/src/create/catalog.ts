@@ -101,6 +101,14 @@ export interface ServiceEntry {
    * to a port without an extra CLI argument. See ADR 0009.
    */
   defaultPort: number;
+  /**
+   * VS Code extensions to *recommend* (not auto-install) when this
+   * service is present. Written to `extensions.recommendations` in the
+   * generated `.code-workspace`. Unlike feature-bound extensions (which
+   * auto-install via the feature manifest), these are soft, context-
+   * derived suggestions the builder can dismiss. See ADR 0016.
+   */
+  vscodeExtensions?: readonly string[];
 }
 
 // The `monoceros` user/password/db below are deliberate dev-only
@@ -145,6 +153,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
     // https://github.com/docker-library/postgres/pull/1259.
     dataMount: '/var/lib/postgresql',
     defaultPort: 5432,
+    vscodeExtensions: ['cweijan.vscode-database-client2'],
   },
   mysql: {
     id: 'mysql',
@@ -170,6 +179,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
     },
     dataMount: '/var/lib/mysql',
     defaultPort: 3306,
+    vscodeExtensions: ['cweijan.vscode-database-client2'],
   },
   redis: {
     id: 'redis',
@@ -182,6 +192,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
     },
     dataMount: '/data',
     defaultPort: 6379,
+    vscodeExtensions: ['cweijan.vscode-database-client2'],
   },
 };
 

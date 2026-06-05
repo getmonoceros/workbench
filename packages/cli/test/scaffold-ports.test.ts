@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildComposeYaml,
   buildDevcontainerJson,
+  ideStateVolumes,
   normalizeOptions,
 } from '../src/create/scaffold.js';
 import { resolveService, expandCuratedService } from '../src/create/catalog.js';
@@ -12,6 +13,49 @@ const base: CreateOptions = {
   languages: [],
   services: [],
 };
+
+describe('VS Code IDE-state volumes (ADR 0015)', () => {
+  it('names a unique extensions + userdata volume per container', () => {
+    expect(ideStateVolumes('demo')).toEqual([
+      {
+        volume: 'monoceros-demo-vscode-extensions',
+        target: '/home/node/.vscode-server/extensions',
+      },
+      {
+        volume: 'monoceros-demo-vscode-userdata',
+        target: '/home/node/.vscode-server/data/User',
+      },
+    ]);
+  });
+
+  it('image-mode mounts both volumes as type=volume on the .vscode-server sub-dirs', () => {
+    const dc = buildDevcontainerJson(base);
+    if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
+    expect(dc.mounts).toContain(
+      'source=monoceros-sandbox-vscode-extensions,target=/home/node/.vscode-server/extensions,type=volume',
+    );
+    expect(dc.mounts).toContain(
+      'source=monoceros-sandbox-vscode-userdata,target=/home/node/.vscode-server/data/User,type=volume',
+    );
+  });
+
+  it('compose-mode references both volumes on workspace and declares them with pinned names', () => {
+    const yaml = buildComposeYaml({
+      ...base,
+      services: [resolveService(expandCuratedService('postgres'))],
+    });
+    expect(yaml).toContain(
+      '      - monoceros-sandbox-vscode-extensions:/home/node/.vscode-server/extensions',
+    );
+    expect(yaml).toContain(
+      '      - monoceros-sandbox-vscode-userdata:/home/node/.vscode-server/data/User',
+    );
+    // Top-level declaration with `name:` pinned (no compose project prefix).
+    expect(yaml).toMatch(
+      /^volumes:\n {2}monoceros-sandbox-vscode-extensions:\n {4}name: monoceros-sandbox-vscode-extensions/m,
+    );
+  });
+});
 
 describe('buildDevcontainerJson — ports & vscode autoForward', () => {
   it('omits ports, customizations, and the proxy network when no ports declared', () => {

@@ -59,7 +59,10 @@ monoceros add-repo <containername> <url> [--path=<folder>] \
    `git -C projects/bar config user.name/email` lines follow right after.
 3. `<containername>.code-workspace` gets an additional folder root for
    `projects/<path>/`. When opened in VS Code, the repo appears as its
-   own column in the Explorer.
+   own column in the Explorer. If the repo's host is GitHub or GitLab,
+   the matching editor extension (PR + Actions, or GitLab Workflow) is
+   added to the workspace's extension **recommendations** — a soft
+   prompt, not an auto-install (see ADR 0016).
 4. On the container build, `git clone` runs. Auth happens via HTTPS
    credentials that `monoceros apply` pulls from the host Git credential
    system (see the Auth section below).

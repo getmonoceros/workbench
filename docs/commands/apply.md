@@ -18,7 +18,13 @@ the filesystem:
 3. Generates into `$MONOCEROS_HOME/container/<name>/`:
    - `.devcontainer/devcontainer.json`, plus `compose.yaml` if applicable
    - `.devcontainer/post-create.sh`
-   - `<name>.code-workspace`
+   - `<name>.code-workspace` — multi-root workspace; the root folder is
+     labelled `🦄 Monoceros`, and context-derived editor extensions (a DB
+     client when a DB service is present, host tooling for GitHub/GitLab
+     repos) are added as **recommendations** (see ADR 0016)
+   - `.vscode/settings.json` — Explorer denoise for the root folder
+     (hides the scaffold, leaves `home/`, `logs/`, `AGENTS.md`,
+     `CLAUDE.md` visible)
    - `.claude/settings.json`
    - `.monoceros/.gitignore`
    - **`AGENTS.md`** + **`CLAUDE.md`** + **`.monoceros/commands.md`** —
