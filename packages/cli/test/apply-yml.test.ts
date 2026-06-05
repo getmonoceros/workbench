@@ -69,8 +69,22 @@ describe('runApply', () => {
     await rm(home, { recursive: true, force: true });
   });
 
+  // apply now requires a pinned runtimeVersion (ADR 0017). Real ymls
+  // get it from `init`; these test bodies predate the field, so inject
+  // a pin right after `schemaVersion: 1` unless the body sets one
+  // itself. Tests that exercise the unpinned-yml error path use
+  // `writeFile` directly to bypass this.
   async function writeYml(name: string, body: string): Promise<void> {
-    await writeFile(path.join(home, 'container-configs', `${name}.yml`), body);
+    const pinned = body.includes('runtimeVersion:')
+      ? body
+      : body.replace(
+          /^schemaVersion: 1$/m,
+          'schemaVersion: 1\nruntimeVersion: 1.1.0',
+        );
+    await writeFile(
+      path.join(home, 'container-configs', `${name}.yml`),
+      pinned,
+    );
   }
 
   it('materializes into <home>/container/<name>/ by convention', async () => {
@@ -92,7 +106,11 @@ describe('runApply', () => {
       ),
     );
     expect(devcontainer.name).toBe('demo');
-    expect(devcontainer.image).toBe('ghcr.io/getmonoceros/monoceros-runtime:1');
+    // The image is resolved from the pinned runtimeVersion (ADR 0017);
+    // writeYml injects `runtimeVersion: 1.1.0`.
+    expect(devcontainer.image).toBe(
+      'ghcr.io/getmonoceros/monoceros-runtime:1.1.0',
+    );
 
     const state = await readStateFile(expected);
     expect(state?.origin).toBe('demo');
@@ -833,6 +851,8 @@ describe('runApply', () => {
       origin: 'demo',
       monocerosCliVersion: '1.2.3',
       materializedAt: '2026-05-16T10:00:00.000Z',
+      // Resolved from the pin writeYml injects (ADR 0017).
+      runtimeImage: 'ghcr.io/getmonoceros/monoceros-runtime:1.1.0',
     });
   });
 
@@ -886,6 +906,18 @@ describe('runApply', () => {
     await expect(
       runApply({ ...baseRunOpts, name: 'missing', monocerosHome: home }),
     ).rejects.toThrow(/No such config.*missing\.yml/);
+  });
+
+  it('errors on a yml without runtimeVersion (no silent re-image — ADR 0017)', async () => {
+    // Bypass the pin-injecting writeYml helper to get a genuinely
+    // unpinned yml on disk.
+    await writeFile(
+      path.join(home, 'container-configs', 'unpinned.yml'),
+      ['schemaVersion: 1', 'name: unpinned', ''].join('\n'),
+    );
+    await expect(
+      runApply({ ...baseRunOpts, name: 'unpinned', monocerosHome: home }),
+    ).rejects.toThrow(/No runtime pinned.*runtimeVersion/s);
   });
 
   it('errors when the yml fails schema validation', async () => {

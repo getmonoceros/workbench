@@ -24,11 +24,19 @@ export interface StateFile {
   monocerosCliVersion: string;
   /** ISO-8601 timestamp of the most recent apply. */
   materializedAt: string;
+  /**
+   * Resolved runtime image this container was last materialized against
+   * (e.g. `ghcr.io/getmonoceros/monoceros-runtime:1.1.0`) — audit for
+   * the pinned-image model (ADR 0017). Optional: pre-pinning state.json
+   * files won't carry it.
+   */
+  runtimeImage?: string;
 }
 
 export function buildStateFile(opts: {
   origin: string;
   cliVersion: string;
+  runtimeImage?: string;
   now?: Date;
 }): StateFile {
   return {
@@ -36,6 +44,7 @@ export function buildStateFile(opts: {
     origin: opts.origin,
     monocerosCliVersion: opts.cliVersion,
     materializedAt: (opts.now ?? new Date()).toISOString(),
+    ...(opts.runtimeImage ? { runtimeImage: opts.runtimeImage } : {}),
   };
 }
 
