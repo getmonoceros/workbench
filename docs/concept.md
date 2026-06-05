@@ -49,14 +49,19 @@ Contents:
 - Standard dev tools from the base image: `git`, `curl`, `ssh`, `jq`,
   `make`
 
-An opt-in egress allowlist mechanism (iptables-based, enabled via
-`MONOCEROS_EGRESS=enforce`) still lives in the image for historical
-reasons but is disabled in the default workflow — the
-hostname-snapshot variant isn't compatible with rotating CDN IPs (VS
-Code Marketplace etc.). Details in
-[ADR 0002](./adr/0002-egress-whitelist-runtime-image.md). Sandboxing
-is **not** an advertised property of Monoceros today beyond normal
-container isolation.
+Container isolation is a core value Monoceros leans on: an AI agent
+in the container can't reach the host — your keychain, your other
+projects, files outside the mounted workspace all stay out of reach.
+That is the basis for letting agents run unattended.
+
+What this does **not** cover is the network. An opt-in egress
+allowlist mechanism (iptables-based, enabled via
+`MONOCEROS_EGRESS=enforce`) lives in the image but is disabled in the
+default workflow — the hostname-snapshot variant isn't compatible
+with rotating CDN IPs (VS Code Marketplace etc.). Details in
+[ADR 0002](./adr/0002-egress-whitelist-runtime-image.md). So by
+default an agent can still make network calls; containment is about
+the host, not egress. We don't claim otherwise.
 
 **What is not in the image:**
 
