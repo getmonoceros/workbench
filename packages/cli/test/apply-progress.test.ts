@@ -105,6 +105,27 @@ describe('createApplyProgress stream sink (phase detection + tail)', () => {
     expect(written()).toBe('> starting container…\n');
   });
 
+  it('advances phase on compose-mode `docker compose … build <services>`', () => {
+    const { stream, written } = makeFakeOut({ isTTY: false });
+    const progress = createApplyProgress({ out: stream, interactive: false });
+    progress.streamSink.write(
+      '[t] Start: Run: docker compose --project-name x -f /a/compose.yaml -f /b/docker-compose.devcontainer.build-123.yml build postgres rustfs workspace\n',
+    );
+    expect(written()).toBe('> building feature layers…\n');
+  });
+
+  it('advances phase on compose-mode `docker compose … up -d` — not fooled by the build-<n>.yml override file in -f', () => {
+    const { stream, written } = makeFakeOut({ isTTY: false });
+    const progress = createApplyProgress({ out: stream, interactive: false });
+    // The up line carries `-f …devcontainer.build-123.yml`; the build
+    // trigger must NOT match it, so the phase is "starting", not stuck
+    // on "building".
+    progress.streamSink.write(
+      '[t] Start: Run: docker compose --project-name x -f /a/compose.yaml -f /b/docker-compose.devcontainer.build-123.yml -f /c/docker-compose.devcontainer.containerFeatures-9.yml up -d postgres rustfs workspace\n',
+    );
+    expect(written()).toBe('> starting container…\n');
+  });
+
   it('advances phase on `Running the postCreateCommand`', () => {
     const { stream, written } = makeFakeOut({ isTTY: false });
     const progress = createApplyProgress({ out: stream, interactive: false });

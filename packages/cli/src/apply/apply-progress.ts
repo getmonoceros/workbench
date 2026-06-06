@@ -32,12 +32,22 @@ const TAIL_LINES = 15;
  * interfere with detection.
  */
 const PHASE_TRIGGERS: ReadonlyArray<{ pattern: RegExp; label: string }> = [
-  // Compose mode triggers a feature/layer build before the container
-  // is created — distinct phase, often the longest single step.
-  { pattern: /Start: Run: docker build/i, label: 'building feature layers…' },
-  // Image mode jumps straight from "preparing…" into the docker run
-  // that pulls (if needed) + creates + starts the container.
-  { pattern: /Start: Run: docker run/i, label: 'starting container…' },
+  // Feature/layer build — distinct phase, often the longest single
+  // step. Image mode runs `docker build`; compose mode runs
+  // `docker compose … build <services>`. We match the build *subcommand*
+  // (a space-delimited ` build`), NOT the substring — the compose `up`
+  // line below carries `-f …devcontainer.build-<n>.yml` and would
+  // otherwise false-match here and swallow the "starting" phase.
+  {
+    pattern: /Start: Run: docker (?:build\b|compose\b.* build\b)/i,
+    label: 'building feature layers…',
+  },
+  // Container create/start. Image mode: `docker run` (pulls if needed,
+  // creates, starts). Compose mode: `docker compose … up -d <services>`.
+  {
+    pattern: /Start: Run: docker (?:run\b|compose\b.* up\b)/i,
+    label: 'starting container…',
+  },
   { pattern: /Running the postCreateCommand/i, label: 'running postCreate…' },
 ];
 
