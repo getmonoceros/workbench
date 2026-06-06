@@ -14,8 +14,15 @@ on:
 
 # Cancel an in-flight run when a new commit lands on the same ref —
 # pushing a fix to a PR shouldn't keep the previous run alive.
+# The literal `precheck-` prefix is load-bearing: when a release-*.yml
+# caller invokes BOTH this reusable workflow and e2e-smoke, both run
+# under the caller's `github.workflow`, so a bare
+# `${{ github.workflow }}-${{ github.ref }}` would collide between the
+# two and, with cancel-in-progress, cancel each other. The per-workflow
+# prefix keeps their lanes distinct (and still distinct from the direct
+# "Precheck" trigger).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: precheck-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

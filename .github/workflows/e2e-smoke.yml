@@ -29,9 +29,14 @@ on:
   # verify, or right after pushing the workflow itself).
   workflow_dispatch:
 
-# Cancel an in-flight run on the same ref when a new commit lands.
+# Cancel an in-flight run on the same ref when a new commit lands. The
+# literal `e2e-smoke-` prefix is load-bearing: a release-*.yml caller
+# invokes both precheck and this workflow under the same
+# `github.workflow`, so an unprefixed group would collide with
+# precheck's and cancel-in-progress would kill one of them. The prefix
+# keeps the lanes distinct. See the matching note in precheck.yml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: e2e-smoke-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
