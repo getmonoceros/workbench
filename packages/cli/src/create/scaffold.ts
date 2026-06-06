@@ -3,11 +3,13 @@ import path from 'node:path';
 import { workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 import {
-  BASE_IMAGE,
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
+  SERVICE_CATALOG,
   knownLanguages,
   parseLanguageSpec,
+  resolveRuntimeImage,
+  runtimeSupportsIdeVolumes,
 } from './catalog.js';
 import type { CreateOptions } from './types.js';
 
@@ -189,6 +191,9 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
   const ports = opts.ports ? [...new Set(opts.ports)] : undefined;
   return {
     name: opts.name,
+    ...(opts.runtimeVersion !== undefined
+      ? { runtimeVersion: opts.runtimeVersion }
+      : {}),
     languages,
     services,
     postgresUrl: opts.postgresUrl,
@@ -502,6 +507,44 @@ function isValidHomeSubpath(p: string): boolean {
 // no whitespace, no shell metacharacters.
 const HOME_SUBPATH_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 
+interface IdeStateVolume {
+  /** Docker volume name — unique per container so two containers don't share IDE state. */
+  volume: string;
+  /** In-container mount target under `~/.vscode-server`. */
+  target: string;
+}
+
+/**
+ * Named volumes that persist VS Code's IDE state across a `monoceros
+ * apply` rebuild: installed extensions and the user-scoped settings /
+ * extension storage. This is the mechanism VS Code documents for
+ * "avoid extension reinstalls" — a named **volume** on the relevant
+ * `~/.vscode-server` sub-directories.
+ *
+ * Why volumes on sub-dirs (not a host bind of the whole dir): VS Code
+ * owns `~/.vscode-server` (server binaries under `bin/`, etc.). Taking
+ * the whole directory over with a host bind fights that ownership and
+ * triggers an endless "configuration changed — rebuild?" loop. Mounting
+ * only `extensions/` and `data/User/` leaves the server location under
+ * VS Code's control. Named volumes survive container removal (`apply`
+ * preserves volumes), so the persisted state outlives a rebuild; the
+ * runtime image pre-creates these paths owned by `node` so the fresh
+ * volumes initialise node-owned (required for the non-root user per VS
+ * Code's docs). `monoceros remove` deletes the volumes. See ADR 0015.
+ */
+export function ideStateVolumes(name: string): IdeStateVolume[] {
+  return [
+    {
+      volume: `monoceros-${name}-vscode-extensions`,
+      target: '/home/node/.vscode-server/extensions',
+    },
+    {
+      volume: `monoceros-${name}-vscode-userdata`,
+      target: '/home/node/.vscode-server/data/User',
+    },
+  ];
+}
+
 export function buildDevcontainerJson(
   opts: CreateOptions,
   dockerMode: DockerMode = 'rootful',
@@ -600,8 +643,16 @@ export function buildDevcontainerJson(
     };
   }
 
-  // Image-mode mounts: per-feature persistent-home binds.
-  const mounts: string[] = [...homeMounts];
+  // Image-mode mounts: per-feature persistent-home binds, plus the VS
+  // Code IDE-state volumes (extensions + user settings) — but only when
+  // the pinned runtime supports them (ADR 0015/0017); otherwise they'd
+  // break on an image without the node-owned dirs.
+  const ideMounts = runtimeSupportsIdeVolumes(opts.runtimeVersion)
+    ? ideStateVolumes(opts.name).map(
+        (v) => `source=${v.volume},target=${v.target},type=volume`,
+      )
+    : [];
+  const mounts: string[] = [...homeMounts, ...ideMounts];
   const mountsField = mounts.length > 0 ? { mounts } : {};
 
   // Image-mode workspaces: pin both `workspaceMount` AND
@@ -647,7 +698,7 @@ export function buildDevcontainerJson(
 
   return {
     name: opts.name,
-    image: BASE_IMAGE,
+    image: resolveRuntimeImage(opts.runtimeVersion),
     remoteUser: 'node',
     ...workspaceMountField,
     ...mountsField,
@@ -704,8 +755,12 @@ export function buildComposeYaml(
   const hasPorts = (opts.ports?.length ?? 0) > 0;
   const lines: string[] = ['services:'];
 
+  const ideVolumes = runtimeSupportsIdeVolumes(opts.runtimeVersion)
+    ? ideStateVolumes(opts.name)
+    : [];
+
   lines.push('  workspace:');
-  lines.push(`    image: ${BASE_IMAGE}`);
+  lines.push(`    image: ${resolveRuntimeImage(opts.runtimeVersion)}`);
   lines.push("    command: 'sleep infinity'");
   // No `user:` directive here — the runtime image's entrypoint runs as
   // root to set up iptables, then drops to the `node` user via gosu
@@ -745,6 +800,12 @@ export function buildComposeYaml(
     for (const sub of allSubs) {
       lines.push(`      - ../home/${sub}:/home/node/${sub}`);
     }
+  }
+  // VS Code IDE-state persistence (extensions + user settings) via named
+  // volumes — see ideStateVolumes / ADR 0015. Gated on the pinned
+  // runtime version; declared at the top-level `volumes:` block below.
+  for (const v of ideVolumes) {
+    lines.push(`      - ${v.volume}:${v.target}`);
   }
   for (const svc of opts.services) {
     // `${VAR}` env values were already resolved against <name>.env in
@@ -792,6 +853,19 @@ export function buildComposeYaml(
     }
   }
 
+  // Top-level declaration of the IDE-state named volumes. `name:` pins
+  // the exact Docker volume name (no compose project prefix) so the
+  // names match image-mode and `monoceros remove` can delete them
+  // deterministically. Only emitted when the pinned runtime supports
+  // them (else there are no IDE volumes to declare).
+  if (ideVolumes.length > 0) {
+    lines.push('volumes:');
+    for (const v of ideVolumes) {
+      lines.push(`  ${v.volume}:`);
+      lines.push(`    name: ${v.volume}`);
+    }
+  }
+
   if (hasPorts) {
     // `external: true` tells compose that `monoceros-proxy` is managed
     // outside this stack (Monoceros's proxy module creates it via
@@ -813,17 +887,88 @@ interface CodeWorkspaceFolder {
 
 interface CodeWorkspaceFile {
   folders: CodeWorkspaceFolder[];
+  extensions?: { recommendations: string[] };
+}
+
+// Generic, container-independent label for the workspace-root folder.
+// Without a `name`, VS Code falls back to the container directory's
+// basename — which collides visually with a repo root of the same name
+// (a repo cloned into projects/<container-name> then shows two
+// identical Explorer entries). A fixed, branded label disambiguates the
+// root and reads as intentional. See ADR 0016. (Monoceros is the
+// unicorn constellation.)
+const WORKSPACE_ROOT_LABEL = '🦄 Monoceros';
+
+// Host → VS Code extensions to *recommend* when a repo from that host
+// is present. Context-derived (inferred from the repo URL), so these
+// are soft recommendations, not auto-installs. bitbucket.org is
+// deliberately absent — its `Atlassian.atlascode` extension is
+// auto-installed by the atlassian feature when that feature is in the
+// yml, so recommending it here would be redundant. See ADR 0016.
+const REPO_HOST_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
+  'github.com': [
+    'github.vscode-pull-request-github',
+    'GitHub.vscode-github-actions',
+  ],
+  'gitlab.com': ['GitLab.gitlab-workflow'],
+};
+
+/**
+ * Extract the bare host from a git repo URL. Handles the three forms
+ * the repo model accepts: `https://host/…`, `scp`-style
+ * `git@host:path`, and `ssh://git@host[:port]/…`. Returns the
+ * lowercased host (no port, no userinfo), or null when none can be
+ * parsed — recommendation lookup just skips a null.
+ */
+export function extractRepoHost(url: string): string | null {
+  // scheme://[user@]host[:port]/path
+  const schemeMatch = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?([^/:]+)/i.exec(url);
+  if (schemeMatch) return schemeMatch[1]!.toLowerCase();
+  // scp-style: [user@]host:path
+  const scpMatch = /^(?:[^@/]+@)?([^/:]+):/.exec(url);
+  if (scpMatch) return scpMatch[1]!.toLowerCase();
+  return null;
+}
+
+/**
+ * Compute the deduped, sorted set of context-derived extension
+ * recommendations for `opts`: one entry per curated service that
+ * declares `vscodeExtensions` (e.g. a DB client when postgres/mysql/
+ * redis is present), plus the host-specific extensions for each repo.
+ * Feature-bound extensions are NOT included — features auto-install
+ * their own via the manifest. See ADR 0016.
+ */
+export function computeExtensionRecommendations(opts: CreateOptions): string[] {
+  const recs = new Set<string>();
+  for (const svc of opts.services) {
+    const catalogEntry = SERVICE_CATALOG[svc.name];
+    for (const ext of catalogEntry?.vscodeExtensions ?? []) {
+      recs.add(ext);
+    }
+  }
+  for (const repo of opts.repos ?? []) {
+    const host = extractRepoHost(repo.url);
+    if (!host) continue;
+    for (const ext of REPO_HOST_EXTENSIONS[host] ?? []) {
+      recs.add(ext);
+    }
+  }
+  return [...recs].sort((a, b) => a.localeCompare(b));
 }
 
 /**
  * The `<name>.code-workspace` file VS Code uses to open the solution as
- * a multi-root workspace. The first entry is `.` so the workspace root
- * (with its system dotfolders) stays visible in the Explorer. Each
- * repo added via `monoceros add-repo` appears as a sibling root
- * pointing at `projects/<name>/`.
+ * a multi-root workspace. The first entry is `.` (labelled with a
+ * generic root name) so the workspace root stays available in the
+ * Explorer. Each repo added via `monoceros add-repo` appears as a
+ * sibling root pointing at `projects/<name>/`. Context-derived
+ * extension recommendations (DB client, repo-host tooling) ride along
+ * under `extensions.recommendations`.
  */
 export function buildCodeWorkspaceJson(opts: CreateOptions): CodeWorkspaceFile {
-  const folders: CodeWorkspaceFolder[] = [{ path: '.' }];
+  const folders: CodeWorkspaceFolder[] = [
+    { path: '.', name: WORKSPACE_ROOT_LABEL },
+  ];
   // Sort repos by path so the Explorer order is deterministic and
   // doesn't depend on insertion order. (Clone order in post-create
   // stays as-added so deps still work.)
@@ -838,7 +983,11 @@ export function buildCodeWorkspaceJson(opts: CreateOptions): CodeWorkspaceFile {
     const label = repo.path.split('/').pop() ?? repo.path;
     folders.push({ path: `projects/${repo.path}`, name: label });
   }
-  return { folders };
+  const recommendations = computeExtensionRecommendations(opts);
+  return {
+    folders,
+    ...(recommendations.length > 0 ? { extensions: { recommendations } } : {}),
+  };
 }
 
 /**
@@ -853,7 +1002,11 @@ export function buildCodeWorkspaceJson(opts: CreateOptions): CodeWorkspaceFile {
  *
  *   - Every folder the builder has in their `folders[]` stays, in
  *     the same order. We don't touch labels or paths the user
- *     already wrote.
+ *     already wrote — with one exception: the workspace-root (`.`)
+ *     label is generator-owned and is filled in when the existing `.`
+ *     entry has no `name` (so a container made before the label
+ *     existed picks it up on re-apply). A deliberate rename of `.` is
+ *     still preserved.
  *   - Any folder from the generator that ISN'T present in the
  *     builder's `folders[]` (matched by `path`) is appended at the
  *     end. That covers the typical case "I just added a new repo via
@@ -862,9 +1015,14 @@ export function buildCodeWorkspaceJson(opts: CreateOptions): CodeWorkspaceFile {
  *     the generator (e.g. yml repo removed) are NOT dropped — the
  *     builder may have kept the folder around on purpose. Cleanup
  *     is a manual edit.
- *   - Top-level fields other than `folders` (e.g. `settings`,
- *     `extensions`, `launch`, `tasks`, `remoteAuthority`) carry
- *     through verbatim.
+ *   - `extensions.recommendations` is unioned: the builder's entries
+ *     stay (in order), generator-derived ones not already present are
+ *     appended, and nothing is auto-removed. Sibling keys like
+ *     `unwantedRecommendations` (the builder's escape hatch to suppress
+ *     a recommendation) carry through verbatim.
+ *   - Top-level fields other than `folders` / `extensions` (e.g.
+ *     `settings`, `launch`, `tasks`, `remoteAuthority`) carry through
+ *     verbatim.
  *   - If `existing` is null / undefined / unparseable / missing
  *     `folders`, the generator output is taken as-is.
  *
@@ -901,12 +1059,107 @@ export function mergeCodeWorkspace(
     if (!existingPaths.has(g.path)) merged.push(g);
   }
 
+  // The workspace-root (`.`) label is generator-owned. The append loop
+  // above never touches an existing `.` entry (its path is already
+  // present), so a container materialized before the label existed —
+  // or any pre-existing file with a bare `{ path: "." }` — would never
+  // pick up the generic name on re-apply. Fill it in here. A *deliberate*
+  // builder rename of `.` is preserved: we only set the name when the
+  // existing entry has none.
+  const generatedRootName = generated.folders.find((f) => f.path === '.')?.name;
+  if (generatedRootName) {
+    const idx = merged.findIndex(
+      (f) => f && typeof f === 'object' && f.path === '.',
+    );
+    if (idx >= 0 && !merged[idx]!.name) {
+      merged[idx] = { ...merged[idx]!, name: generatedRootName };
+    }
+  }
+
   // Top-level pass-through: keep all builder-set keys, overwrite
   // only `folders`. Order: builder's keys first (to keep their
   // structure recognizable on round-trip), then folders.
   const out: Record<string, unknown> = { ...existingObj };
   out.folders = merged;
+
+  // Union `extensions.recommendations`: builder entries first (verbatim
+  // order), generator-only ones appended, deduped. Any other extension
+  // keys the builder set (notably `unwantedRecommendations`) survive via
+  // the `...existingExt` spread. When the generator has no
+  // recommendations, the builder's `extensions` (if any) already passed
+  // through untouched in the spread above.
+  const generatedRecs = generated.extensions?.recommendations ?? [];
+  if (generatedRecs.length > 0) {
+    const existingExtRaw = existingObj.extensions;
+    const existingExt =
+      existingExtRaw &&
+      typeof existingExtRaw === 'object' &&
+      !Array.isArray(existingExtRaw)
+        ? (existingExtRaw as Record<string, unknown>)
+        : {};
+    const existingRecs = Array.isArray(existingExt.recommendations)
+      ? (existingExt.recommendations as unknown[]).filter(
+          (r): r is string => typeof r === 'string',
+        )
+      : [];
+    const existingRecSet = new Set(existingRecs);
+    const mergedRecs = [...existingRecs];
+    for (const r of generatedRecs) {
+      if (!existingRecSet.has(r)) mergedRecs.push(r);
+    }
+    out.extensions = { ...existingExt, recommendations: mergedRecs };
+  }
+
   return out;
+}
+
+// Explorer denoise for the workspace-root (`.`) folder. The root holds
+// the whole materialized scaffold; the builder only cares about a few
+// entries. These globs hide the rest, leaving `home/`, `logs/`,
+// `AGENTS.md`, and `CLAUDE.md` visible. `.vscode` hides itself (the
+// exclude only affects the Explorer view, not whether VS Code reads the
+// settings). This MUST live in a folder-scoped
+// `<root>/.vscode/settings.json` — a workspace-wide `files.exclude` in
+// the `.code-workspace` would also hide these names inside the project
+// repo roots (a repo's own `.gitignore` / `data/`). See ADR 0016.
+const ROOT_DENOISE_EXCLUDES: Readonly<Record<string, boolean>> = {
+  '.devcontainer': true,
+  '.monoceros': true,
+  '.vscode': true,
+  '.gitignore': true,
+  data: true,
+  projects: true,
+  '*.code-workspace': true,
+};
+
+/**
+ * Merge the Monoceros root-denoise `files.exclude` into whatever the
+ * builder may have written into `<root>/.vscode/settings.json`. Pure
+ * function — `writeScaffold` does the I/O.
+ *
+ * Favour-builder, like `mergeCodeWorkspace`: every builder-set top-level
+ * setting is preserved; only `files.exclude` is touched, and even there
+ * the builder's own entries are unioned in (Monoceros keys win on a
+ * literal collision, but a builder adding their own hide survives). A
+ * null / non-object / unparseable `existing` yields just our excludes.
+ */
+export function mergeVscodeSettings(
+  existing: unknown,
+): Record<string, unknown> {
+  const base =
+    existing && typeof existing === 'object' && !Array.isArray(existing)
+      ? (existing as Record<string, unknown>)
+      : {};
+  const existingExclude =
+    base['files.exclude'] &&
+    typeof base['files.exclude'] === 'object' &&
+    !Array.isArray(base['files.exclude'])
+      ? (base['files.exclude'] as Record<string, unknown>)
+      : {};
+  return {
+    ...base,
+    'files.exclude': { ...existingExclude, ...ROOT_DENOISE_EXCLUDES },
+  };
 }
 
 /**
@@ -1036,6 +1289,32 @@ export async function writePostCreateScript(
 }
 
 /**
+ * Write `content` to `filePath` only when it differs from what's already
+ * on disk; returns whether it actually wrote.
+ *
+ * Matters for the devcontainer config files (`devcontainer.json`,
+ * `compose.yaml`): VS Code's Dev Containers extension watches them and
+ * raises a "configuration changed — Rebuild?" prompt on every file
+ * change. An unconditional `writeFile` on each `apply` updates their
+ * mtime even when the generated content is byte-identical, so a repeat
+ * `apply` (or one that changed something unrelated) would keep
+ * triggering that prompt. Skipping the no-op write makes `apply`
+ * idempotent at the filesystem level and keeps VS Code quiet.
+ */
+export async function writeIfChanged(
+  filePath: string,
+  content: string,
+): Promise<boolean> {
+  try {
+    if ((await fs.readFile(filePath, 'utf8')) === content) return false;
+  } catch {
+    // Missing or unreadable — fall through and write it.
+  }
+  await fs.writeFile(filePath, content);
+  return true;
+}
+
+/**
  * Materialize the full devcontainer scaffold for `opts` into
  * `targetDir`. Idempotent overwrite — re-running with different opts
  * produces the new scaffold and overwrites any older files.
@@ -1047,6 +1326,7 @@ export async function writePostCreateScript(
  *   - `.monoceros/.gitignore`
  *   - `projects/.gitkeep`
  *   - `<name>.code-workspace`
+ *   - `.vscode/settings.json` (root-folder Explorer denoise)
  *
  * Does NOT write `README.md` — the README is a once-only stub that
  * `runCreate` produces but `runApplyFromYml` should leave alone (the
@@ -1123,7 +1403,7 @@ export async function writeScaffold(
   );
 
   const devcontainerJson = buildDevcontainerJson(opts, dockerMode);
-  await fs.writeFile(
+  await writeIfChanged(
     path.join(devcontainerDir, 'devcontainer.json'),
     JSON.stringify(devcontainerJson, null, 2) + '\n',
   );
@@ -1177,7 +1457,7 @@ export async function writeScaffold(
 
   const composePath = path.join(devcontainerDir, 'compose.yaml');
   if (needsCompose(opts)) {
-    await fs.writeFile(composePath, buildComposeYaml(opts, dockerMode));
+    await writeIfChanged(composePath, buildComposeYaml(opts, dockerMode));
   } else if (existsSync(composePath)) {
     // Services dropped from the yml — clean up the now-stale file so a
     // later `monoceros start` doesn't pick it up.
@@ -1203,4 +1483,24 @@ export async function writeScaffold(
   const generated = buildCodeWorkspaceJson(opts);
   const merged = mergeCodeWorkspace(existingWorkspace, generated);
   await fs.writeFile(workspacePath, JSON.stringify(merged, null, 2) + '\n');
+
+  // Folder-scoped settings for the workspace-root (`.`) folder: the
+  // `files.exclude` denoise that hides the scaffold and leaves only
+  // `home/`, `logs/`, `AGENTS.md`, `CLAUDE.md` visible. Folder-scoped
+  // (not in the `.code-workspace`) so it doesn't bleed into the project
+  // repo roots — see ADR 0016. Merge so a builder's own settings here
+  // survive a re-apply.
+  const vscodeDir = path.join(targetDir, '.vscode');
+  const settingsPath = path.join(vscodeDir, 'settings.json');
+  let existingSettings: unknown;
+  try {
+    existingSettings = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+  } catch {
+    existingSettings = undefined;
+  }
+  await fs.mkdir(vscodeDir, { recursive: true });
+  await fs.writeFile(
+    settingsPath,
+    JSON.stringify(mergeVscodeSettings(existingSettings), null, 2) + '\n',
+  );
 }

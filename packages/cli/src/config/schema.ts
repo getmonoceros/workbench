@@ -25,6 +25,10 @@ import { z } from 'zod';
 
 const SOLUTION_NAME_RE = /^[A-Za-z0-9._-]+$/;
 const APT_PACKAGE_NAME_RE = /^[a-z0-9][a-z0-9.+-]*$/;
+// Pinned runtime-image version: exact `major.minor.patch` only — no
+// ranges/placeholders (ADR 0017). The image name/registry is a CLI
+// constant; the yml carries just the version.
+const RUNTIME_VERSION_RE = /^\d+\.\d+\.\d+$/;
 // Feature refs are OCI-style:
 //   <registry>/<namespace>/<feature>:<tag>
 // e.g. ghcr.io/devcontainers/features/python:1
@@ -368,6 +372,18 @@ export const SolutionConfigSchema = z.object({
       SOLUTION_NAME_RE,
       "Invalid solution name. Use letters, digits, '.', '_' or '-'.",
     ),
+  // Pinned runtime-image version (ADR 0017). Written by `init`, reused
+  // verbatim by every subsequent `apply` (never auto-bumped), changed
+  // only by `monoceros upgrade`. Optional in the schema so a
+  // pre-pinning yml still parses — `apply` is what enforces its
+  // presence with an actionable hint.
+  runtimeVersion: z
+    .string()
+    .regex(
+      RUNTIME_VERSION_RE,
+      "Invalid runtimeVersion. Expected an exact version like '1.1.0'.",
+    )
+    .optional(),
   languages: z.array(z.string().min(1)).default([]),
   aptPackages: z
     .array(

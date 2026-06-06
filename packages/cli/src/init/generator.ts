@@ -5,7 +5,10 @@ import {
   featureOptionHints,
   wrapToComment as sharedWrapToComment,
 } from './feature-doc.js';
-import { expandCuratedService } from '../create/catalog.js';
+import {
+  DEFAULT_RUNTIME_VERSION,
+  expandCuratedService,
+} from '../create/catalog.js';
 import { renderCustomService, renderServiceObjectBody } from './service-doc.js';
 import { GIT_IDENTITY_VAR } from '../config/env-file.js';
 
@@ -78,6 +81,11 @@ export function generateComposedYml(
   lines.push('');
   lines.push('schemaVersion: 1');
   lines.push(`name: ${name}`);
+  lines.push(
+    '# Pinned runtime image version. Reused on every apply; change it with',
+  );
+  lines.push('# `monoceros upgrade <name> [version]`.');
+  lines.push(`runtimeVersion: ${DEFAULT_RUNTIME_VERSION}`);
   lines.push('');
 
   if (composed.languages.length > 0) {
@@ -165,6 +173,11 @@ export function generateDocumentedYml(
   lines.push('');
   lines.push('schemaVersion: 1');
   lines.push(`name: ${name}`);
+  lines.push(
+    '# Pinned runtime image version. Reused on every apply; change it with',
+  );
+  lines.push('# `monoceros upgrade <name> [version]`.');
+  lines.push(`runtimeVersion: ${DEFAULT_RUNTIME_VERSION}`);
   lines.push('');
 
   if (byCategory.language.length > 0) {

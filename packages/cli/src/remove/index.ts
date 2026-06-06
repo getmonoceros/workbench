@@ -15,6 +15,7 @@ import {
   spawnDocker,
   type DockerExec,
 } from '../devcontainer/compose.js';
+import { ideStateVolumes } from '../create/scaffold.js';
 import { maybeStopProxy } from '../proxy/index.js';
 import { removeDynamicConfig } from '../proxy/dynamic.js';
 
@@ -141,6 +142,16 @@ export async function runRemove(
     logger,
     exec: dockerExec,
   });
+
+  // Remove the per-container VS Code IDE-state named volumes (extensions
+  // + user settings). Unlike the bind-mounted home/ dirs, these live
+  // outside the container directory, so they must be deleted explicitly
+  // or they'd leak after `remove`. `-f` ignores volumes that were never
+  // created; the containers using them are already gone from step 1, so
+  // the volumes are free to delete. Best-effort — a failure here does
+  // not block the rest of the removal.
+  const ideVolumes = ideStateVolumes(opts.name).map((v) => v.volume);
+  await dockerExec(['volume', 'rm', '-f', ...ideVolumes]);
 
   // ── Step 2: optional backup ────────────────────────────────────
   let backupPath: string | null = null;

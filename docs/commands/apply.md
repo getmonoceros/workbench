@@ -12,20 +12,31 @@ monoceros apply <name>
 `monoceros apply` is the step that writes a yml config concretely to
 the filesystem:
 
-1. Reads `$MONOCEROS_HOME/container-configs/<name>.yml`.
+1. Reads `$MONOCEROS_HOME/container-configs/<name>.yml`. The yml must
+   pin a runtime image version (`runtimeVersion:`); apply reuses it
+   verbatim and never bumps it. An unpinned yml is rejected with a hint
+   to run [`monoceros upgrade`](./upgrade.md) (or add `runtimeVersion:`
+   by hand). See [ADR 0017](../adr/0017-per-container-image-pinning.md).
 2. Validates schema (fields, regex constraints) and catalog (do the
    referenced languages/services exist?).
 3. Generates into `$MONOCEROS_HOME/container/<name>/`:
    - `.devcontainer/devcontainer.json`, plus `compose.yaml` if applicable
    - `.devcontainer/post-create.sh`
-   - `<name>.code-workspace`
+   - `<name>.code-workspace` — multi-root workspace; the root folder is
+     labelled `🦄 Monoceros`, and context-derived editor extensions (a DB
+     client when a DB service is present, host tooling for GitHub/GitLab
+     repos) are added as **recommendations** (see ADR 0016)
+   - `.vscode/settings.json` — Explorer denoise for the root folder
+     (hides the scaffold, leaves `home/`, `logs/`, `AGENTS.md`,
+     `CLAUDE.md` visible)
    - `.claude/settings.json`
    - `.monoceros/.gitignore`
    - **`AGENTS.md`** + **`CLAUDE.md`** + **`.monoceros/commands.md`** —
      container briefing for AI tools inside the container (see
      [`docs/ai-tools.md`](../ai-tools.md#container-briefing--agentsmd--claudemd)).
 4. Writes `.monoceros/state.json` with `origin: <name>`,
-   `schemaVersion`, `monocerosCliVersion`, `materializedAt`.
+   `schemaVersion`, `monocerosCliVersion`, `materializedAt`, and
+   `runtimeImage` (the resolved image this apply built against).
 5. Fetches the Git identity host-side (see priority below) and, for
    HTTPS repos, the credentials.
 6. Brings the container up — compose mode with force-remove plus

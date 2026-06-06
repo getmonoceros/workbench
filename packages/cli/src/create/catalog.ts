@@ -21,6 +21,55 @@ const override = process.env.MONOCEROS_BASE_IMAGE_OVERRIDE?.trim();
 export const BASE_IMAGE =
   override && override.length > 0 ? override : DEFAULT_BASE_IMAGE;
 
+// Registry repo for the Monoceros runtime image. The yml pins only a
+// version (ADR 0017); the repo is a CLI constant.
+const RUNTIME_IMAGE_REPO = 'ghcr.io/getmonoceros/monoceros-runtime';
+
+// The runtime version a fresh `monoceros init` pins. Bump in lockstep
+// with a runtime-image release the CLI depends on.
+export const DEFAULT_RUNTIME_VERSION = '1.1.0';
+
+// Minimum runtime version that ships the node-owned `~/.vscode-server`
+// dirs the IDE-state volumes need (ADR 0015). Below this, the scaffold
+// must not emit those volume mounts or the container breaks on start.
+const MIN_RUNTIME_FOR_IDE_VOLUMES = '1.1.0';
+
+/**
+ * Resolve a pinned `runtimeVersion` to a concrete image ref.
+ * `MONOCEROS_BASE_IMAGE_OVERRIDE` (dev) always wins. With no pin we fall
+ * back to the legacy floating major tag (pre-0017 behavior) so an
+ * unpinned yml still yields a usable — if non-reproducible — image;
+ * `apply` is what rejects an unpinned yml. See ADR 0017.
+ */
+export function resolveRuntimeImage(version?: string): string {
+  const ov = process.env.MONOCEROS_BASE_IMAGE_OVERRIDE?.trim();
+  if (ov && ov.length > 0) return ov;
+  if (!version) return `${RUNTIME_IMAGE_REPO}:1`;
+  return `${RUNTIME_IMAGE_REPO}:${version}`;
+}
+
+/** Compare two exact `major.minor.patch` versions: -1 | 0 | 1. */
+export function compareRuntimeVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
+ * Whether the pinned runtime supports the ADR-0015 IDE-state volumes.
+ * False when unpinned (legacy) or below the minimum — those containers
+ * get no IDE volume mounts, so they never break on an image lacking the
+ * node-owned `~/.vscode-server` dirs.
+ */
+export function runtimeSupportsIdeVolumes(version?: string): boolean {
+  if (!version) return false;
+  return compareRuntimeVersions(version, MIN_RUNTIME_FOR_IDE_VOLUMES) >= 0;
+}
+
 export interface LanguageEntry {
   id: string;
   feature: string;
@@ -101,6 +150,14 @@ export interface ServiceEntry {
    * to a port without an extra CLI argument. See ADR 0009.
    */
   defaultPort: number;
+  /**
+   * VS Code extensions to *recommend* (not auto-install) when this
+   * service is present. Written to `extensions.recommendations` in the
+   * generated `.code-workspace`. Unlike feature-bound extensions (which
+   * auto-install via the feature manifest), these are soft, context-
+   * derived suggestions the builder can dismiss. See ADR 0016.
+   */
+  vscodeExtensions?: readonly string[];
 }
 
 // The `monoceros` user/password/db below are deliberate dev-only
@@ -145,6 +202,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
     // https://github.com/docker-library/postgres/pull/1259.
     dataMount: '/var/lib/postgresql',
     defaultPort: 5432,
+    vscodeExtensions: ['cweijan.vscode-database-client2'],
   },
   mysql: {
     id: 'mysql',
@@ -170,6 +228,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
     },
     dataMount: '/var/lib/mysql',
     defaultPort: 3306,
+    vscodeExtensions: ['cweijan.vscode-database-client2'],
   },
   redis: {
     id: 'redis',
@@ -182,6 +241,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
     },
     dataMount: '/data',
     defaultPort: 6379,
+    vscodeExtensions: ['cweijan.vscode-database-client2'],
   },
 };
 

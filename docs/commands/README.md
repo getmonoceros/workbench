@@ -55,18 +55,19 @@ monoceros apply <name>                                    # rebuild, picks up th
 
 ## Create a solution + lifecycle
 
-| Command                                 | Purpose                                               | Docs                                       |
-| --------------------------------------- | ----------------------------------------------------- | ------------------------------------------ |
-| `monoceros init <name> [--with-*=…]`    | Compose config from category flags (or a              | [init.md](./init.md)                       |
-|                                         | documented template when all --with-\* are omitted)   |                                            |
-| `monoceros list-components`             | Show the component catalog                            | [list-components.md](./list-components.md) |
-| `monoceros apply <name>`                | Materialize config + start the container              | [apply.md](./apply.md)                     |
-| `monoceros start <name>`                | Start the devcontainer (`devcontainer up` + services) | [start.md](./start.md)                     |
-| `monoceros stop <name>`                 | Stop compose services, data persists                  | [stop.md](./stop.md)                       |
-| `monoceros status <name>`               | Show compose status                                   | [status.md](./status.md)                   |
-| `monoceros logs <name> [...]`           | Follow compose logs                                   | [logs.md](./logs.md)                       |
-| `monoceros remove <name> [--no-backup]` | Remove the container entirely (backup by default)     | [remove.md](./remove.md)                   |
-| `monoceros restore <backup-path>`       | Restore a container from a remove backup              | [restore.md](./restore.md)                 |
+| Command                                 | Purpose                                                                | Docs                                       |
+| --------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------ |
+| `monoceros init <name> [--with-*=…]`    | Compose config from category flags (or a                               | [init.md](./init.md)                       |
+|                                         | documented template when all --with-\* are omitted)                    |                                            |
+| `monoceros list-components`             | Show the component catalog                                             | [list-components.md](./list-components.md) |
+| `monoceros apply <name>`                | Materialize config + start the container                               | [apply.md](./apply.md)                     |
+| `monoceros upgrade <name> [version]`    | Pin a newer runtime image version + re-apply (`--list` shows versions) | [upgrade.md](./upgrade.md)                 |
+| `monoceros start <name>`                | Start the devcontainer (`devcontainer up` + services)                  | [start.md](./start.md)                     |
+| `monoceros stop <name>`                 | Stop compose services, data persists                                   | [stop.md](./stop.md)                       |
+| `monoceros status <name>`               | Show compose status                                                    | [status.md](./status.md)                   |
+| `monoceros logs <name> [...]`           | Follow compose logs                                                    | [logs.md](./logs.md)                       |
+| `monoceros remove <name> [--no-backup]` | Remove the container entirely (backup by default)                      | [remove.md](./remove.md)                   |
+| `monoceros restore <backup-path>`       | Restore a container from a remove backup                               | [restore.md](./restore.md)                 |
 
 ## Working in the container
 

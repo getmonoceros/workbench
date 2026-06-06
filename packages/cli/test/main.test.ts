@@ -21,6 +21,7 @@ describe('monoceros main command', () => {
       'stop',
       'status',
       'apply',
+      'upgrade',
       'remove',
       'restore',
       'add-service',

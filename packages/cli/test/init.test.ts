@@ -122,6 +122,8 @@ describe('runInit', () => {
     );
     const text = await readFile(result.configPath, 'utf8');
     expect(text).toContain('name: sandbox');
+    // Pinned runtime version (ADR 0017) — written active, not commented.
+    expect(text).toMatch(/^runtimeVersion: \d+\.\d+\.\d+$/m);
     expect(text).toContain('languages:');
     expect(text).toContain('  - node');
     expect(text).toContain('services:');

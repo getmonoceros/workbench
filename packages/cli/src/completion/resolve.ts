@@ -474,6 +474,7 @@ const ALL_COMMANDS = [
   'stop',
   'status',
   'apply',
+  'upgrade',
   'remove',
   'restore',
   'add-service',
@@ -521,6 +522,12 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   apply: {
     positionals: [containerName],
     flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
+  },
+  upgrade: {
+    // First positional is a container name; the second is a version
+    // string (no suggestions — versions live in the registry).
+    positionals: [containerName, () => []],
+    flags: { '--list': { type: 'boolean' } },
   },
   remove: {
     positionals: [containerName],

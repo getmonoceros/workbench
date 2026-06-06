@@ -69,8 +69,22 @@ describe('runApply', () => {
     await rm(home, { recursive: true, force: true });
   });
 
+  // apply now requires a pinned runtimeVersion (ADR 0017). Real ymls
+  // get it from `init`; these test bodies predate the field, so inject
+  // a pin right after `schemaVersion: 1` unless the body sets one
+  // itself. Tests that exercise the unpinned-yml error path use
+  // `writeFile` directly to bypass this.
   async function writeYml(name: string, body: string): Promise<void> {
-    await writeFile(path.join(home, 'container-configs', `${name}.yml`), body);
+    const pinned = body.includes('runtimeVersion:')
+      ? body
+      : body.replace(
+          /^schemaVersion: 1$/m,
+          'schemaVersion: 1\nruntimeVersion: 1.1.0',
+        );
+    await writeFile(
+      path.join(home, 'container-configs', `${name}.yml`),
+      pinned,
+    );
   }
 
   it('materializes into <home>/container/<name>/ by convention', async () => {
@@ -92,7 +106,11 @@ describe('runApply', () => {
       ),
     );
     expect(devcontainer.name).toBe('demo');
-    expect(devcontainer.image).toBe('ghcr.io/getmonoceros/monoceros-runtime:1');
+    // The image is resolved from the pinned runtimeVersion (ADR 0017);
+    // writeYml injects `runtimeVersion: 1.1.0`.
+    expect(devcontainer.image).toBe(
+      'ghcr.io/getmonoceros/monoceros-runtime:1.1.0',
+    );
 
     const state = await readStateFile(expected);
     expect(state?.origin).toBe('demo');
@@ -689,6 +707,9 @@ describe('runApply', () => {
       [
         'schemaVersion: 1',
         'name: dbhost',
+        // Pinned so the IDE-state named volumes are emitted — the test
+        // asserts DB data is NOT among them (ADR 0015/0017 gate).
+        'runtimeVersion: 1.1.0',
         'services:',
         '  - name: postgres',
         '    image: postgres:18',
@@ -713,9 +734,15 @@ describe('runApply', () => {
       '      - ../data/postgres:/var/lib/postgresql',
     );
     expect(composeText).toContain('      - ../data/redis:/data');
-    // The named-volumes top-level section must be gone — that was
-    // the old layout.
-    expect(composeText).not.toMatch(/^volumes:/m);
+    // Service DB data stays on the bind mounts above — never a named
+    // volume. The only top-level `volumes:` are the VS Code IDE-state
+    // volumes (extensions + user settings, ADR 0015); the DB services
+    // must not appear there.
+    const volumesSection = composeText.slice(composeText.indexOf('\nvolumes:'));
+    expect(volumesSection).toContain('monoceros-dbhost-vscode-extensions:');
+    expect(volumesSection).toContain('monoceros-dbhost-vscode-userdata:');
+    expect(volumesSection).not.toContain('postgres');
+    expect(volumesSection).not.toContain('redis');
 
     // Host-side dirs are pre-created so docker doesn't auto-mkdir
     // them as root.
@@ -824,6 +851,8 @@ describe('runApply', () => {
       origin: 'demo',
       monocerosCliVersion: '1.2.3',
       materializedAt: '2026-05-16T10:00:00.000Z',
+      // Resolved from the pin writeYml injects (ADR 0017).
+      runtimeImage: 'ghcr.io/getmonoceros/monoceros-runtime:1.1.0',
     });
   });
 
@@ -877,6 +906,18 @@ describe('runApply', () => {
     await expect(
       runApply({ ...baseRunOpts, name: 'missing', monocerosHome: home }),
     ).rejects.toThrow(/No such config.*missing\.yml/);
+  });
+
+  it('errors on a yml without runtimeVersion (no silent re-image — ADR 0017)', async () => {
+    // Bypass the pin-injecting writeYml helper to get a genuinely
+    // unpinned yml on disk.
+    await writeFile(
+      path.join(home, 'container-configs', 'unpinned.yml'),
+      ['schemaVersion: 1', 'name: unpinned', ''].join('\n'),
+    );
+    await expect(
+      runApply({ ...baseRunOpts, name: 'unpinned', monocerosHome: home }),
+    ).rejects.toThrow(/No runtime pinned.*runtimeVersion/s);
   });
 
   it('errors when the yml fails schema validation', async () => {

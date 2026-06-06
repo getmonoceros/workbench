@@ -30,6 +30,7 @@ import {
 } from '../config/state.js';
 import type { SolutionConfig } from '../config/schema.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
+import { resolveRuntimeImage } from '../create/catalog.js';
 import {
   needsCompose,
   normalizeOptions,
@@ -181,6 +182,20 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   section('Configuration');
 
   const parsed = await readConfig(ymlPath);
+
+  // The runtime image version must be pinned in the yml (ADR 0017). We
+  // never silently adopt a default and re-image an existing container —
+  // an unpinned yml is rejected with an actionable hint. `init` writes
+  // the pin for new containers; pre-pinning ymls are pinned explicitly
+  // or the container is recreated.
+  if (!parsed.config.runtimeVersion) {
+    throw new Error(
+      `No runtime pinned for '${opts.name}': the yml has no 'runtimeVersion'. ` +
+        `Pin it with \`monoceros upgrade ${opts.name} <version>\` (or add ` +
+        `\`runtimeVersion: <version>\` to the yml), then re-apply.`,
+    );
+  }
+
   // Read global defaults early — feature option defaults from
   // `monoceros-config.yml` need to be merged before scaffold codegen,
   // and the git identity logic later in this function also needs the
@@ -410,6 +425,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     buildStateFile({
       origin: opts.name,
       cliVersion: opts.cliVersion,
+      runtimeImage: resolveRuntimeImage(createOpts.runtimeVersion),
       ...(opts.now ? { now: opts.now } : {}),
     }),
   );

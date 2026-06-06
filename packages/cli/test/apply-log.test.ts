@@ -73,8 +73,19 @@ describe('apply log file', () => {
     await rm(home, { recursive: true, force: true });
   });
 
+  // apply requires a pinned runtimeVersion (ADR 0017); inject one after
+  // `schemaVersion: 1` unless the body already sets it.
   async function writeYml(name: string, body: string): Promise<void> {
-    await writeFile(path.join(home, 'container-configs', `${name}.yml`), body);
+    const pinned = body.includes('runtimeVersion:')
+      ? body
+      : body.replace(
+          /^schemaVersion: 1$/m,
+          'schemaVersion: 1\nruntimeVersion: 1.1.0',
+        );
+    await writeFile(
+      path.join(home, 'container-configs', `${name}.yml`),
+      pinned,
+    );
   }
 
   it('writes <container>/logs/apply-<name>-<iso>.log with a header', async () => {
@@ -198,7 +209,7 @@ describe('runApply spinner integration', () => {
   it('engages the spinner: pull warning lands in the log, ✔ ends the section', async () => {
     await writeFile(
       path.join(home, 'container-configs', 'spin.yml'),
-      'schemaVersion: 1\nname: spin\n',
+      'schemaVersion: 1\nruntimeVersion: 1.1.0\nname: spin\n',
     );
     const out = makeProgressOut();
 
@@ -226,7 +237,7 @@ describe('runApply spinner integration', () => {
   it('on failure prints ✘ + tail and the log path', async () => {
     await writeFile(
       path.join(home, 'container-configs', 'boom.yml'),
-      'schemaVersion: 1\nname: boom\n',
+      'schemaVersion: 1\nruntimeVersion: 1.1.0\nname: boom\n',
     );
     const out = makeProgressOut();
 
