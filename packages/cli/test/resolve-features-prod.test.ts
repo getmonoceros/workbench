@@ -56,4 +56,33 @@ describe('resolveFeatures — production path (no workbench checkout)', () => {
       '.claude.json',
     );
   });
+
+  it('builds from local source when MONOCEROS_FEATURES_DIR_OVERRIDE is set', () => {
+    // Even with no checkout, the override points the prod CLI at a
+    // feature-source dir (here the real images/features/) so e2e tests
+    // the BRANCH feature, not the published GHCR artifact.
+    const prev = process.env.MONOCEROS_FEATURES_DIR_OVERRIDE;
+    process.env.MONOCEROS_FEATURES_DIR_OVERRIDE = IMAGES_FEATURES_DIR;
+    try {
+      const resolved = resolveFeatures({
+        name: 'override',
+        languages: [],
+        services: [],
+        features: {
+          'ghcr.io/getmonoceros/monoceros-features/claude-code:1': {},
+        },
+      });
+      const claude = resolved.find((f) => f.localName === 'claude-code');
+      expect(claude).toBeDefined();
+      // Local-source build: relative `./features/<name>` key + recorded
+      // source dir, NOT the GHCR passthrough ref.
+      expect(claude!.devcontainerKey).toBe('./features/claude-code');
+      expect(claude!.localSourceDir).toBe(`${IMAGES_FEATURES_DIR}/claude-code`);
+      expect(claude!.persistentHomePaths).toContain('.claude');
+    } finally {
+      if (prev === undefined)
+        delete process.env.MONOCEROS_FEATURES_DIR_OVERRIDE;
+      else process.env.MONOCEROS_FEATURES_DIR_OVERRIDE = prev;
+    }
+  });
 });

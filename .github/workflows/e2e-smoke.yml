@@ -51,6 +51,15 @@ jobs:
     # if GH_TOKEN were only set on the configure step.
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Build the Monoceros features from THIS branch's source instead
+      # of pulling the last-published GHCR artifacts — the feature-side
+      # analogue of building the runtime image locally below. The
+      # globally-installed (prod) CLI honours this override and copies
+      # the branch feature source into each scenario's
+      # `.devcontainer/features/`, so e2e gates the publish on the
+      # feature code being released, not on a stale one. See
+      # featuresSourceRoot in scaffold.ts.
+      MONOCEROS_FEATURES_DIR_OVERRIDE: ${{ github.workspace }}/images/features
 
     steps:
       - name: Checkout workbench

@@ -339,9 +339,34 @@ interface PersistentHomeFile {
 }
 
 /**
+ * Root directory holding per-feature source dirs
+ * (`<root>/<name>/devcontainer-feature.json`), or null when none is
+ * available. When a root is returned and it contains the feature, the
+ * CLI builds that feature from local source (copied into
+ * `.devcontainer/features/<name>`, referenced as `./features/<name>`)
+ * instead of pulling its published GHCR artifact.
+ *
+ * `MONOCEROS_FEATURES_DIR_OVERRIDE` wins when set — the feature-side
+ * analogue of `MONOCEROS_BASE_IMAGE_OVERRIDE` for the runtime image. It
+ * lets the prod-installed CLI build features from a checkout's
+ * `images/features/`, which is how e2e exercises the BRANCH feature
+ * source rather than the last-published one. With no override we use
+ * the workbench checkout (dev); failing that, null — a plain prod
+ * install then pulls from GHCR. Empty/whitespace-only values are
+ * ignored so an accidentally-blank var doesn't suppress the fallback.
+ */
+function featuresSourceRoot(): string | null {
+  const override = process.env.MONOCEROS_FEATURES_DIR_OVERRIDE?.trim();
+  if (override && override.length > 0) return override;
+  const checkout = workbenchCheckoutRoot();
+  return checkout ? path.join(checkout, 'images', 'features') : null;
+}
+
+/**
  * Compute the feature list for `opts`. Detects Monoceros-owned refs
  * (`ghcr.io/getmonoceros/monoceros-features/<name>:<tag>`) and, if
- * the workbench has the feature on disk, rewrites the key to
+ * a local feature source is available (workbench checkout or
+ * `MONOCEROS_FEATURES_DIR_OVERRIDE`), rewrites the key to
  * `./features/<name>` and records the source for the copy step.
  *
  * Third-party refs and Monoceros refs without a local source pass
@@ -383,15 +408,15 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
       const match = matchMonocerosFeature(rawRef);
       if (match) {
         const name = match.name;
-        // Dev-only fallback: when the CLI is run from a workbench
-        // checkout, prefer the on-disk copy under `images/features/`
-        // so feature edits are testable without a publish. In prod
-        // (npm-installed), `workbenchCheckoutRoot()` returns null
-        // and we fall through to the GHCR-ref passthrough.
-        const checkout = workbenchCheckoutRoot();
-        const localSourceDir = checkout
-          ? path.join(checkout, 'images', 'features', name)
-          : null;
+        // Build from local feature source when one is available: the
+        // workbench checkout under `images/features/` (dev), or the
+        // `MONOCEROS_FEATURES_DIR_OVERRIDE` env (see featuresSourceRoot).
+        // That makes feature edits testable without a publish — it's how
+        // e2e exercises the BRANCH feature source instead of the last
+        // published GHCR artifact. With no source root (plain prod
+        // install) we fall through to the GHCR-ref passthrough.
+        const sourceRoot = featuresSourceRoot();
+        const localSourceDir = sourceRoot ? path.join(sourceRoot, name) : null;
         if (localSourceDir && existsSync(localSourceDir)) {
           const { paths, files } = readPersistentHomeEntries(localSourceDir);
           resolved.push({
