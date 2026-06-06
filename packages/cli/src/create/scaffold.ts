@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import { workbenchCheckoutRoot } from '../config/paths.js';
+import { bundledFeaturesDir, workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 import {
   BUILTIN_LANGUAGES,
@@ -404,6 +404,21 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
           });
           continue;
         }
+        // Prod path: the feature is pulled from GHCR (passthrough ref),
+        // but its persistent-home entries still ship in the CLI bundle
+        // under `features/<name>/` (synced from `images/features/` at
+        // publish). Read them from there so the per-feature home binds
+        // (e.g. `.claude`, `.claude.json`) are emitted — without this,
+        // tool auth/config is not persisted and is lost on every
+        // `apply` rebuild.
+        const { paths, files } = readBundledPersistentHomeEntries(name);
+        resolved.push({
+          devcontainerKey: rawRef,
+          options,
+          persistentHomePaths: paths,
+          persistentHomeFiles: files,
+        });
+        continue;
       }
       resolved.push({
         devcontainerKey: rawRef,
@@ -443,6 +458,26 @@ function readPersistentHomeEntries(localSourceDir: string): {
       paths: filterSubpaths(parsed['x-monoceros']?.persistentHomePaths),
       files: filterFileEntries(parsed['x-monoceros']?.persistentHomeFiles),
     };
+  } catch {
+    return { paths: [], files: [] };
+  }
+}
+
+/**
+ * Prod-path counterpart to `readPersistentHomeEntries`: read a feature's
+ * persistent-home entries from the manifest shipped inside the CLI
+ * bundle (`features/<name>/`, synced from `images/features/` at
+ * publish). Used when the feature is referenced by GHCR ref (no local
+ * checkout source) so the per-feature home binds are still emitted.
+ * Best-effort: returns empty arrays if the bundle root can't be located
+ * or the manifest is missing, never throws.
+ */
+function readBundledPersistentHomeEntries(name: string): {
+  paths: string[];
+  files: PersistentHomeFile[];
+} {
+  try {
+    return readPersistentHomeEntries(path.join(bundledFeaturesDir(), name));
   } catch {
     return { paths: [], files: [] };
   }
