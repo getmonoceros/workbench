@@ -1,9 +1,17 @@
 name: E2E Smoke
 
 # Runs the maintainer-facing e2e suite (getmonoceros/monoceros-e2e)
-# against the CURRENT workbench code on every PR / main push that
-# touches the CLI. Catches regressions before they ever get to
-# release-cli.yml — much cheaper than rolling back an npm publish.
+# against the CURRENT workbench code. Invoked two ways:
+#   - directly on PRs that touch the CLI, and
+#   - as a REUSABLE GATE (workflow_call) from the release-*.yml
+#     pipelines — their `publish` job `needs:` this run, so nothing
+#     reaches npm or GHCR while e2e is red.
+# On main there is deliberately NO direct push trigger: a main push
+# that warrants e2e (CLI / features / runtime) already triggers a
+# release-*.yml, which calls this workflow once. That keeps it to a
+# single e2e run per push instead of a standalone + a gated duplicate.
+# Catching a regression here is much cheaper than rolling back a
+# publish.
 #
 # Why workbench installs from `npm pack` instead of `node dist/bin.js`
 # directly: the install path is what end users hit (npm shim, bin
@@ -12,11 +20,10 @@ name: E2E Smoke
 # 0011. The pack-and-install round trip exercises all of it.
 
 on:
-  push:
-    branches: [main]
-    paths: ['packages/cli/**']
   pull_request:
     paths: ['packages/cli/**']
+  # Reusable gate for the release-*.yml pipelines (see header).
+  workflow_call:
   # Manual trigger for ad-hoc smoke runs (e.g. after a workbench
   # change that didn't touch packages/cli/ but you still want to
   # verify, or right after pushing the workflow itself).

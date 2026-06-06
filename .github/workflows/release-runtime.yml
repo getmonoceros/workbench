@@ -31,9 +31,17 @@ jobs:
   precheck:
     uses: ./.github/workflows/precheck.yml
 
+  # e2e smoke gates the GHCR publish too: no runtime image ships while
+  # the end-to-end suite is red. e2e builds the runtime image from THIS
+  # branch and runs the apply scenarios against it, so this is real
+  # coverage of the image being released, not just a formality.
+  e2e:
+    uses: ./.github/workflows/e2e-smoke.yml
+    secrets: inherit
+
   publish:
     name: build + push runtime image
-    needs: precheck
+    needs: [precheck, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

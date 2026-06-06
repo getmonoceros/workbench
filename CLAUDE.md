@@ -129,3 +129,33 @@ cwd is irrelevant — everything goes through convention.
 
 The workbench is language-agnostic _for the containers built with it_.
 But the workbench codebase itself is TypeScript.
+
+## Release model (READ before touching versions)
+
+**A version bump that lands on `main` IS the release signal. Pushing
+it publishes a new version. There are no tags, no manual buttons — the
+bumped version number is the trigger.** This is intended, not a
+surprise. Treat every version bump as "this will publish on push".
+
+- `packages/cli/package.json` version → `release-cli.yml` publishes to
+  **npm** (`@getmonoceros/workbench`).
+- `images/features/<name>/devcontainer-feature.json` version →
+  `release-features.yml` publishes the feature to **GHCR**.
+- `images/runtime/VERSION` → `release-runtime.yml` builds + pushes the
+  runtime image to **GHCR**.
+
+Each `publish` job only ships a version that isn't already in the
+registry, so re-pushing an unchanged version is a no-op skip.
+
+**Publishing is gated. Nothing reaches npm or GHCR unless BOTH gates
+are green:**
+
+1. `precheck` (lint + typecheck + test + format check), and
+2. `e2e-smoke` (pack + global install + real `monoceros apply`
+   scenarios) — wired as a reusable `workflow_call` that every
+   `release-*.yml` `publish` job `needs:`. A red e2e blocks the
+   publish; it is a hard prerequisite, never a parallel race.
+
+So: do not bump + push expecting to "see if it's good" — pushing a bump
+commits to a release, and the gates either pass and publish or fail and
+block. Verify locally first.

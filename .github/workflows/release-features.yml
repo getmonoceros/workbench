@@ -35,9 +35,20 @@ jobs:
   precheck:
     uses: ./.github/workflows/precheck.yml
 
+  # e2e smoke gates the GHCR publish too: no feature artifact ships
+  # while the end-to-end suite is red. Note e2e installs the CLI from a
+  # packed tarball and pulls features from GHCR at their pinned
+  # versions, so it does NOT build the branch's feature source — for a
+  # feature-only change this is a health gate on the CLI + scenarios,
+  # not a test of the changed feature itself. Proper per-feature e2e
+  # coverage (building features from branch) is a separate follow-up.
+  e2e:
+    uses: ./.github/workflows/e2e-smoke.yml
+    secrets: inherit
+
   publish:
     name: publish updated features
-    needs: precheck
+    needs: [precheck, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

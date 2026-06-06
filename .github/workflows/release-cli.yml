@@ -38,15 +38,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Gate: full lint / typecheck / test / format-check must pass before
+  # Gate 1: full lint / typecheck / test / format-check must pass before
   # anything publishes. Without this, a green publish coexists with a
   # red Precheck (they used to run in parallel on the same push).
   precheck:
     uses: ./.github/workflows/precheck.yml
 
+  # Gate 2: the full end-to-end smoke suite (pack + global install +
+  # real `monoceros apply` scenarios). `publish` needs this, so a red
+  # e2e blocks the npm release — e2e is no longer a parallel race
+  # against publish, it is a hard prerequisite.
+  e2e:
+    uses: ./.github/workflows/e2e-smoke.yml
+    secrets: inherit
+
   publish:
     name: publish @getmonoceros/workbench
-    needs: precheck
+    needs: [precheck, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
