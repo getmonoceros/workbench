@@ -3,6 +3,8 @@
 // reviewable; unknown values are rejected up front rather than passed
 // through to devcontainer / compose.
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { ServiceHealthcheck, ServiceObject } from '../config/schema.js';
 import type { ResolvedService } from './types.js';
 
@@ -25,13 +27,31 @@ export const BASE_IMAGE =
 // version (ADR 0017); the repo is a CLI constant.
 const RUNTIME_IMAGE_REPO = 'ghcr.io/getmonoceros/monoceros-runtime';
 
-// The runtime version a fresh `monoceros init` pins. Bump in lockstep
-// with a runtime-image release the CLI depends on.
-export const DEFAULT_RUNTIME_VERSION = '1.1.0';
+// The runtime version a fresh `monoceros init` pins. SINGLE source of
+// truth: `images/runtime/VERSION` (the same file release-runtime.yml
+// publishes from). tsup substitutes the literal at build time (see
+// tsup.config.ts → `__DEFAULT_RUNTIME_VERSION__`); in dev/test (tsx, no
+// substitution) we read the file from the repo. So a runtime-image bump
+// is a ONE-LINE change in `images/runtime/VERSION` — this is never
+// hand-edited, and `init`'s pin can't drift from the published image.
+declare const __DEFAULT_RUNTIME_VERSION__: string;
+export const DEFAULT_RUNTIME_VERSION: string =
+  typeof __DEFAULT_RUNTIME_VERSION__ === 'string'
+    ? __DEFAULT_RUNTIME_VERSION__
+    : readFileSync(
+        fileURLToPath(
+          new URL('../../../../images/runtime/VERSION', import.meta.url),
+        ),
+        'utf8',
+      ).trim();
 
 // Minimum runtime version that ships the node-owned `~/.vscode-server`
 // dirs the IDE-state volumes need (ADR 0015). Below this, the scaffold
 // must not emit those volume mounts or the container breaks on start.
+// Unlike DEFAULT_RUNTIME_VERSION this is a deliberate, hand-set
+// per-feature gate: it's the version the capability was INTRODUCED in
+// and stays frozen there even as the image moves on. A future
+// image-gated feature gets its own MIN_RUNTIME_FOR_<feature>.
 const MIN_RUNTIME_FOR_IDE_VOLUMES = '1.1.0';
 
 /**

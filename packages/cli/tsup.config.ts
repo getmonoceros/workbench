@@ -23,6 +23,17 @@ const pkgVersion = JSON.parse(
   readFileSync(path.join(here, 'package.json'), 'utf8'),
 ).version as string;
 
+// Runtime image version: SINGLE source of truth is
+// `images/runtime/VERSION` — the same file release-runtime.yml
+// publishes from. We substitute it into `__DEFAULT_RUNTIME_VERSION__`
+// (src/create/catalog.ts) so `monoceros init`'s pin tracks the image
+// automatically. Bump that one file on an image release; neither this
+// config nor catalog.ts is hand-edited for it.
+const runtimeVersion = readFileSync(
+  path.join(here, '..', '..', 'images', 'runtime', 'VERSION'),
+  'utf8',
+).trim();
+
 export default defineConfig({
   entry: ['src/bin.ts'],
   format: ['esm'],
@@ -46,5 +57,6 @@ export default defineConfig({
   // as raw JS expressions, not strings).
   define: {
     __CLI_VERSION__: JSON.stringify(pkgVersion),
+    __DEFAULT_RUNTIME_VERSION__: JSON.stringify(runtimeVersion),
   },
 });
