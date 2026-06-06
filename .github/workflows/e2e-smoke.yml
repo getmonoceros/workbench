@@ -62,6 +62,18 @@ jobs:
       - name: Build workbench
         run: pnpm --filter @getmonoceros/workbench build
 
+      - name: Build runtime image from this branch
+        # The CLI pins new containers to the runtime version in
+        # images/runtime/VERSION (ADR 0017), but that image only
+        # publishes on merge (release-runtime.yml). Build + tag it
+        # locally here so e2e applies resolve the pinned tag from the
+        # local docker image store instead of pulling an unpublished
+        # tag from the registry — and so e2e exercises the runtime image
+        # as it exists ON THIS BRANCH, not the last published one.
+        run: |
+          version=$(tr -d '[:space:]' < images/runtime/VERSION)
+          docker build -t "ghcr.io/getmonoceros/monoceros-runtime:${version}" images/runtime
+
       - name: Install monoceros from packed tarball
         # `npm pack` produces the same tarball release-cli.yml would
         # publish; installing from it locally mimics the end-user
