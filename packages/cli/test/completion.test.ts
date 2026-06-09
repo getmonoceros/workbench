@@ -199,6 +199,28 @@ describe('resolveCompletions', () => {
     expect(r).toEqual([]);
   });
 
+  it('run surfaces --in after the container name', async () => {
+    await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
+    const r = await resolveCompletions(
+      'monoceros run sandbox ',
+      'monoceros run sandbox '.length,
+      { monocerosHome: home },
+    );
+    expect(r).toContain('--in=');
+  });
+
+  it('does not leak run --in into the inner command after `--`', async () => {
+    await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
+    const r = await resolveCompletions(
+      'monoceros run sandbox -- ',
+      'monoceros run sandbox -- '.length,
+      { monocerosHome: home },
+    );
+    // Past `--` we are completing the inner command, not monoceros flags.
+    expect(r).not.toContain('--in=');
+    expect(r).toEqual([]);
+  });
+
   it('init --w suggests the per-category value-flags with trailing `=`', async () => {
     const r = await resolveCompletions(
       'monoceros init demo --w',

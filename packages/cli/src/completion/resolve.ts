@@ -188,6 +188,13 @@ function dispatchCommand(
     return resolveValues(spec.innerArgs, ctx, ctx.current);
   }
 
+  // Post-dash but no inner-arg source (e.g. `run`, where everything
+  // after `--` is a freeform inner command): suggest nothing and let the
+  // shell complete the inner command itself. Without this guard the
+  // command's own flags (e.g. run's `--in`) would leak into the
+  // inner-command slot.
+  if (inPostDash) return [];
+
   // Pre-dash: figure out whether `current` is a value for a flag we
   // started typing, or a fresh positional / flag-name slot.
   return resolvePreDash(spec, preDash, ctx);
@@ -537,7 +544,10 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     },
   },
   shell: { positionals: [containerName] },
-  run: { positionals: [containerName] },
+  run: {
+    positionals: [containerName],
+    flags: { '--in': { type: 'value' } },
+  },
   logs: { positionals: [containerName] },
   start: { positionals: [containerName] },
   stop: { positionals: [containerName] },
