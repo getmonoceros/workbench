@@ -1,9 +1,11 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { monocerosHome } from '../config/paths.js';
+import { readConfig } from '../config/io.js';
 import { loadComponentCatalog } from '../init/components.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
 import { knownLanguages, knownServices } from '../create/catalog.js';
+import { loginCapableServices } from '../login/services.js';
 import { PROVIDER_VALUES, REGEX } from '../config/schema.js';
 
 /**
@@ -351,6 +353,24 @@ async function listContainerNames(ctx: Ctx): Promise<string[]> {
     .sort();
 }
 
+// Login-capable tools in the container named as the first positional of
+// `monoceros login <name> <tool>`. Reads that container's yml; tolerant of
+// a missing/half-written file (returns nothing rather than throwing).
+async function listLoginServices(ctx: Ctx): Promise<string[]> {
+  const after = ctx.prev.slice(2); // drop "monoceros", "login"
+  const name = after.find((t) => !t.startsWith('-'));
+  if (!name) return [];
+  const home = ctx.opts.monocerosHome ?? monocerosHome();
+  const cfgPath = path.join(home, 'container-configs', `${name}.yml`);
+  if (!existsSync(cfgPath)) return [];
+  try {
+    const { config } = await readConfig(cfgPath);
+    return loginCapableServices(config.features.map((f) => f.ref));
+  } catch {
+    return [];
+  }
+}
+
 async function listFeatureComponents(): Promise<string[]> {
   const catalog = await loadComponentCatalog();
   return [...catalog.values()]
@@ -476,6 +496,7 @@ const ALL_COMMANDS = [
   'list-components',
   'shell',
   'run',
+  'login',
   'logs',
   'start',
   'stop',
@@ -548,6 +569,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     positionals: [containerName],
     flags: { '--in': { type: 'value' } },
   },
+  login: { positionals: [containerName, (ctx) => listLoginServices(ctx)] },
   logs: { positionals: [containerName] },
   start: { positionals: [containerName] },
   stop: { positionals: [containerName] },

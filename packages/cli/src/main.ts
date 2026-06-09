@@ -11,6 +11,7 @@ import { completionCommand } from './commands/completion.js';
 import { __completeCommand } from './commands/__complete.js';
 import { initCommand } from './commands/init.js';
 import { listComponentsCommand } from './commands/list-components.js';
+import { loginCommand } from './commands/login.js';
 import { logsCommand } from './commands/logs.js';
 import { portCommand } from './commands/port.js';
 import { removeAptPackagesCommand } from './commands/remove-apt-packages.js';
@@ -43,6 +44,7 @@ export const main = defineCommand({
     'list-components': listComponentsCommand,
     shell: shellCommand,
     run: runCommand,
+    login: loginCommand,
     logs: logsCommand,
     start: startCommand,
     stop: stopCommand,
