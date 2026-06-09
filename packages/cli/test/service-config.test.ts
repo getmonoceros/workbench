@@ -5,6 +5,7 @@ import {
   curatedServiceEnvDefaults,
   deriveServiceName,
   isCuratedService,
+  serviceConnectionEnv,
 } from '../src/create/catalog.js';
 import { buildComposeYaml } from '../src/create/scaffold.js';
 import {
@@ -365,5 +366,93 @@ describe('buildComposeYaml — generic service objects', () => {
     expect(yaml).toContain('  postgres:');
     expect(yaml).toContain('  rustfs:');
     expect(yaml).toContain('    image: rustfs/rustfs:latest');
+  });
+});
+
+describe('serviceConnectionEnv', () => {
+  const pg: ResolvedService = {
+    name: 'postgres',
+    image: 'postgres:18',
+    port: 5432,
+    env: {
+      POSTGRES_USER: 'monoceros',
+      POSTGRES_PASSWORD: 'monoceros',
+      POSTGRES_DB: 'monoceros',
+    },
+    volumes: [],
+  };
+  const redis: ResolvedService = {
+    name: 'redis',
+    image: 'redis:7',
+    port: 6379,
+    env: {},
+    volumes: [],
+  };
+  const mysql: ResolvedService = {
+    name: 'mysql',
+    image: 'mysql:8',
+    port: 3306,
+    env: { MYSQL_ROOT_PASSWORD: 'monoceros', MYSQL_DATABASE: 'monoceros' },
+    volumes: [],
+  };
+  const custom: ResolvedService = {
+    name: 'rustfs',
+    image: 'rustfs/rustfs:latest',
+    port: 9000,
+    env: {},
+    volumes: [],
+  };
+
+  it('derives DATABASE_URL + PG* for postgres', () => {
+    expect(serviceConnectionEnv([pg])).toEqual({
+      PGHOST: 'postgres',
+      PGPORT: '5432',
+      PGUSER: 'monoceros',
+      PGPASSWORD: 'monoceros',
+      PGDATABASE: 'monoceros',
+      DATABASE_URL: 'postgresql://monoceros:monoceros@postgres:5432/monoceros',
+    });
+  });
+
+  it('derives REDIS_URL for redis', () => {
+    expect(serviceConnectionEnv([redis])).toEqual({
+      REDIS_URL: 'redis://redis:6379',
+    });
+  });
+
+  it('skips custom-image services', () => {
+    expect(serviceConnectionEnv([custom])).toEqual({});
+  });
+
+  it('lets postgres win DATABASE_URL when both SQL engines are present', () => {
+    const env = serviceConnectionEnv([mysql, pg]);
+    expect(env.DATABASE_URL).toBe(
+      'postgresql://monoceros:monoceros@postgres:5432/monoceros',
+    );
+    // mysql still contributes its engine-specific vars
+    expect(env.MYSQL_PASSWORD).toBe('monoceros');
+  });
+});
+
+describe('buildComposeYaml — workspace service connection env', () => {
+  it('injects the curated-service connection env onto the workspace service', () => {
+    const services: ResolvedService[] = [
+      {
+        name: 'postgres',
+        image: 'postgres:18',
+        port: 5432,
+        env: {
+          POSTGRES_USER: 'monoceros',
+          POSTGRES_PASSWORD: 'monoceros',
+          POSTGRES_DB: 'monoceros',
+        },
+        volumes: [],
+      },
+    ];
+    const yaml = buildComposeYaml({ ...base, services });
+    expect(yaml).toContain(
+      '      DATABASE_URL: "postgresql://monoceros:monoceros@postgres:5432/monoceros"',
+    );
+    expect(yaml).toContain('      PGHOST: "postgres"');
   });
 });

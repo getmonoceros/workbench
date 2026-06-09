@@ -73,11 +73,13 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('### Services (running on the Docker network)');
     expect(md).toContain('**postgres** — reachable at `postgres:5432`');
     expect(md).toContain('**rustfs** (custom image `rustfs/rustfs:latest`)');
+    // Curated services expose their connection via env vars (postgres here).
     expect(md).toContain(
-      'Credentials for these services are intentionally not stored',
+      'Connection details for the curated services above are already set as',
     );
+    expect(md).toContain('`DATABASE_URL`');
     // Custom-image black-box clause appears only when a custom service exists.
-    expect(md).toContain('black box reachable at the');
+    expect(md).toContain('black box reachable at');
   });
 
   it('omits the custom-image clause when all services are curated', () => {

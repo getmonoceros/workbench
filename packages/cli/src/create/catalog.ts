@@ -347,6 +347,57 @@ export function curatedServiceEnvDefaults(
 }
 
 /**
+ * Connection environment variables to inject into the WORKSPACE container
+ * for curated services, derived from their (already `${VAR}`-resolved)
+ * env + service name + port. Lets the app and the in-container AI agent
+ * connect without anyone knowing or hardcoding the dev-default credentials
+ * — they read `DATABASE_URL` / `REDIS_URL` (and the engine-specific `PG*` /
+ * `MYSQL_*`) instead. These are dev-only defaults inside the isolated
+ * container, not secrets. Custom-image services are skipped (Monoceros
+ * doesn't know their connection shape). `DATABASE_URL` points at the first
+ * SQL database found (postgres wins over mysql when both are present).
+ */
+export function serviceConnectionEnv(
+  services: readonly ResolvedService[],
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const svc of services) {
+    if (!isCuratedService(svc.name)) continue;
+    const host = svc.name;
+    if (svc.name === 'postgres') {
+      const user = svc.env.POSTGRES_USER ?? 'postgres';
+      const pass = svc.env.POSTGRES_PASSWORD ?? '';
+      const db = svc.env.POSTGRES_DB ?? user;
+      const port = svc.port ?? 5432;
+      env.PGHOST = host;
+      env.PGPORT = String(port);
+      env.PGUSER = user;
+      env.PGPASSWORD = pass;
+      env.PGDATABASE = db;
+      // Postgres always wins DATABASE_URL (overrides a mysql one set earlier).
+      env.DATABASE_URL = `postgresql://${user}:${pass}@${host}:${port}/${db}`;
+    } else if (svc.name === 'mysql') {
+      const pass = svc.env.MYSQL_ROOT_PASSWORD ?? '';
+      const db = svc.env.MYSQL_DATABASE ?? '';
+      const port = svc.port ?? 3306;
+      env.MYSQL_HOST = host;
+      env.MYSQL_PORT = String(port);
+      env.MYSQL_USER = 'root';
+      env.MYSQL_PASSWORD = pass;
+      env.MYSQL_DATABASE = db;
+      // Only the fallback when there's no postgres.
+      if (env.DATABASE_URL === undefined) {
+        env.DATABASE_URL = `mysql://root:${pass}@${host}:${port}/${db}`;
+      }
+    } else if (svc.name === 'redis') {
+      const port = svc.port ?? 6379;
+      env.REDIS_URL = `redis://${host}:${port}`;
+    }
+  }
+  return env;
+}
+
+/**
  * Derive a compose service name from an image ref. Takes the last
  * path segment, strips the tag/digest, lowercases and sanitises:
  *   rustfs/rustfs:latest  → rustfs

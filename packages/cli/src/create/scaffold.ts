@@ -10,6 +10,7 @@ import {
   parseLanguageSpec,
   resolveRuntimeImage,
   runtimeSupportsIdeVolumes,
+  serviceConnectionEnv,
 } from './catalog.js';
 import type { CreateOptions } from './types.js';
 
@@ -866,6 +867,17 @@ export function buildComposeYaml(
   // runtime version; declared at the top-level `volumes:` block below.
   for (const v of ideVolumes) {
     lines.push(`      - ${v.volume}:${v.target}`);
+  }
+  // Connection env for curated services (DATABASE_URL / REDIS_URL / PG* …)
+  // so the app and the in-container agent can connect without knowing the
+  // dev-default credentials. Derived from the already-resolved service env.
+  const wsEnv = serviceConnectionEnv(opts.services);
+  const wsEnvKeys = Object.keys(wsEnv);
+  if (wsEnvKeys.length > 0) {
+    lines.push('    environment:');
+    for (const k of wsEnvKeys) {
+      lines.push(`      ${k}: ${composeScalar(wsEnv[k]!)}`);
+    }
   }
   for (const svc of opts.services) {
     // `${VAR}` env values were already resolved against <name>.env in

@@ -4,7 +4,7 @@ import type {
   ResolvedService,
   FeatureOptions,
 } from '../create/types.js';
-import { isCuratedService } from '../create/catalog.js';
+import { isCuratedService, serviceConnectionEnv } from '../create/catalog.js';
 import type { FeatureManifestSummary } from '../init/manifest.js';
 
 /**
@@ -120,22 +120,44 @@ export function generateAgentsMd(input: AgentsMdInput): string {
       lines.push(formatServiceLine(svc));
     }
     lines.push('');
-    lines.push(
-      'Credentials for these services are intentionally not stored in this',
-      'file. If you need to connect from code or from the command line, ask',
-      'the user in the current chat; they will paste the values directly.',
-      'Do not commit credentials provided this way into any file in the',
-      "repo — they belong in the user's `.env` on the host, not in source",
-      'control.',
-    );
+
+    const connEnv = serviceConnectionEnv(input.services);
+    if (Object.keys(connEnv).length > 0) {
+      lines.push(
+        'Connection details for the curated services above are already set as',
+        'environment variables in this container. Read them from the',
+        'environment — do not ask the user for credentials, and do not',
+        'hardcode them:',
+      );
+      lines.push('');
+      if (connEnv.DATABASE_URL !== undefined) {
+        lines.push(
+          '- `DATABASE_URL` — the SQL database. Engine-specific variables are',
+          '  set too (`PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` for',
+          '  Postgres, `MYSQL_*` for MySQL).',
+        );
+      }
+      if (connEnv.REDIS_URL !== undefined) {
+        lines.push('- `REDIS_URL` — Redis.');
+      }
+      lines.push('');
+      lines.push(
+        'These are dev-only defaults for the local container, fine to use',
+        'directly. Prefer reading the variable (e.g. `process.env.DATABASE_URL`)',
+        'over copying its value into code.',
+      );
+    }
+
     const hasCustom = input.services.some((s) => !isCuratedService(s.name));
     if (hasCustom) {
       lines.push('');
       lines.push(
         "For custom-image services, Monoceros does not know the service's",
-        'configuration (env vars, ports beyond the primary one, required',
-        'volumes). Treat such a service as a black box reachable at the',
-        'listed address; if you need more, ask the user.',
+        'configuration or credentials (env vars, ports beyond the primary one,',
+        'required volumes). Treat such a service as a black box reachable at',
+        'the listed address; if you need to connect, ask the user in the',
+        'current chat. Do not commit credentials into the repo — they belong',
+        "in the user's `.env` on the host.",
       );
     }
     lines.push('');
@@ -224,6 +246,55 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     '  DataGrip) to one of the services.',
   );
   lines.push('');
+
+  if (input.ports.length > 0) {
+    lines.push('## Running a long-running server');
+    lines.push('');
+    lines.push(
+      'When you build something that serves on a port (a web app, an API),',
+      'start it as a **detached** background process so it keeps running after',
+      'this session ends. A plain `npm start` (or any foreground start) dies',
+      'the moment the user exits you or closes the terminal — and then',
+      `\`${input.containerName}.localhost\` returns 502 Bad Gateway.`,
+    );
+    lines.push('');
+    lines.push(
+      "Launch it in a new session with `setsid`, using the project's own",
+      'start command, and record the process-group PID + log under the',
+      "container's logs directory:",
+    );
+    lines.push('');
+    lines.push('```');
+    lines.push(
+      `setsid sh -c 'echo $$ >/workspaces/${input.containerName}/logs/<app>.pid; \\`,
+    );
+    lines.push(
+      `  exec <the project's start command> >/workspaces/${input.containerName}/logs/<app>.log 2>&1' </dev/null &`,
+    );
+    lines.push('```');
+    lines.push('');
+    lines.push(
+      'Use whatever start command the project actually uses (`npm start`,',
+      '`./mvnw spring-boot:run`, `python app.py`, `go run .`, …) — do not force',
+      'a language-specific one. `<app>` is a short name you choose.',
+    );
+    lines.push('');
+    lines.push('To stop it, kill the whole process group (also stops children');
+    lines.push('like node under npm or java under maven):');
+    lines.push('');
+    lines.push('```');
+    lines.push(
+      `kill -TERM -$(cat /workspaces/${input.containerName}/logs/<app>.pid)`,
+    );
+    lines.push('```');
+    lines.push('');
+    lines.push(
+      `The user can follow the output with \`monoceros logs ${input.containerName} <app>\``,
+      'on the host. The server must listen on `0.0.0.0` (not `127.0.0.1`) on',
+      'the exposed port, or Traefik cannot reach it.',
+    );
+    lines.push('');
+  }
 
   lines.push('## Command reference');
   lines.push('');
