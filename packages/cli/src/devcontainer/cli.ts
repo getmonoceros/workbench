@@ -82,6 +82,10 @@ export const spawnDevcontainer: DevcontainerSpawn = (
   options = {},
 ) => {
   const binPath = devcontainerCliPath();
+  // Suppress Docker Desktop's "What's next:" CLI hints (e.g. the `docker
+  // debug` advert) from leaking through devcontainer → docker into the
+  // builder's terminal. Nobody asked for them.
+  const env = { ...process.env, DOCKER_CLI_HINTS: 'false' };
   return new Promise((resolve, reject) => {
     if (options.interactive) {
       // Direct inherit — required so the child binary sees a real
@@ -90,6 +94,7 @@ export const spawnDevcontainer: DevcontainerSpawn = (
       // build-time option dumps don't fire on this path).
       const child = spawn(process.execPath, [binPath, ...args], {
         cwd,
+        env,
         stdio: 'inherit',
       });
       child.on('error', reject);
@@ -98,6 +103,7 @@ export const spawnDevcontainer: DevcontainerSpawn = (
     }
     const child = spawn(process.execPath, [binPath, ...args], {
       cwd,
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     if (options.quiet) {

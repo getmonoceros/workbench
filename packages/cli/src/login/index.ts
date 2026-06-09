@@ -202,7 +202,11 @@ async function runClaudeLogin(
       '-lc',
       `export PATH="/workspaces/${name}/${RELAY_DIRNAME}:$PATH"; exec claude`,
     ],
-    { cwd: root, stdio: 'inherit' },
+    {
+      cwd: root,
+      env: { ...process.env, DOCKER_CLI_HINTS: 'false' },
+      stdio: 'inherit',
+    },
   );
 
   const code = await new Promise<number>((resolve) => {
