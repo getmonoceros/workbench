@@ -75,6 +75,37 @@ describe('runInContainer', () => {
     ]);
   });
 
+  it('wraps the command in a cd shell when cwd is set, keeping inner args separate', async () => {
+    const solution = path.join(tmp, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    const calls: string[][] = [];
+    const exitCode = await runInContainer({
+      command: ['claude', '-p', 'build me a thing'],
+      cwd: 'projects',
+      root: solution,
+      spawn: async (args) => {
+        calls.push(args);
+        return 0;
+      },
+    });
+    expect(exitCode).toBe(0);
+    // up call first, then the wrapped exec.
+    expect(calls[1]).toEqual([
+      'exec',
+      '--workspace-folder',
+      solution,
+      '--mount-workspace-git-root=false',
+      'bash',
+      '-lc',
+      'cd -- "$1" && shift && exec "$@"',
+      'bash',
+      'projects',
+      'claude',
+      '-p',
+      'build me a thing',
+    ]);
+  });
+
   it('propagates the inner command exit code', async () => {
     const solution = path.join(tmp, 'demo');
     await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });

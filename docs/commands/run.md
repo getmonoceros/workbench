@@ -33,10 +33,14 @@ Common use cases:
 
 ## Arguments
 
-| Argument   | Meaning                                                                                                                                               |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<name>`   | Container name.                                                                                                                                       |
-| `-- <cmd>` | Everything after `--` is the inner command plus its arguments. The `--` is required so Monoceros doesn't try to interpret flags like `--help` itself. |
+| Argument     | Meaning                                                                                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<name>`     | Container name.                                                                                                                                                                           |
+| `--in <dir>` | Run the inner command in `<dir>` inside the container. Relative to the workspace folder (`/workspaces/<name>`), or absolute. The directory must already exist — `run` does not create it. |
+| `-- <cmd>`   | Everything after `--` is the inner command plus its arguments. The `--` is required so Monoceros doesn't try to interpret flags like `--help` itself.                                     |
+
+Put `--in` (and any other monoceros flag) **before** the `--`; the
+inner command and its arguments go after it.
 
 ## Examples
 
@@ -63,26 +67,45 @@ rovodev run`, and `psql` work exactly as they do in a
 `monoceros shell` session. Exiting the inner command also ends the
 `run` call.
 
-## Shell builtins (`cd`, `export`, ...)
+## Running in a sub-directory (`--in`)
 
-`monoceros run` passes the argument array verbatim to
-`docker exec` — with no shell in between. `cd`, `export`,
-`source`, etc. are bash builtins and not binaries on `$PATH`, so
-they fail with `executable file not found`:
+By default the inner command runs in the workspace folder
+(`/workspaces/<name>`), which holds `.devcontainer/`, `home/`,
+`data/`, and `projects/`. To run somewhere else — typically a project
+under `projects/` — pass `--in`:
 
 ```sh
-$ monoceros run sandbox -- cd projects && claude
-OCI runtime exec failed: exec: "cd": executable file not found
+$ monoceros run sandbox --in projects/web -- pnpm dev
+$ monoceros run sandbox --in projects -- claude -p "scaffold a booking site"
 ```
 
-If you need shell builtins, invoke a shell explicitly:
+`--in` wraps the command in a `cd` for you, so the inner command and
+its arguments stay a plain array — no shell quoting of the arguments
+is needed, even when an argument contains spaces or quotes. The
+directory must already exist; a missing one fails with a clear
+`cd: no such file or directory` instead of running in the wrong place.
+
+## Shell builtins (`cd`, `export`, ...)
+
+For a working directory, prefer `--in` above. For other bash builtins
+(`export`, `source`, pipelines, `&&` chains), note that `monoceros run`
+passes the argument array verbatim to `docker exec` — with no shell in
+between — so the builtins themselves are not binaries on `$PATH` and
+fail with `executable file not found`:
 
 ```sh
-$ monoceros run sandbox -- bash -lc 'cd projects && claude'
+$ monoceros run sandbox -- export FOO=bar && env
+OCI runtime exec failed: exec: "export": executable file not found
+```
+
+If you need a shell, invoke one explicitly:
+
+```sh
+$ monoceros run sandbox -- bash -lc 'export FOO=bar && env'
 ```
 
 The single quotes matter; otherwise your host shell splits the
-`&&` pipeline and `claude` would run on the host side.
+`&&` pipeline and the second half would run on the host side.
 
 ## Related commands
 

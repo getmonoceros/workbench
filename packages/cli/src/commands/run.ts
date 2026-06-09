@@ -18,6 +18,11 @@ export const runCommand = defineCommand({
         'Container name (yml in $MONOCEROS_HOME/container-configs/).',
       required: true,
     },
+    in: {
+      type: 'string',
+      description:
+        'Run the inner command in this directory inside the container (relative to the workspace folder, or absolute). The directory must already exist.',
+    },
   },
   async run({ args }) {
     const command = [...getInnerArgs()];
@@ -31,6 +36,7 @@ export const runCommand = defineCommand({
       const exitCode = await runInContainer({
         root: containerDir(args.name),
         command,
+        ...(args.in ? { cwd: args.in } : {}),
       });
       process.exit(exitCode);
     } catch (err) {
