@@ -7,7 +7,7 @@ import type { CommandDef } from 'citty';
  *   1. It puts `[OPTIONS]` *before* the positional arguments in the
  *      USAGE line. We want positionals first, matching the
  *      `monoceros <command> <containername> [<args> …]` shape
- *      documented in konzept.md and docs/commands/README.md.
+ *      documented in concept.md and the online command reference.
  *   2. It lists all subcommands in a flat pipe-separated USAGE line
  *      (`monoceros init|shell|run|…`) and a flat COMMANDS block.
  *      With 20+ commands that becomes unreadable.

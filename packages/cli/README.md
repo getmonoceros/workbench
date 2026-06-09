@@ -46,7 +46,7 @@ monoceros completion bash > ~/.bash_completion.d/monoceros       # bash
 ```
 
 Full command reference at
-[docs/commands/](https://github.com/getmonoceros/workbench/tree/main/docs/commands).
+[getmonoceros.build/docs](https://getmonoceros.build/docs/).
 
 ## License
 

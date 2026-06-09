@@ -84,21 +84,24 @@ cwd is irrelevant — everything goes through convention.
 1. This file (short overview)
 2. [`docs/concept.md`](docs/concept.md) — the story of the workbench,
    what Monoceros does and explicitly does not do
-3. [`docs/commands/README.md`](docs/commands/README.md) — what the
-   CLI can do today
+3. [getmonoceros.build/docs](https://getmonoceros.build/docs/) — the
+   user-facing command reference (what the CLI can do today)
 
 ## Conventions
 
 - **Everything in the public repo is in English** — commit messages,
   source-code docs (comments, JSDoc), and user docs (README, concept
-  documents, command docs under `docs/commands/`, ADRs). The workbench
-  is a public project with a global audience. (Internal,
-  German-language strategy docs live in the private
+  documents, ADRs). The workbench is a public project with a global
+  audience. (Internal, German-language strategy docs live in the private
   `monoceros-concept` repo — see the local `.claude/CLAUDE.md`.)
-- **One MD file per new CLI command** under `docs/commands/<name>.md`
-  in the same commit as the code, plus a reference in
-  [`docs/commands/README.md`](docs/commands/README.md). Generated
-  solutions point via the README to `/opt/monoceros-workbench/docs/commands/`
+- **Command docs live on the website, not in this repo.** User-facing
+  command documentation is authored as MDX in the `monoceros-web` repo
+  under `src/content/docs/docs/reference/{lifecycle,config,utilities}/`
+  and is updated in the same change as the CLI code. Do **not** recreate
+  a `docs/commands/` here — it was removed to end the double-maintenance,
+  so the docs now have one home: getmonoceros.build/docs. `monoceros
+--help` stays the in-CLI reference and is generated from the citty
+  command definitions, independent of the website.
 - **Context7** is the first stop for external library versions.
   Tools: `mcp__context7__resolve-library-id` and
   `mcp__context7__query-docs`. Never write version numbers from

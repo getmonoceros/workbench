@@ -75,7 +75,7 @@ monoceros apply hello
 monoceros shell hello
 ```
 
-Full command reference under [`docs/commands/`](docs/commands/).
+Full command reference at [getmonoceros.build/docs](https://getmonoceros.build/docs/).
 
 When you first start `claude` in a project under `projects/` inside
 the container, Claude Code asks once for approval of "external
@@ -94,7 +94,7 @@ Completed are the command name (`mono<TAB>` → `monoceros`), subcommands
 (`monoceros <TAB>`) and container names from
 `~/.monoceros/container-configs/` (e.g. `monoceros apply <TAB>`).
 Details and manual re-installation in
-[`docs/commands/completion.md`](docs/commands/completion.md).
+[the completion reference](https://getmonoceros.build/docs/reference/utilities/completion/).
 
 ### 2 — "I'm developing on the workbench"
 
@@ -151,9 +151,9 @@ monoceros shell <name>
 ```
 
 Prefer to curate the yml yourself? The individual fields are explained
-under [`docs/commands/init.md`](docs/commands/init.md), the available
+in [the init reference](https://getmonoceros.build/docs/reference/lifecycle/init/), the available
 components under
-[`pnpm cli list-components`](docs/commands/list-components.md).
+[`pnpm cli list-components`](https://getmonoceros.build/docs/reference/utilities/list-components/).
 
 ## Architecture
 
@@ -196,7 +196,7 @@ Updating or uninstalling the CLI **never** touches this path.
 
 - [`docs/concept.md`](docs/concept.md) — the story of the workbench,
   what Monoceros does and explicitly does not do
-- [`docs/commands/`](docs/commands/) — detail page per CLI command
+- [getmonoceros.build/docs](https://getmonoceros.build/docs/) — user docs: command reference, guides, concepts
 - [`docs/adr/`](docs/adr/) — architecture decisions
 
 ## Contributing

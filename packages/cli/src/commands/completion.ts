@@ -123,8 +123,8 @@ export const completionCommand = defineCommand({
     name: 'completion',
     group: 'tooling',
     // Hidden from `monoceros --help`: the install scripts wire up
-    // completion automatically; manual setup is documented in
-    // docs/commands/completion.md. Still runnable directly.
+    // completion automatically; manual setup is documented at
+    // getmonoceros.build/docs/reference/utilities/completion. Still runnable directly.
     hidden: true,
     description:
       'Print a shell completion script for bash, zsh or PowerShell to stdout. Pipe the output into a file your shell loads at startup. The install scripts (install.sh / install.ps1) call this automatically.',

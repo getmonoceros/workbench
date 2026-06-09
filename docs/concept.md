@@ -3,8 +3,8 @@
 What Monoceros is, what it deliberately is not, and how the workbench
 is built. If you want to understand what Monoceros is for and how the
 pieces fit together, you're in the right place. The concrete commands
-live under [`commands/`](./commands/), the architecture decisions
-under [`adr/`](./adr/).
+live in the [online command reference](https://getmonoceros.build/docs/),
+the architecture decisions under [`adr/`](./adr/).
 
 ## Positioning
 
