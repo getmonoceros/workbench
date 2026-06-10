@@ -1,4 +1,5 @@
 import { startBrowserBridge } from './browser-bridge.js';
+import { preApproveClaudeProject } from './claude-trust.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 import { assertContainerExists } from './shell.js';
 
@@ -77,6 +78,18 @@ export async function runInContainer(
     { quiet: true },
   );
   if (upCode !== 0) return upCode;
+
+  // Pre-approve Claude Code's first-run trust + external-import prompts for the
+  // exact directory we're about to launch in, so the user never faces them and
+  // can't silently disable the briefing by declining the import prompt. No-op
+  // unless the claude-code feature seeded `.claude.json`.
+  if (opts.name) {
+    await preApproveClaudeProject({
+      root: opts.root,
+      name: opts.name,
+      ...(opts.cwd ? { cwd: opts.cwd } : {}),
+    });
+  }
 
   const bridge =
     opts.name && process.stdout.isTTY
