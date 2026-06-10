@@ -82,9 +82,12 @@ export function generateComposedYml(
   lines.push('schemaVersion: 1');
   lines.push(`name: ${name}`);
   lines.push(
-    '# Pinned runtime image version. Reused on every apply; change it with',
+    '# Pinned runtime base image, reused on every apply (never auto-bumped).',
   );
-  lines.push('# `monoceros upgrade <name> [version]`.');
+  lines.push(
+    '# `monoceros upgrade <name>` refreshes the tooling and moves this to the',
+  );
+  lines.push('# latest runtime when a newer one exists.');
   lines.push(`runtimeVersion: ${DEFAULT_RUNTIME_VERSION}`);
   lines.push('');
 
@@ -174,9 +177,12 @@ export function generateDocumentedYml(
   lines.push('schemaVersion: 1');
   lines.push(`name: ${name}`);
   lines.push(
-    '# Pinned runtime image version. Reused on every apply; change it with',
+    '# Pinned runtime base image, reused on every apply (never auto-bumped).',
   );
-  lines.push('# `monoceros upgrade <name> [version]`.');
+  lines.push(
+    '# `monoceros upgrade <name>` refreshes the tooling and moves this to the',
+  );
+  lines.push('# latest runtime when a newer one exists.');
   lines.push(`runtimeVersion: ${DEFAULT_RUNTIME_VERSION}`);
   lines.push('');
 

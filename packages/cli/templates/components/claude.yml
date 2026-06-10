@@ -9,3 +9,8 @@ category: feature
 contributes:
   features:
     - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
+      # Surfaced in the generated yml so it's discoverable/editable.
+      # `auto`: no per-action prompts, no recurring warning. Others:
+      # `ask`, `edits` (auto-accept edits only), `bypass` (skip all).
+      options:
+        permissionMode: auto
