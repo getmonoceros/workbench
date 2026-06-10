@@ -279,10 +279,16 @@ describe('runApply', () => {
         () => null,
       ),
     ).resolves.toBeNull();
-    // The dir itself should exist — readdir succeeds.
-    await expect(
-      (await import('node:fs/promises')).readdir(claudeDir),
-    ).resolves.toEqual([]);
+    // The dir exists and Monoceros has written the default permission mode
+    // into settings.json on apply (claude-code feature present → bypass).
+    const claudeEntries = await (
+      await import('node:fs/promises')
+    ).readdir(claudeDir);
+    expect(claudeEntries).toContain('settings.json');
+    const claudeSettings = JSON.parse(
+      await readFile(path.join(claudeDir, 'settings.json'), 'utf8'),
+    );
+    expect(claudeSettings.permissions.defaultMode).toBe('bypassPermissions');
   });
 
   it('seeds the persistent .claude.json with valid JSON on first apply', async () => {

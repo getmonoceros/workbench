@@ -2,6 +2,7 @@ import { existsSync, readFileSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { bundledFeaturesDir, workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
+import { writeClaudePermissionMode } from './claude-settings.js';
 import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
@@ -1524,6 +1525,13 @@ export async function writeScaffold(
       }
     }
   }
+
+  // Claude Code's default permission mode, derived from the claude-code
+  // feature's `permissionMode` yml option (default `bypass`). Written here
+  // at apply (merged into home/.claude/settings.json) rather than baked into
+  // the feature layer, so a yml change takes effect on the next apply and is
+  // not frozen by the image cache. No-op without the claude-code feature.
+  await writeClaudePermissionMode(targetDir, opts.features);
 
   await writePostCreateScript(devcontainerDir, opts);
 

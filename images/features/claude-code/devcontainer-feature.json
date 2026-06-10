@@ -15,6 +15,12 @@
       "type": "string",
       "default": "",
       "description": "`sk-ant-…` for API auth; empty for OAuth login on first run."
+    },
+    "permissionMode": {
+      "type": "string",
+      "proposals": ["bypass", "ask"],
+      "default": "bypass",
+      "description": "Default Claude permission mode in this container. `bypass` runs without a prompt on every action (reasonable inside the isolated container — the container is the safety boundary); `ask` prompts as usual. Monoceros writes this to ~/.claude/settings.json on apply; override per-project or with a CLI flag."
     }
   },
   "customizations": {
