@@ -133,7 +133,9 @@ async function runClaudeLogin(
   let handledUrl = false;
 
   const onAuthUrl = (authUrl: string): void => {
-    consola.info('Opening the Claude sign-in page in your browser…');
+    // Open the browser silently — do NOT write to the terminal here. Claude
+    // owns the TTY during the interactive login; a parallel write garbles its
+    // output. (Claude already prints its own "opening browser" line.)
     openInBrowser(authUrl);
     const target = parseCallbackTarget(authUrl);
     if (!target) {
@@ -186,10 +188,12 @@ async function runClaudeLogin(
     onAuthUrl(content.trim());
   }, 250);
 
-  // 3. Run Claude's own login interactively, with the relay first on PATH.
-  consola.info(
-    "Starting Claude login. Pick your account in Claude's menu — the browser opens for you, no copying.",
-  );
+  // 3. Run Claude's dedicated `auth login` (relay first on PATH). Unlike bare
+  //    `claude`, it signs in and EXITS instead of dropping into the REPL — so
+  //    the user lands back at their shell, ready to `monoceros run`. It's also
+  //    a focused flow (no theme picker / full TUI), which keeps the output
+  //    clean. The browser opens via our relay; we add nothing to the terminal.
+  consola.info('Logging in to Claude — a browser window will open for you.');
   const child = spawn(
     process.execPath,
     [
@@ -200,7 +204,7 @@ async function runClaudeLogin(
       '--mount-workspace-git-root=false',
       'bash',
       '-lc',
-      `export PATH="/workspaces/${name}/${RELAY_DIRNAME}:$PATH"; exec claude`,
+      `export PATH="/workspaces/${name}/${RELAY_DIRNAME}:$PATH"; exec claude auth login`,
     ],
     {
       cwd: root,
