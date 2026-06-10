@@ -2,12 +2,34 @@ import { spawn } from 'node:child_process';
 import { existsSync, promises as fsp, readFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { parseCallbackTarget } from '../login/services.js';
 import type { DevcontainerSpawn } from './cli.js';
 
 // Dir under the container root (bind-mounted into the workspace) holding the
 // relay `xdg-open` and the captured URL during an interactive session.
 const RELAY_DIRNAME = '.monoceros-bridge';
+
+/**
+ * Parse the localhost callback target out of an OAuth URL. Returns the port +
+ * path of `redirect_uri` when it points at localhost (the loopback-callback
+ * flow used by claude, gh, gcloud, …), or null otherwise (e.g. a remote
+ * paste-code callback). Generic — not tied to any one tool.
+ */
+export function parseCallbackTarget(
+  authUrl: string,
+): { port: number; pathname: string } | null {
+  try {
+    const u = new URL(authUrl);
+    const redirect = u.searchParams.get('redirect_uri');
+    if (!redirect) return null;
+    const r = new URL(redirect);
+    if (r.hostname !== 'localhost' && r.hostname !== '127.0.0.1') return null;
+    const port = Number(r.port);
+    if (!Number.isInteger(port) || port <= 0) return null;
+    return { port, pathname: r.pathname };
+  } catch {
+    return null;
+  }
+}
 
 export interface BrowserBridge {
   /** Container-side dir to prepend to PATH so the relay `xdg-open` is found. */

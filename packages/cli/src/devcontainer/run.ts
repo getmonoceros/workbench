@@ -37,7 +37,12 @@ export function wrapExec(
   const stmts: string[] = [];
   if (opts.pathPrepend) {
     leading.push(opts.pathPrepend);
-    stmts.push(`export PATH="$${leading.length}:$PATH"`);
+    const i = leading.length;
+    // Put the relay's `xdg-open` first on PATH AND point `$BROWSER` at it, so
+    // both conventions (xdg-open lookup, and tools that exec $BROWSER directly)
+    // route through the relay.
+    stmts.push(`export PATH="$${i}:$PATH"`);
+    stmts.push(`export BROWSER="$${i}/xdg-open"`);
   }
   if (opts.cwd) {
     leading.push(opts.cwd);

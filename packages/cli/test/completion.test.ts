@@ -221,32 +221,6 @@ describe('resolveCompletions', () => {
     expect(r).toEqual([]);
   });
 
-  it('login lists login-capable tools of the named container', async () => {
-    await writeFile(
-      path.join(home, 'container-configs', 'box.yml'),
-      'schemaVersion: 1\nname: box\nfeatures:\n  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1\n',
-    );
-    const r = await resolveCompletions(
-      'monoceros login box ',
-      'monoceros login box '.length,
-      { monocerosHome: home },
-    );
-    expect(r).toEqual(['claude']);
-  });
-
-  it('login suggests nothing for a container without a login-capable tool', async () => {
-    await writeFile(
-      path.join(home, 'container-configs', 'plain.yml'),
-      'schemaVersion: 1\nname: plain\nfeatures:\n  - ref: ghcr.io/devcontainers/features/node:1\n',
-    );
-    const r = await resolveCompletions(
-      'monoceros login plain ',
-      'monoceros login plain '.length,
-      { monocerosHome: home },
-    );
-    expect(r).toEqual([]);
-  });
-
   it('init --w suggests the per-category value-flags with trailing `=`', async () => {
     const r = await resolveCompletions(
       'monoceros init demo --w',

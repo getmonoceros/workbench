@@ -159,7 +159,7 @@ describe('wrapExec', () => {
     ).toEqual([
       'bash',
       '-lc',
-      'export PATH="$1:$PATH" && shift && exec "$@"',
+      'export PATH="$1:$PATH" && export BROWSER="$1/xdg-open" && shift && exec "$@"',
       'bash',
       '/workspaces/x/.monoceros-bridge',
       ...cmd,
@@ -175,7 +175,7 @@ describe('wrapExec', () => {
     ).toEqual([
       'bash',
       '-lc',
-      'export PATH="$1:$PATH" && cd -- "$2" && shift 2 && exec "$@"',
+      'export PATH="$1:$PATH" && export BROWSER="$1/xdg-open" && cd -- "$2" && shift 2 && exec "$@"',
       'bash',
       '/workspaces/x/.monoceros-bridge',
       'projects',
