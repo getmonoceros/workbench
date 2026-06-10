@@ -601,6 +601,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     exitCode = await runContainerCycle(targetDir, {
       hasCompose: needsCompose(createOpts),
       ...(opts.rebuild ? { noCache: true } : {}),
+      prewarmImage: resolveRuntimeImage(createOpts.runtimeVersion),
       ...(opts.dockerExec !== undefined ? { dockerExec: opts.dockerExec } : {}),
       ...(opts.devcontainerSpawn !== undefined
         ? { devcontainerSpawn: opts.devcontainerSpawn }

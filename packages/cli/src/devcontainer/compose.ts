@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { Writable } from 'node:stream';
 import { consola } from 'consola';
 import { type DockerExec } from '../proxy/index.js';
 import { createSecretMaskStream } from '../util/mask-secrets.js';
@@ -285,6 +286,15 @@ export interface RunContainerCycleOptions {
   hasCompose: boolean;
   /** Rebuild feature layers from scratch (`--build-no-cache`). See ADR 0018. */
   noCache?: boolean;
+  /** Override the bind-source-retry delay (ms). Test seam; default 500. */
+  bindRetryDelayMs?: number;
+  /**
+   * Image used to "nudge" Docker Desktop's VirtioFS into exposing freshly
+   * created bind sources when an `up` hits "bind source path does not exist"
+   * (typically the resolved runtime image, already pulled). When unset, the
+   * retry still happens but without the nudge.
+   */
+  prewarmImage?: string;
   /**
    * Inject a fake docker exec for tests. Replaces the previous
    * `cleanupSpawn: ComposeSpawn` which fed a bash script to
@@ -309,6 +319,71 @@ export interface RunContainerCycleOptions {
   };
 }
 
+// Docker Desktop on macOS (VirtioFS) does not always make a just-created
+// host directory/file visible to the VM immediately, so a bind mount whose
+// source we created moments earlier in the scaffold can fail with
+// "bind source path does not exist" even though the path is on disk — and it
+// stays stuck (observed >90s) until the VM *touches* the path through a parent
+// mount. So on this error (and nothing else) we run a one-shot "nudge" that
+// mounts the workspace root and stats `home/` (forcing VirtioFS to expose the
+// nested bind sources), then retry the `up`. A non-bind failure returns
+// immediately — we never mask or retry a real error.
+const BIND_SOURCE_MISSING_RE = /bind source path does not exist/i;
+const BIND_RETRY_ATTEMPTS = 3;
+const BIND_RETRY_DELAY_MS = 500;
+
+interface BindRetryOptions {
+  /** Delay after the nudge before retrying (ms). Test seam. */
+  delayMs?: number;
+  /** Nudge VirtioFS to expose the freshly-created bind sources. */
+  onBindRetry?: () => Promise<void>;
+}
+
+/**
+ * Run a single `up` attempt (via `attempt`), capturing its output to detect
+ * the VirtioFS "bind source path does not exist" race; on that error run the
+ * nudge and retry, a few times. `attempt` receives a sink to use as the up's
+ * logSink; we tee it to `baseSink` (the real apply log) so the transcript is
+ * unaffected.
+ */
+async function runUpWithBindRetry(
+  attempt: (logSink: NodeJS.WritableStream) => Promise<number>,
+  baseSink: NodeJS.WritableStream | undefined,
+  logger: { info: (m: string) => void },
+  opts: BindRetryOptions = {},
+): Promise<number> {
+  const delayMs = opts.delayMs ?? BIND_RETRY_DELAY_MS;
+  let code = 0;
+  for (let i = 1; i <= BIND_RETRY_ATTEMPTS; i += 1) {
+    let captured = '';
+    const sink = new Writable({
+      write(chunk, _enc, cb) {
+        captured += chunk.toString();
+        if (baseSink) baseSink.write(chunk);
+        cb();
+      },
+    });
+    code = await attempt(sink);
+    if (code === 0) return 0;
+    if (i < BIND_RETRY_ATTEMPTS && BIND_SOURCE_MISSING_RE.test(captured)) {
+      logger.info(
+        `Bind source not visible yet (Docker Desktop file sync); nudging + retrying… (${i}/${BIND_RETRY_ATTEMPTS - 1})`,
+      );
+      if (opts.onBindRetry) {
+        try {
+          await opts.onBindRetry();
+        } catch {
+          // nudge is best-effort
+        }
+      }
+      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+      continue;
+    }
+    return code;
+  }
+  return code;
+}
+
 /**
  * Container teardown + up for a devcontainer rooted at `root`.
  * Used by `runApply` (apply/index.ts) after writing the scaffold.
@@ -318,6 +393,32 @@ export async function runContainerCycle(
   opts: RunContainerCycleOptions,
 ): Promise<number> {
   const { hasCompose, logger } = opts;
+  const exec = opts.dockerExec ?? spawnDocker;
+
+  // VirtioFS nudge: mount the workspace root and stat `home/` so the VM
+  // exposes the nested home bind sources (see runUpWithBindRetry). `sh`
+  // entrypoint to bypass the runtime image's own entrypoint; best-effort.
+  const onBindRetry = opts.prewarmImage
+    ? async (): Promise<void> => {
+        await exec([
+          'run',
+          '--rm',
+          '--entrypoint',
+          'sh',
+          '--mount',
+          `source=${root},target=/w,type=bind`,
+          opts.prewarmImage as string,
+          '-lc',
+          'ls -laR /w/home >/dev/null 2>&1 || true',
+        ]);
+      }
+    : undefined;
+  const bindRetry: BindRetryOptions = {
+    ...(opts.bindRetryDelayMs !== undefined
+      ? { delayMs: opts.bindRetryDelayMs }
+      : {}),
+    ...(onBindRetry ? { onBindRetry } : {}),
+  };
 
   if (hasCompose) {
     const projectName = composeProjectName(root);
@@ -332,7 +433,6 @@ export async function runContainerCycle(
     // Containers extension is the likely culprit (auto-recreates on
     // container loss); we abort with a clear hint rather than letting
     // `devcontainer up` collide.
-    const exec = opts.dockerExec ?? spawnDocker;
     const filters = [
       `label=com.docker.compose.project=${projectName}`,
       `name=^${projectName}-`,
@@ -359,30 +459,46 @@ export async function runContainerCycle(
       return 1;
     }
 
-    return runStart({
-      root,
-      ...(opts.devcontainerSpawn ? { spawn: opts.devcontainerSpawn } : {}),
-      ...(opts.logSink ? { logSink: opts.logSink } : {}),
-      ...(opts.progressSink ? { progressSink: opts.progressSink } : {}),
-      ...(opts.silent ? { silent: true } : {}),
-      ...(opts.noCache ? { noCache: true } : {}),
+    return runUpWithBindRetry(
+      (logSink) =>
+        runStart({
+          root,
+          ...(opts.devcontainerSpawn ? { spawn: opts.devcontainerSpawn } : {}),
+          logSink,
+          ...(opts.progressSink ? { progressSink: opts.progressSink } : {}),
+          ...(opts.silent ? { silent: true } : {}),
+          ...(opts.noCache ? { noCache: true } : {}),
+          logger,
+        }),
+      opts.logSink,
       logger,
-    });
+      bindRetry,
+    );
   }
 
   logger.info(`Recreating image-mode devcontainer at ${root}…`);
   const spawnFn = opts.devcontainerSpawn ?? spawnDevcontainer;
-  return spawnFn(
-    [
-      'up',
-      '--workspace-folder',
-      root,
-      '--mount-workspace-git-root=false',
-      '--remove-existing-container',
-      ...(opts.noCache ? ['--build-no-cache'] : []),
-    ],
-    root,
-    buildSpawnOptions(opts),
+  return runUpWithBindRetry(
+    (logSink) =>
+      spawnFn(
+        [
+          'up',
+          '--workspace-folder',
+          root,
+          '--mount-workspace-git-root=false',
+          '--remove-existing-container',
+          ...(opts.noCache ? ['--build-no-cache'] : []),
+        ],
+        root,
+        {
+          logSink,
+          ...(opts.progressSink ? { progressSink: opts.progressSink } : {}),
+          ...(opts.silent ? { silent: true } : {}),
+        },
+      ),
+    opts.logSink,
+    logger,
+    bindRetry,
   );
 }
 

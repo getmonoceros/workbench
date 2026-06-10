@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   resolveCompose,
+  runContainerCycle,
   runLogs,
   runStart,
   runStatus,
@@ -196,5 +197,62 @@ describe('compose actions', () => {
       spawn: async () => 5,
     });
     expect(exitCode).toBe(5);
+  });
+});
+
+describe('runContainerCycle — bind-source retry (VirtioFS file-sync race)', () => {
+  const baseOpts = {
+    hasCompose: false as const,
+    bindRetryDelayMs: 0,
+    logger: { info: () => {} },
+  };
+
+  it('retries the up on "bind source path does not exist", then succeeds', async () => {
+    let calls = 0;
+    const code = await runContainerCycle('/root', {
+      ...baseOpts,
+      devcontainerSpawn: async (_args, _cwd, options) => {
+        calls += 1;
+        if (calls === 1) {
+          options?.logSink?.write(
+            'docker: Error response from daemon: invalid mount config for type "bind": bind source path does not exist: /host_mnt/x\n',
+          );
+          return 1;
+        }
+        return 0;
+      },
+    });
+    expect(code).toBe(0);
+    expect(calls).toBe(2);
+  });
+
+  it('does NOT retry a non-bind failure', async () => {
+    let calls = 0;
+    const code = await runContainerCycle('/root', {
+      ...baseOpts,
+      devcontainerSpawn: async (_args, _cwd, options) => {
+        calls += 1;
+        options?.logSink?.write('some other build error\n');
+        return 1;
+      },
+    });
+    expect(code).toBe(1);
+    expect(calls).toBe(1);
+  });
+
+  it('gives up after the bounded attempts if the bind error persists', async () => {
+    let calls = 0;
+    const code = await runContainerCycle('/root', {
+      ...baseOpts,
+      devcontainerSpawn: async (_args, _cwd, options) => {
+        calls += 1;
+        options?.logSink?.write(
+          'bind source path does not exist: /host_mnt/x\n',
+        );
+        return 1;
+      },
+    });
+    expect(code).toBe(1);
+    expect(calls).toBe(3);
   });
 });
