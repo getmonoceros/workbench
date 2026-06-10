@@ -102,6 +102,16 @@ describe('runUpgrade', () => {
     );
   });
 
+  it('prints a summary (tools / base / pruned / recorded)', async () => {
+    await writeFile(ymlPath('demo'), 'schemaVersion: 1\nname: demo\n');
+    await runUpgrade(base({ name: 'demo' }));
+    const summary = messages.find((m) => m.startsWith('success:')) ?? '';
+    expect(summary).toMatch(/tools\s+rebuilt/);
+    expect(summary).toMatch(/base\s+1\.2\.0 \(1 bumped\)/);
+    expect(summary).toMatch(/pruned\s+nothing stale/);
+    expect(summary).toMatch(/recorded\s+\d{4}-\d\d-\d\d \d\d:\d\d UTC/);
+  });
+
   it('pins to the latest published version when none is given', async () => {
     await writeFile(
       ymlPath('demo'),

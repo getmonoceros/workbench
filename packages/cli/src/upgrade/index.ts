@@ -148,19 +148,24 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
   const apply = opts.applyRunner ?? runApply;
   const now = opts.now ?? new Date();
 
-  const finishGlobally = async (): Promise<void> => {
-    await pruneStaleImages({
+  // Prune stale images + stamp the run. Prune stays silent here (no logger) —
+  // the upgrade summary reports the result instead, so it's always visible.
+  const pruneAndStamp = async (): Promise<{
+    removed: number;
+    attempted: number;
+  }> => {
+    const result = await pruneStaleImages({
       home,
       currentContainerNames: new Set(await listContainerNames(home)),
       ...(opts.dockerExec ? { exec: opts.dockerExec } : {}),
-      logger,
     });
     await markUpgraded(now.toISOString(), home);
+    return result;
   };
 
   if (targets.length === 0) {
     logger.info('No containers to upgrade.');
-    await finishGlobally();
+    await pruneAndStamp();
     return 0;
   }
 
@@ -179,6 +184,7 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
   }
 
   let worstExit = 0;
+  let bumped = 0;
   for (const name of targets) {
     const ymlPath = containerConfigPath(name, home);
     if (!existsSync(ymlPath)) continue; // removed mid-run — skip
@@ -186,6 +192,7 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
     const updated = setRuntimeVersion(raw, pinVersion);
     if (updated !== raw) {
       await fs.writeFile(ymlPath, updated);
+      bumped += 1;
       logger.info(`Pinned '${name}' to runtime ${pinVersion}.`);
     }
     logger.info(`Refreshing '${name}' (rebuild — latest tools)…`);
@@ -204,16 +211,35 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
   }
 
   // Prune stale images + stamp the run only when every target succeeded, so a
-  // failed refresh keeps nudging instead of looking done.
+  // failed refresh keeps nudging instead of looking done. Then report what
+  // happened — upgrade is otherwise silent about the prune and the timestamp.
   if (worstExit === 0) {
-    await finishGlobally();
+    const prune = await pruneAndStamp();
     logger.success(
-      opts.name
-        ? `Upgraded '${opts.name}'.`
-        : `Upgraded ${targets.length} container${targets.length === 1 ? '' : 's'}.`,
+      `Upgraded ${opts.name ? `'${opts.name}'` : `${targets.length} container${targets.length === 1 ? '' : 's'}`}\n` +
+        `  tools     rebuilt — latest pulled\n` +
+        `  base      ${pinVersion} ${bumped > 0 ? `(${bumped} bumped)` : '(already latest)'}\n` +
+        `  pruned    ${formatPruneLine(prune)}\n` +
+        `  recorded  ${now.toISOString().slice(0, 16).replace('T', ' ')} UTC`,
     );
   }
   return worstExit;
+}
+
+/** Human-readable prune outcome for the upgrade summary. */
+function formatPruneLine(prune: {
+  removed: number;
+  attempted: number;
+}): string {
+  const gone = prune.attempted - prune.removed;
+  if (prune.attempted === 0) return 'nothing stale';
+  if (prune.removed === 0) {
+    return `0 removed (${gone} stale ${gone === 1 ? 'entry' : 'entries'} already gone)`;
+  }
+  const base = `${prune.removed} image${prune.removed === 1 ? '' : 's'} removed`;
+  return gone > 0
+    ? `${base}, ${gone} stale ${gone === 1 ? 'entry' : 'entries'} cleared`
+    : base;
 }
 
 /** Container config names (`<name>.yml` → `<name>`) under the home. */
