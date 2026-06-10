@@ -16,14 +16,22 @@ set -euo pipefail
 VERSION="${VERSION:-latest}"
 APIKEY="${APIKEY:-}"
 
-echo "[claude-code] installing @anthropic-ai/claude-code@${VERSION}"
+echo "[claude-code] installing @anthropic-ai/claude-code@${VERSION} (as node)"
 
-# Install as root (the feature install scripts always run as root). The
-# binary lands in /usr/local/bin/claude and is callable by every user
-# of the container.
-npm install -g --no-audit --no-fund "@anthropic-ai/claude-code@${VERSION}"
+# Install as the non-root `node` user, NOT root (the feature install
+# script itself runs as root). The base image's npm global prefix
+# (/usr/local/share/npm-global) is owned by `node`, so installing as
+# node leaves the Claude package files node-owned too. That is exactly
+# what lets Claude's runtime self-updater write to them and keep itself
+# current between Monoceros `upgrade`s. Installing as root drops
+# root-owned files into that prefix that the non-root runtime user can
+# never overwrite — the perpetual "Auto-update failed: no write
+# permission to npm prefix" nag, frozen at the build-time version. See
+# ADR 0018.
+runuser -u node -- bash -lc \
+  "npm install -g --no-audit --no-fund '@anthropic-ai/claude-code@${VERSION}'"
 
-claude --version >/dev/null 2>&1 || {
+runuser -u node -- bash -lc 'claude --version' >/dev/null 2>&1 || {
   echo "[claude-code] ERROR: install completed but \`claude\` is not on PATH" >&2
   exit 1
 }
