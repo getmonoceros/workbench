@@ -35,6 +35,7 @@ export const runCommand = defineCommand({
     try {
       const exitCode = await runInContainer({
         root: containerDir(args.name),
+        name: args.name,
         command,
         ...(args.in ? { cwd: args.in } : {}),
       });

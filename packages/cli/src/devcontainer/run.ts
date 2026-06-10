@@ -1,9 +1,16 @@
+import { startBrowserBridge } from './browser-bridge.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 import { assertContainerExists } from './shell.js';
 
 export interface RunInContainerOptions {
   /** Container root: `<MONOCEROS_HOME>/container/<name>/`. */
   root: string;
+  /**
+   * Container name. When set and the session is interactive (a TTY), Monoceros
+   * starts a browser bridge so a tool inside that opens a browser (`claude`,
+   * `gh auth`, …) opens it on the host. Omit to skip the bridge.
+   */
+  name?: string;
   command: string[];
   /**
    * Working directory inside the container for the inner command.
@@ -16,16 +23,38 @@ export interface RunInContainerOptions {
   spawn?: DevcontainerSpawn;
 }
 
-// Run a one-off command inside the named container. Brings the
-// container up if needed (silently — only the inner command's stdio is
-// passed through), then forwards the command verbatim to
-// `devcontainer exec`. The inner command's exit code is propagated.
-//
-// With `cwd`, the command is wrapped in `bash -lc 'cd -- "$1" && shift
-// && exec "$@"'` so it runs in that directory. The command stays a
-// separate argv array through the wrapper, so no shell re-quoting of
-// the inner args is needed (and a failing `cd` aborts before exec,
-// surfacing the missing directory).
+/**
+ * Wrap the inner command in `bash -lc` only when we need to prepend PATH (the
+ * browser-bridge relay dir) and/or change directory. The command stays a
+ * separate argv array passed positionally, so no shell re-quoting of the inner
+ * args is needed. Returns the command unchanged when neither applies.
+ */
+export function wrapExec(
+  command: string[],
+  opts: { pathPrepend?: string; cwd?: string },
+): string[] {
+  const leading: string[] = [];
+  const stmts: string[] = [];
+  if (opts.pathPrepend) {
+    leading.push(opts.pathPrepend);
+    stmts.push(`export PATH="$${leading.length}:$PATH"`);
+  }
+  if (opts.cwd) {
+    leading.push(opts.cwd);
+    stmts.push(`cd -- "$${leading.length}"`);
+  }
+  if (leading.length === 0) return command;
+  const shift = leading.length === 1 ? 'shift' : `shift ${leading.length}`;
+  const script = `${stmts.join(' && ')} && ${shift} && exec "$@"`;
+  return ['bash', '-lc', script, 'bash', ...leading, ...command];
+}
+
+// Run a one-off command inside the named container. Brings the container up if
+// needed (silently — only the inner command's stdio is passed through), then
+// `devcontainer exec`s the command and propagates its exit code. In an
+// interactive (TTY) session a browser bridge is active so an inner tool can
+// open the host browser (see startBrowserBridge); a missing `cwd` directory
+// fails before exec, surfacing it instead of running in the wrong place.
 export async function runInContainer(
   opts: RunInContainerOptions,
 ): Promise<number> {
@@ -44,26 +73,32 @@ export async function runInContainer(
   );
   if (upCode !== 0) return upCode;
 
-  const innerExec = opts.cwd
-    ? [
-        'bash',
-        '-lc',
-        'cd -- "$1" && shift && exec "$@"',
-        'bash',
-        opts.cwd,
-        ...opts.command,
-      ]
-    : opts.command;
+  const bridge =
+    opts.name && process.stdout.isTTY
+      ? await startBrowserBridge({
+          name: opts.name,
+          root: opts.root,
+          spawn: spawnFn,
+        })
+      : null;
 
-  return spawnFn(
-    [
-      'exec',
-      '--workspace-folder',
+  try {
+    const innerExec = wrapExec(opts.command, {
+      ...(bridge ? { pathPrepend: bridge.relayDirInContainer } : {}),
+      ...(opts.cwd ? { cwd: opts.cwd } : {}),
+    });
+    return await spawnFn(
+      [
+        'exec',
+        '--workspace-folder',
+        opts.root,
+        '--mount-workspace-git-root=false',
+        ...innerExec,
+      ],
       opts.root,
-      '--mount-workspace-git-root=false',
-      ...innerExec,
-    ],
-    opts.root,
-    { interactive: true },
-  );
+      { interactive: true },
+    );
+  } finally {
+    if (bridge) await bridge.dispose();
+  }
 }

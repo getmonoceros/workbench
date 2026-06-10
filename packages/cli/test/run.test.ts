@@ -3,7 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { runInContainer } from '../src/devcontainer/run.js';
+import { runInContainer, wrapExec } from '../src/devcontainer/run.js';
 
 describe('runInContainer', () => {
   let tmp: string;
@@ -132,5 +132,54 @@ describe('runInContainer', () => {
     expect(exitCode).toBe(9);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[0]).toBe('up');
+  });
+});
+
+describe('wrapExec', () => {
+  const cmd = ['claude', 'auth', 'login'];
+
+  it('returns the command unchanged when neither pathPrepend nor cwd is set', () => {
+    expect(wrapExec(cmd, {})).toEqual(cmd);
+  });
+
+  it('wraps for cwd only (keeps the inner args separate)', () => {
+    expect(wrapExec(cmd, { cwd: 'projects' })).toEqual([
+      'bash',
+      '-lc',
+      'cd -- "$1" && shift && exec "$@"',
+      'bash',
+      'projects',
+      ...cmd,
+    ]);
+  });
+
+  it('wraps for the browser-bridge PATH prepend only', () => {
+    expect(
+      wrapExec(cmd, { pathPrepend: '/workspaces/x/.monoceros-bridge' }),
+    ).toEqual([
+      'bash',
+      '-lc',
+      'export PATH="$1:$PATH" && shift && exec "$@"',
+      'bash',
+      '/workspaces/x/.monoceros-bridge',
+      ...cmd,
+    ]);
+  });
+
+  it('wraps for both PATH prepend and cwd (order: PATH, then cd, shift 2)', () => {
+    expect(
+      wrapExec(cmd, {
+        pathPrepend: '/workspaces/x/.monoceros-bridge',
+        cwd: 'projects',
+      }),
+    ).toEqual([
+      'bash',
+      '-lc',
+      'export PATH="$1:$PATH" && cd -- "$2" && shift 2 && exec "$@"',
+      'bash',
+      '/workspaces/x/.monoceros-bridge',
+      'projects',
+      ...cmd,
+    ]);
   });
 });
