@@ -95,12 +95,21 @@ NODE_MIN_MAJOR=20
 
 # Detect host OS once so prereq hints can show only the relevant
 # commands. uname -s is POSIX-standard:
-#   Darwin → macOS
-#   Linux  → Linux (also WSL, which is fine — it IS a Linux env)
+#   Darwin → macOS (Docker Desktop)
+#   Linux  → native Linux (Docker Engine) OR WSL (Docker Desktop) — split
+#            because the "daemon not reachable" advice differs: native Linux
+#            gets the docker-group / systemctl hints, WSL gets "start Docker
+#            Desktop" (no docker group / systemctl there).
 #   *      → unknown; fall back to generic doc links
 case "$(uname -s)" in
   Darwin) PLATFORM="macos" ;;
-  Linux)  PLATFORM="linux" ;;
+  Linux)
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+      PLATFORM="wsl"
+    else
+      PLATFORM="linux"
+    fi
+    ;;
   *)      PLATFORM="other" ;;
 esac
 
@@ -202,6 +211,14 @@ Start Docker Desktop:
   open -a Docker
 
 Wait until the whale icon stops animating, then re-run this installer.
+EOF
+      ;;
+    wsl)
+      cat >&2 <<EOF
+
+Start Docker Desktop on Windows and make sure WSL integration is enabled
+for this distro (Docker Desktop → Settings → Resources → WSL integration).
+Wait until it's running, then re-run this installer.
 EOF
       ;;
     linux)
