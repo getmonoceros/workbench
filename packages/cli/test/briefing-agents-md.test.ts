@@ -19,6 +19,8 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('# Monoceros Container — Stack Briefing');
     expect(md).toContain('monoceros apply demo');
     expect(md).toContain('monoceros add-* demo');
+    // The agent must build under projects/, not at the workspace root.
+    expect(md).toContain('Build everything under `/workspaces/demo/projects/`');
   });
 
   it('lists languages with display names and skips section when empty', () => {

@@ -230,8 +230,13 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   lines.push('## Conventions and pitfalls');
   lines.push('');
   lines.push(
-    `- Workspace path: \`/workspaces/${input.containerName}/projects/<repo>/\`.`,
-    '  Cloned repos are git repositories — commit normally.',
+    `- **Build everything under \`/workspaces/${input.containerName}/projects/\`.**`,
+    '  That is the project workspace — create new apps and scaffolding there',
+    '  (e.g. `projects/<app>/`), and `cd` into it before generating files. Do',
+    `  **not** put project files at the workspace root \`/workspaces/${input.containerName}\`:`,
+    '  it holds Monoceros-managed directories (`.devcontainer/`, `home/`,',
+    '  `data/`, `logs/`), not your code. Cloned repos already live at',
+    '  `projects/<repo>/` and are git repositories — commit normally.',
     '- You run as the `node` user. `sudo` is available but its effects do',
     '  not persist across rebuilds.',
     '- A bare `EXPOSE` directive has no effect on host reachability. Ports',
