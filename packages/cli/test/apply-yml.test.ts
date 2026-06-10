@@ -288,7 +288,7 @@ describe('runApply', () => {
     const claudeSettings = JSON.parse(
       await readFile(path.join(claudeDir, 'settings.json'), 'utf8'),
     );
-    expect(claudeSettings.permissions.defaultMode).toBe('bypassPermissions');
+    expect(claudeSettings.permissions.defaultMode).toBe('auto');
   });
 
   it('seeds the persistent .claude.json with valid JSON on first apply', async () => {

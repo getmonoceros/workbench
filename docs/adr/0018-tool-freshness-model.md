@@ -147,6 +147,7 @@ bonus layer for the ones that support it.
 
 - ADR 0017 (per-container image pinning + explicit upgrade) — this ADR
   extends its `upgrade` command and closes its flagged staleness gap.
-- The `claude-code` permission-mode default (`bypassPermissions`) is a
-  separate, smaller change tracked in the backlog, not part of this
-  freshness decision.
+- The `claude-code` permission-mode default (Auto Mode, `permissions.defaultMode:
+auto` — no per-action prompts and no recurring warning; `ask`/`edits`/`bypass`
+  as alternatives) is a separate, smaller change tracked in the backlog, not
+  part of this freshness decision.

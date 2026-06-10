@@ -18,9 +18,9 @@
     },
     "permissionMode": {
       "type": "string",
-      "proposals": ["bypass", "ask"],
-      "default": "bypass",
-      "description": "Default Claude permission mode in this container. `bypass` runs without a prompt on every action (reasonable inside the isolated container — the container is the safety boundary); `ask` prompts as usual. Monoceros writes this to ~/.claude/settings.json on apply; override per-project or with a CLI flag."
+      "proposals": ["auto", "ask", "edits", "bypass"],
+      "default": "auto",
+      "description": "Default Claude permission mode in this container. `auto` = Auto Mode: no per-action prompts and no recurring warning (a background classifier vets actions) — the comfortable default for an isolated container. `ask` prompts as usual; `edits` auto-accepts file edits but prompts for other commands; `bypass` skips all prompts (its one-time warning is pre-accepted). Monoceros writes this to ~/.claude/settings.json on apply; override per-project or with a CLI flag."
     }
   },
   "customizations": {
