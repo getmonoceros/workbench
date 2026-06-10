@@ -150,6 +150,8 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('### Exposed ports');
     expect(md).toContain('3000 (default route) → http://demo.localhost');
     expect(md).toContain('5173 → http://demo-5173.localhost');
+    // Tells the agent it can open the running app on the host browser.
+    expect(md).toContain('xdg-open http://demo.localhost');
   });
 
   it('always emits the @import to the commands reference at the end', () => {

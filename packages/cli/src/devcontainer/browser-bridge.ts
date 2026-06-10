@@ -31,6 +31,20 @@ export function parseCallbackTarget(
   }
 }
 
+/**
+ * Decide whether the freshly-read relay url-file content is a *new* URL to
+ * open. Returns the trimmed URL when it's non-empty and different from the last
+ * one opened (so repeated `xdg-open` calls each relay, but the poller doesn't
+ * re-open the same URL every 250ms), else null.
+ */
+export function nextRelayUrl(
+  content: string,
+  lastOpened: string | null,
+): string | null {
+  const url = content.trim();
+  return url && url !== lastOpened ? url : null;
+}
+
 export interface BrowserBridge {
   /** Container-side dir to prepend to PATH so the relay `xdg-open` is found. */
   relayDirInContainer: string;
@@ -68,10 +82,11 @@ function openInBrowser(url: string): void {
  *
  * Mechanism: install a relay `xdg-open` that writes the URL it's handed to a
  * bind-mounted file (a clean argv, not wrap-corrupted terminal text). While
- * the session runs we watch that file; on a URL we open it on the host. For a
- * localhost OAuth callback we also run a short-lived host listener on the
- * callback port and replay the callback into the container, so the sign-in
- * completes without anyone copying or pasting a code.
+ * the session runs we watch that file; on each new URL we open it on the host
+ * (so a tool can open an OAuth page AND later the running app). For a localhost
+ * OAuth callback we also run a short-lived host listener on the callback port
+ * and replay the callback into the container, so the sign-in completes without
+ * anyone copying or pasting a code.
  *
  * The caller prepends `relayDirInContainer` to the inner command's PATH and
  * calls `dispose()` when the session ends.
@@ -94,7 +109,10 @@ export async function startBrowserBridge(opts: {
   await fsp.chmod(relayScript, 0o755);
 
   const servers: http.Server[] = [];
-  let handled = false;
+  // Last URL we relayed, so repeated `xdg-open` calls each open (not just the
+  // first OAuth one). A tool that opens the running app (`xdg-open
+  // http://<name>.localhost`) should reach the host browser too.
+  let lastOpened: string | null = null;
 
   const onUrl = (url: string): void => {
     // Open silently — never write to the terminal here; the inner tool owns
@@ -131,16 +149,17 @@ export async function startBrowserBridge(opts: {
   };
 
   const poll = setInterval(() => {
-    if (handled || !existsSync(urlFile)) return;
+    if (!existsSync(urlFile)) return;
     let content = '';
     try {
       content = readFileSync(urlFile, 'utf8');
     } catch {
       return;
     }
-    if (!content.trim()) return;
-    handled = true;
-    onUrl(content.trim());
+    const url = nextRelayUrl(content, lastOpened);
+    if (!url) return;
+    lastOpened = url;
+    onUrl(url);
   }, 250);
 
   return {

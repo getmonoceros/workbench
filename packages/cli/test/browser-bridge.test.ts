@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { parseCallbackTarget } from '../src/devcontainer/browser-bridge.js';
+import {
+  nextRelayUrl,
+  parseCallbackTarget,
+} from '../src/devcontainer/browser-bridge.js';
+
+describe('nextRelayUrl', () => {
+  it('relays a new URL, trims, and skips blanks', () => {
+    expect(nextRelayUrl('http://a\n', null)).toBe('http://a');
+    expect(nextRelayUrl('  \n', null)).toBeNull();
+    expect(nextRelayUrl('', 'http://a')).toBeNull();
+  });
+
+  it('skips a repeat of the last URL but relays a changed one', () => {
+    // Same as last → poller must not re-open it every tick.
+    expect(nextRelayUrl('http://a\n', 'http://a')).toBeNull();
+    // A new app-open after an earlier OAuth open → relayed.
+    expect(nextRelayUrl('http://verein.localhost', 'http://oauth')).toBe(
+      'http://verein.localhost',
+    );
+  });
+});
 
 describe('parseCallbackTarget', () => {
   it('extracts port + path from a localhost redirect_uri (loopback callback)', () => {

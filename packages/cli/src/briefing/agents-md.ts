@@ -199,6 +199,13 @@ export function generateAgentsMd(input: AgentsMdInput): string {
       }
     }
     lines.push('');
+    lines.push(
+      'To show the user a running app, open it in their host browser with',
+      `\`xdg-open http://${input.containerName}.localhost\` — Monoceros relays`,
+      'browser-opens from the container to the host machine. Also tell the user',
+      'the URL, so they can open it themselves if no bridge is active.',
+    );
+    lines.push('');
   }
 
   lines.push('## How to extend this container');
