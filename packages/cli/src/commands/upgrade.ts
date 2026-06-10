@@ -4,17 +4,23 @@ import { CLI_VERSION } from '../version.js';
 import { dispatch } from './_dispatch.js';
 
 /**
- * `monoceros upgrade <name> [version]` — change a container's pinned
- * runtime image version and re-apply. The pin lives in the yml and is
- * never bumped by routine `apply` (ADR 0017); this is the deliberate
- * opt-in path. `--list` shows the available versions.
+ * `monoceros upgrade [name] [version]` — refresh tooling (ADR 0018) and,
+ * for the base image, bump the pinned runtime when newer (ADR 0017).
+ * Routine `apply` never refreshes; this is the deliberate opt-in path. It
+ * rebuilds feature layers from scratch so tools re-pull latest, prunes stale
+ * Monoceros-built images, and records the run so `apply` stops nudging.
+ *
+ *   monoceros upgrade            → refresh ALL containers + prune
+ *   monoceros upgrade <name>     → refresh one container (base → latest)
+ *   monoceros upgrade <name> <v> → refresh one container, pin base to <v>
+ *   monoceros upgrade --list     → list available runtime versions
  */
 export const upgradeCommand = defineCommand({
   meta: {
     name: 'upgrade',
     group: 'lifecycle',
     description:
-      'Pin a container to a newer runtime image version and re-apply. `monoceros upgrade <name>` pins to the latest published version; `monoceros upgrade <name> <version>` pins to an exact one; `monoceros upgrade --list` lists available versions.',
+      'Refresh tooling to the latest (rebuilds feature layers, bumps the runtime base when newer) and prune stale Monoceros images. `monoceros upgrade` refreshes all containers; `monoceros upgrade <name>` one; `monoceros upgrade <name> <version>` pins that base version; `monoceros upgrade --list` lists runtime versions.',
   },
   args: {
     name: {

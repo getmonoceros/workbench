@@ -218,6 +218,13 @@ async function runComposeAction(
 export interface StartOptions {
   root: string;
   spawn?: DevcontainerSpawn;
+  /**
+   * Pass `--build-no-cache` to `devcontainer up` so feature install layers
+   * rebuild from scratch and re-pull their latest tools (ADR 0018, used by
+   * `monoceros upgrade`). Only takes effect when the container is (re)created,
+   * which the apply cycle ensures via prior teardown / `--remove-existing-container`.
+   */
+  noCache?: boolean;
   logger?: { info: (message: string) => void };
   /**
    * Forwarded to {@link DevcontainerSpawnOptions.logSink}. See ADR 0013
@@ -246,7 +253,13 @@ export async function runStart(opts: StartOptions): Promise<number> {
   const spawnFn = opts.spawn ?? spawnDevcontainer;
   logger.info(`Bringing devcontainer up at ${opts.root}…`);
   return spawnFn(
-    ['up', '--workspace-folder', opts.root, '--mount-workspace-git-root=false'],
+    [
+      'up',
+      '--workspace-folder',
+      opts.root,
+      '--mount-workspace-git-root=false',
+      ...(opts.noCache ? ['--build-no-cache'] : []),
+    ],
     opts.root,
     buildSpawnOptions(opts),
   );
@@ -270,6 +283,8 @@ interface DevcontainerSpawnOptionsForwarded {
 
 export interface RunContainerCycleOptions {
   hasCompose: boolean;
+  /** Rebuild feature layers from scratch (`--build-no-cache`). See ADR 0018. */
+  noCache?: boolean;
   /**
    * Inject a fake docker exec for tests. Replaces the previous
    * `cleanupSpawn: ComposeSpawn` which fed a bash script to
@@ -350,6 +365,7 @@ export async function runContainerCycle(
       ...(opts.logSink ? { logSink: opts.logSink } : {}),
       ...(opts.progressSink ? { progressSink: opts.progressSink } : {}),
       ...(opts.silent ? { silent: true } : {}),
+      ...(opts.noCache ? { noCache: true } : {}),
       logger,
     });
   }
@@ -363,6 +379,7 @@ export async function runContainerCycle(
       root,
       '--mount-workspace-git-root=false',
       '--remove-existing-container',
+      ...(opts.noCache ? ['--build-no-cache'] : []),
     ],
     root,
     buildSpawnOptions(opts),

@@ -91,6 +91,19 @@ export const MonocerosConfigSchema = z.object({
         ),
     })
     .nullish(),
+  // Tool-freshness settings (ADR 0018). One machine-global knob.
+  upgrade: z
+    .object({
+      staleDays: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(
+          'Days after the last `monoceros upgrade` before `apply` nudges you to refresh tooling. Default 30.',
+        ),
+    })
+    .nullish(),
 });
 
 export type MonocerosConfig = z.infer<typeof MonocerosConfigSchema>;

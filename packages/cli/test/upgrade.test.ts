@@ -76,8 +76,30 @@ describe('runUpgrade', () => {
       'runtimeVersion: 1.2.0',
     );
     expect(appliedWith).toEqual([
-      { name: 'demo', cliVersion: '9.9.9', monocerosHome: home },
+      { name: 'demo', cliVersion: '9.9.9', monocerosHome: home, rebuild: true },
     ]);
+  });
+
+  it('refreshes ALL containers (rebuild) and stamps the run when no name is given', async () => {
+    await writeFile(ymlPath('alpha'), 'schemaVersion: 1\nname: alpha\n');
+    await writeFile(ymlPath('beta'), 'schemaVersion: 1\nname: beta\n');
+    const code = await runUpgrade(
+      base({ now: new Date('2026-06-10T00:00:00.000Z') }),
+    );
+    expect(code).toBe(0);
+    expect(appliedWith.map((o) => o.name).sort()).toEqual(['alpha', 'beta']);
+    expect(appliedWith.every((o) => o.rebuild === true)).toBe(true);
+    // Last-upgrade timestamp recorded in machine state.
+    const state = JSON.parse(
+      await readFile(path.join(home, '.machine-state.json'), 'utf8'),
+    );
+    expect(state.lastUpgradeAt).toBe('2026-06-10T00:00:00.000Z');
+  });
+
+  it('refuses a version without a name (cannot pin a base globally)', async () => {
+    await expect(runUpgrade(base({ version: '1.2.0' }))).rejects.toThrow(
+      /only be pinned for one container/,
+    );
   });
 
   it('pins to the latest published version when none is given', async () => {

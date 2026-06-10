@@ -88,6 +88,20 @@ describe('compose actions', () => {
     ]);
   });
 
+  it('runStart adds --build-no-cache when noCache is set', async () => {
+    const calls: string[][] = [];
+    await runStart({
+      root: solution,
+      noCache: true,
+      logger: { info: () => {} },
+      spawn: async (args) => {
+        calls.push(args);
+        return 0;
+      },
+    });
+    expect(calls[0]).toContain('--build-no-cache');
+  });
+
   it('runStart refuses without compose.yaml', async () => {
     const bare = path.join(tmp, 'image-only');
     await fs.mkdir(path.join(bare, '.devcontainer'), { recursive: true });

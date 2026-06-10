@@ -51,6 +51,13 @@ import { buildApplySummary, formatApplySummary } from './apply-summary.js';
 import { writeBriefing } from '../briefing/index.js';
 import { loadComponentCatalog } from '../init/components.js';
 import { type DockerExec, runContainerCycle } from '../devcontainer/compose.js';
+import { resolveContainerImageId } from '../devcontainer/images.js';
+import {
+  DEFAULT_UPGRADE_STALE_DAYS,
+  readMachineState,
+  recordBuiltImage,
+  upgradeNudge,
+} from '../config/machine-state.js';
 import {
   type CredentialsSpawn,
   collectGitCredentials,
@@ -66,6 +73,7 @@ import {
 import { type DevcontainerSpawn } from '../devcontainer/cli.js';
 import {
   ensureProxy,
+  defaultDockerExec,
   type DockerExec as ProxyDockerExec,
 } from '../proxy/index.js';
 import { removeDynamicConfig, writeDynamicConfig } from '../proxy/dynamic.js';
@@ -107,6 +115,13 @@ export interface RunApplyOptions {
   /** Override of the user-data home. Tests inject a tmpdir. */
   monocerosHome?: string;
   now?: Date;
+  /**
+   * Rebuild feature layers from scratch (`--build-no-cache`), so feature
+   * tools re-pull their latest versions instead of reusing the frozen cached
+   * layer. Set by `monoceros upgrade`; a routine `apply` leaves it false and
+   * uses the cache. See ADR 0018.
+   */
+  rebuild?: boolean;
   /**
    * When true, stream the raw `@devcontainers/cli` output to stderr
    * exactly like before ADR 0013 step 2 — no spinner, no phase
@@ -585,6 +600,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
     exitCode = await runContainerCycle(targetDir, {
       hasCompose: needsCompose(createOpts),
+      ...(opts.rebuild ? { noCache: true } : {}),
       ...(opts.dockerExec !== undefined ? { dockerExec: opts.dockerExec } : {}),
       ...(opts.devcontainerSpawn !== undefined
         ? { devcontainerSpawn: opts.devcontainerSpawn }
@@ -624,6 +640,38 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         const formatted = formatApplySummary(summaryLines);
         progressOut.write(`\n${formatted}\n`);
         applyLog.stream.write(`\n${stripAnsi(formatted)}\n`);
+      }
+
+      // Record the image this apply built, so the upgrade prune can later
+      // remove stale builds of this container — and never touch any image
+      // Monoceros didn't record (ADR 0018). Best-effort: a docker hiccup here
+      // must not fail an otherwise-successful apply.
+      const now = opts.now ?? new Date();
+      try {
+        const imageId = await resolveContainerImageId(
+          targetDir,
+          opts.dockerExec ?? defaultDockerExec,
+        );
+        if (imageId) {
+          await recordBuiltImage(
+            { imageId, container: opts.name, builtAt: now.toISOString() },
+            home,
+          );
+        }
+      } catch {
+        // ignore — recording is an optimization, not a correctness step
+      }
+
+      // Staleness nudge: when the last `monoceros upgrade` is older than the
+      // threshold, remind the builder (non-blocking). Silent if no upgrade has
+      // ever run — a freshly-built container is current by definition.
+      const nudge = upgradeNudge(
+        await readMachineState(home),
+        now,
+        globalConfig?.upgrade?.staleDays ?? DEFAULT_UPGRADE_STALE_DAYS,
+      );
+      if (nudge) {
+        progressOut.write(`\n  ${dim(nudge)}\n`);
       }
     }
 
