@@ -3,10 +3,12 @@ import { consola } from 'consola';
 import {
   containerConfigPath,
   containerConfigsDir,
+  containerDir,
   monocerosHome as defaultMonocerosHome,
 } from '../config/paths.js';
 import { markUpgraded } from '../config/machine-state.js';
 import { compareRuntimeVersions } from '../create/catalog.js';
+import { isWorkspaceRunning, spawnDocker } from '../devcontainer/compose.js';
 import { type DockerExec } from '../proxy/index.js';
 import { pruneStaleImages } from './prune.js';
 import {
@@ -141,12 +143,30 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
     );
   }
 
-  // `upgrade <name>` targets one container; bare `upgrade` is global —
-  // refresh everything in use. Prune + the staleness timestamp are global
-  // either way (ADR 0018).
-  const targets = opts.name ? [opts.name] : await listContainerNames(home);
   const apply = opts.applyRunner ?? runApply;
+  const exec = opts.dockerExec ?? spawnDocker;
   const now = opts.now ?? new Date();
+
+  // `upgrade <name>` targets that one container explicitly (the builder named
+  // it, so applying/starting it is intended). Bare `upgrade` is global, but
+  // must refresh ONLY currently-running containers — re-applying every config
+  // would start stopped containers and materialize never-applied ones, which
+  // is an unwanted side effect. Stopped / not-yet-built configs are skipped
+  // with a hint. (Prune + the staleness timestamp stay global either way.)
+  let targets: string[];
+  const skipped: string[] = [];
+  if (opts.name) {
+    targets = [opts.name];
+  } else {
+    targets = [];
+    for (const name of await listContainerNames(home)) {
+      if (await isWorkspaceRunning(containerDir(name, home), exec)) {
+        targets.push(name);
+      } else {
+        skipped.push(name);
+      }
+    }
+  }
 
   // Prune stale images + stamp the run. Prune stays silent here (no logger) —
   // the upgrade summary reports the result instead, so it's always visible.
@@ -157,14 +177,21 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
     const result = await pruneStaleImages({
       home,
       currentContainerNames: new Set(await listContainerNames(home)),
-      ...(opts.dockerExec ? { exec: opts.dockerExec } : {}),
+      exec,
     });
     await markUpgraded(now.toISOString(), home);
     return result;
   };
 
   if (targets.length === 0) {
-    logger.info('No containers to upgrade.');
+    logger.info(
+      opts.name
+        ? 'Nothing to upgrade.'
+        : skipped.length > 0
+          ? `No running containers to refresh (${skipped.length} not running: ${skipped.join(', ')}). ` +
+            'Start one, or refresh it with `monoceros upgrade <name>`.'
+          : 'No running containers to refresh.',
+    );
     await pruneAndStamp();
     return 0;
   }
@@ -216,10 +243,13 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
   if (worstExit === 0) {
     const prune = await pruneAndStamp();
     logger.success(
-      `Upgraded ${opts.name ? `'${opts.name}'` : `${targets.length} container${targets.length === 1 ? '' : 's'}`}\n` +
+      `Upgraded ${opts.name ? `'${opts.name}'` : `${targets.length} running container${targets.length === 1 ? '' : 's'}`}\n` +
         `  tools     rebuilt — latest pulled\n` +
         `  base      ${pinVersion} ${bumped > 0 ? `(${bumped} bumped)` : '(already latest)'}\n` +
         `  pruned    ${formatPruneLine(prune)}\n` +
+        (skipped.length > 0
+          ? `  skipped   ${skipped.length} not running (${skipped.join(', ')})\n`
+          : '') +
         `  recorded  ${now.toISOString().slice(0, 16).replace('T', ' ')} UTC`,
     );
   }

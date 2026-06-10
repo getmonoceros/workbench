@@ -8,6 +8,15 @@ import {
   type UpgradeOptions,
 } from '../src/upgrade/index.js';
 import type { RunApplyOptions, RunApplyResult } from '../src/apply/index.js';
+import type { DockerExec } from '../src/proxy/index.js';
+
+/** Reports every `docker ps` query as running; everything else ok. */
+const runningExec: DockerExec = (args) =>
+  Promise.resolve(
+    args[0] === 'ps'
+      ? { stdout: 'cid123\n', stderr: '', exitCode: 0 }
+      : { stdout: '', stderr: '', exitCode: 0 },
+  );
 
 describe('setRuntimeVersion', () => {
   it('replaces an existing runtimeVersion line, preserving the rest', () => {
@@ -84,7 +93,10 @@ describe('runUpgrade', () => {
     await writeFile(ymlPath('alpha'), 'schemaVersion: 1\nname: alpha\n');
     await writeFile(ymlPath('beta'), 'schemaVersion: 1\nname: beta\n');
     const code = await runUpgrade(
-      base({ now: new Date('2026-06-10T00:00:00.000Z') }),
+      base({
+        now: new Date('2026-06-10T00:00:00.000Z'),
+        dockerExec: runningExec,
+      }),
     );
     expect(code).toBe(0);
     expect(appliedWith.map((o) => o.name).sort()).toEqual(['alpha', 'beta']);
@@ -94,6 +106,29 @@ describe('runUpgrade', () => {
       await readFile(path.join(home, '.machine-state.json'), 'utf8'),
     );
     expect(state.lastUpgradeAt).toBe('2026-06-10T00:00:00.000Z');
+  });
+
+  it('global upgrade refreshes only running containers, skips stopped/unbuilt', async () => {
+    await writeFile(ymlPath('alpha'), 'schemaVersion: 1\nname: alpha\n');
+    await writeFile(ymlPath('beta'), 'schemaVersion: 1\nname: beta\n');
+    // Only alpha is running (its containerDir path appears in the ps filter).
+    const partialExec: DockerExec = (args) => {
+      if (args[0] === 'ps') {
+        const filter = args.find((a) => a.includes('local_folder')) ?? '';
+        const running = filter.endsWith('/alpha');
+        return Promise.resolve({
+          stdout: running ? 'cid\n' : '',
+          stderr: '',
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+    };
+    const code = await runUpgrade(base({ dockerExec: partialExec }));
+    expect(code).toBe(0);
+    expect(appliedWith.map((o) => o.name)).toEqual(['alpha']);
+    const summary = messages.find((m) => m.startsWith('success:')) ?? '';
+    expect(summary).toMatch(/skipped\s+1 not running \(beta\)/);
   });
 
   it('refuses a version without a name (cannot pin a base globally)', async () => {

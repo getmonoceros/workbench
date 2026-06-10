@@ -95,6 +95,27 @@ export async function findContainerIds(
   return [...ids];
 }
 
+/**
+ * True when the devcontainer workspace rooted at `root` has a RUNNING
+ * container. The devcontainer CLI labels the workspace container with
+ * `devcontainer.local_folder=<workspace path>`; we query running containers
+ * (no `-a`) carrying that label. Used by global `monoceros upgrade` to refresh
+ * only live containers — never to start a stopped one or materialize a config
+ * that was only `init`-ed.
+ */
+export async function isWorkspaceRunning(
+  root: string,
+  exec: DockerExec = spawnDocker,
+): Promise<boolean> {
+  const result = await exec([
+    'ps',
+    '-q',
+    '--filter',
+    `label=devcontainer.local_folder=${root}`,
+  ]);
+  return result.exitCode === 0 && result.stdout.trim().length > 0;
+}
+
 export interface CleanupDockerObjectsOptions {
   /** Display name in log lines (`[cleanup] tearing down docker project <projectName>…`). */
   projectName: string;
