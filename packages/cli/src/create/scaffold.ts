@@ -388,7 +388,11 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
     }
     const entry = LANGUAGE_CATALOG[parsed.name];
     if (!entry) continue;
-    const options: Record<string, string> = {};
+    // Catalog defaults first, then the spec's version layers on top
+    // (an explicit `version` always wins over any default).
+    const options: Record<string, unknown> = {
+      ...(entry.defaultOptions ?? {}),
+    };
     if (parsed.version !== undefined) options.version = parsed.version;
     resolved.push({
       devcontainerKey: entry.feature,

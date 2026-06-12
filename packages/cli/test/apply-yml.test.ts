@@ -797,7 +797,7 @@ describe('runApply', () => {
     );
     expect(
       devcontainer.features['ghcr.io/devcontainers/features/java:1'],
-    ).toEqual({ version: '17' });
+    ).toEqual({ installMaven: true, installGradle: true, version: '17' });
     expect(
       devcontainer.features['ghcr.io/devcontainers/features/node:1'],
     ).toEqual({ version: '20' });

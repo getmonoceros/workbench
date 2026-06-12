@@ -93,6 +93,14 @@ export function runtimeSupportsIdeVolumes(version?: string): boolean {
 export interface LanguageEntry {
   id: string;
   feature: string;
+  /**
+   * Feature options always applied for this language, on top of which
+   * the optional `version` from the spec is layered. Lets a language
+   * ship sensible defaults its upstream feature leaves off — e.g. the
+   * `java` feature installs only a JDK by default, so we turn on
+   * Maven + Gradle here so a plain `languages: [java]` is build-ready.
+   */
+  defaultOptions?: Readonly<Record<string, unknown>>;
 }
 
 // `node` is included in the base runtime image, so the bare entry
@@ -106,7 +114,11 @@ export const BUILTIN_LANGUAGES = new Set(['node']);
 export const LANGUAGE_CATALOG: Readonly<Record<string, LanguageEntry>> = {
   node: { id: 'node', feature: 'ghcr.io/devcontainers/features/node:1' },
   python: { id: 'python', feature: 'ghcr.io/devcontainers/features/python:1' },
-  java: { id: 'java', feature: 'ghcr.io/devcontainers/features/java:1' },
+  java: {
+    id: 'java',
+    feature: 'ghcr.io/devcontainers/features/java:1',
+    defaultOptions: { installMaven: true, installGradle: true },
+  },
   go: { id: 'go', feature: 'ghcr.io/devcontainers/features/go:1' },
   rust: { id: 'rust', feature: 'ghcr.io/devcontainers/features/rust:1' },
   dotnet: { id: 'dotnet', feature: 'ghcr.io/devcontainers/features/dotnet:2' },

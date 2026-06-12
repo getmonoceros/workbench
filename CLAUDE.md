@@ -112,6 +112,14 @@ cwd is irrelevant — everything goes through convention.
   beyond that
 - **Put ADRs** under `docs/adr/` (Markdown, numbered, short). Concept
   documents go in `docs/`; ADRs are more specific
+- **What becomes a component** (service vs. feature vs. dependency) is
+  settled in [ADR 0019](docs/adr/0019-component-taxonomy-service-feature-dependency.md).
+  Before adding a database, CLI, framework, or tool to the catalog,
+  classify it there first: separate networked container is a **service**;
+  a global tool installed into the workspace is a **feature**; anything
+  pulled from the project's own package manifest (Spring Boot, Django,
+  Next.js, …) is a **dependency** and out of scope. Reach for this ADR
+  whenever a "should we support X?" question comes up
 - **Clean up the Traefik proxy after dev smoke tests.** The
   `monoceros-proxy` singleton is machine-wide and is reused by
   `ensureProxy()` **by name** (not per home, not per port). If you ran

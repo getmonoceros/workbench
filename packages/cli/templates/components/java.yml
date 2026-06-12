@@ -1,9 +1,10 @@
 displayName: Java via devcontainers/features/java
 description: |
   Adds the upstream `ghcr.io/devcontainers/features/java` feature to
-  the container, which installs a JDK plus Maven/Gradle scaffolding.
-  Pin a version through the feature's own options if you need
-  something other than the default.
+  the container. Installs a JDK and, by Monoceros default, Maven and
+  Gradle (the upstream feature ships only the JDK), so a plain
+  `languages: [java]` is build-ready. Pin a JDK version with the
+  `:version` suffix (e.g. `java:21`).
 category: language
 contributes:
   languages: [java]
