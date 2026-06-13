@@ -1,7 +1,7 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
+import { componentsRootDir } from '../config/paths.js';
 import {
   DescriptorSchema,
   type Descriptor,
@@ -37,24 +37,16 @@ export interface CatalogComponent {
 }
 
 /**
- * Default `components/` root: the workbench checkout root, resolved from
- * this package. Dev-only for now; Phase 2 wires the bundled copy for the
- * shipped CLI. Callers (tests, future consumers) may pass an explicit root.
- */
-export function defaultComponentsRoot(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  // src/catalog/ -> packages/cli -> <checkout root>
-  const pkgRoot = path.resolve(here, '..', '..');
-  return path.join(path.resolve(pkgRoot, '..', '..'), 'components');
-}
-
-/**
  * Walk the `components/` tree, parse + validate every `component.yml`,
  * return an id-keyed map. Throws on the first invalid descriptor with a
  * path-anchored message — refuse rather than load an inconsistent catalog.
+ *
+ * Defaults to the resolved components root (checkout in dev, bundled copy
+ * in prod — see `config/paths.ts#componentsRootDir`). Tests pass an
+ * explicit root.
  */
 export async function loadDescriptorCatalog(
-  rootDir: string = defaultComponentsRoot(),
+  rootDir: string = componentsRootDir(),
 ): Promise<Map<string, CatalogComponent>> {
   const out = new Map<string, CatalogComponent>();
   if (!existsSync(rootDir)) {

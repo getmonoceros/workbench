@@ -165,6 +165,22 @@ export function bundledFeaturesDir(root: string = workbenchRoot()): string {
   return path.join(root, 'features');
 }
 
+/**
+ * `components/` — the unified component-descriptor tree (ADR 0020), one
+ * `component.yml` per language/service/feature. Prefers the checkout-root
+ * copy (dev, so edits are picked up immediately) and falls back to the
+ * package-local bundled copy (prod), produced by `pnpm components:sync`.
+ * Mirrors how the feature manifests resolve.
+ */
+export function componentsRootDir(): string {
+  const checkout = workbenchCheckoutRoot();
+  if (checkout) {
+    const inCheckout = path.join(checkout, 'components');
+    if (existsSync(inCheckout)) return inCheckout;
+  }
+  return path.join(workbenchRoot(), 'components');
+}
+
 // ─── User-home paths (configs, containers, global config) ────────
 
 export function containerConfigsDir(home: string = monocerosHome()): string {

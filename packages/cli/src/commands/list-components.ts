@@ -1,6 +1,7 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
-import { loadComponentCatalog } from '../init/components.js';
+import { loadDescriptorCatalog } from '../catalog/load.js';
+import { expandSelectable } from '../catalog/expand.js';
 import { colorsFor } from '../util/format.js';
 
 // Category-key → human-readable section label. Same order is used
@@ -27,7 +28,7 @@ export const listComponentsCommand = defineCommand({
   args: {},
   async run() {
     try {
-      const catalog = await loadComponentCatalog();
+      const catalog = expandSelectable(await loadDescriptorCatalog());
       if (catalog.size === 0) {
         consola.warn(
           'No components found. The workbench checkout looks incomplete.',
@@ -44,9 +45,9 @@ export const listComponentsCommand = defineCommand({
         Array<{ name: string; desc: string }>
       >();
       for (const c of catalog.values()) {
-        const list = byCategory.get(c.file.category) ?? [];
-        list.push({ name: c.name, desc: c.file.displayName });
-        byCategory.set(c.file.category, list);
+        const list = byCategory.get(c.category) ?? [];
+        list.push({ name: c.name, desc: c.displayName });
+        byCategory.set(c.category, list);
       }
       for (const list of byCategory.values()) {
         list.sort((a, b) => a.name.localeCompare(b.name));

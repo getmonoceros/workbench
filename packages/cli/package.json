@@ -28,6 +28,7 @@
     "dist",
     "templates",
     "features",
+    "components",
     "README.md"
   ],
   "engines": {
@@ -38,7 +39,8 @@
     "typecheck": "tsc --build",
     "test": "vitest run",
     "manifests:sync": "node scripts/sync-feature-manifests.mjs",
-    "prebuild": "pnpm manifests:sync",
+    "components:sync": "node scripts/sync-components.mjs",
+    "prebuild": "pnpm manifests:sync && pnpm components:sync",
     "build": "tsup",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
