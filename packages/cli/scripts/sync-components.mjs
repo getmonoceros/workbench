@@ -44,4 +44,6 @@ if (existsSync(destDir)) {
   await rm(destDir, { recursive: true });
 }
 await cp(srcDir, destDir, { recursive: true });
-console.log(`[sync-components] synced components/ -> ${path.relative(checkoutRoot, destDir)}`);
+console.log(
+  `[sync-components] synced components/ -> ${path.relative(checkoutRoot, destDir)}`,
+);
