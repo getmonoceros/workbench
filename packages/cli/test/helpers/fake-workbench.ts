@@ -17,21 +17,6 @@ export async function writeDescriptor(
   await writeFile(path.join(dir, 'component.yml'), body, 'utf8');
 }
 
-/** Write a feature manifest under `<workbench>/images/features/<id>/`. */
-export async function writeFeatureManifest(
-  workbench: string,
-  id: string,
-  manifest: unknown,
-): Promise<void> {
-  const dir = path.join(workbench, 'images', 'features', id);
-  await mkdir(dir, { recursive: true });
-  await writeFile(
-    path.join(dir, 'devcontainer-feature.json'),
-    JSON.stringify(manifest, null, 2),
-    'utf8',
-  );
-}
-
 /** A minimal node-language descriptor body. */
 export function nodeLanguageDescriptor(): string {
   return [

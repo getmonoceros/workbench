@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
  */
 
 const MONOCEROS_HOME_MARKER = 'monoceros-config.sample.yml';
-const WORKBENCH_MARKER = path.join('templates', 'components', 'README.md');
+const WORKBENCH_MARKER = path.join('templates', 'monoceros-config.sample.yml');
 const CHECKOUT_MARKER = 'pnpm-workspace.yaml';
 
 let cachedWorkbenchRoot: string | null = null;
@@ -39,12 +39,10 @@ let cachedMonocerosHome: string | null = null;
 let cachedCheckoutRoot: string | null | undefined = undefined;
 
 /**
- * Walk upwards from this module until we find the workbench checkout's
- * marker (`templates/components/README.md`). In dev that hits the
- * workbench root reliably; in production the file does not exist
- * outside the shipped CLI package, so callers that need a workbench
- * root for dev-only purposes (bind-mounting `/opt/monoceros-workbench`)
- * get a clear error.
+ * Walk upwards from this module until we find the CLI-bundle marker
+ * (`templates/monoceros-config.sample.yml`, shipped in the npm tarball and
+ * present in the dev `packages/cli`). In dev that hits the package root
+ * reliably; in production it's the installed package dir.
  */
 export function workbenchRoot(): string {
   if (cachedWorkbenchRoot) return cachedWorkbenchRoot;
@@ -141,36 +139,15 @@ export function _resetPathCachesForTests(): void {
   cachedCheckoutRoot = undefined;
 }
 
-// ─── CLI-bundle paths (templates) ─────────────────────────────────
-
-/**
- * `templates/components/` — the components catalog used by
- * `monoceros init`. Each file under this directory is a small yml
- * snippet describing one composable component (a language, a
- * service, or a feature). See `templates/components/README.md`.
- */
-export function componentsDir(root: string = workbenchRoot()): string {
-  return path.join(root, 'templates', 'components');
-}
-
-/**
- * `features/` (inside the CLI bundle) — npm-shipped copies of the
- * Monoceros feature manifests (`devcontainer-feature.json`). Built
- * by `pnpm manifests:sync` from `images/features/<name>/` and
- * included in the published tarball via the `files` field. The
- * init generator's hint loader looks here as the production
- * fallback when the workbench checkout isn't available.
- */
-export function bundledFeaturesDir(root: string = workbenchRoot()): string {
-  return path.join(root, 'features');
-}
+// ─── CLI-bundle paths ─────────────────────────────────────────────
 
 /**
  * `components/` — the unified component-descriptor tree (ADR 0020), one
- * `component.yml` per language/service/feature. Prefers the checkout-root
- * copy (dev, so edits are picked up immediately) and falls back to the
- * package-local bundled copy (prod), produced by `pnpm components:sync`.
- * Mirrors how the feature manifests resolve.
+ * `component.yml` per language/service/feature, the single source for the
+ * catalog, the generated feature manifests, and the briefing. Prefers the
+ * checkout-root copy (dev, so edits are picked up immediately) and falls back
+ * to the package-local bundled copy (prod) under `bundled-components/`,
+ * produced by `pnpm components:sync`.
  */
 export function componentsRootDir(): string {
   const checkout = workbenchCheckoutRoot();
@@ -178,7 +155,7 @@ export function componentsRootDir(): string {
     const inCheckout = path.join(checkout, 'components');
     if (existsSync(inCheckout)) return inCheckout;
   }
-  return path.join(workbenchRoot(), 'components');
+  return path.join(workbenchRoot(), 'bundled-components');
 }
 
 // ─── User-home paths (configs, containers, global config) ────────

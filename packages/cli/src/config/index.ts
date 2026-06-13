@@ -30,7 +30,6 @@ export {
 } from './io.js';
 export type { ParsedConfig } from './io.js';
 export {
-  componentsDir,
   containerConfigPath,
   containerConfigsDir,
   containerDir,

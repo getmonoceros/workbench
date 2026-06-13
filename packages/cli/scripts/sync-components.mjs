@@ -29,7 +29,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(here, '..');
 const checkoutRoot = path.resolve(pkgRoot, '..', '..');
 const srcDir = path.join(checkoutRoot, 'components');
-const destDir = path.join(pkgRoot, 'components');
+const destDir = path.join(pkgRoot, 'bundled-components');
 
 if (!existsSync(srcDir)) {
   console.error(`[sync-components] source dir not found: ${srcDir}`);

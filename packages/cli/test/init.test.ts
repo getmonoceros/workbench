@@ -4,10 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runInit } from '../src/init/index.js';
 import { parseConfig } from '../src/config/index.js';
-import {
-  writeDescriptor,
-  writeFeatureManifest,
-} from './helpers/fake-workbench.js';
+import { writeDescriptor } from './helpers/fake-workbench.js';
 
 const silentLogger = {
   success: () => {},
@@ -57,7 +54,9 @@ async function buildFakeWorkbench(root: string): Promise<void> {
       '',
     ].join('\n'),
   );
-  // Selector `claude` (short name), manifest id `claude-code`.
+  // Selector `claude` (short name), manifest id `claude-code`. The manifest
+  // summary init renders (option hints, usage notes) is derived from this
+  // descriptor — `apiKey` is a surface:env hint, plus a usage note.
   await writeDescriptor(
     root,
     'features',
@@ -68,33 +67,19 @@ async function buildFakeWorkbench(root: string): Promise<void> {
       'category: feature',
       'displayName: Claude Code CLI',
       'description: Claude Code CLI feature.',
+      'usageNotes:',
+      '  - Persistent OAuth login lives at home/.claude in the container, so first-run `claude login` survives apply rebuilds.',
+      'options:',
+      '  apiKey:',
+      '    type: string',
+      "    default: ''",
+      '    description: Optional Anthropic API key. When set, exported as ANTHROPIC_API_KEY for all shells in the container.',
+      '    surface: env',
       'feature:',
       '  version: 1.0.0',
       '',
     ].join('\n'),
   );
-
-  // Matching feature manifest with optionHints + a description on the hinted
-  // option + a per-feature usageNote — exercises the full hint-rendering
-  // surface the init generator consumes.
-  await writeFeatureManifest(root, 'claude-code', {
-    id: 'claude-code',
-    version: '1.0.0',
-    options: {
-      apiKey: {
-        type: 'string',
-        default: '',
-        description:
-          'Optional Anthropic API key. When set, exported as ANTHROPIC_API_KEY for all shells in the container.',
-      },
-    },
-    'x-monoceros': {
-      optionHints: ['apiKey'],
-      usageNotes: [
-        'Persistent OAuth login lives at home/.claude in the container, so first-run `claude login` survives apply rebuilds.',
-      ],
-    },
-  });
 }
 
 describe('runInit', () => {

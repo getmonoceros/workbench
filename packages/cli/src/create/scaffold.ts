@@ -1,7 +1,10 @@
-import { existsSync, readFileSync, promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import { bundledFeaturesDir, workbenchCheckoutRoot } from '../config/paths.js';
+import { workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
+import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
+import { descriptorToFeatureManifest } from '../catalog/generate-manifest.js';
+import type { Descriptor } from '../catalog/descriptor.js';
 import { writeClaudePermissionMode } from './claude-settings.js';
 import {
   BUILTIN_LANGUAGES,
@@ -315,6 +318,13 @@ interface ResolvedFeature {
   localSourceDir?: string;
   localName?: string;
   /**
+   * For a local-source feature: the devcontainer-feature.json content
+   * generated from the descriptor (ADR 0020), written into
+   * `<container>/.devcontainer/features/<name>/` alongside the copied
+   * install.sh. There is no hand-written manifest on disk to copy.
+   */
+  generatedManifest?: Record<string, unknown>;
+  /**
    * Subdirectories of `/home/node/` that this feature wants to
    * persist across container rebuilds. Each entry is bind-mounted
    * from `<container-dir>/home/<path>` into `/home/node/<path>` and
@@ -354,7 +364,7 @@ interface PersistentHomeFile {
  * `MONOCEROS_FEATURES_DIR_OVERRIDE` wins when set — the feature-side
  * analogue of `MONOCEROS_BASE_IMAGE_OVERRIDE` for the runtime image. It
  * lets the prod-installed CLI build features from a checkout's
- * `images/features/`, which is how e2e exercises the BRANCH feature
+ * `components/features/`, which is how e2e exercises the BRANCH feature
  * source rather than the last-published one. With no override we use
  * the workbench checkout (dev); failing that, null — a plain prod
  * install then pulls from GHCR. Empty/whitespace-only values are
@@ -364,7 +374,7 @@ function featuresSourceRoot(): string | null {
   const override = process.env.MONOCEROS_FEATURES_DIR_OVERRIDE?.trim();
   if (override && override.length > 0) return override;
   const checkout = workbenchCheckoutRoot();
-  return checkout ? path.join(checkout, 'images', 'features') : null;
+  return checkout ? path.join(checkout, 'components', 'features') : null;
 }
 
 /**
@@ -423,35 +433,30 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
       const match = matchMonocerosFeature(rawRef);
       if (match) {
         const name = match.name;
-        // Build from local feature source when one is available: the
-        // workbench checkout under `images/features/` (dev), or the
-        // `MONOCEROS_FEATURES_DIR_OVERRIDE` env (see featuresSourceRoot).
-        // That makes feature edits testable without a publish — it's how
-        // e2e exercises the BRANCH feature source instead of the last
-        // published GHCR artifact. With no source root (plain prod
-        // install) we fall through to the GHCR-ref passthrough.
+        // Persistent-home binds come from the descriptor (ADR 0020), dev and
+        // prod alike — there is no manifest JSON to read.
+        const descriptor = featureDescriptor(name);
+        const { paths, files } = descriptorPersistentHome(descriptor);
+        // Build from local feature source when available — the checkout's
+        // `components/features/<id>/` (dev) or MONOCEROS_FEATURES_DIR_OVERRIDE
+        // (e2e). We copy its install.sh and write a freshly generated
+        // devcontainer-feature.json (from the descriptor) into
+        // `.devcontainer/features/<id>/`. With no source (plain prod install)
+        // we fall through to the GHCR-ref passthrough.
         const sourceRoot = featuresSourceRoot();
         const localSourceDir = sourceRoot ? path.join(sourceRoot, name) : null;
-        if (localSourceDir && existsSync(localSourceDir)) {
-          const { paths, files } = readPersistentHomeEntries(localSourceDir);
+        if (descriptor && localSourceDir && existsSync(localSourceDir)) {
           resolved.push({
             devcontainerKey: `./features/${name}`,
             options,
             localSourceDir,
             localName: name,
+            generatedManifest: descriptorToFeatureManifest(descriptor),
             persistentHomePaths: paths,
             persistentHomeFiles: files,
           });
           continue;
         }
-        // Prod path: the feature is pulled from GHCR (passthrough ref),
-        // but its persistent-home entries still ship in the CLI bundle
-        // under `features/<name>/` (synced from `images/features/` at
-        // publish). Read them from there so the per-feature home binds
-        // (e.g. `.claude`, `.claude.json`) are emitted — without this,
-        // tool auth/config is not persisted and is lost on every
-        // `apply` rebuild.
-        const { paths, files } = readBundledPersistentHomeEntries(name);
         resolved.push({
           devcontainerKey: rawRef,
           options,
@@ -472,55 +477,33 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
 }
 
 /**
- * Read `x-monoceros.persistentHomePaths` and
- * `x-monoceros.persistentHomeFiles` from a feature's manifest on
- * disk. Returns `{paths: [], files: []}` when the manifest doesn't
- * exist, can't be parsed, or the fields are missing — always
- * best-effort, never throws. Both arrays are validated to contain
- * only safe relative subpaths (no `..`, no absolute, no shell
- * metacharacters); anything else is silently dropped, since a bad
- * value here is a feature-author bug, not something a builder can fix.
+ * The descriptor for a Monoceros feature by id (e.g. `claude-code`), or
+ * undefined when it isn't a known feature. Best-effort, never throws.
  */
-function readPersistentHomeEntries(localSourceDir: string): {
-  paths: string[];
-  files: PersistentHomeFile[];
-} {
-  const manifestPath = path.join(localSourceDir, 'devcontainer-feature.json');
+function featureDescriptor(name: string): Descriptor | undefined {
   try {
-    const text = readFileSync(manifestPath, 'utf8');
-    const parsed = JSON.parse(text) as {
-      'x-monoceros'?: {
-        persistentHomePaths?: unknown;
-        persistentHomeFiles?: unknown;
-      };
-    };
-    return {
-      paths: filterSubpaths(parsed['x-monoceros']?.persistentHomePaths),
-      files: filterFileEntries(parsed['x-monoceros']?.persistentHomeFiles),
-    };
+    const c = loadDescriptorCatalogSync().get(name);
+    return c?.category === 'feature' ? c.descriptor : undefined;
   } catch {
-    return { paths: [], files: [] };
+    return undefined;
   }
 }
 
 /**
- * Prod-path counterpart to `readPersistentHomeEntries`: read a feature's
- * persistent-home entries from the manifest shipped inside the CLI
- * bundle (`features/<name>/`, synced from `images/features/` at
- * publish). Used when the feature is referenced by GHCR ref (no local
- * checkout source) so the per-feature home binds are still emitted.
- * Best-effort: returns empty arrays if the bundle root can't be located
- * or the manifest is missing, never throws.
+ * Persistent-home binds for a feature, from its descriptor's
+ * `feature.persistentHomePaths` / `persistentHomeFiles` (ADR 0020). Both
+ * arrays are validated to safe relative subpaths (no `..`, absolute, or shell
+ * metacharacters); anything else is dropped — a bad value is a feature-author
+ * bug, not something a builder can fix. Empty arrays for an unknown feature.
  */
-function readBundledPersistentHomeEntries(name: string): {
+function descriptorPersistentHome(descriptor: Descriptor | undefined): {
   paths: string[];
   files: PersistentHomeFile[];
 } {
-  try {
-    return readPersistentHomeEntries(path.join(bundledFeaturesDir(), name));
-  } catch {
-    return { paths: [], files: [] };
-  }
+  return {
+    paths: filterSubpaths(descriptor?.feature?.persistentHomePaths),
+    files: filterFileEntries(descriptor?.feature?.persistentHomeFiles),
+  };
 }
 
 function filterSubpaths(raw: unknown): string[] {
@@ -1513,7 +1496,29 @@ export async function writeScaffold(
     if (!f.localSourceDir || !f.localName) continue;
     const dest = path.join(featuresDir, f.localName);
     await fs.mkdir(dest, { recursive: true });
-    await fs.cp(f.localSourceDir, dest, { recursive: true });
+    // Copy the install.sh; write a freshly generated devcontainer-feature.json
+    // from the descriptor (the source dir holds component.yml, not a manifest
+    // — ADR 0020). Other support files (if any) ride along.
+    const entries = await fs.readdir(f.localSourceDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (
+        entry.name === 'component.yml' ||
+        entry.name === 'devcontainer-feature.json'
+      ) {
+        continue;
+      }
+      await fs.cp(
+        path.join(f.localSourceDir, entry.name),
+        path.join(dest, entry.name),
+      );
+    }
+    if (f.generatedManifest) {
+      await fs.writeFile(
+        path.join(dest, 'devcontainer-feature.json'),
+        JSON.stringify(f.generatedManifest, null, 2) + '\n',
+      );
+    }
   }
 
   // Pre-create persistent home entries so docker doesn't auto-mkdir

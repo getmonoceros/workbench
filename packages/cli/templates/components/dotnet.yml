@@ -1,8 +1,0 @@
-displayName: .NET via devcontainers/features/dotnet:2
-description: |
-  Adds the upstream `ghcr.io/devcontainers/features/dotnet:2`
-  feature to the container, which installs the .NET SDK (and
-  optionally specific runtimes via the feature's own options).
-category: language
-contributes:
-  languages: [dotnet]

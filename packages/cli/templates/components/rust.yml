@@ -1,8 +1,0 @@
-displayName: Rust via devcontainers/features/rust
-description: |
-  Adds the upstream `ghcr.io/devcontainers/features/rust` feature
-  to the container, which installs rustup, the current stable
-  toolchain, and cargo.
-category: language
-contributes:
-  languages: [rust]

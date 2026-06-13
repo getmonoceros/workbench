@@ -6,7 +6,6 @@ import {
   containerConfigsDir,
   containerEnvPath,
   monocerosHome as defaultMonocerosHome,
-  workbenchCheckoutRoot,
   componentsRootDir,
 } from '../config/paths.js';
 import {
@@ -136,10 +135,9 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     );
   }
 
-  // Component descriptors live under `<root>/components/` (ADR 0020). In
-  // tests the fixture sets `workbenchRoot` to a dir holding both the
-  // descriptors and an `images/features/` tree; honour that. In real use we
-  // resolve checkout-first, bundled-copy fallback.
+  // Component descriptors live under `<root>/components/` (ADR 0020). In tests
+  // the fixture sets `workbenchRoot` to a dir holding the descriptors; honour
+  // that. In real use we resolve checkout-first, bundled-copy fallback.
   const componentsRoot = opts.workbenchRoot
     ? path.join(opts.workbenchRoot, 'components')
     : componentsRootDir();
@@ -150,15 +148,12 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     );
   }
 
-  // Feature manifests live at the workbench-checkout root, not in
-  // the CLI bundle. In tests the fixture sets `workbenchRoot` to a
-  // dir that happens to hold both the templates *and* an
-  // `images/features/` tree; honour that override. In real use we
-  // fall back to `workbenchCheckoutRoot()` which returns null when
-  // the CLI is run from an npm install — manifest lookups then
-  // return undefined and init renders without optionHints.
-  const checkoutRoot = opts.workbenchRoot ?? workbenchCheckoutRoot();
-  const lookup = (ref: string) => loadFeatureManifestSummary(ref, checkoutRoot);
+  // Feature manifest data is derived from the same descriptors (ADR 0020), so
+  // the lookup reads from the same components root — no separate manifest
+  // tree. Unknown/third-party refs yield undefined and init renders without
+  // optionHints.
+  const lookup = (ref: string) =>
+    loadFeatureManifestSummary(ref, componentsRoot);
 
   // --with-repo URL validation: only canonical hosts. Non-canonical
   // hosts (self-hosted GitLab, Gitea, …) need `provider:` in the yml,

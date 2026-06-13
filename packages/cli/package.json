@@ -27,8 +27,7 @@
   "files": [
     "dist",
     "templates",
-    "features",
-    "components",
+    "bundled-components",
     "README.md"
   ],
   "engines": {
@@ -38,9 +37,9 @@
     "start": "tsx src/bin.ts",
     "typecheck": "tsc --build",
     "test": "vitest run",
-    "manifests:sync": "node scripts/sync-feature-manifests.mjs",
     "components:sync": "node scripts/sync-components.mjs",
-    "prebuild": "pnpm manifests:sync && pnpm components:sync",
+    "manifests:generate": "tsx scripts/generate-feature-manifests.ts",
+    "prebuild": "pnpm components:sync",
     "build": "tsup",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },

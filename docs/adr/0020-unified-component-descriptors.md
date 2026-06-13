@@ -232,6 +232,27 @@ adopts it.
   invisible). Conflicts with the requirement that the options we manage
   appear in `container-configs/<name>.yml`.
 
+## As built (deviations from the sketch above)
+
+The implementation refined three things from the earlier sketch:
+
+- **`secret` was dropped; `surface: env` is the option-hint marker.** An
+  option with `surface: env` is rendered as a `${VAR}` placeholder and
+  becomes the feature's `optionHints` (e.g. atlassian's `instance` /
+  `email` are env-backed hints but not secrets). `yml` writes a literal,
+  `silent` keeps it out of the yml. There is no separate `secret` flag.
+- **Descriptors-only generation (no committed/bundled JSON).** The CLI
+  derives manifest data (`manifest.ts`) and persistent-home binds
+  (`scaffold.ts`) from the descriptor at runtime. A real
+  `devcontainer-feature.json` is materialized only where one must exist on
+  disk: the local-source build writes it into
+  `.devcontainer/features/<id>/` at apply, and `manifests:generate`
+  (`pnpm`) writes it into `components/features/<id>/` for the GHCR publish.
+  Those files are gitignored.
+- **Bundle path is `packages/cli/bundled-components/`** (clearly generated,
+  distinct from the source `components/`), produced by `components:sync`.
+  There is no longer a separate feature-manifest bundle.
+
 ## Related
 
 - ADR 0019 (component taxonomy) - this is the structural realization of

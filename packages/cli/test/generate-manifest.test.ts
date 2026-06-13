@@ -1,56 +1,79 @@
 import { describe, expect, it } from 'vitest';
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadDescriptorCatalog } from '../src/catalog/load.js';
 import { descriptorToFeatureManifest } from '../src/catalog/generate-manifest.js';
 
 // test/ -> packages/cli -> packages -> <checkout root>
-const repoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-  '..',
+const componentsRoot = path.join(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..'),
+  'components',
 );
-const componentsRoot = path.join(repoRoot, 'components');
 
 /**
- * Transitional fidelity contract (ADR 0020, phase 2): the descriptors under
- * `components/features/*` must generate byte-equivalent devcontainer-feature
- * manifests to the hand-written ones still living under `images/features/*`.
- * This guarantees the source-of-truth flip (phase 2 wiring + phase 4) does not
- * change any published feature. Retire this test once `images/features/*` is
- * gone and generation is the only path.
+ * The devcontainer-feature.json is generated from the component descriptor
+ * (ADR 0020); these assertions pin the shape of that generation from the real
+ * feature descriptors — id/name/version, the devcontainer option schema, and
+ * the x-monoceros block (optionHints from surface:env, persistent home,
+ * briefing). This is the contract the GHCR publish and the local-source build
+ * both rely on.
  */
-const FEATURES = ['claude-code', 'github-cli', 'atlassian'] as const;
+async function generate(id: string) {
+  const catalog = await loadDescriptorCatalog(componentsRoot);
+  const component = catalog.get(id);
+  expect(component, `descriptor for ${id}`).toBeDefined();
+  return descriptorToFeatureManifest(component!.descriptor);
+}
 
-describe('descriptorToFeatureManifest reproduces the hand-written manifests', () => {
-  for (const id of FEATURES) {
-    it(`${id}: generated manifest equals images/features/${id}/devcontainer-feature.json`, async () => {
-      const catalog = await loadDescriptorCatalog(componentsRoot);
-      const component = catalog.get(id);
-      expect(component, `descriptor for ${id} should load`).toBeDefined();
-
-      const generated = descriptorToFeatureManifest(component!.descriptor);
-
-      const handWritten = JSON.parse(
-        await readFile(
-          path.join(
-            repoRoot,
-            'images',
-            'features',
-            id,
-            'devcontainer-feature.json',
-          ),
-          'utf8',
-        ),
-      );
-
-      expect(generated).toEqual(handWritten);
+describe('descriptorToFeatureManifest', () => {
+  it('claude-code: full manifest shape', async () => {
+    const m = await generate('claude-code');
+    expect(m.$schema).toMatch(/devContainerFeature\.schema\.json$/);
+    expect(m.id).toBe('claude-code');
+    expect(m.name).toBe('Claude Code');
+    expect(m.version).toBe('1.2.0');
+    expect(m.documentationURL).toBe(
+      'https://docs.anthropic.com/en/docs/claude-code',
+    );
+    // devcontainer option schema: surface/secret are stripped, proposals kept.
+    expect(Object.keys(m.options as object)).toEqual([
+      'version',
+      'apiKey',
+      'permissionMode',
+    ]);
+    expect((m.options as Record<string, unknown>).version).toEqual({
+      type: 'string',
+      default: 'latest',
+      description: 'npm-style version spec (`latest`, `^0.4`, `0.4.2`).',
     });
-  }
+    const x = m['x-monoceros'] as Record<string, unknown>;
+    expect(x.optionHints).toEqual(['apiKey']); // surface:env only
+    expect(x.persistentHomePaths).toEqual(['.claude']);
+    expect(x.persistentHomeFiles).toEqual([
+      { path: '.claude.json', initialContent: '{}\n' },
+    ]);
+    expect((x.briefing as { lines: unknown[] }).lines).toHaveLength(1);
+    expect(
+      (m.customizations as { vscode: { extensions: string[] } }).vscode
+        .extensions,
+    ).toEqual(['anthropic.claude-code']);
+  });
 
-  it('refuses to generate a manifest for a non-feature descriptor', async () => {
+  it('atlassian: optionHints follow declaration order; briefing keeps whenOption', async () => {
+    const m = await generate('atlassian');
+    const x = m['x-monoceros'] as Record<string, unknown>;
+    // rovodev/twg are surface:yml (not hints); the four credentials are env.
+    expect(x.optionHints).toEqual([
+      'instance',
+      'email',
+      'apiToken',
+      'bitbucketToken',
+    ]);
+    const lines = (x.briefing as { lines: { whenOption?: string }[] }).lines;
+    expect(lines.map((l) => l.whenOption)).toEqual(['rovodev', 'twg']);
+  });
+
+  it('refuses to generate a manifest for a non-feature descriptor', () => {
     const fakeLanguage = {
       id: 'java',
       category: 'language' as const,

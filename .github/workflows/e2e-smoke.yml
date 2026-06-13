@@ -64,7 +64,7 @@ jobs:
       # `.devcontainer/features/`, so e2e gates the publish on the
       # feature code being released, not on a stale one. See
       # featuresSourceRoot in scaffold.ts.
-      MONOCEROS_FEATURES_DIR_OVERRIDE: ${{ github.workspace }}/images/features
+      MONOCEROS_FEATURES_DIR_OVERRIDE: ${{ github.workspace }}/components/features
 
     steps:
       - name: Checkout workbench

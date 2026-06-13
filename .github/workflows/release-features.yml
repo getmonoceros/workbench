@@ -1,20 +1,21 @@
 name: Release Features
 
-# Triggered when something under images/features/ lands on main. The
-# workflow iterates all feature directories, reads the version from
-# each manifest, and only publishes features whose version isn't
-# already in GHCR. Version bump in `devcontainer-feature.json` is the
-# entire release signal — no tags, no manual buttons.
+# Triggered when something under components/features/ lands on main. The
+# workflow generates each feature's devcontainer-feature.json from its
+# component.yml descriptor (ADR 0020), then iterates all feature directories,
+# reads the version from each generated manifest, and only publishes features
+# whose version isn't already in GHCR. The `version` in the descriptor's
+# `feature:` block is the entire release signal — no tags, no manual buttons.
 #
-# Generic over N features: a new `images/features/<name>/` directory
-# is picked up by the loop automatically, no workflow change needed.
+# Generic over N features: a new `components/features/<name>/` directory is
+# picked up by the loop automatically, no workflow change needed.
 #
 # Per ADR 0004 § "Version-getriggerte Pipelines".
 on:
   push:
     branches: [main]
     paths:
-      - 'images/features/**'
+      - 'components/features/**'
   # Manual trigger as a safety net (re-run after fixing the workflow,
   # bootstrapping a new feature without a code change, etc).
   workflow_dispatch:
@@ -54,6 +55,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Generate each feature's devcontainer-feature.json from its
+      # component.yml descriptor (ADR 0020) — the json is a build artifact,
+      # not committed. The publish step packages each components/features/<id>/
+      # dir (install.sh + the freshly generated manifest).
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate feature manifests
+        run: pnpm --filter @getmonoceros/workbench manifests:generate
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -71,7 +86,7 @@ jobs:
           published=()
           skipped=()
 
-          for dir in images/features/*/; do
+          for dir in components/features/*/; do
             manifest="$dir/devcontainer-feature.json"
             [[ -f "$manifest" ]] || continue
 
