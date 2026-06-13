@@ -21,6 +21,11 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('monoceros add-* demo');
     // The agent must build under projects/, not at the workspace root.
     expect(md).toContain('Build everything under `/workspaces/demo/projects/`');
+    // Self-scaffolded projects must be registered in the workspace file so
+    // VS Code opened from the host lists them (clones get added by apply).
+    expect(md).toContain('Register new projects in `demo.code-workspace`');
+    expect(md).toContain('/workspaces/demo/demo.code-workspace');
+    expect(md).toContain('{ "path": "projects/<app>", "name": "<app>" }');
   });
 
   it('lists languages with display names and skips section when empty', () => {
