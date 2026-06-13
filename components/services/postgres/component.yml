@@ -1,0 +1,27 @@
+id: postgres
+category: service
+displayName: PostgreSQL
+description: 'PostgreSQL with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `postgres`.'
+service:
+  image: postgres:18
+  defaultPort: 5432
+  dataMount: /var/lib/postgresql
+  healthcheck:
+    test: [CMD, pg_isready, -U, '${POSTGRES_USER}', -d, '${POSTGRES_DB}']
+    interval: 10s
+    timeout: 5s
+    retries: 5
+  vscodeExtensions: [cweijan.vscode-database-client2]
+options:
+  POSTGRES_USER:
+    type: string
+    default: monoceros
+    surface: env
+  POSTGRES_PASSWORD:
+    type: string
+    default: monoceros
+    surface: env
+  POSTGRES_DB:
+    type: string
+    default: monoceros
+    surface: env

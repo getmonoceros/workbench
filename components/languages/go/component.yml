@@ -1,0 +1,7 @@
+id: go
+category: language
+displayName: Go
+description: 'The Go toolchain plus golangci-lint via the upstream devcontainer feature. Pin a version with `go:<version>`.'
+language:
+  feature: ghcr.io/devcontainers/features/go:1
+  versions: [latest, 1.24, 1.23]

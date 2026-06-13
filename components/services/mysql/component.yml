@@ -1,0 +1,33 @@
+id: mysql
+category: service
+displayName: MySQL
+description: 'MySQL with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mysql`.'
+service:
+  image: mysql:8
+  defaultPort: 3306
+  dataMount: /var/lib/mysql
+  healthcheck:
+    test:
+      [
+        CMD,
+        mysqladmin,
+        ping,
+        -h,
+        127.0.0.1,
+        -u,
+        root,
+        '-p${MYSQL_ROOT_PASSWORD}',
+      ]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+  vscodeExtensions: [cweijan.vscode-database-client2]
+options:
+  MYSQL_ROOT_PASSWORD:
+    type: string
+    default: monoceros
+    surface: env
+  MYSQL_DATABASE:
+    type: string
+    default: monoceros
+    surface: env

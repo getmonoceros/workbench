@@ -1,0 +1,7 @@
+id: python
+category: language
+displayName: Python
+description: 'CPython plus pip and common dev tooling via the upstream devcontainer feature. Pin a version with `python:<version>`.'
+language:
+  feature: ghcr.io/devcontainers/features/python:1
+  versions: [latest, 3.12, 3.11, 3.10, 3.9, 3.8]

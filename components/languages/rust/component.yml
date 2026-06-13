@@ -1,0 +1,7 @@
+id: rust
+category: language
+displayName: Rust
+description: 'rustup plus the stable toolchain (rust-analyzer, rust-src, rustfmt, clippy) via the upstream feature. Pin a version with `rust:<version>`.'
+language:
+  feature: ghcr.io/devcontainers/features/rust:1
+  versions: [latest, 1.87]

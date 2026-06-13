@@ -1,0 +1,8 @@
+id: node
+category: language
+displayName: Node.js
+description: 'Node.js, built into the runtime image. A bare `node` installs nothing extra; pin a different major with `node:<version>`.'
+language:
+  feature: ghcr.io/devcontainers/features/node:1
+  builtin: true
+  versions: [lts, latest, 22, 20]
