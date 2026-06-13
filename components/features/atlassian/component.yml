@@ -43,3 +43,10 @@ briefing:
     text: 'Atlassian Rovo Dev — invoke via `acli rovodev`. Pre-authenticated against the Atlassian account configured in the feature options (shared with twg).'
   - whenOption: twg
     text: 'Atlassian Teamwork Graph CLI (`twg`) — work-data access across Jira, Confluence, Bitbucket, JSM and Assets. Pre-authenticated. Sub-skills cover status rollups, engineering work, ops health and context discovery.'
+presets:
+  twg:
+    rovodev: false
+    twg: true
+  rovodev:
+    rovodev: true
+    twg: false

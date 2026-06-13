@@ -1,4 +1,5 @@
 id: claude-code
+name: claude
 category: feature
 displayName: Claude Code
 description: "Anthropic's CLI coding assistant. OAuth/subscription login persists across container rebuilds."

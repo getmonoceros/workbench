@@ -1,4 +1,5 @@
 id: github-cli
+name: github
 category: feature
 displayName: GitHub CLI
 description: 'The official `gh` CLI. Login persists across container rebuilds.'

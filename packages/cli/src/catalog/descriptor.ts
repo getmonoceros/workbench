@@ -117,6 +117,15 @@ export const DescriptorSchema = z
     id: z
       .string()
       .regex(DESCRIPTOR_ID_RE, 'id must be lowercase letters/digits/hyphens'),
+    /**
+     * CLI/yml selector name (catalog key). Defaults to `id`. Lets a feature
+     * keep a short selector (`claude`) while its published manifest id stays
+     * canonical (`claude-code`).
+     */
+    name: z
+      .string()
+      .regex(DESCRIPTOR_ID_RE, 'name must be lowercase letters/digits/hyphens')
+      .optional(),
     category: CategorySchema,
     displayName: z.string().min(1),
     description: z.string().min(1),
@@ -128,6 +137,17 @@ export const DescriptorSchema = z
     language: LanguageBlockSchema.optional(),
     service: ServiceBlockSchema.optional(),
     feature: FeatureBlockSchema.optional(),
+    /**
+     * Named option-override presets. Each becomes a selectable
+     * `<name>/<presetKey>` component (e.g. `atlassian/twg`); the bare
+     * component keeps the descriptor's own option defaults. Feature-only.
+     */
+    presets: z
+      .record(
+        z.string().regex(DESCRIPTOR_ID_RE),
+        z.record(z.string(), OptionValueSchema),
+      )
+      .optional(),
   })
   .superRefine((data, ctx) => {
     // Exactly one category-specific block, and it must match `category`.
@@ -166,6 +186,28 @@ export const DescriptorSchema = z
         });
       }
     });
+
+    // Presets are feature-only, and each override must target a declared option.
+    if (data.presets) {
+      if (data.category !== 'feature') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['presets'],
+          message: `presets are only allowed on features, not '${data.category}'`,
+        });
+      }
+      for (const [presetKey, overrides] of Object.entries(data.presets)) {
+        for (const optKey of Object.keys(overrides)) {
+          if (!optionKeys.has(optKey)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['presets', presetKey, optKey],
+              message: `preset '${presetKey}' overrides '${optKey}', which is not a declared option`,
+            });
+          }
+        }
+      }
+    }
   });
 
 export type Descriptor = z.infer<typeof DescriptorSchema>;

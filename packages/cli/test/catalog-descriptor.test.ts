@@ -213,4 +213,46 @@ service:
       /sits under 'languages\/'/,
     );
   });
+
+  it('rejects presets on a non-feature', async () => {
+    await writeDescriptor(
+      'services',
+      'redis',
+      `
+id: redis
+category: service
+displayName: Redis
+description: Presets are feature-only.
+service:
+  image: redis:8
+presets:
+  ha: { maxmemory: 1gb }
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /presets are only allowed on features/,
+    );
+  });
+
+  it('rejects a preset that overrides an undeclared option', async () => {
+    await writeDescriptor(
+      'features',
+      'demo',
+      `
+id: demo
+category: feature
+displayName: Demo
+description: Preset targets a non-existent option.
+options:
+  flagA: { type: boolean, default: false }
+feature:
+  version: 1.0.0
+presets:
+  variant: { flagB: true }
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /preset 'variant' overrides 'flagB', which is not a declared option/,
+    );
+  });
 });
