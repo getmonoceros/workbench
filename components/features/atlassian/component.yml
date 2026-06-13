@@ -1,0 +1,45 @@
+id: atlassian
+category: feature
+displayName: Atlassian
+description: 'Rovo Dev (`acli rovodev`) and Teamwork Graph (`twg`) CLIs sharing one Atlassian account. Auth persists across rebuilds.'
+documentationURL: https://developer.atlassian.com/cloud/
+options:
+  rovodev:
+    type: boolean
+    default: true
+    description: 'Install acli (with the Rovo Dev agent).'
+    surface: yml
+  twg:
+    type: boolean
+    default: true
+    description: 'Install twg (Teamwork Graph CLI).'
+    surface: yml
+  instance:
+    type: string
+    default: ''
+    description: 'Atlassian site host (`yoursite.atlassian.net`); required by twg.'
+    surface: env
+  email:
+    type: string
+    default: ''
+    description: 'Atlassian account email; used with `apiToken` for non-interactive login.'
+    surface: env
+  apiToken:
+    type: string
+    default: ''
+    description: 'Atlassian API token (id.atlassian.com → Security → API tokens).'
+    surface: env
+  bitbucketToken:
+    type: string
+    default: ''
+    description: "Optional Bitbucket app password; only needed for twg's Bitbucket commands."
+    surface: env
+feature:
+  version: 1.0.0
+  persistentHomePaths: [.config/acli, .rovodev, .config/twg, .agents]
+  vscodeExtensions: [Atlassian.atlascode]
+briefing:
+  - whenOption: rovodev
+    text: 'Atlassian Rovo Dev — invoke via `acli rovodev`. Pre-authenticated against the Atlassian account configured in the feature options (shared with twg).'
+  - whenOption: twg
+    text: 'Atlassian Teamwork Graph CLI (`twg`) — work-data access across Jira, Confluence, Bitbucket, JSM and Assets. Pre-authenticated. Sub-skills cover status rollups, engineering work, ops health and context discovery.'

@@ -26,9 +26,14 @@ const OptionTypeSchema = z.enum(['string', 'boolean', 'number']);
 
 /**
  * Where an option's value is written when a container is composed:
- *   - `yml`    → into `container-configs/<name>.yml` (visible/editable)
- *   - `env`    → into `<name>.env` (service credentials, secrets)
- *   - `silent` → only into the generated devcontainer.json (not surfaced)
+ *   - `yml`    → a literal `key: <default>` in `container-configs/<name>.yml`
+ *                (visible, editable; e.g. claude `permissionMode: auto`)
+ *   - `env`    → a `key: ${ENV_VAR}` placeholder in the yml, with the var
+ *                seeded into `<name>.env`. This is the old `optionHints`
+ *                behavior — credentials and per-site config the builder
+ *                fills in (e.g. apiKey, atlassian instance/email).
+ *   - `silent` → only into the generated devcontainer.json (not surfaced;
+ *                e.g. a feature `version` that floats to latest, ADR 0018)
  *
  * Defaults to `silent`: an option is hidden unless a descriptor opts in.
  */
@@ -40,8 +45,6 @@ export const OptionSpecSchema = z.object({
   type: OptionTypeSchema,
   default: OptionValueSchema.optional(),
   description: z.string().optional(),
-  /** Credential/secret. Replaces the old `x-monoceros.optionHints` list. */
-  secret: z.boolean().default(false),
   surface: SurfaceSchema.default('silent'),
   /** Suggested values (rendered as devcontainer `proposals`). */
   proposals: z.array(z.string()).optional(),
@@ -119,6 +122,8 @@ export const DescriptorSchema = z
     description: z.string().min(1),
     documentationURL: z.string().url().optional(),
     options: z.record(z.string(), OptionSpecSchema).default({}),
+    /** Free-text notes rendered above the component block at `init`. */
+    usageNotes: z.array(z.string()).default([]),
     briefing: z.array(BriefingLineSchema).default([]),
     language: LanguageBlockSchema.optional(),
     service: ServiceBlockSchema.optional(),

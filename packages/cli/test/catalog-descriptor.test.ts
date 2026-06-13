@@ -53,7 +53,7 @@ service:
     retries: 5
   connectionEnv: [DATABASE_URL, PGHOST]
 options:
-  POSTGRES_PASSWORD: { type: string, default: monoceros, secret: true, surface: env }
+  POSTGRES_PASSWORD: { type: string, default: monoceros, surface: env }
 `;
 
 const CLAUDE = `
@@ -63,7 +63,7 @@ displayName: Claude Code
 description: Anthropic's CLI coding assistant.
 documentationURL: https://docs.anthropic.com/en/docs/claude-code
 options:
-  apiKey: { type: string, default: "", secret: true, surface: yml }
+  apiKey: { type: string, default: "", surface: env }
   permissionMode: { type: string, default: auto, surface: yml, proposals: [auto, ask, edits, bypass] }
 feature:
   version: 1.2.0
@@ -91,7 +91,7 @@ describe('loadDescriptorCatalog', () => {
     expect(catalog.get('claude-code')!.category).toBe('feature');
   });
 
-  it('applies option defaults (secret=false, surface=silent) when omitted', async () => {
+  it('applies the option default (surface=silent) when omitted', async () => {
     await writeDescriptor(
       'languages',
       'go',
@@ -109,7 +109,6 @@ options:
 
     const catalog = await loadDescriptorCatalog(root);
     const opt = catalog.get('go')!.descriptor.options.golangciLintVersion!;
-    expect(opt.secret).toBe(false);
     expect(opt.surface).toBe('silent');
   });
 

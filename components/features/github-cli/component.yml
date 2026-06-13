@@ -1,0 +1,17 @@
+id: github-cli
+category: feature
+displayName: GitHub CLI
+description: 'The official `gh` CLI. Login persists across container rebuilds.'
+documentationURL: https://cli.github.com/
+options:
+  apiToken:
+    type: string
+    default: ''
+    description: 'GitHub PAT (scopes: repo, read:org, gist); empty for `gh auth login` on first run.'
+    surface: env
+feature:
+  version: 1.0.0
+  persistentHomePaths: [.config/gh]
+  vscodeExtensions: [github.vscode-pull-request-github]
+briefing:
+  - text: 'GitHub CLI (`gh`) — repo, PR, issue, gist operations against github.com. Pre-authenticated; `gh auth status` reflects the active account.'

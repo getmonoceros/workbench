@@ -1,0 +1,31 @@
+id: claude-code
+category: feature
+displayName: Claude Code
+description: "Anthropic's CLI coding assistant. OAuth/subscription login persists across container rebuilds."
+documentationURL: https://docs.anthropic.com/en/docs/claude-code
+options:
+  version:
+    type: string
+    default: latest
+    description: 'npm-style version spec (`latest`, `^0.4`, `0.4.2`).'
+    surface: silent
+  apiKey:
+    type: string
+    default: ''
+    description: '`sk-ant-…` for API auth; empty for OAuth login on first run.'
+    surface: env
+  permissionMode:
+    type: string
+    default: auto
+    proposals: [auto, ask, edits, bypass]
+    description: 'Default Claude permission mode in this container. `auto` = Auto Mode: no per-action prompts and no recurring warning (a background classifier vets actions) — the comfortable default for an isolated container. `ask` prompts as usual; `edits` auto-accepts file edits but prompts for other commands; `bypass` skips all prompts (its one-time warning is pre-accepted). Monoceros writes this to ~/.claude/settings.json on apply; override per-project or with a CLI flag.'
+    surface: yml
+feature:
+  version: 1.2.0
+  persistentHomePaths: [.claude]
+  persistentHomeFiles:
+    - path: .claude.json
+      initialContent: "{}\n"
+  vscodeExtensions: [anthropic.claude-code]
+briefing:
+  - text: 'Anthropic Claude Code CLI (`claude`) — interactive coding assistant. Authenticated via OAuth/subscription unless `apiKey` was set, in which case it runs in API-key mode.'
