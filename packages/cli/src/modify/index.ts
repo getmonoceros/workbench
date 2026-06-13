@@ -59,6 +59,7 @@ import {
   expandCuratedService,
   isCuratedService,
   knownLanguages,
+  parseLanguageSpec,
 } from '../create/catalog.js';
 import {
   renderServiceObjectBody,
@@ -219,15 +220,27 @@ type YmlMutator = (doc: Document) => boolean;
 // ─── add-* ────────────────────────────────────────────────────────
 
 export function runAddLanguage(input: AddLanguageInput): Promise<ModifyResult> {
+  const spec = parseLanguageSpec(input.language);
   if (
-    !BUILTIN_LANGUAGES.has(input.language) &&
-    !LANGUAGE_CATALOG[input.language]
+    !spec ||
+    (!BUILTIN_LANGUAGES.has(spec.name) && !LANGUAGE_CATALOG[spec.name])
   ) {
     throw new Error(
       `Unknown language: ${input.language}. Known: ${knownLanguages().join(', ')}.`,
     );
   }
-  return mutate(input, (doc) => addLanguageToDoc(doc, input.language));
+  // Mirror init: surface the version inline (explicit `:version` wins over the
+  // catalog default) and the language's `surface: yml` options as the object
+  // form, so the builder sees what's editable.
+  const entry = LANGUAGE_CATALOG[spec.name];
+  const version = spec.version ?? entry?.defaultVersion;
+  const options = entry?.ymlOptions;
+  return mutate(input, (doc) =>
+    addLanguageToDoc(doc, spec.name, {
+      ...(version !== undefined ? { version } : {}),
+      ...(options && Object.keys(options).length > 0 ? { options } : {}),
+    }),
+  );
 }
 
 export async function runAddService(

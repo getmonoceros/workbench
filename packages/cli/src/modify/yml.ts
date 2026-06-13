@@ -58,10 +58,48 @@ function scalarValue(item: unknown): unknown {
   return isScalar(item) ? item.value : item;
 }
 
-export function addLanguageToDoc(doc: Document, lang: string): boolean {
+/** Language name of a `languages[]` item — `name[:version]` string or `{name: {…}}` object. */
+function languageEntryName(item: unknown): string | undefined {
+  const v = scalarValue(item);
+  if (typeof v === 'string') {
+    const colon = v.indexOf(':');
+    return colon === -1 ? v : v.slice(0, colon);
+  }
+  if (isMap(item)) {
+    const firstKey = item.items[0]?.key;
+    const k = isScalar(firstKey) ? firstKey.value : firstKey;
+    return typeof k === 'string' ? k : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Add a language to `languages[]`. Idempotent by language NAME (`java` and
+ * `java:17` are the same language). Mirrors `init`: with `surface: yml`
+ * options the entry is the object form (`- java:\n    version: …\n
+ * installMaven: …`), otherwise the bare `name:version` string.
+ */
+export function addLanguageToDoc(
+  doc: Document,
+  name: string,
+  opts: {
+    version?: string;
+    options?: Record<string, string | number | boolean>;
+  } = {},
+): boolean {
   const seq = ensureSeq(doc, 'languages');
-  if (seq.items.some((i) => scalarValue(i) === lang)) return false;
-  seq.add(lang);
+  if (seq.items.some((i) => languageEntryName(i) === name)) return false;
+  const { version, options } = opts;
+  if (options && Object.keys(options).length > 0) {
+    const inner = new YAMLMap();
+    if (version !== undefined) inner.set('version', version);
+    for (const [key, value] of Object.entries(options)) inner.set(key, value);
+    const outer = new YAMLMap();
+    outer.set(name, inner);
+    seq.add(outer);
+  } else {
+    seq.add(version !== undefined ? `${name}:${version}` : name);
+  }
   return true;
 }
 

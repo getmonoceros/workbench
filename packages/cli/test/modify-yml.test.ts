@@ -19,6 +19,7 @@ import {
   runRemoveRepo,
   runRemoveService,
 } from '../src/modify/index.js';
+import { parseConfig } from '../src/config/index.js';
 
 const silentLogger = {
   info: () => {},
@@ -98,7 +99,43 @@ describe('add-*/remove-* against the yml', () => {
     const yml = await ymlOf('demo');
     expect(yml).toContain('# my notes');
     expect(yml).toContain('languages:');
-    expect(yml).toContain('- python');
+    // node-less language with no surface:yml options → bare string, but the
+    // default version is surfaced inline (matches init).
+    expect(yml).toContain('- python:latest');
+  });
+
+  it('runAddLanguage surfaces the object form for a language with yml options (java)', async () => {
+    await writeYml('jdemo', 'schemaVersion: 1\nname: jdemo\n');
+    const result = await runAddLanguage({
+      ...baseOpts,
+      name: 'jdemo',
+      language: 'java:21',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const parsed = parseConfig(await ymlOf('jdemo'));
+    // Same object form `init` produces — version inline + surface:yml options.
+    expect(parsed.config.languages).toEqual([
+      { java: { version: '21', installMaven: true, installGradle: true } },
+    ]);
+  });
+
+  it('runAddLanguage is idempotent by language name (java vs java:21)', async () => {
+    await writeYml(
+      'idem',
+      'schemaVersion: 1\nname: idem\nlanguages:\n  - java:17\n',
+    );
+    const result = await runAddLanguage({
+      ...baseOpts,
+      name: 'idem',
+      language: 'java',
+      monocerosHome: home,
+    });
+    // java already present (as java:17) → no-op, the existing pin is kept.
+    expect(result.status).toBe('no-change');
+    expect(parseConfig(await ymlOf('idem')).config.languages).toEqual([
+      'java:17',
+    ]);
   });
 
   it('runAddService expands a curated name into a full object block', async () => {
