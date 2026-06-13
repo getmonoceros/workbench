@@ -867,6 +867,38 @@ describe('runApply', () => {
     expect(devcontainer.features).toBeUndefined();
   });
 
+  it('`node:22` (the base-image version) also stays builtin, no node feature', async () => {
+    await writeYml(
+      'node-pinned-builtin',
+      [
+        'schemaVersion: 1',
+        'name: node-pinned-builtin',
+        'languages:',
+        '  - node:22',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'node-pinned-builtin',
+      monocerosHome: home,
+    });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'node-pinned-builtin',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    // node:22 == the builtin base-image version → no upstream node feature.
+    expect(devcontainer.features).toBeUndefined();
+  });
+
   it('does not create data/ when no services are configured', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runApply({ ...baseRunOpts, name: 'demo', monocerosHome: home });

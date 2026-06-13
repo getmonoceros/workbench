@@ -8,6 +8,7 @@ import {
 import {
   DEFAULT_RUNTIME_VERSION,
   expandCuratedService,
+  LANGUAGE_CATALOG,
 } from '../create/catalog.js';
 import { renderCustomService, renderServiceObjectBody } from './service-doc.js';
 import { GIT_IDENTITY_VAR } from '../config/env-file.js';
@@ -218,7 +219,10 @@ export function generateDocumentedYml(
     lines.push('# languages:');
     for (const c of byCategory.language) {
       for (const lang of c.file.contributes.languages ?? []) {
-        lines.push(`#   - ${lang}`);
+        // Show the version inline (`name:<defaultVersion>`) so it's clear
+        // where to pin it, matching the composed-mode output.
+        const ver = LANGUAGE_CATALOG[lang]?.defaultVersion;
+        lines.push(`#   - ${ver ? `${lang}:${ver}` : lang}`);
       }
     }
     lines.push('');

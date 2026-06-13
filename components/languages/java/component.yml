@@ -4,6 +4,7 @@ displayName: Java
 description: 'A JDK plus Maven and Gradle by default (the upstream feature ships only the JDK), so a plain `languages: [java]` is build-ready. Pin a JDK major with `java:<version>`.'
 language:
   feature: ghcr.io/devcontainers/features/java:1
+  defaultVersion: latest
   versions: [latest, 21, 17, 11, 8]
 options:
   installMaven:

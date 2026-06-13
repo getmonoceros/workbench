@@ -111,6 +111,13 @@ export interface LanguageEntry {
    * applies via `defaultOptions` regardless of what the yml shows.
    */
   ymlOptions?: Readonly<Record<string, string | number | boolean>>;
+  /**
+   * Version rendered inline in the yml (`name:<defaultVersion>`) so the
+   * builder sees where to edit it. For a builtin language this is the
+   * base-image version: pinning exactly it stays builtin (no feature install
+   * — see `resolveFeatures`); a different version triggers the feature.
+   */
+  defaultVersion?: string;
 }
 
 // ─── Descriptor-derived catalogs (ADR 0020) ──────────────────────
@@ -179,6 +186,9 @@ export const LANGUAGE_CATALOG: Readonly<Record<string, LanguageEntry>> =
             ? { defaultOptions: defaults }
             : {}),
           ...(Object.keys(ymlOptions).length > 0 ? { ymlOptions } : {}),
+          ...(c.descriptor.language!.defaultVersion !== undefined
+            ? { defaultVersion: c.descriptor.language!.defaultVersion }
+            : {}),
         };
         return [key, entry];
       }),

@@ -5,4 +5,5 @@ description: 'Node.js, built into the runtime image. A bare `node` installs noth
 language:
   feature: ghcr.io/devcontainers/features/node:1
   builtin: true
+  defaultVersion: 22
   versions: [lts, latest, 22, 20]

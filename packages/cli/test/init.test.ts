@@ -150,7 +150,9 @@ describe('runInit', () => {
     expect(text).toMatch(/^# Options: apiKey \(/m);
     const parsed = parseConfig(text);
     expect(parsed.config.name).toBe('sandbox');
-    expect(parsed.config.languages).toEqual(['node']);
+    // node is builtin; init surfaces its base-image version inline (node:22),
+    // which stays builtin at apply (no upstream feature install).
+    expect(parsed.config.languages).toEqual(['node:22']);
   });
 
   it('surfaces a language’s yml options as the object form (java → Maven/Gradle)', async () => {
@@ -165,13 +167,13 @@ describe('runInit', () => {
     // java surfaces its surface:yml defaults as the object form; the version
     // moves inside. node has no surface:yml options → stays a bare string.
     expect(text).toMatch(
-      /languages:\n {2}- java:\n {6}version: 21\n {6}installMaven: true\n {6}installGradle: true\n {2}- node\n/,
+      /languages:\n {2}- java:\n {6}version: 21\n {6}installMaven: true\n {6}installGradle: true\n {2}- node:22\n/,
     );
     // Round-trips through the schema into the object form.
     const parsed = parseConfig(text);
     expect(parsed.config.languages).toEqual([
       { java: { version: 21, installMaven: true, installGradle: true } },
-      'node',
+      'node:22',
     ]);
   });
 
@@ -287,7 +289,7 @@ describe('runInit', () => {
     // No two-`#` per line anywhere — builder must strip exactly one
     // `#` per line to activate any commented block.
     expect(text).not.toMatch(/^#[ \t]+#[ \t]/m);
-    expect(text).toMatch(/^#\s+- node\s*$/m);
+    expect(text).toMatch(/^#\s+- node:22\s*$/m);
     expect(text).toContain(
       '#   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
     );

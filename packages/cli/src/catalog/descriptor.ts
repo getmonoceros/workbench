@@ -77,6 +77,15 @@ export const LanguageBlockSchema = z.object({
   /** True when the toolchain is already in the base runtime image (node). */
   builtin: z.boolean().default(false),
   /**
+   * Version shown inline in the generated yml (`name:<defaultVersion>`), so
+   * the builder sees where to edit it. Should equal the upstream feature's
+   * real default to stay behavior-neutral. For a `builtin` language it is the
+   * base-image version; pinning that exact version stays builtin (no feature
+   * install), only a different version triggers the upstream feature.
+   * Coerced to string so bare YAML numbers (`defaultVersion: 22`) work.
+   */
+  defaultVersion: z.coerce.string().optional(),
+  /**
    * Versions the upstream feature accepts (docs/UX only, not enforced).
    * Coerced to string so authors can write bare YAML numbers
    * (`versions: [latest, 21, 17]`) without quoting.

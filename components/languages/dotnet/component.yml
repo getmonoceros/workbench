@@ -4,4 +4,5 @@ displayName: .NET
 description: 'The .NET SDK via the upstream devcontainer feature. Pin a version with `dotnet:<version>`.'
 language:
   feature: ghcr.io/devcontainers/features/dotnet:2
+  defaultVersion: latest
   versions: [latest, lts, 10.0, 9.0, 8.0, 7.0, 6.0]

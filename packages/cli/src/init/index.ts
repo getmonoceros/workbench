@@ -352,12 +352,19 @@ function resolveInitLanguages(entries: string[]): LanguageRender[] {
       continue;
     }
     seen.add(e);
-    // Surface the language's `surface: yml` option defaults as the object
-    // form (e.g. java -> installMaven/installGradle). Bare languages stay
-    // plain strings.
-    const ymlOptions = LANGUAGE_CATALOG[spec.name]?.ymlOptions;
+    const entry = LANGUAGE_CATALOG[spec.name];
+    // Always surface the version inline (`name:<defaultVersion>`) so the
+    // builder sees where to edit it; an explicit `:version` from the flag
+    // wins. Plus the language's `surface: yml` option defaults (e.g. java ->
+    // installMaven/installGradle) as the object form.
+    const renderedSpec =
+      spec.version === undefined && entry?.defaultVersion
+        ? `${spec.name}:${entry.defaultVersion}`
+        : e;
+    if (out.some((o) => o.spec === renderedSpec)) continue;
+    const ymlOptions = entry?.ymlOptions;
     out.push({
-      spec: e,
+      spec: renderedSpec,
       ...(ymlOptions && Object.keys(ymlOptions).length > 0
         ? { options: ymlOptions }
         : {}),

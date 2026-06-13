@@ -383,14 +383,18 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
   for (const langSpec of opts.languages) {
     const parsed = parseLanguageSpec(langSpec);
     if (!parsed) continue;
-    // Builtin only applies to the bare `node` (no version) — the
-    // base image's node 22 isn't pinnable, so any `node:<version>`
-    // has to go through the upstream feature like everything else.
-    if (BUILTIN_LANGUAGES.has(parsed.name) && parsed.version === undefined) {
-      continue;
-    }
     const entry = LANGUAGE_CATALOG[parsed.name];
     if (!entry) continue;
+    // A builtin language stays builtin (no feature install) when it carries
+    // no version OR exactly the base-image version (`node` / `node:22`). Any
+    // other version (`node:20`) goes through the upstream feature like the
+    // rest.
+    if (
+      BUILTIN_LANGUAGES.has(parsed.name) &&
+      (parsed.version === undefined || parsed.version === entry.defaultVersion)
+    ) {
+      continue;
+    }
     // Catalog defaults first, then the yml's per-language options (the object
     // form — builder edits win over the default), then the spec's version
     // (an explicit `version` always wins).
