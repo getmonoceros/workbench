@@ -26,6 +26,11 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('Register new projects in `demo.code-workspace`');
     expect(md).toContain('/workspaces/demo/demo.code-workspace');
     expect(md).toContain('{ "path": "projects/<app>", "name": "<app>" }');
+    // One root per top-level dir under projects/, not per sub-project,
+    // so the Explorer stays readable as more projects land.
+    expect(md).toContain(
+      'Add **exactly one** folder entry per directory directly under `projects/`',
+    );
   });
 
   it('lists languages with display names and skips section when empty', () => {
