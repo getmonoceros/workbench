@@ -103,6 +103,14 @@ export interface LanguageEntry {
    * Maven + Gradle here so a plain `languages: [java]` is build-ready.
    */
   defaultOptions?: Readonly<Record<string, unknown>>;
+  /**
+   * The subset of options the builder should SEE in the yml (descriptor
+   * `surface: yml`). `init` renders these as the language's object form
+   * (e.g. java's `installMaven` / `installGradle`); editing them in the yml
+   * overrides the default at apply time. A superset-or-equal of these always
+   * applies via `defaultOptions` regardless of what the yml shows.
+   */
+  ymlOptions?: Readonly<Record<string, string | number | boolean>>;
 }
 
 // ─── Descriptor-derived catalogs (ADR 0020) ──────────────────────
@@ -121,6 +129,22 @@ function descriptorOptionDefaults(
   const out: Record<string, string | boolean | number> = {};
   for (const [key, spec] of Object.entries(options)) {
     if (spec.default !== undefined) out[key] = spec.default;
+  }
+  return out;
+}
+
+/** Option defaults the descriptor marks `surface: yml` (shown in the yml). */
+function descriptorYmlOptionDefaults(
+  options: Record<
+    string,
+    { default?: string | boolean | number; surface?: string }
+  >,
+): Record<string, string | boolean | number> {
+  const out: Record<string, string | boolean | number> = {};
+  for (const [key, spec] of Object.entries(options)) {
+    if (spec.surface === 'yml' && spec.default !== undefined) {
+      out[key] = spec.default;
+    }
   }
   return out;
 }
@@ -147,12 +171,14 @@ export const LANGUAGE_CATALOG: Readonly<Record<string, LanguageEntry>> =
       .map((c) => {
         const key = descriptorSelector(c);
         const defaults = descriptorOptionDefaults(c.descriptor.options);
+        const ymlOptions = descriptorYmlOptionDefaults(c.descriptor.options);
         const entry: LanguageEntry = {
           id: key,
           feature: c.descriptor.language!.feature,
           ...(Object.keys(defaults).length > 0
             ? { defaultOptions: defaults }
             : {}),
+          ...(Object.keys(ymlOptions).length > 0 ? { ymlOptions } : {}),
         };
         return [key, entry];
       }),

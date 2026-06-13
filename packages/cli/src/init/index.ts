@@ -23,6 +23,7 @@ import {
   generateDocumentedYml,
   type ComposedInit,
   type InitService,
+  type LanguageRender,
 } from './generator.js';
 import { loadFeatureManifestSummary } from './manifest.js';
 import {
@@ -31,6 +32,7 @@ import {
   isCuratedService,
   knownLanguages,
   parseLanguageSpec,
+  LANGUAGE_CATALOG,
 } from '../create/catalog.js';
 
 /**
@@ -336,9 +338,9 @@ function resolveComposedInit(
   };
 }
 
-function resolveInitLanguages(entries: string[]): string[] {
+function resolveInitLanguages(entries: string[]): LanguageRender[] {
   const known = new Set(knownLanguages());
-  const out: string[] = [];
+  const out: LanguageRender[] = [];
   const seen = new Set<string>();
   const unknown: string[] = [];
   for (const raw of entries) {
@@ -350,7 +352,16 @@ function resolveInitLanguages(entries: string[]): string[] {
       continue;
     }
     seen.add(e);
-    out.push(e);
+    // Surface the language's `surface: yml` option defaults as the object
+    // form (e.g. java -> installMaven/installGradle). Bare languages stay
+    // plain strings.
+    const ymlOptions = LANGUAGE_CATALOG[spec.name]?.ymlOptions;
+    out.push({
+      spec: e,
+      ...(ymlOptions && Object.keys(ymlOptions).length > 0
+        ? { options: ymlOptions }
+        : {}),
+    });
   }
   if (unknown.length > 0) {
     throw new Error(

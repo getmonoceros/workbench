@@ -3,6 +3,38 @@ import { deriveRepoName } from '../create/scaffold.js';
 import type { CreateOptions, FeatureOptions } from '../create/types.js';
 import { portNumber, type SolutionConfig } from './schema.js';
 
+type LanguageOptionValue = string | number | boolean;
+
+/**
+ * Normalize the yml `languages` array (mixed string + object form) into the
+ * CreateOptions shape: a `name[:version]` string list plus a per-language
+ * options map (object form only, version stripped out into the suffix).
+ */
+function normalizeLanguages(entries: SolutionConfig['languages']): {
+  languages: string[];
+  languageOptions: Record<string, Record<string, LanguageOptionValue>>;
+} {
+  const languages: string[] = [];
+  const languageOptions: Record<
+    string,
+    Record<string, LanguageOptionValue>
+  > = {};
+  for (const entry of entries) {
+    if (typeof entry === 'string') {
+      languages.push(entry);
+      continue;
+    }
+    // Object form: single-key map `{ <name>: { version?, ...options } }`.
+    const name = Object.keys(entry)[0]!;
+    const opts = { ...entry[name] };
+    const version = opts.version;
+    delete opts.version;
+    languages.push(version !== undefined ? `${name}:${String(version)}` : name);
+    if (Object.keys(opts).length > 0) languageOptions[name] = opts;
+  }
+  return { languages, languageOptions };
+}
+
 /**
  * Translate a yml-shaped `SolutionConfig` into the `CreateOptions`
  * shape the existing scaffolders (devcontainer.json, compose.yaml,
@@ -46,12 +78,14 @@ export function solutionConfigToCreateOptions(
     featureRecord[entry.ref] = { ...defaults, ...containerOpts };
   }
 
+  const { languages, languageOptions } = normalizeLanguages(config.languages);
+
   const result: CreateOptions = {
     name: config.name,
     ...(config.runtimeVersion !== undefined
       ? { runtimeVersion: config.runtimeVersion }
       : {}),
-    languages: [...config.languages],
+    languages,
     // Normalize every services[] entry (curated string or explicit
     // object) to the canonical ResolvedService shape. `${VAR}` values
     // survive untouched here — apply interpolates them against
@@ -59,6 +93,9 @@ export function solutionConfigToCreateOptions(
     services: config.services.map(resolveService),
   };
 
+  if (Object.keys(languageOptions).length > 0) {
+    result.languageOptions = languageOptions;
+  }
   if (config.externalServices.postgres !== undefined) {
     result.postgresUrl = config.externalServices.postgres;
   }

@@ -803,6 +803,39 @@ describe('runApply', () => {
     ).toEqual({ version: '20' });
   });
 
+  it('object-form language options override the catalog defaults (editable)', async () => {
+    await writeYml(
+      'javaopt',
+      [
+        'schemaVersion: 1',
+        'name: javaopt',
+        'languages:',
+        '  - java:',
+        '      version: 17',
+        '      installMaven: false',
+        '',
+      ].join('\n'),
+    );
+    await runApply({ ...baseRunOpts, name: 'javaopt', monocerosHome: home });
+    const devcontainer = JSON.parse(
+      await readFile(
+        path.join(
+          home,
+          'container',
+          'javaopt',
+          '.devcontainer',
+          'devcontainer.json',
+        ),
+        'utf8',
+      ),
+    );
+    // installMaven:false from the yml wins over the catalog default (true);
+    // installGradle keeps its default (true); version from the object form.
+    expect(
+      devcontainer.features['ghcr.io/devcontainers/features/java:1'],
+    ).toEqual({ installMaven: false, installGradle: true, version: '17' });
+  });
+
   it('bare `node` stays a builtin and does not install the upstream node feature', async () => {
     await writeYml(
       'bare-node',

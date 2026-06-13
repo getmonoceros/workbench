@@ -364,6 +364,32 @@ export const ExternalServicesSchema = z.object({
     .optional(),
 });
 
+// A language entry is either the bare/`:version` string form (`node`,
+// `java:17`) or an object form that surfaces feature options in the yml:
+//   - java:
+//       version: 21
+//       installMaven: true
+// The object form is a single-key map `{ <language>: { ...options } }` where
+// `version` (if present) is the upstream feature version and the rest are
+// feature options. Backward compatible: existing string entries still parse.
+const LanguageOptionValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+]);
+const LanguageEntrySchema = z.union([
+  z.string().min(1),
+  z
+    .record(
+      z.string().min(1),
+      z.record(z.string().min(1), LanguageOptionValueSchema),
+    )
+    .refine((obj) => Object.keys(obj).length === 1, {
+      message:
+        'a language entry object must have exactly one language name as its key',
+    }),
+]);
+
 export const SolutionConfigSchema = z.object({
   schemaVersion: z.literal(CONFIG_SCHEMA_VERSION),
   name: z
@@ -384,7 +410,7 @@ export const SolutionConfigSchema = z.object({
       "Invalid runtimeVersion. Expected an exact version like '1.1.0'.",
     )
     .optional(),
-  languages: z.array(z.string().min(1)).default([]),
+  languages: z.array(LanguageEntrySchema).default([]),
   aptPackages: z
     .array(
       z

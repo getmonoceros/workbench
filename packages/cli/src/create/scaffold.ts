@@ -197,6 +197,9 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
       ? { runtimeVersion: opts.runtimeVersion }
       : {}),
     languages,
+    ...(opts.languageOptions && Object.keys(opts.languageOptions).length > 0
+      ? { languageOptions: opts.languageOptions }
+      : {}),
     services,
     postgresUrl: opts.postgresUrl,
     ...(aptPackages.length > 0 ? { aptPackages } : {}),
@@ -388,10 +391,12 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
     }
     const entry = LANGUAGE_CATALOG[parsed.name];
     if (!entry) continue;
-    // Catalog defaults first, then the spec's version layers on top
-    // (an explicit `version` always wins over any default).
+    // Catalog defaults first, then the yml's per-language options (the object
+    // form — builder edits win over the default), then the spec's version
+    // (an explicit `version` always wins).
     const options: Record<string, unknown> = {
       ...(entry.defaultOptions ?? {}),
+      ...(opts.languageOptions?.[parsed.name] ?? {}),
     };
     if (parsed.version !== undefined) options.version = parsed.version;
     resolved.push({

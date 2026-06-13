@@ -81,6 +81,14 @@ export interface ResolvedService {
 export interface CreateOptions {
   name: string;
   languages: string[];
+  /**
+   * Per-language feature options from the yml's object form (e.g.
+   * `java: { installMaven: false }`), keyed by language name, excluding the
+   * version (which stays in the `languages` entry's `:version` suffix). These
+   * override the catalog's `defaultOptions` at apply time. Absent when every
+   * language entry is the bare string form.
+   */
+  languageOptions?: Record<string, Record<string, string | number | boolean>>;
   services: ResolvedService[];
   /**
    * Pinned runtime-image version (e.g. `1.1.0`), from the yml's

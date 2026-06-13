@@ -153,6 +153,28 @@ describe('runInit', () => {
     expect(parsed.config.languages).toEqual(['node']);
   });
 
+  it('surfaces a language’s yml options as the object form (java → Maven/Gradle)', async () => {
+    const result = await runInit({
+      name: 'jbox',
+      languages: ['java:21', 'node'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    // java surfaces its surface:yml defaults as the object form; the version
+    // moves inside. node has no surface:yml options → stays a bare string.
+    expect(text).toMatch(
+      /languages:\n {2}- java:\n {6}version: 21\n {6}installMaven: true\n {6}installGradle: true\n {2}- node\n/,
+    );
+    // Round-trips through the schema into the object form.
+    const parsed = parseConfig(text);
+    expect(parsed.config.languages).toEqual([
+      { java: { version: 21, installMaven: true, installGradle: true } },
+      'node',
+    ]);
+  });
+
   it('writes a gitignored <name>.env stub with an info header', async () => {
     await runInit({
       name: 'sandbox',

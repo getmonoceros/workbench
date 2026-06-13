@@ -61,9 +61,20 @@ export interface InitService {
   image?: string;
 }
 
+/**
+ * One language line for the composed generator. `spec` is the
+ * `name[:version]` form; `options` are the `surface: yml` feature options
+ * rendered as the object form (e.g. java's installMaven/installGradle). With
+ * no options, the language renders as the bare `spec` string.
+ */
+export interface LanguageRender {
+  spec: string;
+  options?: Readonly<Record<string, string | number | boolean>>;
+}
+
 /** Resolved, categorized inputs for the composed-mode generator. */
 export interface ComposedInit {
-  languages: readonly string[];
+  languages: readonly LanguageRender[];
   aptPackages: readonly string[];
   services: readonly InitService[];
   features: readonly RenderableFeature[];
@@ -94,7 +105,23 @@ export function generateComposedYml(
   if (composed.languages.length > 0) {
     pushSectionHeader(lines, LANGUAGES_HEADER, /* commented */ false);
     lines.push('languages:');
-    for (const lang of composed.languages) lines.push(`  - ${lang}`);
+    for (const lang of composed.languages) {
+      const opts = lang.options ?? {};
+      if (Object.keys(opts).length === 0) {
+        lines.push(`  - ${lang.spec}`);
+        continue;
+      }
+      // Object form: move any `:version` suffix into a `version:` key, then
+      // list the surfaced feature options below it.
+      const colon = lang.spec.indexOf(':');
+      const langName = colon === -1 ? lang.spec : lang.spec.slice(0, colon);
+      const version = colon === -1 ? undefined : lang.spec.slice(colon + 1);
+      lines.push(`  - ${langName}:`);
+      if (version !== undefined) lines.push(`      version: ${version}`);
+      for (const [key, value] of Object.entries(opts)) {
+        lines.push(`      ${key}: ${String(value)}`);
+      }
+    }
     lines.push('');
   }
   if (composed.aptPackages.length > 0) {
