@@ -51,7 +51,8 @@ service:
     test: [CMD, pg_isready, -U, monoceros]
     interval: 10s
     retries: 5
-  connectionEnv: [DATABASE_URL, PGHOST]
+  connectionEnv:
+    DATABASE_URL: postgresql://x@\${host}:\${port}/x
 options:
   POSTGRES_PASSWORD: { type: string, default: monoceros, surface: env }
 `;

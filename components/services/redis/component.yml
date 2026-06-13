@@ -12,3 +12,5 @@ service:
     timeout: 5s
     retries: 5
   vscodeExtensions: [cweijan.vscode-database-client2]
+  connectionEnv:
+    REDIS_URL: redis://${host}:${port}

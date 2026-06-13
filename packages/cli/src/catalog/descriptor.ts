@@ -100,8 +100,16 @@ export const ServiceBlockSchema = z.object({
   defaultPort: z.number().int().positive().optional(),
   dataMount: z.string().optional(),
   healthcheck: HealthcheckSchema.optional(),
-  /** Connection env vars derived for the workspace (DATABASE_URL, ...). */
-  connectionEnv: z.array(z.string()).optional(),
+  /**
+   * Connection env vars injected into the WORKSPACE container so the app /
+   * agent can reach this service without hardcoding anything. Keyed by env
+   * var name → a template value. Tokens: `${host}` (the service hostname),
+   * `${port}` (the service's port, falling back to `defaultPort`), and
+   * `${<OPTION>}` (any of the service's own option values, e.g.
+   * `${POSTGRES_USER}`). Example:
+   *   DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${POSTGRES_DB}
+   */
+  connectionEnv: z.record(z.string(), z.string()).optional(),
   vscodeExtensions: z.array(z.string()).optional(),
 });
 export type ServiceBlock = z.infer<typeof ServiceBlockSchema>;

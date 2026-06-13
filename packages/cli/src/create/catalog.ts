@@ -260,6 +260,13 @@ export interface ServiceEntry {
    * derived suggestions the builder can dismiss. See ADR 0016.
    */
   vscodeExtensions?: readonly string[];
+  /**
+   * Workspace connection env, keyed by var name → template. Tokens `${host}`,
+   * `${port}` and `${<OPTION>}` (the service's own env values) are
+   * interpolated by `serviceConnectionEnv`. Descriptor-driven (ADR 0020): a
+   * new service declares its own connection env without any code change.
+   */
+  connectionEnv?: Readonly<Record<string, string>>;
 }
 
 // The `monoceros` user/password/db below are deliberate dev-only
@@ -305,6 +312,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
           ...(svc.vscodeExtensions
             ? { vscodeExtensions: svc.vscodeExtensions }
             : {}),
+          ...(svc.connectionEnv ? { connectionEnv: svc.connectionEnv } : {}),
         };
         return [key, entry];
       }),
@@ -392,51 +400,40 @@ export function curatedServiceEnvDefaults(
 }
 
 /**
- * Connection environment variables to inject into the WORKSPACE container
- * for curated services, derived from their (already `${VAR}`-resolved)
- * env + service name + port. Lets the app and the in-container AI agent
- * connect without anyone knowing or hardcoding the dev-default credentials
- * — they read `DATABASE_URL` / `REDIS_URL` (and the engine-specific `PG*` /
- * `MYSQL_*`) instead. These are dev-only defaults inside the isolated
- * container, not secrets. Custom-image services are skipped (Monoceros
- * doesn't know their connection shape). `DATABASE_URL` points at the first
- * SQL database found (postgres wins over mysql when both are present).
+ * Connection environment variables injected into the WORKSPACE container,
+ * derived from each curated service's descriptor `connectionEnv` templates
+ * (ADR 0020). Tokens are interpolated: `${host}` (the service hostname),
+ * `${port}` (svc.port, falling back to the catalog defaultPort), and
+ * `${<OPTION>}` (the service's already-resolved env values). Lets the app and
+ * the in-container AI agent read `DATABASE_URL` / `REDIS_URL` (and the
+ * engine-specific `PG*` / `MYSQL_*`) instead of hardcoding the dev-default
+ * credentials. Services without a `connectionEnv` (custom images, most
+ * non-DB services) are skipped — Monoceros doesn't invent a shape for them.
+ *
+ * When two services set the same var (postgres + mysql both set
+ * `DATABASE_URL`) the later one in the list wins. Apply sorts services by
+ * name, so postgres (`p` > `m`) deterministically wins over mysql.
+ *
+ * Fully data-driven: a new service declares its own `connectionEnv` in its
+ * descriptor and gets it injected with no code change here.
  */
 export function serviceConnectionEnv(
   services: readonly ResolvedService[],
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const svc of services) {
-    if (!isCuratedService(svc.name)) continue;
+    const def = SERVICE_CATALOG[svc.name];
+    if (!def?.connectionEnv) continue;
     const host = svc.name;
-    if (svc.name === 'postgres') {
-      const user = svc.env.POSTGRES_USER ?? 'postgres';
-      const pass = svc.env.POSTGRES_PASSWORD ?? '';
-      const db = svc.env.POSTGRES_DB ?? user;
-      const port = svc.port ?? 5432;
-      env.PGHOST = host;
-      env.PGPORT = String(port);
-      env.PGUSER = user;
-      env.PGPASSWORD = pass;
-      env.PGDATABASE = db;
-      // Postgres always wins DATABASE_URL (overrides a mysql one set earlier).
-      env.DATABASE_URL = `postgresql://${user}:${pass}@${host}:${port}/${db}`;
-    } else if (svc.name === 'mysql') {
-      const pass = svc.env.MYSQL_ROOT_PASSWORD ?? '';
-      const db = svc.env.MYSQL_DATABASE ?? '';
-      const port = svc.port ?? 3306;
-      env.MYSQL_HOST = host;
-      env.MYSQL_PORT = String(port);
-      env.MYSQL_USER = 'root';
-      env.MYSQL_PASSWORD = pass;
-      env.MYSQL_DATABASE = db;
-      // Only the fallback when there's no postgres.
-      if (env.DATABASE_URL === undefined) {
-        env.DATABASE_URL = `mysql://root:${pass}@${host}:${port}/${db}`;
-      }
-    } else if (svc.name === 'redis') {
-      const port = svc.port ?? 6379;
-      env.REDIS_URL = `redis://${host}:${port}`;
+    const port = String(svc.port ?? def.defaultPort);
+    const fill = (template: string): string =>
+      template.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, token: string) => {
+        if (token === 'host') return host;
+        if (token === 'port') return port;
+        return svc.env[token] ?? '';
+      });
+    for (const [key, template] of Object.entries(def.connectionEnv)) {
+      env[key] = fill(template);
     }
   }
   return env;
