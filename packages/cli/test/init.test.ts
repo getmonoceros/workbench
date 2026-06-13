@@ -4,6 +4,10 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runInit } from '../src/init/index.js';
 import { parseConfig } from '../src/config/index.js';
+import {
+  writeDescriptor,
+  writeFeatureManifest,
+} from './helpers/fake-workbench.js';
 
 const silentLogger = {
   success: () => {},
@@ -18,78 +22,79 @@ const silentLogger = {
  * to do their thing.
  */
 async function buildFakeWorkbench(root: string): Promise<void> {
+  // README sentinel so workbenchRoot() — if ever called — finds a marker.
   const componentsDir = path.join(root, 'templates', 'components');
   await mkdir(componentsDir, { recursive: true });
-  // README sentinel so workbenchRoot() — if it were ever called —
-  // would find a marker. We pass workbenchRoot explicitly in the
-  // tests, but the file is cheap and matches the real layout.
   await writeFile(path.join(componentsDir, 'README.md'), '# components\n');
 
-  await writeFile(
-    path.join(componentsDir, 'node.yml'),
+  await writeDescriptor(
+    root,
+    'languages',
+    'node',
     [
+      'id: node',
+      'category: language',
       'displayName: Node 22',
       'description: Node runtime.',
-      'category: language',
-      'contributes:',
-      '  languages: [node]',
+      'language:',
+      '  feature: ghcr.io/devcontainers/features/node:1',
+      '  builtin: true',
       '',
     ].join('\n'),
   );
-  await writeFile(
-    path.join(componentsDir, 'postgres.yml'),
+  await writeDescriptor(
+    root,
+    'services',
+    'postgres',
     [
+      'id: postgres',
+      'category: service',
       'displayName: Postgres 16',
       'description: Postgres compose service.',
-      'category: service',
-      'contributes:',
-      '  services: [postgres]',
+      'service:',
+      '  image: postgres:18',
+      '  defaultPort: 5432',
       '',
     ].join('\n'),
   );
-  await writeFile(
-    path.join(componentsDir, 'claude.yml'),
+  // Selector `claude` (short name), manifest id `claude-code`.
+  await writeDescriptor(
+    root,
+    'features',
+    'claude-code',
     [
+      'id: claude-code',
+      'name: claude',
+      'category: feature',
       'displayName: Claude Code CLI',
       'description: Claude Code CLI feature.',
-      'category: feature',
-      'contributes:',
-      '  features:',
-      '    - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+      'feature:',
+      '  version: 1.0.0',
       '',
     ].join('\n'),
   );
 
-  // Matching feature manifest with optionHints + a description on
-  // the hinted option + a per-feature usageNote — exercises the
-  // full hint-rendering surface that the init generator consumes.
-  const featureDir = path.join(root, 'images', 'features', 'claude-code');
-  await mkdir(featureDir, { recursive: true });
-  await writeFile(
-    path.join(featureDir, 'devcontainer-feature.json'),
-    JSON.stringify(
-      {
-        id: 'claude-code',
-        version: '1.0.0',
-        options: {
-          apiKey: {
-            type: 'string',
-            default: '',
-            description:
-              'Optional Anthropic API key. When set, exported as ANTHROPIC_API_KEY for all shells in the container.',
-          },
-        },
-        'x-monoceros': {
-          optionHints: ['apiKey'],
-          usageNotes: [
-            'Persistent OAuth login lives at home/.claude in the container, so first-run `claude login` survives apply rebuilds.',
-          ],
-        },
+  // Matching feature manifest with optionHints + a description on the hinted
+  // option + a per-feature usageNote — exercises the full hint-rendering
+  // surface the init generator consumes.
+  await writeFeatureManifest(root, 'claude-code', {
+    id: 'claude-code',
+    version: '1.0.0',
+    options: {
+      apiKey: {
+        type: 'string',
+        default: '',
+        description:
+          'Optional Anthropic API key. When set, exported as ANTHROPIC_API_KEY for all shells in the container.',
       },
-      null,
-      2,
-    ),
-  );
+    },
+    'x-monoceros': {
+      optionHints: ['apiKey'],
+      usageNotes: [
+        'Persistent OAuth login lives at home/.claude in the container, so first-run `claude login` survives apply rebuilds.',
+      ],
+    },
+  });
 }
 
 describe('runInit', () => {

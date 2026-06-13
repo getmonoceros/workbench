@@ -6,9 +6,8 @@ import {
   containerConfigsDir,
   containerEnvPath,
   monocerosHome as defaultMonocerosHome,
-  workbenchRoot as defaultWorkbenchRoot,
   workbenchCheckoutRoot,
-  componentsDir as defaultComponentsDir,
+  componentsRootDir,
 } from '../config/paths.js';
 import {
   ensureEnvGitignored,
@@ -116,7 +115,6 @@ export interface RunInitResult {
 }
 
 export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
-  const workbench = opts.workbenchRoot ?? defaultWorkbenchRoot();
   const home = opts.monocerosHome ?? defaultMonocerosHome();
   const logger = opts.logger ?? {
     success: (msg) => consola.success(msg),
@@ -136,10 +134,17 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     );
   }
 
-  const catalog = await loadComponentCatalog(defaultComponentsDir(workbench));
+  // Component descriptors live under `<root>/components/` (ADR 0020). In
+  // tests the fixture sets `workbenchRoot` to a dir holding both the
+  // descriptors and an `images/features/` tree; honour that. In real use we
+  // resolve checkout-first, bundled-copy fallback.
+  const componentsRoot = opts.workbenchRoot
+    ? path.join(opts.workbenchRoot, 'components')
+    : componentsRootDir();
+  const catalog = await loadComponentCatalog(componentsRoot);
   if (catalog.size === 0) {
     throw new Error(
-      `No components found under ${defaultComponentsDir(workbench)}. The workbench checkout is incomplete.`,
+      `No components found under ${componentsRoot}. The workbench checkout is incomplete.`,
     );
   }
 

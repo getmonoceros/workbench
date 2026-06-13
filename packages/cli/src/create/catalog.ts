@@ -7,6 +7,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ServiceHealthcheck, ServiceObject } from '../config/schema.js';
 import type { ResolvedService } from './types.js';
+import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
+import type { CatalogComponent } from '../catalog/load.js';
 
 // Monoceros runtime image — thin layer on top of Microsoft's
 // typescript-node base (see images/runtime/Dockerfile). The default
@@ -103,26 +105,58 @@ export interface LanguageEntry {
   defaultOptions?: Readonly<Record<string, unknown>>;
 }
 
-// `node` is included in the base runtime image, so the bare entry
-// `languages: [node]` is accepted as input but installs nothing
-// extra. Versioned node — `node:20` — bypasses the builtin set and
-// goes through the upstream feature like the other languages,
-// because the base image's node version (22) isn't selectable
-// otherwise.
-export const BUILTIN_LANGUAGES = new Set(['node']);
+// ─── Descriptor-derived catalogs (ADR 0020) ──────────────────────
+// LANGUAGE_CATALOG / SERVICE_CATALOG / BUILTIN_LANGUAGES are no longer
+// hand-written literals: they are a typed projection of the unified
+// component descriptors under `components/`, loaded synchronously at import
+// so these eager const exports keep their original shape and every existing
+// consumer keeps working unchanged. The descriptor is the single source of
+// truth (see ADR 0020); these records derive from it.
+const DESCRIPTORS = loadDescriptorCatalogSync();
 
-export const LANGUAGE_CATALOG: Readonly<Record<string, LanguageEntry>> = {
-  node: { id: 'node', feature: 'ghcr.io/devcontainers/features/node:1' },
-  python: { id: 'python', feature: 'ghcr.io/devcontainers/features/python:1' },
-  java: {
-    id: 'java',
-    feature: 'ghcr.io/devcontainers/features/java:1',
-    defaultOptions: { installMaven: true, installGradle: true },
-  },
-  go: { id: 'go', feature: 'ghcr.io/devcontainers/features/go:1' },
-  rust: { id: 'rust', feature: 'ghcr.io/devcontainers/features/rust:1' },
-  dotnet: { id: 'dotnet', feature: 'ghcr.io/devcontainers/features/dotnet:2' },
-};
+/** Plain `{ key: defaultValue }` for the options that declare a default. */
+function descriptorOptionDefaults(
+  options: Record<string, { default?: string | boolean | number }>,
+): Record<string, string | boolean | number> {
+  const out: Record<string, string | boolean | number> = {};
+  for (const [key, spec] of Object.entries(options)) {
+    if (spec.default !== undefined) out[key] = spec.default;
+  }
+  return out;
+}
+
+/** CLI/yml selector for a component (its `name`, defaulting to `id`). */
+function descriptorSelector(c: CatalogComponent): string {
+  return c.descriptor.name ?? c.descriptor.id;
+}
+
+// `node` is in the base runtime image (descriptor `language.builtin: true`),
+// so the bare entry `languages: [node]` installs nothing extra. Versioned
+// node — `node:20` — bypasses the builtin set and goes through the upstream
+// feature, because the base image's node version isn't otherwise selectable.
+export const BUILTIN_LANGUAGES = new Set<string>(
+  [...DESCRIPTORS.values()]
+    .filter((c) => c.category === 'language' && c.descriptor.language?.builtin)
+    .map(descriptorSelector),
+);
+
+export const LANGUAGE_CATALOG: Readonly<Record<string, LanguageEntry>> =
+  Object.fromEntries(
+    [...DESCRIPTORS.values()]
+      .filter((c) => c.category === 'language')
+      .map((c) => {
+        const key = descriptorSelector(c);
+        const defaults = descriptorOptionDefaults(c.descriptor.options);
+        const entry: LanguageEntry = {
+          id: key,
+          feature: c.descriptor.language!.feature,
+          ...(Object.keys(defaults).length > 0
+            ? { defaultOptions: defaults }
+            : {}),
+        };
+        return [key, entry];
+      }),
+  );
 
 /**
  * Language entries in a container yml may carry an optional
@@ -206,76 +240,39 @@ export interface ServiceEntry {
 // leaves the host, never rides along when the yml is shared). Because
 // the default isn't a secret, the secret-masking layer
 // (util/mask-secrets.ts) doesn't and shouldn't mask it.
-export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> = {
-  postgres: {
-    id: 'postgres',
-    image: 'postgres:18',
-    env: {
-      POSTGRES_USER: 'monoceros',
-      POSTGRES_PASSWORD: 'monoceros',
-      POSTGRES_DB: 'monoceros',
-    },
-    healthcheck: {
-      test: [
-        'CMD',
-        'pg_isready',
-        '-U',
-        '${POSTGRES_USER}',
-        '-d',
-        '${POSTGRES_DB}',
-      ],
-      interval: '10s',
-      timeout: '5s',
-      retries: 5,
-    },
-    // Postgres 18+ stores data under /var/lib/postgresql/<major>/, so
-    // the recommended mount is the parent directory; pre-18 used
-    // /var/lib/postgresql/data directly. See
-    // https://github.com/docker-library/postgres/pull/1259.
-    dataMount: '/var/lib/postgresql',
-    defaultPort: 5432,
-    vscodeExtensions: ['cweijan.vscode-database-client2'],
-  },
-  mysql: {
-    id: 'mysql',
-    image: 'mysql:8',
-    env: {
-      MYSQL_ROOT_PASSWORD: 'monoceros',
-      MYSQL_DATABASE: 'monoceros',
-    },
-    healthcheck: {
-      test: [
-        'CMD',
-        'mysqladmin',
-        'ping',
-        '-h',
-        '127.0.0.1',
-        '-u',
-        'root',
-        '-p${MYSQL_ROOT_PASSWORD}',
-      ],
-      interval: '10s',
-      timeout: '5s',
-      retries: 5,
-    },
-    dataMount: '/var/lib/mysql',
-    defaultPort: 3306,
-    vscodeExtensions: ['cweijan.vscode-database-client2'],
-  },
-  redis: {
-    id: 'redis',
-    image: 'redis:8',
-    healthcheck: {
-      test: ['CMD', 'redis-cli', 'ping'],
-      interval: '10s',
-      timeout: '5s',
-      retries: 5,
-    },
-    dataMount: '/data',
-    defaultPort: 6379,
-    vscodeExtensions: ['cweijan.vscode-database-client2'],
-  },
-};
+export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
+  Object.fromEntries(
+    [...DESCRIPTORS.values()]
+      .filter((c) => c.category === 'service')
+      .map((c) => {
+        const key = descriptorSelector(c);
+        const svc = c.descriptor.service!;
+        if (svc.defaultPort === undefined) {
+          throw new Error(
+            `Service descriptor '${key}' is missing service.defaultPort.`,
+          );
+        }
+        // env defaults are modeled as the service's surface:env options.
+        const env = descriptorOptionDefaults(c.descriptor.options) as Record<
+          string,
+          string
+        >;
+        const entry: ServiceEntry = {
+          id: key,
+          image: svc.image,
+          ...(Object.keys(env).length > 0 ? { env } : {}),
+          ...(svc.healthcheck
+            ? { healthcheck: svc.healthcheck as ServiceHealthcheck }
+            : {}),
+          ...(svc.dataMount ? { dataMount: svc.dataMount } : {}),
+          defaultPort: svc.defaultPort,
+          ...(svc.vscodeExtensions
+            ? { vscodeExtensions: svc.vscodeExtensions }
+            : {}),
+        };
+        return [key, entry];
+      }),
+  );
 
 export function knownLanguages(): string[] {
   return [...BUILTIN_LANGUAGES, ...Object.keys(LANGUAGE_CATALOG)].sort();

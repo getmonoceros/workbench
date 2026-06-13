@@ -80,6 +80,20 @@ async function loadOne(
   expectedCategory: DescriptorCategory,
 ): Promise<CatalogComponent> {
   const text = await fs.readFile(sourcePath, 'utf8');
+  return parseDescriptorFile(text, sourcePath, folderId, expectedCategory);
+}
+
+/**
+ * Parse + validate one descriptor's YAML text into a CatalogComponent.
+ * Pure (no I/O) so both the async and sync loaders share it. Throws with a
+ * path-anchored message on any problem.
+ */
+export function parseDescriptorFile(
+  text: string,
+  sourcePath: string,
+  folderId: string,
+  expectedCategory: DescriptorCategory,
+): CatalogComponent {
   let raw: unknown;
   try {
     raw = parseYaml(text);

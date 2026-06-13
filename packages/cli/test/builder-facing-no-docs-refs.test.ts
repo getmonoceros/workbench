@@ -9,6 +9,10 @@ import { resolveService, expandCuratedService } from '../src/create/catalog.js';
 import { renderDynamicConfig } from '../src/proxy/dynamic.js';
 import { formatRootlessNotSupportedError } from '../src/devcontainer/docker-mode.js';
 import { formatHostPortHeldError } from '../src/proxy/port-check.js';
+import {
+  writeDescriptor,
+  nodeLanguageDescriptor,
+} from './helpers/fake-workbench.js';
 
 /**
  * Builder-facing output (generated yml, compose files, dynamic
@@ -49,22 +53,14 @@ describe('no internal docs/ADR refs in builder-facing output', () => {
     home = await mkdtemp(path.join(tmpdir(), 'monoceros-docs-guard-home-'));
     workbench = await mkdtemp(path.join(tmpdir(), 'monoceros-docs-guard-wb-'));
     await mkdir(path.join(home, 'container-configs'), { recursive: true });
-    // Minimal component catalog so runInit's composed mode has
-    // something to compose. Catalog layout is flat:
-    // `<componentsDir>/<name>.yml`, NOT a per-component subdir.
-    const compRoot = path.join(workbench, 'templates', 'components');
-    await mkdir(compRoot, { recursive: true });
-    const nodeYml = [
-      'displayName: Node.js',
-      'description: Node 22 + pnpm',
-      'category: language',
-      'contributes:',
-      '  languages:',
-      '    - node',
-      '',
-    ].join('\n');
-    const { writeFile } = await import('node:fs/promises');
-    await writeFile(path.join(compRoot, 'node.yml'), nodeYml);
+    // Minimal descriptor catalog so runInit's composed mode has something
+    // to compose (ADR 0020 layout: components/<category>/<id>/component.yml).
+    await writeDescriptor(
+      workbench,
+      'languages',
+      'node',
+      nodeLanguageDescriptor(),
+    );
   });
   afterEach(async () => {
     await rm(home, { recursive: true, force: true });

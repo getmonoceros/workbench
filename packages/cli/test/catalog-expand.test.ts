@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadDescriptorCatalog } from '../src/catalog/load.js';
 import { expandSelectable } from '../src/catalog/expand.js';
-import { loadComponentCatalog } from '../src/init/components.js';
+import { buildComponentCatalog } from '../src/init/components.js';
 
 // test/ -> packages/cli -> packages -> <checkout root>
 const repoRoot = path.resolve(
@@ -13,36 +13,29 @@ const repoRoot = path.resolve(
   '..',
 );
 const componentsRoot = path.join(repoRoot, 'components');
-const templatesRoot = path.join(
-  repoRoot,
-  'packages',
-  'cli',
-  'templates',
-  'components',
-);
 
 /**
- * Transitional surface contract (ADR 0020, phase 3): the descriptor catalog,
- * once expanded (base entries + presets), must offer the exact same set of
- * selectable (name, category) pairs as the old component-template catalog. The
- * displayName/description are intentionally NOT compared - the descriptor port
- * rewrote them. What must not change is *what the builder can select*.
+ * Surface contract (ADR 0020, phase 3): the two projections of the descriptor
+ * catalog agree on the selectable surface — `expandSelectable` (what
+ * list-components shows) and `buildComponentCatalog` (what init resolves
+ * `--with-*` against) must offer the exact same set of (name, category) pairs,
+ * base entries plus presets. (That this set also matched the retired component
+ * templates was proven when the descriptors were first ported.)
  */
 describe('expandSelectable preserves the selectable surface', () => {
-  it('offers the same (name, category) set as the old component templates', async () => {
-    const oldCatalog = await loadComponentCatalog(templatesRoot);
-    const expanded = expandSelectable(
-      await loadDescriptorCatalog(componentsRoot),
-    );
+  it('agrees with the init component catalog on (name, category)', async () => {
+    const descriptors = await loadDescriptorCatalog(componentsRoot);
+    const expanded = expandSelectable(descriptors);
+    const initCatalog = buildComponentCatalog(descriptors);
 
-    const oldSet = new Set(
-      [...oldCatalog.values()].map((c) => `${c.file.category}:${c.name}`),
-    );
-    const newSet = new Set(
+    const expandedSet = new Set(
       [...expanded.values()].map((c) => `${c.category}:${c.name}`),
     );
+    const initSet = new Set(
+      [...initCatalog.values()].map((c) => `${c.file.category}:${c.name}`),
+    );
 
-    expect(newSet).toEqual(oldSet);
+    expect(expandedSet).toEqual(initSet);
   });
 
   it('exposes the atlassian presets as atlassian/twg and atlassian/rovodev', async () => {

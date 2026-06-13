@@ -1,148 +1,120 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  loadComponentCatalog,
+  buildComponentCatalog,
   mergeComponents,
   resolveComponents,
 } from '../src/init/components.js';
+import { loadDescriptorCatalog } from '../src/catalog/load.js';
+import { writeDescriptor } from './helpers/fake-workbench.js';
 
-describe('component catalog reader', () => {
-  let dir: string;
+// Descriptor parsing + validation is covered in catalog-descriptor.test.ts;
+// here we test the projection from descriptors into the legacy Component shape
+// that init's resolve/merge consumes (incl. preset expansion + selector names).
+describe('buildComponentCatalog (descriptor projection)', () => {
+  let root: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(path.join(tmpdir(), 'monoceros-components-'));
+    root = await mkdtemp(path.join(tmpdir(), 'monoceros-components-'));
   });
 
   afterEach(async () => {
-    await rm(dir, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   });
 
-  async function writeComponent(rel: string, body: string): Promise<void> {
-    const full = path.join(dir, rel);
-    await mkdir(path.dirname(full), { recursive: true });
-    await writeFile(full, body);
+  async function build() {
+    return buildComponentCatalog(
+      await loadDescriptorCatalog(path.join(root, 'components')),
+    );
   }
 
-  it('loads a flat language component', async () => {
-    await writeComponent(
-      'node.yml',
+  it('projects a language descriptor to a languages contribution', async () => {
+    await writeDescriptor(
+      root,
+      'languages',
+      'node',
       [
-        'displayName: Node 22',
-        'description: Node 22 runtime.',
+        'id: node',
         'category: language',
-        'contributes:',
-        '  languages: [node]',
+        'displayName: Node.js',
+        'description: Node runtime.',
+        'language:',
+        '  feature: ghcr.io/devcontainers/features/node:1',
         '',
       ].join('\n'),
     );
-    const catalog = await loadComponentCatalog(dir);
+    const catalog = await build();
     const c = catalog.get('node');
-    expect(c).toBeDefined();
     expect(c?.file.category).toBe('language');
     expect(c?.file.contributes.languages).toEqual(['node']);
   });
 
-  it('loads a sub-component using slash-form name', async () => {
-    await writeComponent(
-      'atlassian/twg.yml',
+  it('exposes a feature and its presets with reconstructed ref + merged options', async () => {
+    await writeDescriptor(
+      root,
+      'features',
+      'atlassian',
       [
-        'displayName: TWG',
-        'description: Just twg.',
+        'id: atlassian',
         'category: feature',
-        'contributes:',
-        '  features:',
-        '    - ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1',
-        '      options:',
-        '        twg: true',
-        '        rovodev: false',
+        'displayName: Atlassian',
+        'description: Both tools.',
+        'options:',
+        '  rovodev: { type: boolean, default: true, surface: yml }',
+        '  twg: { type: boolean, default: true, surface: yml }',
+        'feature:',
+        '  version: 1.0.0',
+        'presets:',
+        '  twg: { rovodev: false, twg: true }',
         '',
       ].join('\n'),
     );
-    const catalog = await loadComponentCatalog(dir);
-    expect(catalog.has('atlassian/twg')).toBe(true);
+    const catalog = await build();
+    expect(catalog.get('atlassian')?.file.contributes.features).toEqual([
+      {
+        ref: 'ghcr.io/getmonoceros/monoceros-features/atlassian:1',
+        options: { rovodev: true, twg: true },
+      },
+    ]);
     expect(catalog.get('atlassian/twg')?.file.contributes.features).toEqual([
       {
         ref: 'ghcr.io/getmonoceros/monoceros-features/atlassian:1',
-        options: { twg: true, rovodev: false },
+        options: { rovodev: false, twg: true },
       },
     ]);
   });
 
-  it('skips README and non-yml files in the catalog dir', async () => {
-    await writeComponent(
-      'node.yml',
+  it('keys a feature by its selector name, not the manifest id', async () => {
+    await writeDescriptor(
+      root,
+      'features',
+      'claude-code',
       [
-        'displayName: Node',
-        'description: Node.',
-        'category: language',
-        'contributes:',
-        '  languages: [node]',
+        'id: claude-code',
+        'name: claude',
+        'category: feature',
+        'displayName: Claude Code',
+        'description: Claude Code CLI.',
+        'feature:',
+        '  version: 1.2.0',
         '',
       ].join('\n'),
     );
-    await writeFile(path.join(dir, 'README.md'), '# not a component\n');
-    await writeFile(path.join(dir, 'notes.txt'), 'random');
-    const catalog = await loadComponentCatalog(dir);
-    expect([...catalog.keys()]).toEqual(['node']);
+    const catalog = await build();
+    expect(catalog.has('claude')).toBe(true);
+    expect(catalog.has('claude-code')).toBe(false);
+    expect(catalog.get('claude')?.file.contributes.features?.[0]?.ref).toBe(
+      'ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+    );
   });
 
   it('returns an empty catalog when the directory does not exist', async () => {
-    const catalog = await loadComponentCatalog(
-      path.join(dir, 'does-not-exist'),
+    const catalog = buildComponentCatalog(
+      await loadDescriptorCatalog(path.join(root, 'does-not-exist')),
     );
     expect(catalog.size).toBe(0);
-  });
-
-  it('rejects a component whose category mismatches the contributions', async () => {
-    await writeComponent(
-      'broken.yml',
-      [
-        'displayName: Broken',
-        'description: Wrong category.',
-        'category: language',
-        'contributes:',
-        '  features:',
-        '    - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
-        '',
-      ].join('\n'),
-    );
-    await expect(loadComponentCatalog(dir)).rejects.toThrow(
-      /category 'language' requires contributes\.languages/,
-    );
-  });
-
-  it('rejects a component that contributes to multiple sections at once', async () => {
-    await writeComponent(
-      'both.yml',
-      [
-        'displayName: Both',
-        'description: Too many.',
-        'category: language',
-        'contributes:',
-        '  languages: [node]',
-        '  services: [postgres]',
-        '',
-      ].join('\n'),
-    );
-    await expect(loadComponentCatalog(dir)).rejects.toThrow(/exactly one of/);
-  });
-
-  it('rejects a component with an invalid feature ref', async () => {
-    await writeComponent(
-      'bad-ref.yml',
-      [
-        'displayName: Bad',
-        'description: Bad ref.',
-        'category: feature',
-        'contributes:',
-        '  features:',
-        '    - ref: not-a-real-ref',
-        '',
-      ].join('\n'),
-    );
-    await expect(loadComponentCatalog(dir)).rejects.toThrow(/ref/);
   });
 });
 

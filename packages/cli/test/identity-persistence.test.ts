@@ -4,6 +4,10 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 import {
+  writeDescriptor,
+  nodeLanguageDescriptor,
+} from './helpers/fake-workbench.js';
+import {
   readMonocerosConfig,
   writeGlobalDefaultGitUser,
 } from '../src/config/global.js';
@@ -446,19 +450,11 @@ describe('init scaffolds a ${VAR} git.user + seeds <name>.env when --with-repo',
     home = await mkdtemp(path.join(tmpdir(), 'monoceros-init-id-'));
     workbench = await mkdtemp(path.join(tmpdir(), 'monoceros-init-id-wb-'));
     await mkdir(path.join(home, 'container-configs'), { recursive: true });
-    const compRoot = path.join(workbench, 'templates', 'components');
-    await mkdir(compRoot, { recursive: true });
-    await writeFile(
-      path.join(compRoot, 'node.yml'),
-      [
-        'displayName: Node.js',
-        'description: Node 22',
-        'category: language',
-        'contributes:',
-        '  languages:',
-        '    - node',
-        '',
-      ].join('\n'),
+    await writeDescriptor(
+      workbench,
+      'languages',
+      'node',
+      nodeLanguageDescriptor(),
     );
   });
   afterEach(async () => {
