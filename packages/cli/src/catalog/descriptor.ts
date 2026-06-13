@@ -1,0 +1,166 @@
+import { z } from 'zod';
+import { REGEX } from '../config/schema.js';
+
+/**
+ * Unified component descriptor (`component.yml`) — the single source of
+ * truth for one catalog component (a language, a service, or a feature).
+ * See ADR 0020. This module owns only the *schema + types*; loading from
+ * disk lives in `./load.ts`, and nothing consumes it yet (Phase 1 is
+ * additive — the old `catalog.ts` + `templates/components/*.yml` paths
+ * still run unchanged).
+ *
+ * One descriptor replaces what used to be spread across `catalog.ts`
+ * (config-in-code), the hand-written `devcontainer-feature.json`, and the
+ * `templates/components/*.yml` fragment. The shape is a common head, one
+ * option model, optional briefing, and exactly one category-specific
+ * block matching `category`.
+ */
+
+/** Component identifier: lowercase, e.g. `java`, `postgres`, `claude-code`. */
+export const DESCRIPTOR_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+export const CategorySchema = z.enum(['language', 'service', 'feature']);
+export type DescriptorCategory = z.infer<typeof CategorySchema>;
+
+const OptionTypeSchema = z.enum(['string', 'boolean', 'number']);
+
+/**
+ * Where an option's value is written when a container is composed:
+ *   - `yml`    → into `container-configs/<name>.yml` (visible/editable)
+ *   - `env`    → into `<name>.env` (service credentials, secrets)
+ *   - `silent` → only into the generated devcontainer.json (not surfaced)
+ *
+ * Defaults to `silent`: an option is hidden unless a descriptor opts in.
+ */
+const SurfaceSchema = z.enum(['yml', 'silent', 'env']);
+
+const OptionValueSchema = z.union([z.string(), z.boolean(), z.number()]);
+
+export const OptionSpecSchema = z.object({
+  type: OptionTypeSchema,
+  default: OptionValueSchema.optional(),
+  description: z.string().optional(),
+  /** Credential/secret. Replaces the old `x-monoceros.optionHints` list. */
+  secret: z.boolean().default(false),
+  surface: SurfaceSchema.default('silent'),
+  /** Suggested values (rendered as devcontainer `proposals`). */
+  proposals: z.array(z.string()).optional(),
+});
+export type OptionSpec = z.infer<typeof OptionSpecSchema>;
+
+export const BriefingLineSchema = z.object({
+  text: z.string().min(1),
+  /**
+   * Option name; the line is emitted only when that option resolves
+   * truthy (after merging defaults + user options). Must reference an
+   * option declared on the same descriptor.
+   */
+  whenOption: z.string().optional(),
+});
+export type BriefingLine = z.infer<typeof BriefingLineSchema>;
+
+const HealthcheckSchema = z.object({
+  test: z.array(z.string()).min(1),
+  interval: z.string().optional(),
+  timeout: z.string().optional(),
+  retries: z.number().int().positive().optional(),
+  startPeriod: z.string().optional(),
+});
+
+/** `category: language` block — maps to an upstream devcontainer feature. */
+export const LanguageBlockSchema = z.object({
+  /** Upstream OCI feature ref, e.g. `ghcr.io/devcontainers/features/java:1`. */
+  feature: z.string().regex(REGEX.featureRef),
+  /** True when the toolchain is already in the base runtime image (node). */
+  builtin: z.boolean().default(false),
+  /**
+   * Versions the upstream feature accepts (docs/UX only, not enforced).
+   * Coerced to string so authors can write bare YAML numbers
+   * (`versions: [latest, 21, 17]`) without quoting.
+   */
+  versions: z.array(z.coerce.string()).optional(),
+});
+export type LanguageBlock = z.infer<typeof LanguageBlockSchema>;
+
+/** `category: service` block — a backing container the workspace talks to. */
+export const ServiceBlockSchema = z.object({
+  image: z.string().min(1),
+  defaultPort: z.number().int().positive().optional(),
+  dataMount: z.string().optional(),
+  healthcheck: HealthcheckSchema.optional(),
+  /** Connection env vars derived for the workspace (DATABASE_URL, ...). */
+  connectionEnv: z.array(z.string()).optional(),
+  vscodeExtensions: z.array(z.string()).optional(),
+});
+export type ServiceBlock = z.infer<typeof ServiceBlockSchema>;
+
+const PersistentHomeFileSchema = z.object({
+  path: z.string().min(1),
+  initialContent: z.string().optional(),
+});
+
+/** `category: feature` block — a tool we author and publish to GHCR. */
+export const FeatureBlockSchema = z.object({
+  /** Publishable feature version (devcontainer-feature.json `version`). */
+  version: z.string().min(1),
+  persistentHomePaths: z.array(z.string().min(1)).optional(),
+  persistentHomeFiles: z.array(PersistentHomeFileSchema).optional(),
+  vscodeExtensions: z.array(z.string()).optional(),
+});
+export type FeatureBlock = z.infer<typeof FeatureBlockSchema>;
+
+export const DescriptorSchema = z
+  .object({
+    id: z
+      .string()
+      .regex(DESCRIPTOR_ID_RE, 'id must be lowercase letters/digits/hyphens'),
+    category: CategorySchema,
+    displayName: z.string().min(1),
+    description: z.string().min(1),
+    documentationURL: z.string().url().optional(),
+    options: z.record(z.string(), OptionSpecSchema).default({}),
+    briefing: z.array(BriefingLineSchema).default([]),
+    language: LanguageBlockSchema.optional(),
+    service: ServiceBlockSchema.optional(),
+    feature: FeatureBlockSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    // Exactly one category-specific block, and it must match `category`.
+    const present = (
+      [
+        data.language ? 'language' : null,
+        data.service ? 'service' : null,
+        data.feature ? 'feature' : null,
+      ].filter(Boolean) as DescriptorCategory[]
+    ).sort();
+    if (present.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `missing the '${data.category}' block required by category '${data.category}'`,
+      });
+    } else if (present.length > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `exactly one of language/service/feature is allowed, got: ${present.join(', ')}`,
+      });
+    } else if (present[0] !== data.category) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `category '${data.category}' requires a '${data.category}' block, found '${present[0]}'`,
+      });
+    }
+
+    // Every briefing.whenOption must reference a declared option.
+    const optionKeys = new Set(Object.keys(data.options));
+    data.briefing.forEach((line, i) => {
+      if (line.whenOption !== undefined && !optionKeys.has(line.whenOption)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['briefing', i, 'whenOption'],
+          message: `whenOption '${line.whenOption}' is not a declared option`,
+        });
+      }
+    });
+  });
+
+export type Descriptor = z.infer<typeof DescriptorSchema>;
