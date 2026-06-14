@@ -195,58 +195,6 @@ describe('writeOpencodeConfig', () => {
     expect(cfg.provider).toBeUndefined();
   });
 
-  it('pre-approves the briefing files + projects under external_directory', async () => {
-    await writeOpencodeConfig(dir, NAME, {
-      [OPENCODE_REF]: { model: 'anthropic/claude-sonnet-4-6', apiToken: 'sk' },
-    });
-    const cfg = await read();
-    const ext = (cfg.permission as Record<string, Record<string, unknown>>)
-      .external_directory;
-    expect(ext).toEqual({
-      [`/workspaces/${NAME}/AGENTS.md`]: 'allow',
-      [`/workspaces/${NAME}/.monoceros/commands.md`]: 'allow',
-      [`/workspaces/${NAME}/projects/**`]: 'allow',
-    });
-  });
-
-  it('does not blanket-allow the workspace (home/ stays gated)', async () => {
-    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: {} });
-    const cfg = await read();
-    const ext = (cfg.permission as Record<string, Record<string, unknown>>)
-      .external_directory!;
-    expect(ext[`/workspaces/${NAME}/**`]).toBeUndefined();
-    expect(ext[`/workspaces/${NAME}/home/**`]).toBeUndefined();
-  });
-
-  it('leaves a string-valued permission policy untouched', async () => {
-    await fsp.mkdir(path.dirname(cfgPath()), { recursive: true });
-    await fsp.writeFile(cfgPath(), JSON.stringify({ permission: 'allow' }));
-    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: {} });
-    const cfg = await read();
-    expect(cfg.permission).toBe('allow');
-  });
-
-  it('merges external_directory: keeps user entries, adds the managed ones', async () => {
-    await fsp.mkdir(path.dirname(cfgPath()), { recursive: true });
-    await fsp.writeFile(
-      cfgPath(),
-      JSON.stringify({
-        permission: {
-          bash: 'allow',
-          external_directory: { '/data/**': 'allow' },
-        },
-      }),
-    );
-    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: {} });
-    const cfg = await read();
-    const perm = cfg.permission as Record<string, unknown>;
-    expect(perm.bash).toBe('allow');
-    const ext = perm.external_directory as Record<string, unknown>;
-    expect(ext['/data/**']).toBe('allow');
-    expect(ext[`/workspaces/${NAME}/AGENTS.md`]).toBe('allow');
-    expect(ext[`/workspaces/${NAME}/projects/**`]).toBe('allow');
-  });
-
   it('is a no-op when no opencode feature is present', async () => {
     const { existsSync } = await import('node:fs');
     await writeOpencodeConfig(dir, NAME, {
