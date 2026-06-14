@@ -81,7 +81,9 @@ export function parseOpencodeModel(
  *
  * `instructions` (AGENTS.md + the `.monoceros/commands.md` reference,
  * absolute workspace paths) is always written so the briefing loads
- * regardless of auth mode.
+ * regardless of auth mode. `permission.external_directory` pre-allows
+ * `projects/*` (and only that) so the agent isn't prompted on its first
+ * write into the project tree; everything else stays gated.
  */
 export async function writeOpencodeConfig(
   targetDir: string,
@@ -149,6 +151,31 @@ export async function writeOpencodeConfig(
     ...managedInstructions,
     ...existingInstructions.filter((i) => !managedInstructions.includes(i)),
   ];
+
+  // Pre-approve writes under `projects/`. OpenCode's `external_directory`
+  // permission defaults to "ask" and fires when a tool touches a path outside
+  // the working directory (the cwd, checked via `Filesystem.contains`), so the
+  // agent gets prompted on its first write into the project tree when launched
+  // from elsewhere in the workspace. We allow exactly `projects/`, nothing
+  // more: `home/` (provider key, .claude.json) and `.monoceros/git-credentials`
+  // stay gated. OpenCode's wildcard turns `*` into the regex `.*`, which spans
+  // `/`, so a single star covers every depth under projects (`**` is not a
+  // special token there). Skipped when the user set a string-valued
+  // `permission` policy, which we leave alone.
+  if (typeof config.permission !== 'string') {
+    const permission =
+      typeof config.permission === 'object' && config.permission !== null
+        ? (config.permission as Record<string, unknown>)
+        : {};
+    const ext =
+      typeof permission.external_directory === 'object' &&
+      permission.external_directory !== null
+        ? (permission.external_directory as Record<string, unknown>)
+        : {};
+    ext[`${workspaceRoot}/projects/*`] = 'allow';
+    permission.external_directory = ext;
+    config.permission = permission;
+  }
 
   // Model: only when set. An empty option must not clobber a user-set
   // model, and leaving it unset lets OpenCode prompt on first run.
