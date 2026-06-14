@@ -81,7 +81,10 @@ export function parseOpencodeModel(
  *
  * `instructions` (AGENTS.md + the `.monoceros/commands.md` reference,
  * absolute workspace paths) is always written so the briefing loads
- * regardless of auth mode.
+ * regardless of auth mode. It also pre-approves those briefing files plus
+ * `projects/**` under `permission.external_directory` so OpenCode's
+ * "outside the working directory" gate (default "ask") doesn't prompt when
+ * run from a project subdir - the analog of Claude's trust dialog.
  */
 export async function writeOpencodeConfig(
   targetDir: string,
@@ -149,6 +152,37 @@ export async function writeOpencodeConfig(
     ...managedInstructions,
     ...existingInstructions.filter((i) => !managedInstructions.includes(i)),
   ];
+
+  // Trust pre-approval: OpenCode's `external_directory` permission defaults to
+  // "ask" and fires when a tool reads paths outside the working directory. Run
+  // from a project subdir (`projects/<app>`), the workspace-root briefing files
+  // we put in `instructions` are exactly such external paths, so OpenCode would
+  // prompt on every start (the Monoceros analog of Claude's trust dialog). We
+  // pre-allow the two briefing files plus the projects tree. We deliberately do
+  // NOT blanket-allow the whole workspace: `home/` (the provider key in
+  // opencode.json, `.claude.json`) and `.monoceros/git-credentials` live under
+  // `/workspaces/<name>` too and must stay gated. Skipped when the user set a
+  // string-valued `permission` (a global policy we leave alone).
+  if (typeof config.permission !== 'string') {
+    const permission =
+      typeof config.permission === 'object' && config.permission !== null
+        ? (config.permission as Record<string, unknown>)
+        : {};
+    const ext =
+      typeof permission.external_directory === 'object' &&
+      permission.external_directory !== null
+        ? (permission.external_directory as Record<string, unknown>)
+        : {};
+    for (const p of [
+      `${workspaceRoot}/AGENTS.md`,
+      `${workspaceRoot}/.monoceros/commands.md`,
+      `${workspaceRoot}/projects/**`,
+    ]) {
+      ext[p] = 'allow';
+    }
+    permission.external_directory = ext;
+    config.permission = permission;
+  }
 
   // Model: only when set. An empty option must not clobber a user-set
   // model, and leaving it unset lets OpenCode prompt on first run.
