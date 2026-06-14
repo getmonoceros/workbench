@@ -159,11 +159,23 @@ TWG_LOGIN_INPUT
 
 # (Re-)install twg's agent skills. Canonical install lands in
 # /home/node/.agents/skills/twg (persisted via the feature's
-# persistentHomePaths); per-agent wrapper scripts go into agent-
-# specific home dirs (.claude/skills/twg, .codex/skills/twg, …)
-# and are regenerated on each apply when those tools are present.
+# persistentHomePaths); .agents/skills-native agents (codex, cursor,
+# gemini, copilot, …) read it directly. Agents with their own skills
+# dir (claude → .claude/skills, opencode → .opencode/skills) need an
+# explicit --agent flag, so we detect which AI CLIs are present in this
+# container and pass the matching flags. This keeps the atlassian
+# feature decoupled from the container's feature list — it reacts to
+# whatever is actually installed. Idempotent: re-running just refreshes
+# the wrappers.
 echo "[atlassian/twg] (re-)installing twg skills"
-twg skills install --global --yes
+TWG_SKILL_AGENTS=()
+if command -v claude >/dev/null 2>&1; then
+  TWG_SKILL_AGENTS+=(--agent claude)
+fi
+if command -v opencode >/dev/null 2>&1; then
+  TWG_SKILL_AGENTS+=(--agent opencode)
+fi
+twg skills install --global --yes "\${TWG_SKILL_AGENTS[@]}"
 EOF
     chmod 0755 "${HOOK}"
     echo "[atlassian/twg] post-create login hook installed"

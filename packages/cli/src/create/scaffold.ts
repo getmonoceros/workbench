@@ -6,6 +6,7 @@ import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { descriptorToFeatureManifest } from '../catalog/generate-manifest.js';
 import type { Descriptor } from '../catalog/descriptor.js';
 import { writeClaudePermissionMode } from './claude-settings.js';
+import { writeOpencodeConfig } from './opencode-config.js';
 import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
@@ -1550,6 +1551,12 @@ export async function writeScaffold(
   // the feature layer, so a yml change takes effect on the next apply and is
   // not frozen by the image cache. No-op without the claude-code feature.
   await writeClaudePermissionMode(targetDir, opts.features);
+
+  // OpenCode's global config (model + provider key + AGENTS.md/commands
+  // instructions), derived from the opencode feature's yml options. Same
+  // apply-time-merge rationale as the claude write above. No-op without
+  // the opencode feature.
+  await writeOpencodeConfig(targetDir, opts.name, opts.features);
 
   await writePostCreateScript(devcontainerDir, opts);
 

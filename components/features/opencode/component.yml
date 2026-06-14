@@ -1,0 +1,37 @@
+id: opencode
+name: opencode
+category: feature
+displayName: OpenCode
+description: "sst's open-source, provider-agnostic AI coding agent (TUI). Model + provider key configurable; auth and session state persist across container rebuilds."
+documentationURL: https://opencode.ai/docs/
+options:
+  version:
+    type: string
+    default: latest
+    description: 'npm-style version spec for `opencode-ai` (`latest`, `^0.4`, `0.4.2`).'
+    surface: silent
+  model:
+    type: string
+    default: ''
+    description: 'Default model as `provider/model-id` (e.g. `anthropic/claude-sonnet-4-6`, `openai/gpt-4o-mini`). The provider is derived from the prefix before `/`. Empty: pick interactively on first run.'
+    surface: yml
+  apiToken:
+    type: string
+    default: ''
+    description: 'API key for the model provider (derived from `model`); written to `provider.<x>.options.apiKey` in opencode.json. Empty for `opencode auth login` on first run.'
+    surface: env
+  npm:
+    type: string
+    default: ''
+    description: 'Custom/local providers only (e.g. Ollama): the AI-SDK driver package, usually `@ai-sdk/openai-compatible`. Setting this switches `model` to custom-provider mode and builds a full provider block from `model` + `baseUrl`. Empty for hosted providers.'
+    surface: silent
+  baseUrl:
+    type: string
+    default: ''
+    description: 'Custom/local providers only: the endpoint URL, e.g. `http://ollama:11434/v1` (a service on the Docker network). Used together with `npm`.'
+    surface: silent
+feature:
+  version: 1.0.0
+  persistentHomePaths: [.config/opencode, .local/share/opencode]
+briefing:
+  - text: 'OpenCode (`opencode`) — open-source, provider-agnostic AI coding agent. Reads this AGENTS.md as project instructions. Model + provider key (when set in the yml) live in `~/.config/opencode/opencode.json`; otherwise authenticate once with `opencode auth login`.'
