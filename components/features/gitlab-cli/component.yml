@@ -1,0 +1,28 @@
+id: gitlab-cli
+name: gitlab
+category: feature
+displayName: GitLab CLI
+description: 'The official GitLab CLI (`glab`) for merge requests, issues, CI/CD pipelines and releases. Targets gitlab.com or a self-managed host. Login persists across container rebuilds.'
+documentationURL: https://gitlab.com/gitlab-org/cli
+options:
+  version:
+    type: string
+    default: latest
+    description: 'glab release to install: `latest` (resolved from the GitLab release API at build) or a pinned version like `1.102.0`.'
+    surface: silent
+  apiToken:
+    type: string
+    default: ''
+    description: 'GitLab personal access token (scopes: `api`, `write_repository`); exported as GITLAB_TOKEN. Empty for `glab auth login` on first run.'
+    surface: env
+  host:
+    type: string
+    default: ''
+    description: 'Self-managed/Dedicated GitLab host (e.g. `gitlab.example.com`); empty targets gitlab.com. Exported as GITLAB_HOST, so every `glab` command uses it without `--hostname`.'
+    surface: yml
+feature:
+  version: 1.0.0
+  persistentHomePaths: [.config/glab-cli]
+  vscodeExtensions: [GitLab.gitlab-workflow]
+briefing:
+  - text: 'GitLab CLI (`glab`) — merge requests, issues, CI/CD pipelines and releases. Targets the configured GitLab host (gitlab.com unless `host` was set). Pre-authenticated when a token was set; `glab auth status` shows the active account.'
