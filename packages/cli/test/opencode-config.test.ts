@@ -195,17 +195,22 @@ describe('writeOpencodeConfig', () => {
     expect(cfg.provider).toBeUndefined();
   });
 
-  it('pre-allows only projects/* under external_directory (single star, home stays gated)', async () => {
+  it('pre-allows the briefing paths under external_directory (home/data stay gated)', async () => {
     await writeOpencodeConfig(dir, NAME, {
       [OPENCODE_REF]: { model: 'anthropic/claude-sonnet-4-6', apiToken: 'sk' },
     });
     const cfg = await read();
     const ext = (cfg.permission as Record<string, Record<string, unknown>>)
       .external_directory!;
-    expect(ext).toEqual({ [`/workspaces/${NAME}/projects/*`]: 'allow' });
-    // No blanket workspace allow, no home allow.
+    expect(ext).toEqual({
+      [`/workspaces/${NAME}/projects/*`]: 'allow',
+      [`/workspaces/${NAME}/${NAME}.code-workspace`]: 'allow',
+      [`/workspaces/${NAME}/logs/*`]: 'allow',
+    });
+    // No blanket workspace allow, nothing under home/ or data/.
     expect(ext[`/workspaces/${NAME}/*`]).toBeUndefined();
     expect(ext[`/workspaces/${NAME}/home/*`]).toBeUndefined();
+    expect(ext[`/workspaces/${NAME}/data/*`]).toBeUndefined();
   });
 
   it('leaves a string-valued permission policy untouched', async () => {

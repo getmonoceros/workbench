@@ -81,9 +81,10 @@ export function parseOpencodeModel(
  *
  * `instructions` (AGENTS.md + the `.monoceros/commands.md` reference,
  * absolute workspace paths) is always written so the briefing loads
- * regardless of auth mode. `permission.external_directory` pre-allows
- * `projects/*` (and only that) so the agent isn't prompted on its first
- * write into the project tree; everything else stays gated.
+ * regardless of auth mode. `permission.external_directory` pre-allows the
+ * workspace paths the briefing tells the agent to use (`projects/*`, the
+ * `<name>.code-workspace` file, `logs/*`) so it isn't prompted for those;
+ * `home/`, `data/` and credentials stay gated.
  */
 export async function writeOpencodeConfig(
   targetDir: string,
@@ -152,16 +153,18 @@ export async function writeOpencodeConfig(
     ...existingInstructions.filter((i) => !managedInstructions.includes(i)),
   ];
 
-  // Pre-approve writes under `projects/`. OpenCode's `external_directory`
-  // permission defaults to "ask" and fires when a tool touches a path outside
-  // the working directory (the cwd, checked via `Filesystem.contains`), so the
-  // agent gets prompted on its first write into the project tree when launched
-  // from elsewhere in the workspace. We allow exactly `projects/`, nothing
-  // more: `home/` (provider key, .claude.json) and `.monoceros/git-credentials`
-  // stay gated. OpenCode's wildcard turns `*` into the regex `.*`, which spans
-  // `/`, so a single star covers every depth under projects (`**` is not a
-  // special token there). Skipped when the user set a string-valued
-  // `permission` policy, which we leave alone.
+  // Pre-approve the workspace paths the Monoceros briefing tells the agent to
+  // use. OpenCode's `external_directory` permission defaults to "ask" and fires
+  // when a tool touches a path outside the working directory (the cwd, checked
+  // via `Filesystem.contains`), so launched from a project subdir the agent
+  // gets prompted on its first access to these. The briefing directs it to:
+  // build under `projects/`, register new projects in `<name>.code-workspace`,
+  // and write detached-server PIDs/logs under `logs/`. We allow exactly those,
+  // nothing more: `home/` (provider key, .claude.json), `data/`,
+  // `.devcontainer/` and `.monoceros/git-credentials` stay gated. OpenCode's
+  // wildcard turns `*` into the regex `.*`, which spans `/`, so a single star
+  // covers every depth (`**` is not a special token there). Skipped when the
+  // user set a string-valued `permission` policy, which we leave alone.
   if (typeof config.permission !== 'string') {
     const permission =
       typeof config.permission === 'object' && config.permission !== null
@@ -172,7 +175,13 @@ export async function writeOpencodeConfig(
       permission.external_directory !== null
         ? (permission.external_directory as Record<string, unknown>)
         : {};
-    ext[`${workspaceRoot}/projects/*`] = 'allow';
+    for (const p of [
+      `${workspaceRoot}/projects/*`,
+      `${workspaceRoot}/${containerName}.code-workspace`,
+      `${workspaceRoot}/logs/*`,
+    ]) {
+      ext[p] = 'allow';
+    }
     permission.external_directory = ext;
     config.permission = permission;
   }
