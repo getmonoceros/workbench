@@ -1,4 +1,4 @@
-import { startBrowserBridge } from './browser-bridge.js';
+import { startBrowserBridge, wrapExec } from './browser-bridge.js';
 import { preApproveClaudeProject } from './claude-trust.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 import { assertContainerExists } from './shell.js';
@@ -22,37 +22,6 @@ export interface RunInContainerOptions {
    */
   cwd?: string;
   spawn?: DevcontainerSpawn;
-}
-
-/**
- * Wrap the inner command in `bash -lc` only when we need to prepend PATH (the
- * browser-bridge relay dir) and/or change directory. The command stays a
- * separate argv array passed positionally, so no shell re-quoting of the inner
- * args is needed. Returns the command unchanged when neither applies.
- */
-export function wrapExec(
-  command: string[],
-  opts: { pathPrepend?: string; cwd?: string },
-): string[] {
-  const leading: string[] = [];
-  const stmts: string[] = [];
-  if (opts.pathPrepend) {
-    leading.push(opts.pathPrepend);
-    const i = leading.length;
-    // Put the relay's `xdg-open` first on PATH AND point `$BROWSER` at it, so
-    // both conventions (xdg-open lookup, and tools that exec $BROWSER directly)
-    // route through the relay.
-    stmts.push(`export PATH="$${i}:$PATH"`);
-    stmts.push(`export BROWSER="$${i}/xdg-open"`);
-  }
-  if (opts.cwd) {
-    leading.push(opts.cwd);
-    stmts.push(`cd -- "$${leading.length}"`);
-  }
-  if (leading.length === 0) return command;
-  const shift = leading.length === 1 ? 'shift' : `shift ${leading.length}`;
-  const script = `${stmts.join(' && ')} && ${shift} && exec "$@"`;
-  return ['bash', '-lc', script, 'bash', ...leading, ...command];
 }
 
 // Run a one-off command inside the named container. Brings the container up if

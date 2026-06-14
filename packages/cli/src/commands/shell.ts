@@ -20,7 +20,10 @@ export const shellCommand = defineCommand({
   },
   async run({ args }) {
     try {
-      const exitCode = await runShell({ root: containerDir(args.name) });
+      const exitCode = await runShell({
+        root: containerDir(args.name),
+        name: args.name,
+      });
       process.exit(exitCode);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));

@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -61,6 +61,7 @@ describe('runShell', () => {
     const calls: { args: string[]; cwd: string }[] = [];
     const exitCode = await runShell({
       root: solution,
+      isTty: false,
       spawn: async (args, cwd) => {
         calls.push({ args, cwd });
         return 0;
@@ -88,6 +89,31 @@ describe('runShell', () => {
         cwd: solution,
       },
     ]);
+  });
+
+  it('wires the browser bridge into the exec in an interactive session', async () => {
+    const solution = path.join(tmp, 'demo');
+    await fs.mkdir(path.join(solution, '.devcontainer'), { recursive: true });
+    const calls: string[][] = [];
+    const exitCode = await runShell({
+      root: solution,
+      name: 'demo',
+      isTty: true,
+      spawn: async (args) => {
+        calls.push(args);
+        return 0;
+      },
+    });
+    expect(exitCode).toBe(0);
+    const exec = calls.find((a) => a[0] === 'exec');
+    expect(exec).toBeDefined();
+    // The inner bash is wrapped so the relay `xdg-open` is first on PATH and
+    // $BROWSER points at it.
+    expect(exec).toContain('-lc');
+    expect(exec).toContain('/workspaces/demo/.monoceros-bridge');
+    expect(exec!.some((a) => a.includes('export BROWSER='))).toBe(true);
+    // The relay dir is cleaned up on dispose.
+    expect(existsSync(path.join(solution, '.monoceros-bridge'))).toBe(false);
   });
 
   it('short-circuits and propagates the exit code when up fails', async () => {

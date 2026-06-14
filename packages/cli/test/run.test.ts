@@ -3,7 +3,8 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { runInContainer, wrapExec } from '../src/devcontainer/run.js';
+import { wrapExec } from '../src/devcontainer/browser-bridge.js';
+import { runInContainer } from '../src/devcontainer/run.js';
 
 describe('runInContainer', () => {
   let tmp: string;
