@@ -23,12 +23,12 @@ service:
     retries: 5
   vscodeExtensions: [cweijan.vscode-database-client2]
   connectionEnv:
-    MYSQL_HOST: ${host}
-    MYSQL_PORT: ${port}
-    MYSQL_USER: root
-    MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-    MYSQL_DATABASE: ${MYSQL_DATABASE}
-    DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD}@${host}:${port}/${MYSQL_DATABASE}
+    URL: mysql://root:${MYSQL_ROOT_PASSWORD}@${host}:${port}/${MYSQL_DATABASE}
+    HOST: ${host}
+    PORT: ${port}
+    USER: root
+    PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    DB: ${MYSQL_DATABASE}
 options:
   MYSQL_ROOT_PASSWORD:
     type: string

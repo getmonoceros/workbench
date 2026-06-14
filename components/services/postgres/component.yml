@@ -13,12 +13,12 @@ service:
     retries: 5
   vscodeExtensions: [cweijan.vscode-database-client2]
   connectionEnv:
-    PGHOST: ${host}
-    PGPORT: ${port}
-    PGUSER: ${POSTGRES_USER}
-    PGPASSWORD: ${POSTGRES_PASSWORD}
-    PGDATABASE: ${POSTGRES_DB}
-    DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${POSTGRES_DB}
+    URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${POSTGRES_DB}
+    HOST: ${host}
+    PORT: ${port}
+    USER: ${POSTGRES_USER}
+    PASSWORD: ${POSTGRES_PASSWORD}
+    DB: ${POSTGRES_DB}
 options:
   POSTGRES_USER:
     type: string

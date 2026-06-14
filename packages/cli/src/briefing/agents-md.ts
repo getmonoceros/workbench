@@ -122,29 +122,30 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     lines.push('');
 
     const connEnv = serviceConnectionEnv(input.services);
-    if (Object.keys(connEnv).length > 0) {
+    const connUrlKeys = Object.keys(connEnv).filter((k) => k.endsWith('_URL'));
+    if (connUrlKeys.length > 0) {
       lines.push(
-        'Connection details for the curated services above are already set as',
-        'environment variables in this container. Read them from the',
-        'environment — do not ask the user for credentials, and do not',
-        'hardcode them:',
+        'Connection details for the curated services above are set as',
+        'environment variables in this container — one set per service, prefixed',
+        'with the (uppercased) service name. Read them from the environment; do',
+        'not ask the user for credentials and do not hardcode them. The URLs:',
       );
       lines.push('');
-      if (connEnv.DATABASE_URL !== undefined) {
-        lines.push(
-          '- `DATABASE_URL` — the SQL database. Engine-specific variables are',
-          '  set too (`PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` for',
-          '  Postgres, `MYSQL_*` for MySQL).',
-        );
-      }
-      if (connEnv.REDIS_URL !== undefined) {
-        lines.push('- `REDIS_URL` — Redis.');
+      for (const k of connUrlKeys) {
+        lines.push(`- \`${k}\``);
       }
       lines.push('');
       lines.push(
-        'These are dev-only defaults for the local container, fine to use',
-        'directly. Prefer reading the variable (e.g. `process.env.DATABASE_URL`)',
-        'over copying its value into code.',
+        'Each service also exposes `<SERVICE>_HOST`, `<SERVICE>_PORT` and, for SQL',
+        'databases, `<SERVICE>_USER` / `<SERVICE>_PASSWORD` / `<SERVICE>_DB`. These',
+        'are dev-only defaults for the local container, fine to read directly.',
+      );
+      lines.push('');
+      lines.push(
+        'There is deliberately **no** bare `DATABASE_URL` (multiple databases',
+        'would collide on it). If a framework or tool defaults to `DATABASE_URL`,',
+        "set it in the project's `.env` to the right service URL, e.g.",
+        '`DATABASE_URL=$POSTGRES_URL`.',
       );
     }
 

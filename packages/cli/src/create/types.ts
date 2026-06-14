@@ -76,6 +76,16 @@ export interface ResolvedService {
   healthcheck?: ServiceHealthcheck;
   restart?: string;
   command?: string;
+  /**
+   * Connection-env templates keyed by logical SUFFIX (`URL`, `HOST`,
+   * `PORT`, `USER`, `PASSWORD`, `DB`). At apply, `serviceConnectionEnv`
+   * emits them into the workspace as `<UPPER(name)>_<SUFFIX>` (e.g.
+   * `POSTGRES_URL`), filling `${host}` (= this service's name), `${port}`
+   * and `${<OPTION>}` (from `env`). NOT touched by `.env` interpolation
+   * (passes through verbatim), so `${host}`/`${port}` survive to here and
+   * a renamed instance stays correct. See ADR 0021.
+   */
+  connectionEnv?: Record<string, string>;
 }
 
 export interface CreateOptions {

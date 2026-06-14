@@ -352,6 +352,12 @@ export const ServiceObjectSchema = z.object({
   healthcheck: ServiceHealthcheckSchema.optional(),
   restart: z.enum(SERVICE_RESTART_VALUES).optional(),
   command: z.string().optional(),
+  // Connection-env templates keyed by logical SUFFIX (URL/HOST/PORT/USER/
+  // PASSWORD/DB). Baked in by `expandCuratedService`; emitted into the
+  // workspace as `<UPPER(name)>_<SUFFIX>` at apply (ADR 0021). `${host}`/
+  // `${port}`/`${<OPTION>}` are render tokens, NOT `.env` placeholders, and
+  // are left untouched by `interpolateServices`.
+  connectionEnv: z.record(z.string(), z.string()).optional(),
 });
 
 export const ExternalServicesSchema = z.object({
@@ -390,58 +396,75 @@ const LanguageEntrySchema = z.union([
     }),
 ]);
 
-export const SolutionConfigSchema = z.object({
-  schemaVersion: z.literal(CONFIG_SCHEMA_VERSION),
-  name: z
-    .string()
-    .regex(
-      SOLUTION_NAME_RE,
-      "Invalid solution name. Use letters, digits, '.', '_' or '-'.",
-    ),
-  // Pinned runtime-image version (ADR 0017). Written by `init`, reused
-  // verbatim by every subsequent `apply` (never auto-bumped), changed
-  // only by `monoceros upgrade`. Optional in the schema so a
-  // pre-pinning yml still parses — `apply` is what enforces its
-  // presence with an actionable hint.
-  runtimeVersion: z
-    .string()
-    .regex(
-      RUNTIME_VERSION_RE,
-      "Invalid runtimeVersion. Expected an exact version like '1.1.0'.",
-    )
-    .optional(),
-  languages: z.array(LanguageEntrySchema).default([]),
-  aptPackages: z
-    .array(
-      z
-        .string()
-        .regex(
-          APT_PACKAGE_NAME_RE,
-          "Invalid apt package name. Expected lowercase alphanumeric plus '.+-'.",
-        ),
-    )
-    .default([]),
-  features: z.array(FeatureEntrySchema).default([]),
-  installUrls: z
-    .array(
-      z
-        .string()
-        .regex(
-          INSTALL_URL_RE,
-          "Invalid install URL. Must start with 'https://' and contain only URL-safe characters (no shell metacharacters).",
-        ),
-    )
-    .default([]),
-  services: z.array(ServiceObjectSchema).default([]),
-  repos: z.array(RepoEntrySchema).default([]),
-  routing: RoutingSchema.optional(),
-  externalServices: ExternalServicesSchema.default({}),
-  git: z
-    .object({
-      user: GitUserSchema.optional(),
-    })
-    .optional(),
-});
+export const SolutionConfigSchema = z
+  .object({
+    schemaVersion: z.literal(CONFIG_SCHEMA_VERSION),
+    name: z
+      .string()
+      .regex(
+        SOLUTION_NAME_RE,
+        "Invalid solution name. Use letters, digits, '.', '_' or '-'.",
+      ),
+    // Pinned runtime-image version (ADR 0017). Written by `init`, reused
+    // verbatim by every subsequent `apply` (never auto-bumped), changed
+    // only by `monoceros upgrade`. Optional in the schema so a
+    // pre-pinning yml still parses — `apply` is what enforces its
+    // presence with an actionable hint.
+    runtimeVersion: z
+      .string()
+      .regex(
+        RUNTIME_VERSION_RE,
+        "Invalid runtimeVersion. Expected an exact version like '1.1.0'.",
+      )
+      .optional(),
+    languages: z.array(LanguageEntrySchema).default([]),
+    aptPackages: z
+      .array(
+        z
+          .string()
+          .regex(
+            APT_PACKAGE_NAME_RE,
+            "Invalid apt package name. Expected lowercase alphanumeric plus '.+-'.",
+          ),
+      )
+      .default([]),
+    features: z.array(FeatureEntrySchema).default([]),
+    installUrls: z
+      .array(
+        z
+          .string()
+          .regex(
+            INSTALL_URL_RE,
+            "Invalid install URL. Must start with 'https://' and contain only URL-safe characters (no shell metacharacters).",
+          ),
+      )
+      .default([]),
+    services: z.array(ServiceObjectSchema).default([]),
+    repos: z.array(RepoEntrySchema).default([]),
+    routing: RoutingSchema.optional(),
+    externalServices: ExternalServicesSchema.default({}),
+    git: z
+      .object({
+        user: GitUserSchema.optional(),
+      })
+      .optional(),
+  })
+  .superRefine((cfg, ctx) => {
+    // Service names must be unique: each becomes a compose service key, a DNS
+    // alias, a data dir, and the prefix for that instance's connection env
+    // (ADR 0021). Duplicates would silently clobber one another.
+    const seen = new Set<string>();
+    cfg.services.forEach((svc, i) => {
+      if (seen.has(svc.name)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['services', i, 'name'],
+          message: `Duplicate service name '${svc.name}'. Service names must be unique (use \`add-service … --as <name>\` to add a second instance of the same image).`,
+        });
+      }
+      seen.add(svc.name);
+    });
+  });
 
 export type SolutionConfig = z.infer<typeof SolutionConfigSchema>;
 export type FeatureEntry = z.infer<typeof FeatureEntrySchema>;

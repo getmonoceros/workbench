@@ -69,6 +69,10 @@ describe('AGENTS.md generator', () => {
           port: 5432,
           env: {},
           volumes: [],
+          connectionEnv: {
+            URL: 'postgresql://${host}:${port}/db',
+            HOST: '${host}',
+          },
         },
         {
           name: 'rustfs',
@@ -85,11 +89,11 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('### Services (running on the Docker network)');
     expect(md).toContain('**postgres** — reachable at `postgres:5432`');
     expect(md).toContain('**rustfs** (custom image `rustfs/rustfs:latest`)');
-    // Curated services expose their connection via env vars (postgres here).
+    // Curated services expose their connection via name-prefixed env vars.
     expect(md).toContain(
-      'Connection details for the curated services above are already set as',
+      'Connection details for the curated services above are set as',
     );
-    expect(md).toContain('`DATABASE_URL`');
+    expect(md).toContain('`POSTGRES_URL`');
     // Custom-image black-box clause appears only when a custom service exists.
     expect(md).toContain('black box reachable at');
   });

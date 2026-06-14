@@ -261,10 +261,10 @@ export interface ServiceEntry {
    */
   vscodeExtensions?: readonly string[];
   /**
-   * Workspace connection env, keyed by var name → template. Tokens `${host}`,
-   * `${port}` and `${<OPTION>}` (the service's own env values) are
-   * interpolated by `serviceConnectionEnv`. Descriptor-driven (ADR 0020): a
-   * new service declares its own connection env without any code change.
+   * Workspace connection env, keyed by logical SUFFIX (`URL`/`HOST`/`PORT`/
+   * `USER`/`PASSWORD`/`DB`) → template. Baked into the yml at expand and
+   * emitted as `<UPPER(name)>_<SUFFIX>` per instance by `serviceConnectionEnv`
+   * (ADR 0021). Tokens `${host}`/`${port}`/`${<OPTION>}` are filled there.
    */
   connectionEnv?: Readonly<Record<string, string>>;
 }
@@ -343,6 +343,9 @@ export function resolveService(entry: ServiceObject): ResolvedService {
     ...(entry.healthcheck ? { healthcheck: entry.healthcheck } : {}),
     ...(entry.restart ? { restart: entry.restart } : {}),
     ...(entry.command ? { command: entry.command } : {}),
+    ...(entry.connectionEnv
+      ? { connectionEnv: { ...entry.connectionEnv } }
+      : {}),
   };
 }
 
@@ -379,6 +382,10 @@ export function expandCuratedService(name: string): ServiceObject {
       : {}),
     ...(def.dataMount ? { volumes: [`data:${def.dataMount}`] } : {}),
     ...(def.healthcheck ? { healthcheck: def.healthcheck } : {}),
+    // Bake the connection-env templates into the yml (suffix → template) so
+    // they travel with the service: a renamed/duplicated instance keeps them,
+    // and `serviceConnectionEnv` prefixes by the instance's current name.
+    ...(def.connectionEnv ? { connectionEnv: { ...def.connectionEnv } } : {}),
     restart: 'unless-stopped',
   };
 }
@@ -401,39 +408,41 @@ export function curatedServiceEnvDefaults(
 
 /**
  * Connection environment variables injected into the WORKSPACE container,
- * derived from each curated service's descriptor `connectionEnv` templates
- * (ADR 0020). Tokens are interpolated: `${host}` (the service hostname),
- * `${port}` (svc.port, falling back to the catalog defaultPort), and
- * `${<OPTION>}` (the service's already-resolved env values). Lets the app and
- * the in-container AI agent read `DATABASE_URL` / `REDIS_URL` (and the
- * engine-specific `PG*` / `MYSQL_*`) instead of hardcoding the dev-default
- * credentials. Services without a `connectionEnv` (custom images, most
- * non-DB services) are skipped — Monoceros doesn't invent a shape for them.
+ * **per service instance** (ADR 0021). Each service that carries a
+ * `connectionEnv` (suffix → template) emits `<UPPER(name)>_<SUFFIX>` —
+ * e.g. a service named `postgres` → `POSTGRES_URL`, `POSTGRES_HOST`, …; a
+ * second one named `analytics` → `ANALYTICS_URL`, … Because service names are
+ * unique, the var names are unique by construction, so any number of databases
+ * (same or different engine) coexist with no collision and one code path.
  *
- * When two services set the same var (postgres + mysql both set
- * `DATABASE_URL`) the later one in the list wins. Apply sorts services by
- * name, so postgres (`p` > `m`) deterministically wins over mysql.
+ * Tokens in each template are filled here: `${host}` = the service's CURRENT
+ * name (rename-safe), `${port}` = svc.port, `${<OPTION>}` = the service's
+ * already-resolved env value. The templates are read from the service itself
+ * (baked into the yml at expand), not looked up by catalog name, so renamed
+ * and custom instances work too.
  *
- * Fully data-driven: a new service declares its own `connectionEnv` in its
- * descriptor and gets it injected with no code change here.
+ * Monoceros deliberately does NOT inject bare `DATABASE_URL` / `PGHOST` etc.:
+ * those are project/framework concerns. A tool that wants `DATABASE_URL` reads
+ * `<NAME>_URL` (the briefing says so) or maps it in the project's `.env`.
  */
 export function serviceConnectionEnv(
   services: readonly ResolvedService[],
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const svc of services) {
-    const def = SERVICE_CATALOG[svc.name];
-    if (!def?.connectionEnv) continue;
+    const conn = svc.connectionEnv;
+    if (!conn || Object.keys(conn).length === 0) continue;
+    const prefix = svc.name.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
     const host = svc.name;
-    const port = String(svc.port ?? def.defaultPort);
+    const port = svc.port !== undefined ? String(svc.port) : '';
     const fill = (template: string): string =>
       template.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, token: string) => {
         if (token === 'host') return host;
         if (token === 'port') return port;
         return svc.env[token] ?? '';
       });
-    for (const [key, template] of Object.entries(def.connectionEnv)) {
-      env[key] = fill(template);
+    for (const [suffix, template] of Object.entries(conn)) {
+      env[`${prefix}_${suffix}`] = fill(template);
     }
   }
   return env;

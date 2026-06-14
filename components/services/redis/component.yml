@@ -13,4 +13,6 @@ service:
     retries: 5
   vscodeExtensions: [cweijan.vscode-database-client2]
   connectionEnv:
-    REDIS_URL: redis://${host}:${port}
+    URL: redis://${host}:${port}
+    HOST: ${host}
+    PORT: ${port}
