@@ -1,0 +1,28 @@
+id: rustfs
+category: service
+displayName: RustFS
+description: 'S3-compatible object storage (MinIO-compatible API). S3 API on `rustfs:9000`; web console on 9001 (enable with `RUSTFS_CONSOLE_ENABLE=true`, reach via `monoceros tunnel <name> rustfs:9001`).'
+service:
+  image: rustfs/rustfs:latest
+  defaultPort: 9000
+  dataMount: /data
+  healthcheck:
+    test: [CMD, curl, -f, 'http://localhost:9000/minio/health/live']
+    interval: 10s
+    timeout: 5s
+    retries: 5
+  connectionEnv:
+    URL: http://${host}:${port}
+    HOST: ${host}
+    PORT: ${port}
+    ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+    SECRET_KEY: ${RUSTFS_SECRET_KEY}
+options:
+  RUSTFS_ACCESS_KEY:
+    type: string
+    default: rustfsadmin
+    surface: env
+  RUSTFS_SECRET_KEY:
+    type: string
+    default: rustfsadmin
+    surface: env

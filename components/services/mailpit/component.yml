@@ -1,0 +1,17 @@
+id: mailpit
+category: service
+displayName: Mailpit
+description: 'SMTP catcher for local dev — apps send mail to it and nothing leaves the machine. SMTP on `mailpit:1025`; web UI + API on 8025 (reach via `monoceros tunnel <name> mailpit:8025`).'
+service:
+  image: axllent/mailpit:latest
+  defaultPort: 1025
+  healthcheck:
+    # Mailpit ships its own readiness probe in the image — no curl/wget needed.
+    test: [CMD, /mailpit, readyz]
+    interval: 15s
+    timeout: 5s
+    retries: 5
+  connectionEnv:
+    URL: smtp://${host}:${port}
+    HOST: ${host}
+    PORT: ${port}

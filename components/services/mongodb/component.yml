@@ -1,0 +1,34 @@
+id: mongodb
+category: service
+displayName: MongoDB
+description: 'MongoDB with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mongodb`.'
+service:
+  image: mongo:8
+  defaultPort: 27017
+  dataMount: /data/db
+  healthcheck:
+    test: [CMD, mongosh, --quiet, --eval, 'db.adminCommand({ ping: 1 }).ok']
+    interval: 10s
+    timeout: 5s
+    retries: 5
+  vscodeExtensions: [mongodb.mongodb-vscode]
+  connectionEnv:
+    URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@${host}:${port}/${MONGO_INITDB_DATABASE}?authSource=admin
+    HOST: ${host}
+    PORT: ${port}
+    USER: ${MONGO_INITDB_ROOT_USERNAME}
+    PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    DB: ${MONGO_INITDB_DATABASE}
+options:
+  MONGO_INITDB_ROOT_USERNAME:
+    type: string
+    default: monoceros
+    surface: env
+  MONGO_INITDB_ROOT_PASSWORD:
+    type: string
+    default: monoceros
+    surface: env
+  MONGO_INITDB_DATABASE:
+    type: string
+    default: monoceros
+    surface: env

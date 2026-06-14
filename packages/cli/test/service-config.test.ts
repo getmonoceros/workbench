@@ -482,6 +482,45 @@ describe('serviceConnectionEnv', () => {
     expect(env.POSTGRES_URL).toContain('@postgres:5432/');
     expect(env.ANALYTICS_URL).toContain('@analytics:5432/');
   });
+
+  it('curates the new service wave with connection URLs', () => {
+    for (const name of ['pgvector', 'mongodb', 'rustfs', 'mailpit']) {
+      expect(isCuratedService(name)).toBe(true);
+      expect(expandCuratedService(name).connectionEnv?.URL).toBeTruthy();
+    }
+  });
+
+  it('pgvector emits PGVECTOR_* and coexists with a postgres', () => {
+    const pgv = resolveService(expandCuratedService('pgvector'));
+    const env = serviceConnectionEnv([
+      pg,
+      {
+        ...pgv,
+        env: {
+          POSTGRES_USER: 'monoceros',
+          POSTGRES_PASSWORD: 'monoceros',
+          POSTGRES_DB: 'monoceros',
+        },
+      },
+    ]);
+    expect(env.PGVECTOR_URL).toBe(
+      'postgresql://monoceros:monoceros@pgvector:5432/monoceros',
+    );
+    expect(env.POSTGRES_URL).toContain('@postgres:5432/');
+  });
+
+  it('rustfs emits S3 endpoint + keys (RUSTFS_*)', () => {
+    const rustfs = resolveService(expandCuratedService('rustfs'));
+    const env = serviceConnectionEnv([
+      {
+        ...rustfs,
+        env: { RUSTFS_ACCESS_KEY: 'ak', RUSTFS_SECRET_KEY: 'sk' },
+      },
+    ]);
+    expect(env.RUSTFS_URL).toBe('http://rustfs:9000');
+    expect(env.RUSTFS_ACCESS_KEY).toBe('ak');
+    expect(env.RUSTFS_SECRET_KEY).toBe('sk');
+  });
 });
 
 describe('buildComposeYaml — workspace service connection env', () => {

@@ -75,9 +75,9 @@ describe('AGENTS.md generator', () => {
           },
         },
         {
-          name: 'rustfs',
-          image: 'rustfs/rustfs:latest',
-          port: 9000,
+          name: 'clickhouse',
+          image: 'clickhouse/clickhouse-server:latest',
+          port: 8123,
           env: {},
           volumes: [],
         },
@@ -88,7 +88,9 @@ describe('AGENTS.md generator', () => {
     });
     expect(md).toContain('### Services (running on the Docker network)');
     expect(md).toContain('**postgres** — reachable at `postgres:5432`');
-    expect(md).toContain('**rustfs** (custom image `rustfs/rustfs:latest`)');
+    expect(md).toContain(
+      '**clickhouse** (custom image `clickhouse/clickhouse-server:latest`)',
+    );
     // Curated services expose their connection via name-prefixed env vars.
     expect(md).toContain(
       'Connection details for the curated services above are set as',

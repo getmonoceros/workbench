@@ -1,0 +1,34 @@
+id: pgvector
+category: service
+displayName: pgvector (PostgreSQL + vectors)
+description: 'PostgreSQL with the pgvector extension for embeddings / vector search — a drop-in Postgres. Reachable in-container as host `pgvector`. Enable the extension once with `CREATE EXTENSION vector;` (or in your migration).'
+service:
+  image: pgvector/pgvector:pg18
+  defaultPort: 5432
+  dataMount: /var/lib/postgresql
+  healthcheck:
+    test: [CMD, pg_isready, -U, '${POSTGRES_USER}', -d, '${POSTGRES_DB}']
+    interval: 10s
+    timeout: 5s
+    retries: 5
+  vscodeExtensions: [cweijan.vscode-database-client2]
+  connectionEnv:
+    URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${POSTGRES_DB}
+    HOST: ${host}
+    PORT: ${port}
+    USER: ${POSTGRES_USER}
+    PASSWORD: ${POSTGRES_PASSWORD}
+    DB: ${POSTGRES_DB}
+options:
+  POSTGRES_USER:
+    type: string
+    default: monoceros
+    surface: env
+  POSTGRES_PASSWORD:
+    type: string
+    default: monoceros
+    surface: env
+  POSTGRES_DB:
+    type: string
+    default: monoceros
+    surface: env
