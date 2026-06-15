@@ -7,6 +7,7 @@ import {
   isCuratedService,
   serviceConnectionEnv,
   serviceClientAptPackages,
+  serviceClientNpmPackages,
 } from '../src/create/catalog.js';
 import { buildComposeYaml } from '../src/create/scaffold.js';
 import {
@@ -522,11 +523,21 @@ describe('serviceConnectionEnv', () => {
     ]);
   });
 
-  it('contributes no client for services without one (mongodb/rustfs/mailpit)', () => {
+  it('no apt client for mongodb/rustfs/mailpit (mongodb ships an npm client)', () => {
     const svcs = ['mongodb', 'rustfs', 'mailpit'].map((n) =>
       resolveService(expandCuratedService(n)),
     );
     expect(serviceClientAptPackages(svcs)).toEqual([]);
+  });
+
+  it('contributes npm client tools (mongodb → mongosh; apt-only services none)', () => {
+    const mongo = resolveService(expandCuratedService('mongodb'));
+    expect(serviceClientNpmPackages([mongo])).toEqual(['mongosh']);
+    // postgres/redis use apt clients, not npm.
+    const pgRedis = ['postgres', 'redis'].map((n) =>
+      resolveService(expandCuratedService(n)),
+    );
+    expect(serviceClientNpmPackages(pgRedis)).toEqual([]);
   });
 
   it('rustfs emits S3 endpoint + keys (RUSTFS_*)', () => {

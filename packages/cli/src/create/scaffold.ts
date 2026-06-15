@@ -16,6 +16,7 @@ import {
   resolveRuntimeImage,
   runtimeSupportsIdeVolumes,
   serviceClientAptPackages,
+  serviceClientNpmPackages,
   serviceConnectionEnv,
 } from './catalog.js';
 import type { CreateOptions } from './types.js';
@@ -1279,6 +1280,24 @@ export function buildPostCreateScript(opts: CreateOptions): string {
     '  pnpm install',
     'fi',
   ];
+
+  // CLI client tools for curated services that ship as global npm packages
+  // (e.g. mongodb → mongosh). Guarded so an already-installed client is a
+  // no-op on subsequent starts; installed as the runtime user into the
+  // node-owned npm prefix (ADR 0018). apt clients go through the
+  // apt-packages feature instead (build-time).
+  const clientNpm = serviceClientNpmPackages(opts.services);
+  if (clientNpm.length > 0) {
+    lines.push(
+      '',
+      '# CLI clients for the curated services (global npm installs).',
+    );
+    for (const pkg of clientNpm) {
+      lines.push(
+        `command -v ${pkg} >/dev/null 2>&1 || npm install -g --no-audit --no-fund ${pkg}`,
+      );
+    }
+  }
 
   if (opts.installUrls && opts.installUrls.length > 0) {
     lines.push(

@@ -12,6 +12,8 @@ service:
     timeout: 5s
     retries: 5
   vscodeExtensions: [mongodb.mongodb-vscode]
+  client:
+    npm: [mongosh]
   connectionEnv:
     URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@${host}:${port}/${MONGO_INITDB_DATABASE}?authSource=admin
     HOST: ${host}

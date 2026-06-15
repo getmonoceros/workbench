@@ -270,9 +270,11 @@ export interface ServiceEntry {
   /**
    * CLI client tool(s) installed into the WORKSPACE when this service is
    * present (ADR 0020). `apt` packages merge into the workspace apt-packages
-   * feature, e.g. postgres → `postgresql-client`.
+   * feature (build-time); `npm` packages are installed globally in post-create
+   * (guarded). E.g. postgres → apt `postgresql-client`, mongodb → npm
+   * `mongosh`.
    */
-  client?: Readonly<{ apt?: readonly string[] }>;
+  client?: Readonly<{ apt?: readonly string[]; npm?: readonly string[] }>;
 }
 
 // The `monoceros` user/password/db below are deliberate dev-only
@@ -469,6 +471,24 @@ export function serviceClientAptPackages(
   const pkgs = new Set<string>();
   for (const svc of services) {
     for (const pkg of SERVICE_CATALOG[svc.name]?.client?.apt ?? []) {
+      pkgs.add(pkg);
+    }
+  }
+  return [...pkgs].sort();
+}
+
+/**
+ * Global npm packages for the CLI client tools of the curated services present
+ * (ADR 0020), e.g. a `mongodb` service contributes `mongosh`. Installed in
+ * post-create (guarded, so already-present packages are skipped). Looked up by
+ * catalog name (renamed instances don't auto-contribute). Deduped + sorted.
+ */
+export function serviceClientNpmPackages(
+  services: readonly ResolvedService[],
+): string[] {
+  const pkgs = new Set<string>();
+  for (const svc of services) {
+    for (const pkg of SERVICE_CATALOG[svc.name]?.client?.npm ?? []) {
       pkgs.add(pkg);
     }
   }

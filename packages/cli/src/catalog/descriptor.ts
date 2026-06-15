@@ -116,12 +116,17 @@ export const ServiceBlockSchema = z.object({
    * CLI client tool(s) for this service, installed into the WORKSPACE
    * container at apply so the dev/agent can use them (the service runs in its
    * own container; the workspace has no client otherwise). `apt` packages are
-   * merged into the workspace's apt-packages feature (build-time, cached) when
-   * the service is present, e.g. postgres → `postgresql-client` (`psql`).
-   * (`npm`/binary clients like `mongosh`/`mc` are a later addition.) See
-   * ADR 0020.
+   * merged into the workspace's apt-packages feature (build-time, cached);
+   * `npm` packages are installed globally in post-create (guarded, so it's a
+   * no-op once present). E.g. postgres → apt `postgresql-client` (`psql`),
+   * mongodb → npm `mongosh`. See ADR 0020.
    */
-  client: z.object({ apt: z.array(z.string()).optional() }).optional(),
+  client: z
+    .object({
+      apt: z.array(z.string()).optional(),
+      npm: z.array(z.string()).optional(),
+    })
+    .optional(),
   vscodeExtensions: z.array(z.string()).optional(),
 });
 export type ServiceBlock = z.infer<typeof ServiceBlockSchema>;
