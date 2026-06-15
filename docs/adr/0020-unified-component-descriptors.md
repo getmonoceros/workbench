@@ -284,6 +284,25 @@ Looked up by catalog name (a renamed instance doesn't auto-contribute —
 add the package via `aptPackages`). Kept here as an addendum rather than
 a separate ADR.
 
+## Addendum (2026-06-15): service `user` field
+
+The service descriptor gained an optional `user` field, rendered as
+compose `user:` on the service container. It exists for images that run
+as a fixed non-root uid yet must write a host bind-mounted `dataMount`:
+the apply-created host data dir is owned by the apply user, and on native
+Linux (no Docker-Desktop ownership remapping) such an image cannot write
+it and exits. Running as root (`user: "0:0"`) lets it write the mount -
+the same de-facto situation as the official Postgres image, which starts
+as root and chowns its data dir.
+
+Threaded through descriptor → `SERVICE_CATALOG` → `expandCuratedService`
+/ `resolveService` → yml serializer (`renderServiceObjectBody`) → compose
+emitter, so it travels with the instance (init and `add-service --as`
+both carry it) and is visible/editable in the yml rather than injected
+magically at apply. Set for `rustfs` (`user: "0:0"`); reusable for any
+future non-root image. Verified on a native Ubuntu host. Kept here as an
+addendum rather than a separate ADR.
+
 ## Related
 
 - ADR 0019 (component taxonomy) - this is the structural realization of
