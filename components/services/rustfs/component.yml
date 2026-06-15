@@ -11,6 +11,10 @@ service:
     interval: 10s
     timeout: 5s
     retries: 5
+  client:
+    # `aws s3 --endpoint-url "$RUSTFS_URL" …` with AWS_* from RUSTFS_ACCESS_KEY /
+    # RUSTFS_SECRET_KEY (the briefing tells the agent the vars).
+    apt: [awscli]
   connectionEnv:
     URL: http://${host}:${port}
     HOST: ${host}

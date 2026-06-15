@@ -550,20 +550,21 @@ describe('serviceConnectionEnv', () => {
     expect(env.POSTGRES_URL).toContain('@postgres:5432/');
   });
 
-  it('contributes CLI client apt packages for curated DB services (deduped)', () => {
-    const svcs = ['postgres', 'mysql', 'redis', 'pgvector'].map((n) =>
+  it('contributes CLI client apt packages for curated services (deduped)', () => {
+    const svcs = ['postgres', 'mysql', 'redis', 'pgvector', 'rustfs'].map((n) =>
       resolveService(expandCuratedService(n)),
     );
-    // postgres + pgvector both → postgresql-client (deduped), sorted.
+    // postgres + pgvector both → postgresql-client (deduped); rustfs → awscli.
     expect(serviceClientAptPackages(svcs)).toEqual([
+      'awscli',
       'default-mysql-client',
       'postgresql-client',
       'redis-tools',
     ]);
   });
 
-  it('no apt client for mongodb/rustfs/mailpit (mongodb ships an npm client)', () => {
-    const svcs = ['mongodb', 'rustfs', 'mailpit'].map((n) =>
+  it('no apt client for mongodb/mailpit (mongodb ships an npm client)', () => {
+    const svcs = ['mongodb', 'mailpit'].map((n) =>
       resolveService(expandCuratedService(n)),
     );
     expect(serviceClientAptPackages(svcs)).toEqual([]);
