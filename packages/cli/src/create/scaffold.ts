@@ -897,6 +897,13 @@ export function buildComposeYaml(
     // so docker doesn't auto-mkdir them as root.
     lines.push(`  ${svc.name}:`);
     lines.push(`    image: ${svc.image}`);
+    // `user:` lets an image that runs as a fixed non-root uid write its
+    // host bind-mounted data dir (the apply-created dir is owned by the
+    // apply user; on native Linux the container uid can't write it and
+    // exits). E.g. rustfs runs as root via this. See ADR 0021 / descriptor.
+    if (svc.user !== undefined) {
+      lines.push(`    user: ${composeScalar(svc.user)}`);
+    }
     if (svc.restart) {
       lines.push(`    restart: ${svc.restart}`);
     }

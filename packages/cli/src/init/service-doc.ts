@@ -17,6 +17,8 @@ import type { ServiceObject } from '../config/schema.js';
 /** Full active map body for a known ServiceObject (curated, expanded). */
 export function renderServiceObjectBody(svc: ServiceObject): string[] {
   const lines: string[] = [`name: ${svc.name}`, `image: ${svc.image}`];
+  if (svc.user !== undefined)
+    lines.push(`user: '${svc.user.replace(/'/g, "''")}'`);
   if (svc.port !== undefined) lines.push(`port: ${svc.port}`);
   if (svc.env && Object.keys(svc.env).length > 0) {
     lines.push('env:');

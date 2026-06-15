@@ -73,6 +73,12 @@ export interface ResolvedService {
   port?: number;
   env: Record<string, string>;
   volumes: string[];
+  /**
+   * Compose `user:` (e.g. `"0:0"`). Set for images that run as a fixed
+   * non-root uid but must write a host bind-mounted data dir; without it
+   * they can't write the apply-created dir on native Linux and exit.
+   */
+  user?: string;
   healthcheck?: ServiceHealthcheck;
   restart?: string;
   command?: string;

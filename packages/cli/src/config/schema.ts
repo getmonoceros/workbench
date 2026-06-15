@@ -333,6 +333,12 @@ export const ServiceObjectSchema = z.object({
       "Invalid service name. Use lowercase letters, digits, '_' or '-' (must start with a letter or digit).",
     ),
   image: z.string().min(1, 'Service image must not be empty.'),
+  // Compose `user:` for the service container (e.g. "0:0"). Set for images
+  // that run as a fixed non-root uid but must write a host bind-mounted
+  // dataMount — without it they can't write the apply-created data dir on
+  // native Linux and exit (e.g. rustfs). Curated entries bake this from the
+  // catalog; a builder can also set it by hand.
+  user: z.string().min(1).optional(),
   // In-container port the service listens on. Used by
   // `monoceros tunnel <name> <service>` to forward without an explicit
   // port argument. NOT a host port mapping — host exposure goes through

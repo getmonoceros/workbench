@@ -6,6 +6,14 @@ service:
   image: rustfs/rustfs:latest
   defaultPort: 9000
   dataMount: /data
+  # rustfs runs as a fixed non-root uid (10001) and must write its
+  # bind-mounted /data. The apply-created host data dir is owned by the
+  # apply user; on native Linux (no Docker-Desktop ownership remapping)
+  # uid 10001 can't write it and rustfs exits with a FATAL "Read-only file
+  # system". Running as root lets it write the mount — the same de-facto
+  # situation as postgres (whose image starts as root and chowns its data
+  # dir). Verified on a native Ubuntu host.
+  user: '0:0'
   healthcheck:
     test: [CMD, curl, -f, 'http://localhost:9000/minio/health/live']
     interval: 10s

@@ -279,6 +279,31 @@ describe('buildComposeYaml — generic service objects', () => {
     expect(yaml).not.toMatch(/ports:/);
   });
 
+  it('emits `user:` for a service that sets it, omits it otherwise', () => {
+    const withUser = buildComposeYaml({
+      ...base,
+      services: [
+        {
+          name: 'rustfs',
+          image: 'rustfs/rustfs:latest',
+          user: '0:0',
+          env: {},
+          volumes: [],
+        },
+      ],
+    });
+    // Lets a fixed-non-root-uid image write its bind-mounted data dir on
+    // native Linux (rustfs would otherwise exit FATAL "Read-only file
+    // system"). composeScalar double-quotes the value.
+    expect(withUser).toContain('    user: "0:0"');
+
+    const noUser = buildComposeYaml({
+      ...base,
+      services: [{ name: 'redis', image: 'redis:7', env: {}, volumes: [] }],
+    });
+    expect(noUser).not.toMatch(/^\s*user:/m);
+  });
+
   it('renders a healthcheck exec-array as a compose flow sequence', () => {
     const services: ResolvedService[] = [
       {
@@ -581,6 +606,12 @@ describe('serviceConnectionEnv', () => {
       resolveService(expandCuratedService(n)),
     );
     expect(serviceClientNpmPackages(pgRedis)).toEqual([]);
+  });
+
+  it('rustfs runs as root so it can write its bind-mounted /data', () => {
+    // rustfs runs as a fixed non-root uid and exits if it can't write the
+    // apply-created host data dir on native Linux. Catalog pins user 0:0.
+    expect(expandCuratedService('rustfs').user).toBe('0:0');
   });
 
   it('rustfs emits S3 endpoint + keys (RUSTFS_*)', () => {

@@ -99,6 +99,16 @@ export const ServiceBlockSchema = z.object({
   image: z.string().min(1),
   defaultPort: z.number().int().positive().optional(),
   dataMount: z.string().optional(),
+  /**
+   * Compose `user:` for the service container (e.g. `"0:0"`). Needed for
+   * images that run as a fixed non-root uid yet must write a host
+   * bind-mounted `dataMount`: a freshly-created host data dir is owned by
+   * the apply user, and on native Linux (no Docker-Desktop ownership
+   * remapping) such an image cannot write it and exits. Running as root
+   * lets it write the mount — the same de-facto situation as postgres,
+   * whose image starts as root and chowns its data dir. E.g. rustfs.
+   */
+  user: z.string().min(1).optional(),
   healthcheck: HealthcheckSchema.optional(),
   /**
    * Connection env injected into the WORKSPACE container so the app / agent

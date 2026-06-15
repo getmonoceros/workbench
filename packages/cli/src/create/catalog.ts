@@ -247,6 +247,13 @@ export interface ServiceEntry {
    */
   dataMount?: string;
   /**
+   * Compose `user:` for the service container (e.g. `"0:0"`). Set for
+   * images that run as a fixed non-root uid but must write a host
+   * bind-mounted `dataMount` — without it they can't write the
+   * apply-created data dir on native Linux and exit. See descriptor.ts.
+   */
+  user?: string;
+  /**
    * Default in-container port the service listens on. Used by
    * `monoceros tunnel <name> <service>` to resolve the service-name
    * to a port without an extra CLI argument. See ADR 0009.
@@ -316,6 +323,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
             ? { healthcheck: svc.healthcheck as ServiceHealthcheck }
             : {}),
           ...(svc.dataMount ? { dataMount: svc.dataMount } : {}),
+          ...(svc.user ? { user: svc.user } : {}),
           defaultPort: svc.defaultPort,
           ...(svc.vscodeExtensions
             ? { vscodeExtensions: svc.vscodeExtensions }
@@ -349,6 +357,7 @@ export function resolveService(entry: ServiceObject): ResolvedService {
     ...(entry.port !== undefined ? { port: entry.port } : {}),
     env: entry.env ? { ...entry.env } : {},
     volumes: entry.volumes ? [...entry.volumes] : [],
+    ...(entry.user ? { user: entry.user } : {}),
     ...(entry.healthcheck ? { healthcheck: entry.healthcheck } : {}),
     ...(entry.restart ? { restart: entry.restart } : {}),
     ...(entry.command ? { command: entry.command } : {}),
@@ -390,6 +399,7 @@ export function expandCuratedService(name: string): ServiceObject {
         }
       : {}),
     ...(def.dataMount ? { volumes: [`data:${def.dataMount}`] } : {}),
+    ...(def.user ? { user: def.user } : {}),
     ...(def.healthcheck ? { healthcheck: def.healthcheck } : {}),
     // Bake the connection-env templates into the yml (suffix → template) so
     // they travel with the service: a renamed/duplicated instance keeps them,
