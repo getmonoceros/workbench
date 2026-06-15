@@ -47,10 +47,6 @@ function normalizeLanguages(entries: SolutionConfig['languages']): {
  * existing `add-feature` command uses when a builder re-adds with new
  * options.
  *
- * `externalServices.postgres` → `postgresUrl` (the CreateOptions
- * field name predates the yml schema; rename would touch every M1
- * caller, so the translator absorbs the diff here).
- *
  * `featureDefaults` (optional) — `defaults.features` from
  * `monoceros-config.yml`. Per-container options always override these;
  * keys not set per-container fall back to the default. A feature ref
@@ -95,9 +91,6 @@ export function solutionConfigToCreateOptions(
 
   if (Object.keys(languageOptions).length > 0) {
     result.languageOptions = languageOptions;
-  }
-  if (config.externalServices.postgres !== undefined) {
-    result.postgresUrl = config.externalServices.postgres;
   }
   if (config.aptPackages.length > 0) {
     result.aptPackages = [...config.aptPackages];

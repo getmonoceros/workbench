@@ -154,17 +154,15 @@ export function validateOptions(opts: CreateOptions): void {
   }
 }
 
-// Normalize: dedupe + sort + drop postgres from compose services when an
-// external --postgres-url is provided.
+// Normalize: dedupe + sort services for deterministic compose/devcontainer
+// output.
 export function normalizeOptions(opts: CreateOptions): CreateOptions {
   const languages = [...new Set(opts.languages)].sort();
   // Dedupe services by name (last write wins) and sort by name so the
   // generated compose/devcontainer output is deterministic regardless
-  // of yml order. An external `--postgres-url` drops a curated postgres
-  // service — the workspace talks to the external DB instead.
+  // of yml order.
   const serviceByName = new Map<string, (typeof opts.services)[number]>();
   for (const svc of opts.services) {
-    if (opts.postgresUrl && svc.name === 'postgres') continue;
     serviceByName.set(svc.name, svc);
   }
   const services = [...serviceByName.values()].sort((a, b) =>
@@ -207,7 +205,6 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
       ? { languageOptions: opts.languageOptions }
       : {}),
     services,
-    postgresUrl: opts.postgresUrl,
     ...(aptPackages.length > 0 ? { aptPackages } : {}),
     ...(features && Object.keys(features).length > 0 ? { features } : {}),
     ...(installUrls && installUrls.length > 0 ? { installUrls } : {}),
@@ -877,9 +874,10 @@ export function buildComposeYaml(
   for (const v of ideVolumes) {
     lines.push(`      - ${v.volume}:${v.target}`);
   }
-  // Connection env for curated services (DATABASE_URL / REDIS_URL / PG* …)
-  // so the app and the in-container agent can connect without knowing the
-  // dev-default credentials. Derived from the already-resolved service env.
+  // Per-instance connection env for curated services (`<NAME>_URL`,
+  // `<NAME>_HOST`, … - e.g. `POSTGRES_URL`; ADR 0021) so the app and the
+  // in-container agent can connect without knowing the dev-default
+  // credentials. Derived from the already-resolved service env.
   const wsEnv = serviceConnectionEnv(opts.services);
   const wsEnvKeys = Object.keys(wsEnv);
   if (wsEnvKeys.length > 0) {

@@ -115,7 +115,6 @@ export interface CreateOptions {
    * `apply` separately rejects an unpinned yml. See ADR 0017.
    */
   runtimeVersion?: string;
-  postgresUrl?: string;
   /**
    * Additional Debian/Ubuntu apt packages to install via the
    * `ghcr.io/devcontainers-contrib/features/apt-packages` devcontainer

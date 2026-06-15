@@ -55,7 +55,6 @@ describe('validateConfig', () => {
     expect(cfg.installUrls).toEqual([]);
     expect(cfg.services).toEqual([]);
     expect(cfg.repos).toEqual([]);
-    expect(cfg.externalServices).toEqual({});
     expect(cfg.git).toBeUndefined();
   });
 
@@ -362,7 +361,6 @@ describe('createDoc', () => {
       installUrls: [],
       services: [],
       repos: [],
-      externalServices: {},
     });
     const out = stringifyConfig(doc);
     // schemaVersion + name first, then languages; empty arrays/objects
@@ -374,7 +372,6 @@ describe('createDoc', () => {
       '  - node',
     ]);
     expect(out).not.toContain('aptPackages');
-    expect(out).not.toContain('externalServices');
   });
 
   it('round-trips through parse+stringify without changes', () => {
@@ -392,7 +389,6 @@ describe('createDoc', () => {
       installUrls: [],
       services: [{ name: 'postgres', image: 'postgres:18' }],
       repos: [],
-      externalServices: {},
     };
     const doc = createDoc(config);
     const yaml = stringifyConfig(doc);
@@ -423,7 +419,6 @@ describe('readConfig / writeConfig', () => {
       installUrls: [],
       services: [],
       repos: [],
-      externalServices: {},
     });
     await writeConfig(file, doc);
     const text = await readFile(file, 'utf8');
@@ -449,7 +444,6 @@ describe('readConfig / writeConfig', () => {
         installUrls: [],
         services: [],
         repos: [],
-        externalServices: {},
       }),
     );
     // Now overwrite with broken content.

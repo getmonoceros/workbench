@@ -1,6 +1,5 @@
 export {
   CONFIG_SCHEMA_VERSION,
-  ExternalServicesSchema,
   FeatureEntrySchema,
   FeatureOptionValueSchema,
   GitUserSchema,
@@ -13,7 +12,6 @@ export {
   validateConfig,
 } from './schema.js';
 export type {
-  ExternalServices,
   FeatureEntry,
   GitUser,
   PortEntry,

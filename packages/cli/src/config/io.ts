@@ -90,7 +90,6 @@ const KEY_ORDER = [
   'services',
   'repos',
   'routing',
-  'externalServices',
   'git',
 ] as const;
 

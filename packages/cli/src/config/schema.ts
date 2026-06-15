@@ -14,9 +14,6 @@ import { z } from 'zod';
  *     The apply step converts to the Record shape `devcontainer.json`
  *     expects.
  *
- *   - `externalServices.postgres` carries what `CreateOptions.postgresUrl`
- *     does today.
- *
  *   - `git.user.{name,email}` carries the host-captured identity so the
  *     yml-as-profile is self-contained when shared across containers.
  *     Optional — falls back to host-side `git config --global --get` +
@@ -50,7 +47,6 @@ const REPO_URL_RE = /^https:\/\/[A-Za-z0-9@:/+_~.#=&?-]+$/;
 // be no-ops or escape `projects/`, neither belongs in a checked-in
 // container yml.
 const REPO_PATH_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
-const POSTGRES_URL_RE = /^postgres(ql)?:\/\//;
 
 export const REGEX = {
   solutionName: SOLUTION_NAME_RE,
@@ -59,7 +55,6 @@ export const REGEX = {
   installUrl: INSTALL_URL_RE,
   repoUrl: REPO_URL_RE,
   repoPath: REPO_PATH_RE,
-  postgresUrl: POSTGRES_URL_RE,
 };
 
 /**
@@ -366,16 +361,6 @@ export const ServiceObjectSchema = z.object({
   connectionEnv: z.record(z.string(), z.string()).optional(),
 });
 
-export const ExternalServicesSchema = z.object({
-  postgres: z
-    .string()
-    .regex(
-      POSTGRES_URL_RE,
-      "Postgres URL must start with 'postgres://' or 'postgresql://'",
-    )
-    .optional(),
-});
-
 // A language entry is either the bare/`:version` string form (`node`,
 // `java:17`) or an object form that surfaces feature options in the yml:
 //   - java:
@@ -448,7 +433,6 @@ export const SolutionConfigSchema = z
     services: z.array(ServiceObjectSchema).default([]),
     repos: z.array(RepoEntrySchema).default([]),
     routing: RoutingSchema.optional(),
-    externalServices: ExternalServicesSchema.default({}),
     git: z
       .object({
         user: GitUserSchema.optional(),
@@ -478,7 +462,6 @@ export type ServiceObject = z.infer<typeof ServiceObjectSchema>;
 export type ServiceHealthcheck = z.infer<typeof ServiceHealthcheckSchema>;
 export type RepoEntry = z.infer<typeof RepoEntrySchema>;
 export type GitUser = z.infer<typeof GitUserSchema>;
-export type ExternalServices = z.infer<typeof ExternalServicesSchema>;
 export type PortEntry = z.infer<typeof PortEntrySchema>;
 export type Routing = z.infer<typeof RoutingSchema>;
 
