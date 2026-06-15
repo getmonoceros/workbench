@@ -439,11 +439,12 @@ export function serviceConnectionEnv(
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const svc of services) {
-    // An explicit `connectionEnv` on the service (hand-written in the yml)
-    // wins; otherwise look it up from the catalog by service name. The catalog
-    // lookup is what covers the normal case — `expand` does not serialise a
-    // `connectionEnv` block into the yml, so a curated `postgres`/`mongodb`/…
-    // resolves its templates here, by name.
+    // The templates on the service win: `expand`/`add-service` serialise a
+    // `connectionEnv` block into the yml (renderServiceObjectBody), so they
+    // travel with the instance and a renamed/duplicated curated service
+    // resolves here by its own name. The catalog-by-name lookup is only a
+    // fallback for a hand-written curated entry that omits the block (and
+    // happens to keep the catalog name).
     const conn = svc.connectionEnv ?? SERVICE_CATALOG[svc.name]?.connectionEnv;
     if (!conn || Object.keys(conn).length === 0) continue;
     const prefix = svc.name.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();

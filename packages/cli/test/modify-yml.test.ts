@@ -20,6 +20,8 @@ import {
   runRemoveService,
 } from '../src/modify/index.js';
 import { parseConfig } from '../src/config/index.js';
+import { solutionConfigToCreateOptions } from '../src/config/transform.js';
+import { serviceConnectionEnv } from '../src/create/catalog.js';
 
 const silentLogger = {
   info: () => {},
@@ -212,6 +214,19 @@ describe('add-*/remove-* against the yml', () => {
     // catalog name `postgres`
     expect(yml).not.toMatch(/- name: postgres$/m);
     expect(yml.match(/image: postgres:18/g)).toHaveLength(2);
+    // Each instance must SERIALISE its own connectionEnv block, so the
+    // templates travel through the yml and resolve per instance at apply.
+    // (Regression: renderServiceObjectBody dropped connectionEnv, so a
+    // renamed instance hit the catalog-by-name fallback, missed, and got
+    // no connection env at all.) Drive the real apply pipeline:
+    // parse → transform → serviceConnectionEnv.
+    expect(yml.match(/connectionEnv:/g)).toHaveLength(2);
+    const parsed = parseConfig(yml);
+    const opts = solutionConfigToCreateOptions(parsed.config, {});
+    const env = serviceConnectionEnv(opts.services);
+    expect(env.POSTGRES_APP_URL).toContain('@postgres-app:5432/');
+    expect(env.POSTGRES_ANALYTICS_URL).toContain('@postgres-analytics:5432/');
+    expect(env.POSTGRES_APP_URL).not.toBe(env.POSTGRES_ANALYTICS_URL);
   });
 
   it('runAddService rejects an invalid --as name', async () => {

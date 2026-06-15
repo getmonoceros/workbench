@@ -495,9 +495,12 @@ describe('serviceConnectionEnv', () => {
     expect(env.POSTGRES_HOST).toBe('postgres');
   });
 
-  it('a renamed instance with no connectionEnv gets none (needs an explicit block)', () => {
-    // Catalog lookup is by name; a custom name (`analytics`) is not a catalog
-    // id, so a second same-engine instance must carry its own connectionEnv.
+  it('a renamed instance with no connectionEnv gets none (function contract)', () => {
+    // Function contract in isolation: catalog lookup is by name, and a custom
+    // name (`analytics`) is not a catalog id, so an object with no block yields
+    // nothing. In the real pipeline this case does not occur — the serializer
+    // (renderServiceObjectBody) always writes the block, so a parsed renamed
+    // instance carries its templates (see modify-yml.test.ts `--as`).
     const analytics: ResolvedService = {
       name: 'analytics',
       image: 'postgres:18',

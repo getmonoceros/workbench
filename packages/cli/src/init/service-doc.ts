@@ -47,6 +47,21 @@ export function renderServiceObjectBody(svc: ServiceObject): string[] {
     if (svc.healthcheck.startPeriod)
       lines.push(`  startPeriod: ${svc.healthcheck.startPeriod}`);
   }
+  // Connection-env templates travel WITH the instance (ADR 0021), so a
+  // renamed/duplicated curated service (e.g. `add-service postgres
+  // --as=analytics`) keeps them: at apply `serviceConnectionEnv` reads
+  // them off the service and prefixes by the instance's own name
+  // (`ANALYTICS_*`). Without this, a renamed instance would fall back to a
+  // catalog-by-name lookup that misses, and get no connection env at all.
+  // Single-quoted: the templates contain `:`/`/`/`@` and `${…}` render
+  // tokens that must survive verbatim (interpolateServices leaves
+  // connectionEnv untouched).
+  if (svc.connectionEnv && Object.keys(svc.connectionEnv).length > 0) {
+    lines.push('connectionEnv:');
+    for (const [k, v] of Object.entries(svc.connectionEnv)) {
+      lines.push(`  ${k}: '${v.replace(/'/g, "''")}'`);
+    }
+  }
   return lines;
 }
 
