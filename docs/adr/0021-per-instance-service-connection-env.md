@@ -89,12 +89,23 @@ project-specific config belongs in the project, not in Monoceros's global
 injection. `psql` connects via `psql "$POSTGRES_URL"` rather than bare
 libpq env.
 
-**Templates travel with the service.** The connection templates are baked
-into the yml service block at `expand` (like `image`/`env`/`healthcheck`)
-and read from the resolved service at `apply` — not looked up by catalog
-name. The `<NAME>_` prefix is derived from the service's **current** name
-at apply, so renamed and duplicated instances (and hand-written
-custom-image services that declare a `connectionEnv`) keep correct vars.
+**Resolved at apply, by catalog name (with an explicit override).** At
+apply, each service's templates are looked up from the catalog **by its
+service name**, filled, and emitted as `<NAME>_<SUFFIX>` (prefix from the
+service's current name). A service may instead carry its own
+`connectionEnv` block in the yml, which **overrides** the catalog — the
+escape hatch for a custom-image service or a renamed second instance of
+the same engine. So a curated `postgres`/`mongodb`/… (named as its
+catalog id) gets its vars automatically; a same-engine second instance
+renamed (e.g. `analytics`, required because names are unique) is not a
+catalog id and must carry an explicit `connectionEnv` to get vars.
+
+> Correction (2026-06-15): an earlier version of this ADR said the
+> templates were **baked into the yml at expand** and read back at apply.
+> They are not — the yml serializer does not persist a `connectionEnv`
+> block, so reading only the baked field produced an **empty** workspace
+> env (a regression shipped in 1.25.0). The mechanism is catalog-lookup
+> by name, with the explicit-yml `connectionEnv` as an override.
 
 **`apply` enforces unique service names.** A duplicate `services[].name`
 is a hard validation error. `add-service` gains an optional instance name

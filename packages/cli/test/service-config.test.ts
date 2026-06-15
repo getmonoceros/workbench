@@ -427,10 +427,12 @@ describe('serviceConnectionEnv', () => {
       DB: '${MYSQL_DATABASE}',
     },
   };
+  // A genuinely non-catalog service (clickhouse isn't curated) — no catalog
+  // connectionEnv to fall back to.
   const custom: ResolvedService = {
-    name: 'rustfs',
-    image: 'rustfs/rustfs:latest',
-    port: 9000,
+    name: 'clickhouse',
+    image: 'clickhouse/clickhouse-server:latest',
+    port: 8123,
     env: {},
     volumes: [],
   };
@@ -469,7 +471,44 @@ describe('serviceConnectionEnv', () => {
     expect(env.PGHOST).toBeUndefined();
   });
 
-  it('a renamed instance is prefixed by its current name', () => {
+  it('looks up the catalog by name when the service has no connectionEnv (real yml path)', () => {
+    // The yml serializer does NOT write a connectionEnv block, so a parsed
+    // curated service has none — serviceConnectionEnv must fall back to the
+    // catalog by name. (Regression: reading only svc.connectionEnv yielded an
+    // empty workspace env.)
+    const fromYml: ResolvedService = {
+      name: 'postgres',
+      image: 'postgres:18',
+      port: 5432,
+      env: {
+        POSTGRES_USER: 'monoceros',
+        POSTGRES_PASSWORD: 'monoceros',
+        POSTGRES_DB: 'monoceros',
+      },
+      volumes: [],
+    };
+    expect(fromYml.connectionEnv).toBeUndefined();
+    const env = serviceConnectionEnv([fromYml]);
+    expect(env.POSTGRES_URL).toBe(
+      'postgresql://monoceros:monoceros@postgres:5432/monoceros',
+    );
+    expect(env.POSTGRES_HOST).toBe('postgres');
+  });
+
+  it('a renamed instance with no connectionEnv gets none (needs an explicit block)', () => {
+    // Catalog lookup is by name; a custom name (`analytics`) is not a catalog
+    // id, so a second same-engine instance must carry its own connectionEnv.
+    const analytics: ResolvedService = {
+      name: 'analytics',
+      image: 'postgres:18',
+      port: 5432,
+      env: {},
+      volumes: [],
+    };
+    expect(serviceConnectionEnv([analytics])).toEqual({});
+  });
+
+  it('an explicit connectionEnv on the service is honoured and travels with a rename', () => {
     const analytics: ResolvedService = { ...pg, name: 'analytics' };
     const env = serviceConnectionEnv([analytics]);
     expect(env.ANALYTICS_URL).toBe(
