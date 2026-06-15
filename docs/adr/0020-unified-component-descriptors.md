@@ -253,6 +253,28 @@ The implementation refined three things from the earlier sketch:
   distinct from the source `components/`), produced by `components:sync`.
   There is no longer a separate feature-manifest bundle.
 
+## Addendum (2026-06-15): service `client` field
+
+A service descriptor may declare a CLI client tool to install into the
+**workspace** container (the service runs in its own container; the
+workspace otherwise has no `psql`/`mysql`/… client). Field:
+
+```yaml
+service:
+  client:
+    apt: [postgresql-client] # merged into the workspace apt-packages feature
+```
+
+At `apply`, `serviceClientAptPackages()` unions the `client.apt` of every
+curated service present into the workspace's apt-packages feature
+(build-time, cached). So a `postgres` service brings `psql`, `mysql` →
+`default-mysql-client`, `redis` → `redis-tools`. Looked up by catalog
+name (a renamed instance doesn't auto-contribute — add the package via
+`aptPackages`). Services without an apt client (mongodb's `mongosh`,
+rustfs's `mc`, mailpit) get nothing for now; `npm`/binary client kinds
+are a later extension of the `client` block (kept here rather than as a
+separate ADR).
+
 ## Related
 
 - ADR 0019 (component taxonomy) - this is the structural realization of

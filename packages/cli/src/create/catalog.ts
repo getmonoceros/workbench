@@ -267,6 +267,12 @@ export interface ServiceEntry {
    * (ADR 0021). Tokens `${host}`/`${port}`/`${<OPTION>}` are filled there.
    */
   connectionEnv?: Readonly<Record<string, string>>;
+  /**
+   * CLI client tool(s) installed into the WORKSPACE when this service is
+   * present (ADR 0020). `apt` packages merge into the workspace apt-packages
+   * feature, e.g. postgres → `postgresql-client`.
+   */
+  client?: Readonly<{ apt?: readonly string[] }>;
 }
 
 // The `monoceros` user/password/db below are deliberate dev-only
@@ -313,6 +319,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
             ? { vscodeExtensions: svc.vscodeExtensions }
             : {}),
           ...(svc.connectionEnv ? { connectionEnv: svc.connectionEnv } : {}),
+          ...(svc.client ? { client: svc.client } : {}),
         };
         return [key, entry];
       }),
@@ -446,6 +453,26 @@ export function serviceConnectionEnv(
     }
   }
   return env;
+}
+
+/**
+ * APT packages for the CLI client tools of the curated services present in the
+ * container (ADR 0020), e.g. a `postgres` service contributes
+ * `postgresql-client` so `psql` is available in the workspace. Looked up by
+ * catalog name (a renamed instance doesn't auto-contribute — add the package
+ * via `aptPackages` if needed). Deduped + sorted; merged into the workspace's
+ * apt-packages feature at scaffold time.
+ */
+export function serviceClientAptPackages(
+  services: readonly ResolvedService[],
+): string[] {
+  const pkgs = new Set<string>();
+  for (const svc of services) {
+    for (const pkg of SERVICE_CATALOG[svc.name]?.client?.apt ?? []) {
+      pkgs.add(pkg);
+    }
+  }
+  return [...pkgs].sort();
 }
 
 /**

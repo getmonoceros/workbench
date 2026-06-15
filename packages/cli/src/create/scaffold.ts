@@ -15,6 +15,7 @@ import {
   parseLanguageSpec,
   resolveRuntimeImage,
   runtimeSupportsIdeVolumes,
+  serviceClientAptPackages,
   serviceConnectionEnv,
 } from './catalog.js';
 import type { CreateOptions } from './types.js';
@@ -421,10 +422,19 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
       persistentHomeFiles: [],
     });
   }
-  if (opts.aptPackages && opts.aptPackages.length > 0) {
+  // Workspace apt packages: the user's `aptPackages` plus the CLI client tools
+  // contributed by the curated services present (ADR 0020), e.g. a postgres
+  // service adds `postgresql-client` so `psql` works in the workspace.
+  const aptPackages = [
+    ...new Set([
+      ...(opts.aptPackages ?? []),
+      ...serviceClientAptPackages(opts.services),
+    ]),
+  ].sort();
+  if (aptPackages.length > 0) {
     resolved.push({
       devcontainerKey: 'ghcr.io/devcontainers-contrib/features/apt-packages:1',
-      options: { packages: opts.aptPackages.join(',') },
+      options: { packages: aptPackages.join(',') },
       persistentHomePaths: [],
       persistentHomeFiles: [],
     });

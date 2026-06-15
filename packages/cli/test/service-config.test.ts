@@ -6,6 +6,7 @@ import {
   deriveServiceName,
   isCuratedService,
   serviceConnectionEnv,
+  serviceClientAptPackages,
 } from '../src/create/catalog.js';
 import { buildComposeYaml } from '../src/create/scaffold.js';
 import {
@@ -507,6 +508,25 @@ describe('serviceConnectionEnv', () => {
       'postgresql://monoceros:monoceros@pgvector:5432/monoceros',
     );
     expect(env.POSTGRES_URL).toContain('@postgres:5432/');
+  });
+
+  it('contributes CLI client apt packages for curated DB services (deduped)', () => {
+    const svcs = ['postgres', 'mysql', 'redis', 'pgvector'].map((n) =>
+      resolveService(expandCuratedService(n)),
+    );
+    // postgres + pgvector both → postgresql-client (deduped), sorted.
+    expect(serviceClientAptPackages(svcs)).toEqual([
+      'default-mysql-client',
+      'postgresql-client',
+      'redis-tools',
+    ]);
+  });
+
+  it('contributes no client for services without one (mongodb/rustfs/mailpit)', () => {
+    const svcs = ['mongodb', 'rustfs', 'mailpit'].map((n) =>
+      resolveService(expandCuratedService(n)),
+    );
+    expect(serviceClientAptPackages(svcs)).toEqual([]);
   });
 
   it('rustfs emits S3 endpoint + keys (RUSTFS_*)', () => {

@@ -12,6 +12,8 @@ service:
     timeout: 5s
     retries: 5
   vscodeExtensions: [cweijan.vscode-database-client2]
+  client:
+    apt: [postgresql-client]
   connectionEnv:
     URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${POSTGRES_DB}
     HOST: ${host}
