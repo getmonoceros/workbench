@@ -206,7 +206,7 @@ export async function runRemove(
       logger.info(
         `[remove] host-side rm hit ${code} on ${prettyPath(containerPath)}; using a throw-away alpine container to clean root-owned files…`,
       );
-      const { exitCode: exit } = await dockerExec([
+      const { exitCode: exit, stderr } = await dockerExec([
         'run',
         '--rm',
         '-v',
@@ -218,12 +218,24 @@ export async function runRemove(
         '1',
         '-delete',
       ]);
-      if (exit !== 0) {
+      // busybox `find -delete` can report a NON-ZERO exit even after it has
+      // emptied the tree (it warns during depth-first directory traversal),
+      // so its exit code is NOT authoritative — trusting it left the
+      // already-emptied container dir behind and reported a spurious
+      // failure. The real verdict is whether the host-side rm now succeeds:
+      // if alpine cleared the root-owned files, the parent is empty and
+      // user-owned so this removes it; if something genuinely survived, this
+      // throws and we surface it (with alpine's stderr for diagnosis).
+      try {
+        await fs.rm(containerPath, { recursive: true, force: true });
+      } catch (err2) {
+        const code2 = (err2 as NodeJS.ErrnoException).code;
         throw new Error(
-          `docker-based cleanup of ${containerPath} exited ${exit}. Inspect with \`sudo ls -la ${containerPath}\` and clean manually.`,
+          `docker-based cleanup of ${containerPath} did not fully clear it ` +
+            `(alpine find exit ${exit}${stderr.trim() ? `: ${stderr.trim()}` : ''}; ` +
+            `host rm: ${code2}). Inspect with \`sudo ls -la ${containerPath}\` and clean manually.`,
         );
       }
-      await fs.rm(containerPath, { recursive: true, force: true });
     }
   }
 
