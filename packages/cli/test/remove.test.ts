@@ -167,7 +167,7 @@ describe('runRemove', () => {
     expect(volumeRm).toContain('monoceros-sandbox-jetbrains-cache');
     expect(volumeRm).toContain('monoceros-sandbox-vscode-extensions');
     // ...but the machine-wide shared backend is NOT (other containers use it).
-    expect(volumeRm).not.toContain('monoceros-jetbrains-remotedev');
+    expect(volumeRm).not.toContain('monoceros-jetbrains-dist');
   });
 
   it('skips the backup step under --no-backup', async () => {

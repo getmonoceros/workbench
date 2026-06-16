@@ -79,8 +79,8 @@ COPY egress-allow.default.txt /etc/monoceros/egress-allow.default.txt
 # VS Code's "avoid extension reinstalls" docs.
 #   - VS Code   -> ~/.vscode-server
 #   - VS Codium -> ~/.vscodium-server
-#   - JetBrains -> ~/.cache/JetBrains (+ /RemoteDev for the shared backend),
-#     ~/.config/JetBrains, ~/.local/share/JetBrains
+#   - JetBrains -> ~/.cache/JetBrains (+ /RemoteDev/dist for the shared
+#     backend distribution), ~/.config/JetBrains, ~/.local/share/JetBrains
 # chown the XDG parents (~/.cache, ~/.config, ~/.local) recursively, NOT
 # just the JetBrains leaves: `mkdir -p` creates the intermediate ~/.local
 # and ~/.local/share as root, and a leaf-only chown would leave those
@@ -91,7 +91,7 @@ RUN mkdir -p /home/node/.vscode-server/extensions \
              /home/node/.vscode-server/data/User \
              /home/node/.vscodium-server/extensions \
              /home/node/.vscodium-server/data/User \
-             /home/node/.cache/JetBrains/RemoteDev \
+             /home/node/.cache/JetBrains/RemoteDev/dist \
              /home/node/.config/JetBrains \
              /home/node/.local/share/JetBrains \
  && chown -R node:node /home/node/.vscode-server /home/node/.vscodium-server \

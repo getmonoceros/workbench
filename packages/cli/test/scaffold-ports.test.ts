@@ -38,9 +38,9 @@ describe('VS Code IDE-state volumes (ADR 0015)', () => {
         minRuntime: '1.2.0',
       },
       {
-        volume: 'monoceros-jetbrains-remotedev',
-        target: '/home/node/.cache/JetBrains/RemoteDev',
-        minRuntime: '1.3.0',
+        volume: 'monoceros-jetbrains-dist',
+        target: '/home/node/.cache/JetBrains/RemoteDev/dist',
+        minRuntime: '1.3.2',
         shared: true,
       },
       {
@@ -61,20 +61,31 @@ describe('VS Code IDE-state volumes (ADR 0015)', () => {
     ]);
   });
 
-  it('shares the JetBrains backend machine-wide, keeps the rest per-container (1.3.0)', () => {
-    const dc = buildDevcontainerJson({ ...base, runtimeVersion: '1.3.0' });
-    if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
-    const m = (dc.mounts ?? []).join('\n');
-    // Shared backend: NO `<name>` in the volume name, nested under .cache.
-    expect(m).toContain(
-      'source=monoceros-jetbrains-remotedev,target=/home/node/.cache/JetBrains/RemoteDev,type=volume',
-    );
-    // Per-container caches/settings/state carry the container name.
-    expect(m).toContain(
+  it('per-container JetBrains volumes at 1.3.0, shared dist only from 1.3.2', () => {
+    // 1.3.0/1.3.1: per-container JetBrains volumes mount, but NOT the
+    // shared dist (the image only pre-creates .../RemoteDev/dist at 1.3.2).
+    const at130 = buildDevcontainerJson({ ...base, runtimeVersion: '1.3.0' });
+    if (!('runArgs' in at130)) throw new Error('expected image-mode shape');
+    const m130 = (at130.mounts ?? []).join('\n');
+    expect(m130).toContain(
       'source=monoceros-sandbox-jetbrains-cache,target=/home/node/.cache/JetBrains,type=volume',
     );
-    expect(m).toContain('source=monoceros-sandbox-jetbrains-config,');
-    expect(m).toContain('source=monoceros-sandbox-jetbrains-data,');
+    expect(m130).toContain('source=monoceros-sandbox-jetbrains-config,');
+    expect(m130).toContain('source=monoceros-sandbox-jetbrains-data,');
+    expect(m130).not.toContain('monoceros-jetbrains-dist');
+
+    // 1.3.2: only the backend DISTRIBUTION is shared (no `<name>`, nested
+    // at RemoteDev/dist); session state stays in the per-container cache.
+    const at132 = buildDevcontainerJson({ ...base, runtimeVersion: '1.3.2' });
+    if (!('runArgs' in at132)) throw new Error('expected image-mode shape');
+    const m132 = (at132.mounts ?? []).join('\n');
+    expect(m132).toContain(
+      'source=monoceros-jetbrains-dist,target=/home/node/.cache/JetBrains/RemoteDev/dist,type=volume',
+    );
+    expect(m132).toContain(
+      'source=monoceros-sandbox-jetbrains-cache,target=/home/node/.cache/JetBrains,type=volume',
+    );
+
     // Gated: nothing JetBrains at 1.2.0.
     const at120 = buildDevcontainerJson({ ...base, runtimeVersion: '1.2.0' });
     if (!('runArgs' in at120)) throw new Error('expected image-mode shape');

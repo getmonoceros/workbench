@@ -628,12 +628,13 @@ interface IdeStateVolume {
  *   - VS Code:   `~/.vscode-server`   (since runtime 1.1.0)
  *   - VS Codium: `~/.vscodium-server` (since runtime 1.2.0)
  *   - JetBrains: `~/.cache/JetBrains` + `~/.config/JetBrains` +
- *     `~/.local/share/JetBrains` (since runtime 1.3.0). The heavy backend
- *     distribution lives at `~/.cache/JetBrains/RemoteDev` (~3 GB,
- *     identical across containers) and is a SHARED volume - downloaded
- *     once; the rest (project indexes, settings, state) stays
- *     per-container. The shared RemoteDev mount nests inside the
- *     per-container `~/.cache/JetBrains` mount.
+ *     `~/.local/share/JetBrains` (since runtime 1.3.0). Only the backend
+ *     DISTRIBUTION `~/.cache/JetBrains/RemoteDev/dist` (~3 GB, identical
+ *     across containers) is a SHARED volume - downloaded once (since
+ *     runtime 1.3.2). Its siblings under RemoteDev (`active/`, `recent/`,
+ *     `remote-dev-worker/`) are per-user session state and stay
+ *     per-container, as do project indexes / settings / state. The shared
+ *     `dist` mount nests inside the per-container `~/.cache/JetBrains`.
  * Zed is not listed yet - add it once its backend dir is confirmed.
  */
 export function ideStateVolumes(name: string): IdeStateVolume[] {
@@ -658,14 +659,18 @@ export function ideStateVolumes(name: string): IdeStateVolume[] {
       target: '/home/node/.vscodium-server/data/User',
       minRuntime: '1.2.0',
     },
-    // JetBrains (ADR 0022). The backend distribution is shared
-    // machine-wide (downloaded once); project indexes / settings / state
-    // stay per-container. The shared RemoteDev mount nests inside the
-    // per-container `~/.cache/JetBrains` mount.
+    // JetBrains (ADR 0022). Only the backend DISTRIBUTION
+    // (`~/.cache/JetBrains/RemoteDev/dist`, ~3 GB, identical across
+    // containers) is shared machine-wide - downloaded once. The sibling
+    // RemoteDev state (`active/`, `recent/`, `remote-dev-worker/`) is
+    // per-user session state and stays per-container, inside the
+    // per-container `~/.cache/JetBrains` volume; sharing it pooled every
+    // container's recent-projects/active-sessions (the "wild" Gateway
+    // list). The shared `dist` mount nests two levels into that volume.
     {
-      volume: 'monoceros-jetbrains-remotedev',
-      target: '/home/node/.cache/JetBrains/RemoteDev',
-      minRuntime: '1.3.0',
+      volume: 'monoceros-jetbrains-dist',
+      target: '/home/node/.cache/JetBrains/RemoteDev/dist',
+      minRuntime: '1.3.2',
       shared: true,
     },
     {

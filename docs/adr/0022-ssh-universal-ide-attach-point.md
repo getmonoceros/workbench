@@ -136,25 +136,34 @@ in-container backend dir is confirmed - until then a builder who needs it
 opens a ticket (see Consequences).
 
 JetBrains (confirmed via WebStorm over Gateway) is different and forced a
-departure from ADR 0015's strict per-container rule. Measured footprint:
-`~/.cache/JetBrains/RemoteDev` is the ~3 GB IDE backend distribution,
-**identical across containers**; `~/.cache/JetBrains/<Product><Version>`
-(indexes, LocalHistory), `~/.config/JetBrains`, and `~/.local/share/JetBrains`
-are per-project/per-container. So the split is:
+departure from ADR 0015's strict per-container rule. Measured footprint
+under `~/.cache/JetBrains/RemoteDev`: `dist/` is the ~3 GB IDE backend
+distribution, **identical across containers**; its siblings `active/`,
+`recent/`, `remote-dev-worker/` are tiny per-user session state. The rest
+(`~/.cache/JetBrains/<Product><Version>` indexes/LocalHistory,
+`~/.config/JetBrains`, `~/.local/share/JetBrains`) is per-project/per-
+container. So the split is:
 
 - **Shared, machine-wide** (downloaded once, like the Traefik proxy
-  singleton): `~/.cache/JetBrains/RemoteDev` -> one `monoceros-jetbrains-
-remotedev` volume, reused by every container, **not** deleted by
-  `monoceros remove <name>` (reclaim explicitly with `docker volume rm`).
-- **Per-container:** `~/.cache/JetBrains` (project indexes; the shared
-  RemoteDev volume nests inside it), `~/.config/JetBrains`,
+  singleton): **only** `~/.cache/JetBrains/RemoteDev/dist` -> one
+  `monoceros-jetbrains-dist` volume, reused by every container, **not**
+  deleted by `monoceros remove <name>` (reclaim explicitly with `docker
+volume rm`).
+- **Per-container:** `~/.cache/JetBrains` (project indexes **and** the
+  RemoteDev session state `active/`+`recent/`+`remote-dev-worker/`; the
+  shared `dist` volume nests inside it), `~/.config/JetBrains`,
   `~/.local/share/JetBrains` - all `monoceros-<name>-jetbrains-*`, deleted
   on remove.
 
-Gated on runtime 1.3.0 (the image pre-creates all four node-owned). This is
-the only place a Monoceros volume is shared across containers; it is
-justified by the multi-GB, container-identical backend - the same reasoning
-that makes the proxy a singleton.
+An earlier cut shared the whole `RemoteDev` dir, which pooled every
+container's `recent/` + `active/` state - WebStorm's "Recent SSH Projects"
+then showed one merged, cross-container list. Sharing **only** `dist/`
+fixes that while keeping the download-once win. The shared `dist` volume is
+gated on runtime 1.3.2 (the image pre-creates `.../RemoteDev/dist`
+node-owned there); the per-container JetBrains volumes are gated on 1.3.0.
+This is the only place a Monoceros volume is shared across containers,
+justified by the multi-GB, container-identical distribution - the same
+reasoning that makes the proxy a singleton.
 
 As in ADR 0015, volumes target **sub-directories the IDE writes into**,
 never a whole IDE-owned directory - that lesson (VS Code owns `bin/`)
