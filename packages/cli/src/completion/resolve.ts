@@ -5,6 +5,7 @@ import { loadComponentCatalog } from '../init/components.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
 import { knownLanguages, knownServices } from '../create/catalog.js';
 import { PROVIDER_VALUES, REGEX } from '../config/schema.js';
+import { OPEN_TOOLS } from '../open/index.js';
 
 /**
  * Shell-agnostic completion engine. Called by the `__complete`
@@ -475,6 +476,7 @@ const ALL_COMMANDS = [
   'init',
   'list-components',
   'shell',
+  'open',
   'run',
   'logs',
   'start',
@@ -544,6 +546,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     },
   },
   shell: { positionals: [containerName] },
+  open: { positionals: [containerName, () => [...OPEN_TOOLS]] },
   run: {
     positionals: [containerName],
     flags: { '--in': { type: 'value' } },

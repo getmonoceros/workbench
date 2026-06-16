@@ -43,7 +43,7 @@ describe('renderUsageBlock — top-level COMMANDS', () => {
 
   it('puts a blank line between command entries', () => {
     // `shell` (single-line desc) is immediately followed by a blank
-    // line, then the `run` entry.
-    expect(out).toMatch(/^shell\b[^\n]*\n\nrun\b/m);
+    // line, then the next entry (`open`).
+    expect(out).toMatch(/^shell\b[^\n]*\n\nopen\b/m);
   });
 });

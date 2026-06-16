@@ -12,6 +12,7 @@ import { __completeCommand } from './commands/__complete.js';
 import { initCommand } from './commands/init.js';
 import { listComponentsCommand } from './commands/list-components.js';
 import { logsCommand } from './commands/logs.js';
+import { openCommand } from './commands/open.js';
 import { portCommand } from './commands/port.js';
 import { removeAptPackagesCommand } from './commands/remove-apt-packages.js';
 import { removeFeatureCommand } from './commands/remove-feature.js';
@@ -42,6 +43,7 @@ export const main = defineCommand({
     init: initCommand,
     'list-components': listComponentsCommand,
     shell: shellCommand,
+    open: openCommand,
     run: runCommand,
     logs: logsCommand,
     start: startCommand,

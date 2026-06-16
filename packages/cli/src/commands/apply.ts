@@ -1,5 +1,7 @@
 import { defineCommand } from 'citty';
+import { consola } from 'consola';
 import { runApply } from '../apply/index.js';
+import { OPEN_TOOLS, runOpen } from '../open/index.js';
 import { CLI_VERSION } from '../version.js';
 import { dispatch } from './_dispatch.js';
 
@@ -32,6 +34,10 @@ export const applyCommand = defineCommand({
         'Stream the raw @devcontainers/cli output to stderr instead of showing a phase spinner. Auto-enabled when stderr is not a TTY.',
       default: false,
     },
+    open: {
+      type: 'string',
+      description: `After a successful apply, open the container in this tool (${OPEN_TOOLS.join('|')}).`,
+    },
   },
   run({ args }) {
     return dispatch(async () => {
@@ -40,6 +46,16 @@ export const applyCommand = defineCommand({
         cliVersion: CLI_VERSION,
         verbose: args.verbose,
       });
+      // `--open` is a convenience on top of a successful apply. A failure
+      // here (editor not found, etc.) must not mask the apply result, so
+      // it surfaces as a warning and the apply's exit code stands.
+      if (args.open && result.containerExitCode === 0) {
+        try {
+          await runOpen({ name: args.name, tool: args.open });
+        } catch (err) {
+          consola.warn(err instanceof Error ? err.message : String(err));
+        }
+      }
       return result.containerExitCode;
     });
   },

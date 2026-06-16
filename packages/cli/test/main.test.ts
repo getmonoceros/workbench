@@ -15,6 +15,7 @@ describe('monoceros main command', () => {
       'init',
       'list-components',
       'shell',
+      'open',
       'run',
       'logs',
       'start',
