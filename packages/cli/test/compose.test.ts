@@ -331,24 +331,46 @@ describe('image-mode lifecycle (no compose.yaml)', () => {
     expect(calls).toHaveLength(1); // only the lookup, no `stop`
   });
 
-  it('runStatus reports the labeled container state', async () => {
+  it('runStatus prints docker default table for the labeled container', async () => {
     const calls: string[][] = [];
     const code = await runStatus({
       root: bare,
       logger: { info: () => {} },
       dockerExec: async (args) => {
         calls.push(args);
-        return { exitCode: 0, stdout: 'sandbox\tUp 3 minutes\n', stderr: '' };
+        return {
+          exitCode: 0,
+          stdout:
+            'CONTAINER ID   IMAGE                    STATUS         NAMES\n' +
+            'abc123def456   monoceros-runtime:dev    Up 3 minutes   monoceros-sandbox\n',
+          stderr: '',
+        };
       },
     });
     expect(code).toBe(0);
+    // No --format: docker's default table (with header) is rendered.
     expect(calls[0]).toEqual([
       'ps',
       '-a',
       '--filter',
       `label=devcontainer.local_folder=${bare}`,
-      '--format',
-      '{{.Names}}\t{{.Status}}',
     ]);
+  });
+
+  it('runStatus reports "does not exist" when only the header is returned', async () => {
+    const infos: string[] = [];
+    const code = await runStatus({
+      root: bare,
+      logger: { info: (m) => infos.push(m) },
+      dockerExec: async () => ({
+        exitCode: 0,
+        stdout: 'CONTAINER ID   IMAGE   STATUS   NAMES\n',
+        stderr: '',
+      }),
+    });
+    expect(code).toBe(0);
+    expect(infos.join('\n')).toMatch(
+      /does not exist.*monoceros apply sandbox/s,
+    );
   });
 });

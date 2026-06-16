@@ -605,22 +605,27 @@ async function statusImageContainer(
   const exec = opts.dockerExec ?? spawnDocker;
   const logger = opts.logger ?? { info: (msg) => consola.info(msg) };
   const name = path.basename(opts.root);
+  // Plain `docker ps -a` (no --format) renders docker's default table with
+  // a header (CONTAINER ID / IMAGE / STATUS / PORTS / NAMES), comparable to
+  // `docker compose ps`. The NAMES column shows `monoceros-<name>`.
   const res = await exec([
     'ps',
     '-a',
     '--filter',
     imageContainerFilter(opts.root),
-    '--format',
-    '{{.Names}}\t{{.Status}}',
   ]);
-  const out = res.stdout.trim();
-  if (!out) {
+  // The default table always emits a header row; a single line (or none)
+  // means no matching container.
+  const rows = res.stdout.split('\n').filter((l) => l.trim().length > 0);
+  if (rows.length <= 1) {
     logger.info(
       `Container '${name}' does not exist. Run \`monoceros apply ${name}\`.`,
     );
     return 0;
   }
-  process.stdout.write(`${out}\n`);
+  process.stdout.write(
+    res.stdout.endsWith('\n') ? res.stdout : `${res.stdout}\n`,
+  );
   return res.exitCode;
 }
 

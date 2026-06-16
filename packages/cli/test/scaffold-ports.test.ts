@@ -145,6 +145,23 @@ describe('SSH attach postStartCommand (ADR 0022)', () => {
   });
 });
 
+describe('deterministic workspace container name (ADR 0022)', () => {
+  it('image-mode pins --name=monoceros-<name> in runArgs', () => {
+    const dc = buildDevcontainerJson({ ...base, runtimeVersion: '1.2.0' });
+    if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
+    expect(dc.runArgs).toContain('--name=monoceros-sandbox');
+  });
+
+  it('compose-mode sets container_name on the workspace service', () => {
+    const yaml = buildComposeYaml({
+      ...base,
+      runtimeVersion: '1.2.0',
+      services: [resolveService(expandCuratedService('postgres'))],
+    });
+    expect(yaml).toContain('    container_name: monoceros-sandbox');
+  });
+});
+
 describe('buildDevcontainerJson — ports & vscode autoForward', () => {
   it('omits ports, customizations, and the proxy network when no ports declared', () => {
     const dc = buildDevcontainerJson(base);

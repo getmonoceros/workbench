@@ -817,7 +817,14 @@ export function buildDevcontainerJson(
   // names like `thirsty_bartik`, which would make Traefik's backend
   // URL non-deterministic. With the alias we know the route in the
   // dynamic config can always point at `http://<name>:<port>`.
-  const runArgs = ['--cap-add=NET_ADMIN'];
+  // Pin a deterministic container name. Without it devcontainer-cli
+  // assigns a random name (`thirsty_bartik`), which is impossible to
+  // attribute in `docker ps`. `monoceros-<name>` matches the compose-mode
+  // workspace container_name, so the workspace container reads the same in
+  // both modes. apply removes the prior container (by label) before
+  // recreating, so the name is free on rebuild. SSH still resolves by
+  // label, not this name. See ADR 0022.
+  const runArgs = ['--cap-add=NET_ADMIN', `--name=monoceros-${opts.name}`];
   if (ports.length > 0) {
     runArgs.push('--network=monoceros-proxy');
     runArgs.push(`--network-alias=${opts.name}`);
@@ -887,6 +894,12 @@ export function buildComposeYaml(
 
   lines.push('  workspace:');
   lines.push(`    image: ${resolveRuntimeImage(opts.runtimeVersion)}`);
+  // Deterministic container name, matching image-mode's `--name`. Compose
+  // would otherwise name it `<project>-workspace-1`; this makes the
+  // workspace container read as `monoceros-<name>` in `docker ps` in both
+  // modes. The aux services keep their compose-generated names; removal is
+  // by compose-project label, so the rename doesn't affect it.
+  lines.push(`    container_name: monoceros-${opts.name}`);
   lines.push("    command: 'sleep infinity'");
   // No `user:` directive here — the runtime image's entrypoint runs as
   // root to set up iptables, then drops to the `node` user via gosu
