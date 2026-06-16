@@ -77,13 +77,20 @@ COPY egress-allow.default.txt /etc/monoceros/egress-allow.default.txt
 # non-root `node` user, otherwise the IDE server fails to write into them
 # ("permission denied"). This is the non-root requirement called out in
 # VS Code's "avoid extension reinstalls" docs.
-#   - VS Code  -> ~/.vscode-server
+#   - VS Code   -> ~/.vscode-server
 #   - VS Codium -> ~/.vscodium-server
+#   - JetBrains -> ~/.cache/JetBrains (+ /RemoteDev for the shared backend),
+#     ~/.config/JetBrains, ~/.local/share/JetBrains
 RUN mkdir -p /home/node/.vscode-server/extensions \
              /home/node/.vscode-server/data/User \
              /home/node/.vscodium-server/extensions \
              /home/node/.vscodium-server/data/User \
- && chown -R node:node /home/node/.vscode-server /home/node/.vscodium-server
+             /home/node/.cache/JetBrains/RemoteDev \
+             /home/node/.config/JetBrains \
+             /home/node/.local/share/JetBrains \
+ && chown -R node:node /home/node/.vscode-server /home/node/.vscodium-server \
+      /home/node/.cache/JetBrains /home/node/.config/JetBrains \
+      /home/node/.local/share/JetBrains
 
 COPY entrypoint.sh /usr/local/bin/monoceros-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/monoceros-entrypoint.sh

@@ -120,22 +120,41 @@ the Docker access the builder already has - no new privilege.
 in-container backend sub-directories** (option A, chosen over persisting a
 broad swath of the home directory):
 
-| IDE family       | In-container backend directory              | Status     | Since runtime |
-| ---------------- | ------------------------------------------- | ---------- | ------------- |
-| VS Code Remote   | `~/.vscode-server`                          | confirmed  | 1.1.0         |
-| VS Codium Remote | `~/.vscodium-server`                        | confirmed  | 1.2.0         |
-| JetBrains        | `~/.cache/JetBrains` (+ remote-dev backend) | to confirm | -             |
-| Zed              | `~/.zed_server`                             | to confirm | -             |
+| IDE family       | In-container backend directory                        | Status     | Since runtime |
+| ---------------- | ----------------------------------------------------- | ---------- | ------------- |
+| VS Code Remote   | `~/.vscode-server`                                    | confirmed  | 1.1.0         |
+| VS Codium Remote | `~/.vscodium-server`                                  | confirmed  | 1.2.0         |
+| JetBrains        | `~/.cache/JetBrains` + `~/.config` + `~/.local/share` | confirmed  | 1.3.0         |
+| Zed              | `~/.zed_server`                                       | to confirm | -             |
 
 Confirmed via `open-remote-ssh` on Codium: it lays down `~/.vscodium-server`
 with the same `extensions/` + `data/User/` sub-dirs as VS Code, so both get
 named volumes on those two sub-dirs (never the whole server dir - `bin/`
 stays IDE-owned, per ADR 0015). The VS Codium volumes are gated on runtime
-1.2.0, where the image first pre-creates `~/.vscodium-server/{extensions,
-data/User}` node-owned; the VS Code pair stays gated on 1.1.0. JetBrains and
-Zed are added once their in-container backend dirs are confirmed on a real
-connection - until then a builder who needs one opens a ticket (see
-Consequences).
+1.2.0; the VS Code pair stays gated on 1.1.0. Zed is added once its
+in-container backend dir is confirmed - until then a builder who needs it
+opens a ticket (see Consequences).
+
+JetBrains (confirmed via WebStorm over Gateway) is different and forced a
+departure from ADR 0015's strict per-container rule. Measured footprint:
+`~/.cache/JetBrains/RemoteDev` is the ~3 GB IDE backend distribution,
+**identical across containers**; `~/.cache/JetBrains/<Product><Version>`
+(indexes, LocalHistory), `~/.config/JetBrains`, and `~/.local/share/JetBrains`
+are per-project/per-container. So the split is:
+
+- **Shared, machine-wide** (downloaded once, like the Traefik proxy
+  singleton): `~/.cache/JetBrains/RemoteDev` -> one `monoceros-jetbrains-
+remotedev` volume, reused by every container, **not** deleted by
+  `monoceros remove <name>` (reclaim explicitly with `docker volume rm`).
+- **Per-container:** `~/.cache/JetBrains` (project indexes; the shared
+  RemoteDev volume nests inside it), `~/.config/JetBrains`,
+  `~/.local/share/JetBrains` - all `monoceros-<name>-jetbrains-*`, deleted
+  on remove.
+
+Gated on runtime 1.3.0 (the image pre-creates all four node-owned). This is
+the only place a Monoceros volume is shared across containers; it is
+justified by the multi-GB, container-identical backend - the same reasoning
+that makes the proxy a singleton.
 
 As in ADR 0015, volumes target **sub-directories the IDE writes into**,
 never a whole IDE-owned directory - that lesson (VS Code owns `bin/`)

@@ -583,9 +583,9 @@ function isValidHomeSubpath(p: string): boolean {
 const HOME_SUBPATH_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 
 interface IdeStateVolume {
-  /** Docker volume name - unique per container so two containers don't share IDE state. */
+  /** Docker volume name. Per-container (carries `<name>`) unless `shared`. */
   volume: string;
-  /** In-container mount target (an IDE server sub-directory). */
+  /** In-container mount target (an IDE server/backend sub-directory). */
   target: string;
   /**
    * Minimum runtime version that pre-creates this target node-owned. The
@@ -594,6 +594,14 @@ interface IdeStateVolume {
    * and the IDE server couldn't write into it.
    */
   minRuntime: string;
+  /**
+   * Machine-wide volume shared by ALL containers (no `<name>` in the
+   * name), for content that is identical across containers - e.g. the
+   * JetBrains remote backend (a multi-GB download). Like the Traefik
+   * proxy singleton, it is reused by name and NOT deleted by `monoceros
+   * remove <name>` (other containers depend on it). See ADR 0022.
+   */
+  shared?: boolean;
 }
 
 /**
@@ -616,11 +624,17 @@ interface IdeStateVolume {
  * pinned runtime (see `ideStateVolumesForRuntime`); `remove` deletes the
  * whole set (`docker volume rm -f` no-ops on absent ones).
  *
- * In-container server dirs confirmed empirically per IDE (connect, look):
- *   - VS Code:    `~/.vscode-server`   (since runtime 1.1.0)
- *   - VS Codium:  `~/.vscodium-server` (since runtime 1.2.0)
- * JetBrains / Zed are deliberately not listed yet - add them once their
- * in-container backend dirs are confirmed on a real connection.
+ * In-container server/backend dirs confirmed empirically per IDE:
+ *   - VS Code:   `~/.vscode-server`   (since runtime 1.1.0)
+ *   - VS Codium: `~/.vscodium-server` (since runtime 1.2.0)
+ *   - JetBrains: `~/.cache/JetBrains` + `~/.config/JetBrains` +
+ *     `~/.local/share/JetBrains` (since runtime 1.3.0). The heavy backend
+ *     distribution lives at `~/.cache/JetBrains/RemoteDev` (~3 GB,
+ *     identical across containers) and is a SHARED volume - downloaded
+ *     once; the rest (project indexes, settings, state) stays
+ *     per-container. The shared RemoteDev mount nests inside the
+ *     per-container `~/.cache/JetBrains` mount.
+ * Zed is not listed yet - add it once its backend dir is confirmed.
  */
 export function ideStateVolumes(name: string): IdeStateVolume[] {
   return [
@@ -643,6 +657,31 @@ export function ideStateVolumes(name: string): IdeStateVolume[] {
       volume: `monoceros-${name}-vscodium-userdata`,
       target: '/home/node/.vscodium-server/data/User',
       minRuntime: '1.2.0',
+    },
+    // JetBrains (ADR 0022). The backend distribution is shared
+    // machine-wide (downloaded once); project indexes / settings / state
+    // stay per-container. The shared RemoteDev mount nests inside the
+    // per-container `~/.cache/JetBrains` mount.
+    {
+      volume: 'monoceros-jetbrains-remotedev',
+      target: '/home/node/.cache/JetBrains/RemoteDev',
+      minRuntime: '1.3.0',
+      shared: true,
+    },
+    {
+      volume: `monoceros-${name}-jetbrains-cache`,
+      target: '/home/node/.cache/JetBrains',
+      minRuntime: '1.3.0',
+    },
+    {
+      volume: `monoceros-${name}-jetbrains-config`,
+      target: '/home/node/.config/JetBrains',
+      minRuntime: '1.3.0',
+    },
+    {
+      volume: `monoceros-${name}-jetbrains-data`,
+      target: '/home/node/.local/share/JetBrains',
+      minRuntime: '1.3.0',
     },
   ];
 }

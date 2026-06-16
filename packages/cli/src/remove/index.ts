@@ -144,14 +144,21 @@ export async function runRemove(
     exec: dockerExec,
   });
 
-  // Remove the per-container VS Code IDE-state named volumes (extensions
-  // + user settings). Unlike the bind-mounted home/ dirs, these live
-  // outside the container directory, so they must be deleted explicitly
-  // or they'd leak after `remove`. `-f` ignores volumes that were never
-  // created; the containers using them are already gone from step 1, so
-  // the volumes are free to delete. Best-effort — a failure here does
-  // not block the rest of the removal.
-  const ideVolumes = ideStateVolumes(opts.name).map((v) => v.volume);
+  // Remove the per-container IDE-state named volumes (extensions, user
+  // settings, JetBrains project caches). Unlike the bind-mounted home/
+  // dirs, these live outside the container directory, so they must be
+  // deleted explicitly or they'd leak after `remove`. `-f` ignores
+  // volumes that were never created; the containers using them are
+  // already gone from step 1, so they are free to delete. Best-effort.
+  //
+  // SHARED volumes (e.g. the machine-wide JetBrains backend at
+  // `monoceros-jetbrains-remotedev`) are deliberately NOT deleted here -
+  // other containers depend on them, like the Traefik proxy singleton.
+  // Reclaim them explicitly with `docker volume rm` when no container
+  // needs them. See ADR 0022.
+  const ideVolumes = ideStateVolumes(opts.name)
+    .filter((v) => !v.shared)
+    .map((v) => v.volume);
   await dockerExec(['volume', 'rm', '-f', ...ideVolumes]);
 
   // ── Step 2: optional backup ────────────────────────────────────

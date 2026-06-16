@@ -37,7 +37,48 @@ describe('VS Code IDE-state volumes (ADR 0015)', () => {
         target: '/home/node/.vscodium-server/data/User',
         minRuntime: '1.2.0',
       },
+      {
+        volume: 'monoceros-jetbrains-remotedev',
+        target: '/home/node/.cache/JetBrains/RemoteDev',
+        minRuntime: '1.3.0',
+        shared: true,
+      },
+      {
+        volume: 'monoceros-demo-jetbrains-cache',
+        target: '/home/node/.cache/JetBrains',
+        minRuntime: '1.3.0',
+      },
+      {
+        volume: 'monoceros-demo-jetbrains-config',
+        target: '/home/node/.config/JetBrains',
+        minRuntime: '1.3.0',
+      },
+      {
+        volume: 'monoceros-demo-jetbrains-data',
+        target: '/home/node/.local/share/JetBrains',
+        minRuntime: '1.3.0',
+      },
     ]);
+  });
+
+  it('shares the JetBrains backend machine-wide, keeps the rest per-container (1.3.0)', () => {
+    const dc = buildDevcontainerJson({ ...base, runtimeVersion: '1.3.0' });
+    if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
+    const m = (dc.mounts ?? []).join('\n');
+    // Shared backend: NO `<name>` in the volume name, nested under .cache.
+    expect(m).toContain(
+      'source=monoceros-jetbrains-remotedev,target=/home/node/.cache/JetBrains/RemoteDev,type=volume',
+    );
+    // Per-container caches/settings/state carry the container name.
+    expect(m).toContain(
+      'source=monoceros-sandbox-jetbrains-cache,target=/home/node/.cache/JetBrains,type=volume',
+    );
+    expect(m).toContain('source=monoceros-sandbox-jetbrains-config,');
+    expect(m).toContain('source=monoceros-sandbox-jetbrains-data,');
+    // Gated: nothing JetBrains at 1.2.0.
+    const at120 = buildDevcontainerJson({ ...base, runtimeVersion: '1.2.0' });
+    if (!('runArgs' in at120)) throw new Error('expected image-mode shape');
+    expect((at120.mounts ?? []).join('\n')).not.toContain('JetBrains');
   });
 
   it('gates the VS Codium volumes on runtime 1.2.0 (not the 1.1.0 VS Code floor)', () => {

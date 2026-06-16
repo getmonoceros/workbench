@@ -149,6 +149,27 @@ describe('runRemove', () => {
     expect(dat).toBe('rows');
   });
 
+  it('deletes per-container IDE volumes but spares the shared JetBrains backend', async () => {
+    await seedContainer('sandbox');
+    const dockerCalls: string[][] = [];
+    await runRemove({
+      name: 'sandbox',
+      monocerosHome: home,
+      dockerExec: captureDockerExec(dockerCalls),
+      proxyDocker: captureDockerExec([]),
+      logger: silentLogger,
+    });
+    const volumeRm = dockerCalls.find(
+      (c) => c[0] === 'volume' && c[1] === 'rm',
+    );
+    expect(volumeRm).toBeDefined();
+    // Per-container volumes are removed...
+    expect(volumeRm).toContain('monoceros-sandbox-jetbrains-cache');
+    expect(volumeRm).toContain('monoceros-sandbox-vscode-extensions');
+    // ...but the machine-wide shared backend is NOT (other containers use it).
+    expect(volumeRm).not.toContain('monoceros-jetbrains-remotedev');
+  });
+
   it('skips the backup step under --no-backup', async () => {
     await seedContainer('sandbox');
     const dockerCalls: string[][] = [];
