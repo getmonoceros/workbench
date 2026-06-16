@@ -56,6 +56,13 @@ export const DEFAULT_RUNTIME_VERSION: string =
 // image-gated feature gets its own MIN_RUNTIME_FOR_<feature>.
 const MIN_RUNTIME_FOR_IDE_VOLUMES = '1.1.0';
 
+// Minimum runtime version that ships sshd + socat for the universal IDE
+// attach point (ADR 0022). Below this the image has no sshd, so the
+// host-side SSH config would point at a dead port - apply skips the
+// whole SSH setup. Frozen at the version the capability was INTRODUCED
+// in, like MIN_RUNTIME_FOR_IDE_VOLUMES above.
+const MIN_RUNTIME_FOR_SSH_ATTACH = '1.2.0';
+
 /**
  * Resolve a pinned `runtimeVersion` to a concrete image ref.
  * `MONOCEROS_BASE_IMAGE_OVERRIDE` (dev) always wins. With no pin we fall
@@ -90,6 +97,16 @@ export function compareRuntimeVersions(a: string, b: string): number {
 export function runtimeSupportsIdeVolumes(version?: string): boolean {
   if (!version) return false;
   return compareRuntimeVersions(version, MIN_RUNTIME_FOR_IDE_VOLUMES) >= 0;
+}
+
+/**
+ * Whether the pinned runtime ships sshd + socat for the ADR-0022 IDE
+ * attach point. False when unpinned or below the minimum - those
+ * containers get no host-side SSH config (the image has no sshd).
+ */
+export function runtimeSupportsSshAttach(version?: string): boolean {
+  if (!version) return false;
+  return compareRuntimeVersions(version, MIN_RUNTIME_FOR_SSH_ATTACH) >= 0;
 }
 
 export interface LanguageEntry {

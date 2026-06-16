@@ -30,7 +30,14 @@ import {
 } from '../config/state.js';
 import type { SolutionConfig } from '../config/schema.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
-import { resolveRuntimeImage } from '../create/catalog.js';
+import {
+  resolveRuntimeImage,
+  runtimeSupportsSshAttach,
+} from '../create/catalog.js';
+import {
+  type KeygenSpawn,
+  setupSshAttach,
+} from '../devcontainer/ssh-attach.js';
 import {
   needsCompose,
   normalizeOptions,
@@ -154,6 +161,10 @@ export interface RunApplyOptions {
   identityScopePrompt?: IdentityScopePrompt;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
+  /** Override `ssh-keygen` for the SSH attach point (ADR 0022). Tests stub this. */
+  sshKeygen?: KeygenSpawn;
+  /** Override the user `.ssh` dir for SSH attach config (ADR 0022). Tests inject a tmpdir. */
+  sshUserSshDir?: string;
 }
 
 export interface RunApplyResult {
@@ -444,6 +455,34 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       ...(opts.now ? { now: opts.now } : {}),
     }),
   );
+
+  // SSH attach point (ADR 0022): mint a per-container keypair and
+  // register a `Host monoceros-<name>` block so any SSH-capable IDE or a
+  // plain `ssh monoceros-<name>` attaches to the running container with
+  // zero config. Gated on the pinned runtime shipping sshd (>= 1.2.0);
+  // older images have no sshd, so the config would point at a dead port.
+  // Non-fatal: an ssh-keygen / config hiccup must not strand the apply.
+  if (runtimeSupportsSshAttach(createOpts.runtimeVersion)) {
+    try {
+      const ssh = await setupSshAttach({
+        name: opts.name,
+        targetDir,
+        home,
+        ...(opts.sshKeygen ? { keygen: opts.sshKeygen } : {}),
+        ...(opts.sshUserSshDir ? { userSshDir: opts.sshUserSshDir } : {}),
+        logger: idLogger,
+      });
+      if (ssh.configured) {
+        logger.info(
+          `SSH attach: \`ssh ${ssh.hostAlias}\` (or pick it in your IDE)`,
+        );
+      }
+    } catch (err) {
+      (logger.warn ?? logger.info)(
+        `SSH attach setup skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   // Briefing files for AI tools inside the container. Lives next to
   // the scaffold (AGENTS.md / CLAUDE.md at the workspace root,

@@ -16,6 +16,7 @@ import {
   type DockerExec,
 } from '../devcontainer/compose.js';
 import { ideStateVolumes } from '../create/scaffold.js';
+import { removeSshAttach } from '../devcontainer/ssh-attach.js';
 import { maybeStopProxy } from '../proxy/index.js';
 import { removeDynamicConfig } from '../proxy/dynamic.js';
 
@@ -245,6 +246,19 @@ export async function runRemove(
   if (!backupPath) {
     logger.warn?.(
       'No backup created (--no-backup). The host-side state is gone for good.',
+    );
+  }
+
+  // Drop the host-side SSH attach artifacts (proxy script + config.d
+  // entry under <home>/ssh/). The keypair lived under the container dir
+  // and is already gone with the directory delete above. The `Include`
+  // line in ~/.ssh/config stays - it harmlessly globs and other
+  // containers still rely on it. See ADR 0022.
+  try {
+    await removeSshAttach(home, opts.name);
+  } catch (err) {
+    logger.warn?.(
+      `Could not remove SSH attach config for ${opts.name}: ${err instanceof Error ? err.message : String(err)}. Ignored.`,
     );
   }
 
