@@ -177,6 +177,14 @@ connection per IDE (connect, `ls ~`), not guessed.
 - Exact in-container backend paths (notably the Codium server dir and the
   JetBrains remote-dev backend) are confirmed empirically before their
   rows are treated as authoritative.
+- **Image-mode lifecycle enabled.** The attach workflow makes long-lived
+  image-mode containers (no services) the norm - a builder stops one to
+  free resources and starts it again to reattach. `start`, `stop`, and
+  `status` were previously compose-only; they are now mode-aware (`start`
+  via `devcontainer up`, which already handles both modes; `stop`/`status`
+  via plain `docker` on the `devcontainer.local_folder`-labeled container).
+  `logs` stays compose-only - a bare container's main process is just the
+  keep-alive, so there is nothing useful to tail.
 
 ## Related
 

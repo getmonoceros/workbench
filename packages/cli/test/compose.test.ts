@@ -103,16 +103,37 @@ describe('compose actions', () => {
     expect(calls[0]).toContain('--build-no-cache');
   });
 
-  it('runStart refuses without compose.yaml', async () => {
+  it('runStart works without compose.yaml (image-mode) via devcontainer up', async () => {
     const bare = path.join(tmp, 'image-only');
     await fs.mkdir(path.join(bare, '.devcontainer'), { recursive: true });
+    const calls: string[][] = [];
+    const exitCode = await runStart({
+      root: bare,
+      logger: { info: () => {} },
+      spawn: async (args) => {
+        calls.push(args);
+        return 0;
+      },
+    });
+    expect(exitCode).toBe(0);
+    expect(calls[0]).toEqual([
+      'up',
+      '--workspace-folder',
+      bare,
+      '--mount-workspace-git-root=false',
+    ]);
+  });
+
+  it('runStart still refuses without a .devcontainer/ (not applied)', async () => {
+    const missing = path.join(tmp, 'never-applied');
+    await fs.mkdir(missing, { recursive: true });
     await expect(
       runStart({
-        root: bare,
+        root: missing,
         logger: { info: () => {} },
         spawn: async () => 0,
       }),
-    ).rejects.toThrow(/require services configured/);
+    ).rejects.toThrow(/No \.devcontainer\/ at/);
   });
 
   it('runStop issues `stop` and preserves volumes', async () => {
@@ -254,5 +275,80 @@ describe('runContainerCycle — bind-source retry (VirtioFS file-sync race)', ()
     });
     expect(code).toBe(1);
     expect(calls).toBe(3);
+  });
+});
+
+describe('image-mode lifecycle (no compose.yaml)', () => {
+  let tmp: string;
+  let bare: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), 'monoceros-image-lifecycle-'));
+    bare = path.join(tmp, 'sandbox');
+    await fs.mkdir(path.join(bare, '.devcontainer'), { recursive: true });
+    // deliberately no compose.yaml -> image-mode
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('runStop docker-stops the labeled container', async () => {
+    const calls: string[][] = [];
+    const code = await runStop({
+      root: bare,
+      logger: { info: () => {} },
+      dockerExec: async (args) => {
+        calls.push(args);
+        return args[0] === 'ps'
+          ? { exitCode: 0, stdout: 'abc123\n', stderr: '' }
+          : { exitCode: 0, stdout: '', stderr: '' };
+      },
+    });
+    expect(code).toBe(0);
+    expect(calls[0]).toEqual([
+      'ps',
+      '-q',
+      '--filter',
+      `label=devcontainer.local_folder=${bare}`,
+      '--filter',
+      'status=running',
+    ]);
+    expect(calls[1]).toEqual(['stop', 'abc123']);
+  });
+
+  it('runStop is a no-op when nothing is running', async () => {
+    const calls: string[][] = [];
+    const code = await runStop({
+      root: bare,
+      logger: { info: () => {} },
+      dockerExec: async (args) => {
+        calls.push(args);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      },
+    });
+    expect(code).toBe(0);
+    expect(calls).toHaveLength(1); // only the lookup, no `stop`
+  });
+
+  it('runStatus reports the labeled container state', async () => {
+    const calls: string[][] = [];
+    const code = await runStatus({
+      root: bare,
+      logger: { info: () => {} },
+      dockerExec: async (args) => {
+        calls.push(args);
+        return { exitCode: 0, stdout: 'sandbox\tUp 3 minutes\n', stderr: '' };
+      },
+    });
+    expect(code).toBe(0);
+    expect(calls[0]).toEqual([
+      'ps',
+      '-a',
+      '--filter',
+      `label=devcontainer.local_folder=${bare}`,
+      '--format',
+      '{{.Names}}\t{{.Status}}',
+    ]);
   });
 });

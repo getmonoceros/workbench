@@ -206,16 +206,31 @@ export function composeProjectName(root: string): string {
  * lifecycle commands (`start/stop/status/logs/down`) error when the
  * file is missing.
  */
-export function resolveCompose(root: string): ResolvedCompose {
+/** Throw unless the container has been materialized (`apply` ran). */
+export function assertDevcontainer(root: string): void {
   if (!existsSync(path.join(root, '.devcontainer'))) {
     throw new Error(
       `No .devcontainer/ at ${root}. Run \`monoceros apply <name>\` first.`,
     );
   }
+}
+
+/**
+ * Whether the container is compose-mode (has services). Image-mode
+ * containers have no `compose.yaml`; `start`/`stop`/`status` handle both,
+ * but `logs` is compose-only (a bare container's main process is just the
+ * keep-alive). See ADR 0022 for why image-mode lifecycle is now wired.
+ */
+export function isComposeMode(root: string): boolean {
+  return existsSync(path.join(root, '.devcontainer', 'compose.yaml'));
+}
+
+export function resolveCompose(root: string): ResolvedCompose {
+  assertDevcontainer(root);
   const composeFile = path.join(root, '.devcontainer', 'compose.yaml');
   if (!existsSync(composeFile)) {
     throw new Error(
-      `No compose.yaml at ${composeFile}. \`start\` / \`stop\` / \`status\` / \`logs\` require services configured via \`monoceros add-service <name> <svc>\`. Use \`monoceros shell <name>\` to enter the container directly.`,
+      `No compose.yaml at ${composeFile}. \`monoceros logs\` tails compose service logs, which require services configured via \`monoceros add-service <name> <svc>\`. For a bare container, use \`monoceros shell <name>\` or read logs/<app>.log.`,
     );
   }
   return { composeFile, projectName: composeProjectName(root) };
@@ -225,6 +240,9 @@ export interface ComposeActionOptions {
   root: string;
   service?: string;
   spawn?: ComposeSpawn;
+  /** Plain `docker` exec for the image-mode path (no compose.yaml). Tests inject. */
+  dockerExec?: DockerExec;
+  logger?: { info: (message: string) => void };
 }
 
 async function runComposeAction(
@@ -270,7 +288,9 @@ export interface StartOptions {
 // The auxiliary services come up alongside because the generated
 // devcontainer.json lists them under `runServices`.
 export async function runStart(opts: StartOptions): Promise<number> {
-  resolveCompose(opts.root); // throws if no compose.yaml
+  // `devcontainer up` handles both image- and compose-mode, so `start`
+  // works for either - it only needs a materialized container (ADR 0022).
+  assertDevcontainer(opts.root);
   const logger = opts.logger ?? { info: (msg) => consola.info(msg) };
   const spawnFn = opts.spawn ?? spawnDevcontainer;
   logger.info(`Bringing devcontainer up at ${opts.root}…`);
@@ -524,17 +544,84 @@ export async function runContainerCycle(
 }
 
 export function runStop(opts: ComposeActionOptions): Promise<number> {
-  return runComposeAction(
-    (service) => ['stop', ...(service ? [service] : [])],
-    opts,
-  );
+  assertDevcontainer(opts.root);
+  if (isComposeMode(opts.root)) {
+    return runComposeAction(
+      (service) => ['stop', ...(service ? [service] : [])],
+      opts,
+    );
+  }
+  return stopImageContainer(opts);
 }
 
 export function runStatus(opts: ComposeActionOptions): Promise<number> {
-  return runComposeAction(
-    (service) => ['ps', ...(service ? [service] : [])],
-    opts,
-  );
+  assertDevcontainer(opts.root);
+  if (isComposeMode(opts.root)) {
+    return runComposeAction(
+      (service) => ['ps', ...(service ? [service] : [])],
+      opts,
+    );
+  }
+  return statusImageContainer(opts);
+}
+
+// ─── Image-mode lifecycle (no compose.yaml) ──────────────────────────
+// The single dev container is found by the `devcontainer.local_folder`
+// label devcontainer-cli stamps at `up` time (the same handle `shell`
+// and `remove` use). `stop` halts it; `status` reports its state.
+
+function imageContainerFilter(root: string): string {
+  return `label=devcontainer.local_folder=${root}`;
+}
+
+async function stopImageContainer(opts: ComposeActionOptions): Promise<number> {
+  const exec = opts.dockerExec ?? spawnDocker;
+  const logger = opts.logger ?? { info: (msg) => consola.info(msg) };
+  const name = path.basename(opts.root);
+  const ps = await exec([
+    'ps',
+    '-q',
+    '--filter',
+    imageContainerFilter(opts.root),
+    '--filter',
+    'status=running',
+  ]);
+  const id = ps.stdout
+    .split('\n')
+    .map((s) => s.trim())
+    .find((s) => s.length > 0);
+  if (!id) {
+    logger.info(`Container '${name}' is not running.`);
+    return 0;
+  }
+  const res = await exec(['stop', id]);
+  if (res.exitCode === 0) logger.info(`Stopped '${name}'.`);
+  return res.exitCode;
+}
+
+async function statusImageContainer(
+  opts: ComposeActionOptions,
+): Promise<number> {
+  const exec = opts.dockerExec ?? spawnDocker;
+  const logger = opts.logger ?? { info: (msg) => consola.info(msg) };
+  const name = path.basename(opts.root);
+  const res = await exec([
+    'ps',
+    '-a',
+    '--filter',
+    imageContainerFilter(opts.root),
+    '--format',
+    '{{.Names}}\t{{.Status}}',
+  ]);
+  const out = res.stdout.trim();
+  if (!out) {
+    logger.info(
+      `Container '${name}' does not exist. Run \`monoceros apply ${name}\`.`,
+    );
+    return 0;
+  }
+  process.stdout.write(`${out}\n`);
+  return res.exitCode;
 }
 
 export interface LogsOptions extends ComposeActionOptions {
