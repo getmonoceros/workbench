@@ -62,22 +62,36 @@ personal `~/.ssh` identity is never entangled.
 ### 3. Portless transport via `docker exec` + `socat`, zero-config
 
 `apply` writes a per-container OpenSSH `Host` block to
-`~/.monoceros/ssh/config.d/<name>`:
+`<MONOCEROS_HOME>/ssh/config.d/<name>`:
 
 ```
 Host monoceros-<name>
     User node
-    IdentityFile ~/.monoceros/container/<name>/.monoceros/ssh/id_ed25519
-    ProxyCommand docker exec -i monoceros-<name> socat - TCP:127.0.0.1:22
+    IdentityFile "<MONOCEROS_HOME>/container/<name>/.monoceros/ssh/id_ed25519"
+    IdentitiesOnly yes
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    ProxyCommand "<MONOCEROS_HOME>/ssh/exec-<name>.sh"
 ```
 
-`sshd` listens only inside the container; `socat` pipes the connection in
-over `docker exec`. `socat` is already a runtime dependency established by
-[ADR 0009](./0009-tcp-tunnels-foreground-sidecar.md).
+The `ProxyCommand` points at a small generated wrapper script rather than
+a fixed container name: the image-mode container name is non-deterministic
+(devcontainer-cli assigns e.g. `thirsty_bartik`), so the script resolves
+the running container by its `devcontainer.local_folder` label - the same
+handle `monoceros shell` uses - and execs `socat - TCP:127.0.0.1:22` into
+it. Resolving by label rather than a baked-in name means the entry follows
+rebuilds (the container id changes, the label does not) and prints an
+actionable error when the container is not running. `sshd` listens only
+inside the container; `socat` is already a runtime dependency established by
+[ADR 0009](./0009-tcp-tunnels-foreground-sidecar.md). Host keys are
+ephemeral (regenerated per container), so the entry disables host-key
+checking - there is no persistent identity to pin.
 
 `apply` also ensures - idempotently, once - an `Include
-~/.monoceros/ssh/config.d/*` line in the builder's `~/.ssh/config`;
-`remove` deletes the per-container file.
+"<MONOCEROS_HOME>/ssh/config.d/*"` line in the builder's `~/.ssh/config`;
+`remove` deletes the per-container config entry and wrapper script (the
+keypair goes with the container directory; the `Include` line stays, since
+it harmlessly globs and other containers rely on it).
 
 The result is genuine zero-config. The builder touches no key and no port:
 
