@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -55,6 +55,12 @@ export interface SetupSshAttachOptions {
   userSshDir?: string;
   keygen?: KeygenSpawn;
   logger?: { info: (m: string) => void; warn: (m: string) => void };
+  /**
+   * Windows/WSL bridge injectables. Omitted in production (real WSL
+   * detection + cmd.exe/wslpath/icacls); tests stub them to write into a
+   * temp dir without a real WSL. See the Windows bridge section.
+   */
+  windows?: WindowsBridgeDeps;
 }
 
 export interface SetupSshAttachResult {
@@ -195,6 +201,229 @@ async function ensureInclude(userSshDir: string, home: string): Promise<void> {
   await fs.chmod(configPath, 0o600).catch(() => {});
 }
 
+// ─── Windows/WSL bridge (ADR 0022) ────────────────────────────────
+// On Windows the CLI runs in WSL, but the editor (Codium / VS Code /
+// JetBrains Gateway) runs on Windows and reads the Windows-side
+// `C:\Users\<user>\.ssh\config` - it never sees the WSL-side entry. So
+// when running under WSL we ALSO write the connection on the Windows
+// side: a per-container key in our own `.ssh\monoceros\` subdir (no
+// collision with the user's keys) and a marked Host block in the
+// Windows `~/.ssh/config` (found + replaced surgically, the rest of the
+// user's config untouched). The `docker exec … socat` transport is
+// host-agnostic (docker.exe reaches the same daemon), and the
+// deterministic container name means no wrapper script is needed.
+
+export interface WindowsProfile {
+  /** WSL path to the Windows home, e.g. `/mnt/c/Users/X`. */
+  homeWsl: string;
+  /** Windows path to the Windows home, e.g. `C:\Users\X`. */
+  homeWin: string;
+  /** Windows username, for the icacls grant. */
+  user: string;
+}
+
+/** Injectable bits of the Windows bridge. Tests stub all three. */
+export interface WindowsBridgeDeps {
+  isWsl?: () => boolean;
+  resolveProfile?: () => Promise<WindowsProfile | null>;
+  lockKey?: (winKeyPath: string, user: string) => Promise<void>;
+}
+
+function runCapture(
+  cmd: string,
+  args: readonly string[],
+): Promise<{ stdout: string; exitCode: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args as string[], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    let stdout = '';
+    child.stdout.on('data', (c: Buffer) => {
+      stdout += c.toString();
+    });
+    child.on('error', reject);
+    child.on('exit', (code) => resolve({ stdout, exitCode: code ?? 0 }));
+  });
+}
+
+function realIsWsl(): boolean {
+  try {
+    if (process.env.WSL_DISTRO_NAME) return true;
+    const rel = readFileSync(
+      '/proc/sys/kernel/osrelease',
+      'utf8',
+    ).toLowerCase();
+    return rel.includes('microsoft') || rel.includes('wsl');
+  } catch {
+    return false;
+  }
+}
+
+// USERPROFILE via cmd.exe (no extra package; verified on a real box),
+// then wslpath for the /mnt/c view. The Windows username is the last
+// segment of `C:\Users\X`.
+async function realResolveWindowsProfile(): Promise<WindowsProfile | null> {
+  try {
+    const r = await runCapture('cmd.exe', ['/c', 'echo %USERPROFILE%']);
+    const homeWin = r.stdout.replace(/\r/g, '').trim();
+    if (r.exitCode !== 0 || !homeWin || homeWin.includes('%USERPROFILE%')) {
+      return null;
+    }
+    const w = await runCapture('wslpath', ['-u', homeWin]);
+    const homeWsl = w.stdout.trim();
+    const user = homeWin.split('\\').pop() ?? '';
+    if (w.exitCode !== 0 || !homeWsl || !user) return null;
+    return { homeWsl, homeWin, user };
+  } catch {
+    return null;
+  }
+}
+
+async function realLockWindowsKey(
+  winKeyPath: string,
+  user: string,
+): Promise<void> {
+  // OpenSSH-Windows rejects keys whose ACLs are too open. Strip
+  // inheritance and grant read to the owner only.
+  await runCapture('icacls.exe', [
+    winKeyPath,
+    '/inheritance:r',
+    '/grant:r',
+    `${user}:R`,
+  ]);
+}
+
+function resolveWindowsDeps(
+  d?: WindowsBridgeDeps,
+): Required<WindowsBridgeDeps> {
+  return {
+    isWsl: d?.isWsl ?? realIsWsl,
+    resolveProfile: d?.resolveProfile ?? realResolveWindowsProfile,
+    lockKey: d?.lockKey ?? realLockWindowsKey,
+  };
+}
+
+function windowsHostBlock(hostAlias: string, keyWin: string): string {
+  // Host keys are ephemeral and the transport is docker-exec, so disable
+  // host-key checking (same rationale as the WSL/host entry). `docker`
+  // resolves to docker.exe on the Windows PATH; socat runs in-container.
+  return [
+    `Host ${hostAlias}`,
+    `    User node`,
+    `    IdentityFile ${keyWin}`,
+    `    IdentitiesOnly yes`,
+    `    StrictHostKeyChecking no`,
+    `    UserKnownHostsFile NUL`,
+    `    ProxyCommand docker exec -i ${hostAlias} socat - TCP:127.0.0.1:22`,
+  ].join('\n');
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function blockMarkers(hostAlias: string): { begin: string; end: string } {
+  return {
+    begin: `# >>> monoceros ${hostAlias} >>>`,
+    end: `# <<< monoceros ${hostAlias} <<<`,
+  };
+}
+
+// Surgically upsert OUR marked block in the user's Windows ssh config.
+// We only ever touch the region between our markers; everything the
+// builder wrote stays put.
+async function upsertMarkedBlock(
+  configPath: string,
+  hostAlias: string,
+  body: string,
+): Promise<void> {
+  const { begin, end } = blockMarkers(hostAlias);
+  const section = `${begin}\n${body}\n${end}`;
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  let existing = '';
+  try {
+    existing = await fs.readFile(configPath, 'utf8');
+  } catch {
+    existing = '';
+  }
+  const re = new RegExp(`${escapeRegExp(begin)}[\\s\\S]*?${escapeRegExp(end)}`);
+  if (re.test(existing)) {
+    await fs.writeFile(configPath, existing.replace(re, section));
+    return;
+  }
+  const sep = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
+  await fs.writeFile(configPath, `${existing}${sep}${section}\n`);
+}
+
+async function removeMarkedBlock(
+  configPath: string,
+  hostAlias: string,
+): Promise<void> {
+  let existing = '';
+  try {
+    existing = await fs.readFile(configPath, 'utf8');
+  } catch {
+    return;
+  }
+  const { begin, end } = blockMarkers(hostAlias);
+  const re = new RegExp(
+    `\\n?${escapeRegExp(begin)}[\\s\\S]*?${escapeRegExp(end)}\\n?`,
+    'g',
+  );
+  await fs.writeFile(
+    configPath,
+    existing.replace(re, '\n').replace(/\n{3,}/g, '\n\n'),
+  );
+}
+
+async function setupWindowsBridge(
+  name: string,
+  hostAlias: string,
+  privateKey: string,
+  deps: Required<WindowsBridgeDeps>,
+  logger: { info: (m: string) => void; warn: (m: string) => void },
+): Promise<void> {
+  if (!deps.isWsl()) return;
+  const profile = await deps.resolveProfile();
+  if (!profile) {
+    logger.warn(
+      'WSL detected but the Windows user profile could not be resolved; skipping the Windows SSH bridge.',
+    );
+    return;
+  }
+  const monoDir = path.join(profile.homeWsl, '.ssh', 'monoceros');
+  await fs.mkdir(monoDir, { recursive: true });
+  // Key in our own subdir so it can never clobber a user key in `.ssh\`.
+  await fs.copyFile(privateKey, path.join(monoDir, name));
+  const keyWin = `${profile.homeWin}\\.ssh\\monoceros\\${name}`;
+  await upsertMarkedBlock(
+    path.join(profile.homeWsl, '.ssh', 'config'),
+    hostAlias,
+    windowsHostBlock(hostAlias, keyWin),
+  );
+  await deps.lockKey(keyWin, profile.user);
+  logger.info(
+    `Windows SSH bridge ready: \`ssh ${hostAlias}\` (Codium/Gateway too).`,
+  );
+}
+
+async function removeWindowsBridge(
+  name: string,
+  hostAlias: string,
+  deps: Required<WindowsBridgeDeps>,
+): Promise<void> {
+  if (!deps.isWsl()) return;
+  const profile = await deps.resolveProfile();
+  if (!profile) return;
+  await fs.rm(path.join(profile.homeWsl, '.ssh', 'monoceros', name), {
+    force: true,
+  });
+  await removeMarkedBlock(
+    path.join(profile.homeWsl, '.ssh', 'config'),
+    hostAlias,
+  );
+}
+
 export async function setupSshAttach(
   opts: SetupSshAttachOptions,
 ): Promise<SetupSshAttachResult> {
@@ -225,6 +454,22 @@ export async function setupSshAttach(
 
   await ensureInclude(userSshDir, opts.home);
 
+  // On WSL, also write the Windows-side bridge so a Windows editor can
+  // attach. No-op on macOS / native Linux. Non-fatal.
+  try {
+    await setupWindowsBridge(
+      opts.name,
+      hostAlias,
+      keys.privateKey,
+      resolveWindowsDeps(opts.windows),
+      logger,
+    );
+  } catch (err) {
+    logger.warn(
+      `Windows SSH bridge skipped: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   return { hostAlias, configured: true };
 }
 
@@ -239,7 +484,18 @@ export async function setupSshAttach(
 export async function removeSshAttach(
   home: string,
   name: string,
+  windows?: WindowsBridgeDeps,
 ): Promise<void> {
   await fs.rm(sshProxyScriptPath(home, name), { force: true });
   await fs.rm(sshConfigEntryPath(home, name), { force: true });
+  // Tear down the Windows-side bridge too (WSL only). No-op elsewhere.
+  try {
+    await removeWindowsBridge(
+      name,
+      `monoceros-${name}`,
+      resolveWindowsDeps(windows),
+    );
+  } catch {
+    // best-effort; a stale Windows entry is harmless
+  }
 }

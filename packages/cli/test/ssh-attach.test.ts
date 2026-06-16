@@ -1,5 +1,12 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -176,5 +183,126 @@ describe('removeSshAttach', () => {
 
   it('is a no-op when nothing was set up', async () => {
     await expect(removeSshAttach(home, 'never')).resolves.toBeUndefined();
+  });
+});
+
+describe('Windows/WSL bridge', () => {
+  let winHome: string;
+
+  // Fake WSL bridge: pretend we're under WSL, point the "Windows home"
+  // at a temp dir, and record icacls calls instead of running them.
+  function winDeps() {
+    const locked: Array<{ p: string; u: string }> = [];
+    return {
+      deps: {
+        isWsl: () => true,
+        resolveProfile: async () => ({
+          homeWsl: winHome,
+          homeWin: 'C:\\Users\\TestUser',
+          user: 'TestUser',
+        }),
+        lockKey: async (p: string, u: string) => {
+          locked.push({ p, u });
+        },
+      },
+      locked,
+    };
+  }
+
+  beforeEach(() => {
+    winHome = path.join(root, 'winhome');
+  });
+
+  it('writes the Windows key + marked Host block and locks the key (under WSL)', async () => {
+    const { deps, locked } = winDeps();
+    await setupSshAttach({
+      name: 'demo',
+      targetDir,
+      home,
+      userSshDir,
+      keygen: fakeKeygen().spawn,
+      windows: deps,
+    });
+
+    // key copied into our own subdir (no collision with user keys)
+    expect(existsSync(path.join(winHome, '.ssh', 'monoceros', 'demo'))).toBe(
+      true,
+    );
+    // marked block with Windows key path, container name, docker-exec proxy
+    const cfg = await readFile(path.join(winHome, '.ssh', 'config'), 'utf8');
+    expect(cfg).toContain('# >>> monoceros monoceros-demo >>>');
+    expect(cfg).toContain('Host monoceros-demo');
+    expect(cfg).toContain(
+      'IdentityFile C:\\Users\\TestUser\\.ssh\\monoceros\\demo',
+    );
+    expect(cfg).toContain(
+      'ProxyCommand docker exec -i monoceros-demo socat - TCP:127.0.0.1:22',
+    );
+    expect(cfg).toContain('# <<< monoceros monoceros-demo <<<');
+    // icacls invoked on the Windows key path for the resolved user
+    expect(locked).toEqual([
+      { p: 'C:\\Users\\TestUser\\.ssh\\monoceros\\demo', u: 'TestUser' },
+    ]);
+  });
+
+  it('does nothing when not under WSL', async () => {
+    await setupSshAttach({
+      name: 'demo',
+      targetDir,
+      home,
+      userSshDir,
+      keygen: fakeKeygen().spawn,
+      windows: { isWsl: () => false },
+    });
+    expect(existsSync(path.join(winHome, '.ssh'))).toBe(false);
+  });
+
+  it('updates its own block in place, leaving user config intact', async () => {
+    await mkdir(path.join(winHome, '.ssh'), { recursive: true });
+    await writeFile(
+      path.join(winHome, '.ssh', 'config'),
+      'Host my-server\n    HostName 10.0.0.1\n',
+    );
+    const { deps } = winDeps();
+    await setupSshAttach({
+      name: 'demo',
+      targetDir,
+      home,
+      userSshDir,
+      keygen: fakeKeygen().spawn,
+      windows: deps,
+    });
+    await setupSshAttach({
+      name: 'demo',
+      targetDir,
+      home,
+      userSshDir,
+      keygen: fakeKeygen().spawn,
+      windows: deps,
+    });
+
+    const cfg = await readFile(path.join(winHome, '.ssh', 'config'), 'utf8');
+    expect(cfg).toContain('Host my-server'); // user content preserved
+    expect(cfg.split('Host monoceros-demo').length - 1).toBe(1); // not duplicated
+  });
+
+  it('removeSshAttach clears the Windows key + block (under WSL)', async () => {
+    const { deps } = winDeps();
+    await setupSshAttach({
+      name: 'demo',
+      targetDir,
+      home,
+      userSshDir,
+      keygen: fakeKeygen().spawn,
+      windows: deps,
+    });
+
+    await removeSshAttach(home, 'demo', deps);
+
+    expect(existsSync(path.join(winHome, '.ssh', 'monoceros', 'demo'))).toBe(
+      false,
+    );
+    const cfg = await readFile(path.join(winHome, '.ssh', 'config'), 'utf8');
+    expect(cfg).not.toContain('Host monoceros-demo');
   });
 });

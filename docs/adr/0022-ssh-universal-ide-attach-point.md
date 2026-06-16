@@ -177,6 +177,40 @@ cover. Only the in-container backend dirs need persisting.
 The exact in-container paths are confirmed empirically on the first remote
 connection per IDE (connect, `ls ~`), not guessed.
 
+### 5. Windows/WSL bridge
+
+On Windows the CLI runs in WSL (ADR 0011), so the `Host monoceros-<name>`
+entry + key + ProxyCommand land in WSL's `~/.ssh/config`. But the editor
+(Codium / VS Code / JetBrains Gateway) runs on **Windows** and reads
+`C:\Users\<user>\.ssh\config` - it never sees the WSL entry, so
+`monoceros-<name>` is unresolvable. Docker Desktop's WSL2 backend is the
+bridgehead: the same daemon (hence the same container) is reachable from
+both WSL (`docker`) and Windows (`docker.exe`).
+
+So when `apply` detects it is running under WSL, it **additionally** writes
+the connection on the Windows side (verified manually before automating -
+plain `ssh.exe monoceros-<name>` and Codium both connect):
+
+- **Resolve the Windows profile from WSL** via `cmd.exe /c echo
+%USERPROFILE%` (strip CR) + `wslpath` - no extra package. The username is
+  the last segment of `C:\Users\<user>`.
+- **Key in a Monoceros-owned subdir** `…\.ssh\monoceros\<name>` (NOT
+  `.ssh\` itself), so it can never clobber a user key of the same name.
+  ACLs locked with `icacls.exe` (OpenSSH-Windows rejects open keys).
+- **A marked Host block** (`# >>> monoceros monoceros-<name> >>>` … `<<<`)
+  upserted into the user's Windows `~/.ssh/config`: found + replaced
+  surgically, the rest of the builder's config untouched. The block uses
+  the Windows key path, the deterministic container name, and
+  `ProxyCommand docker exec -i monoceros-<name> socat - TCP:127.0.0.1:22`
+  (host-agnostic transport; `socat` runs in-container, `docker` is
+  docker.exe on the Windows PATH). Host-key checking disabled, as on the
+  WSL side.
+- `remove` clears the Windows key + marked block too.
+
+No-op on macOS / native Linux (`realIsWsl()` is false). JetBrains Gateway
+on Windows reads the same Windows config + ProxyCommand, so it is expected
+to work like Codium - to be confirmed on a real Gateway connection.
+
 ## Rationale
 
 - **One SSH contract, many editors.** Instead of a per-IDE extension story,
