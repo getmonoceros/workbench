@@ -69,18 +69,21 @@ RUN chmod 0644 /etc/profile.d/monoceros-workspace.sh
 RUN install -d /etc/monoceros
 COPY egress-allow.default.txt /etc/monoceros/egress-allow.default.txt
 
-# Pre-create the VS Code server state dirs owned by `node`. Monoceros
-# mounts named volumes at `~/.vscode-server/extensions` and
-# `~/.vscode-server/data/User` so extensions + settings survive a
-# rebuild (ADR 0015). A fresh named volume initialises with the
-# ownership of the image directory at its mount point — so these must
-# exist and be owned by the non-root `node` user, otherwise the VS Code
-# server fails to write into them ("permission denied"). This is the
-# non-root requirement called out in VS Code's "avoid extension
-# reinstalls" docs.
+# Pre-create the IDE server state dirs owned by `node`. Monoceros mounts
+# named volumes on the `extensions` and `data/User` sub-dirs so extensions
+# + settings survive a rebuild (ADR 0015; per-IDE allowlist in ADR 0022).
+# A fresh named volume initialises with the ownership of the image
+# directory at its mount point - so these must exist and be owned by the
+# non-root `node` user, otherwise the IDE server fails to write into them
+# ("permission denied"). This is the non-root requirement called out in
+# VS Code's "avoid extension reinstalls" docs.
+#   - VS Code  -> ~/.vscode-server
+#   - VS Codium -> ~/.vscodium-server
 RUN mkdir -p /home/node/.vscode-server/extensions \
              /home/node/.vscode-server/data/User \
- && chown -R node:node /home/node/.vscode-server
+             /home/node/.vscodium-server/extensions \
+             /home/node/.vscodium-server/data/User \
+ && chown -R node:node /home/node/.vscode-server /home/node/.vscodium-server
 
 COPY entrypoint.sh /usr/local/bin/monoceros-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/monoceros-entrypoint.sh

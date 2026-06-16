@@ -13,8 +13,8 @@ import {
   SERVICE_CATALOG,
   knownLanguages,
   parseLanguageSpec,
+  compareRuntimeVersions,
   resolveRuntimeImage,
-  runtimeSupportsIdeVolumes,
   runtimeSupportsSshAttach,
   serviceClientAptPackages,
   serviceClientNpmPackages,
@@ -583,41 +583,83 @@ function isValidHomeSubpath(p: string): boolean {
 const HOME_SUBPATH_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 
 interface IdeStateVolume {
-  /** Docker volume name — unique per container so two containers don't share IDE state. */
+  /** Docker volume name - unique per container so two containers don't share IDE state. */
   volume: string;
-  /** In-container mount target under `~/.vscode-server`. */
+  /** In-container mount target (an IDE server sub-directory). */
   target: string;
+  /**
+   * Minimum runtime version that pre-creates this target node-owned. The
+   * mount is only emitted at/above it - on an older image the dir isn't
+   * pre-created node-owned, so a fresh volume would initialise root-owned
+   * and the IDE server couldn't write into it.
+   */
+  minRuntime: string;
 }
 
 /**
- * Named volumes that persist VS Code's IDE state across a `monoceros
- * apply` rebuild: installed extensions and the user-scoped settings /
- * extension storage. This is the mechanism VS Code documents for
- * "avoid extension reinstalls" — a named **volume** on the relevant
- * `~/.vscode-server` sub-directories.
+ * Named volumes that persist an IDE's state across a `monoceros apply`
+ * rebuild: installed extensions and user-scoped settings / extension
+ * storage. This is the per-IDE allowlist of ADR 0022 (option A),
+ * extending the VS-Code-only set of ADR 0015.
  *
- * Why volumes on sub-dirs (not a host bind of the whole dir): VS Code
- * owns `~/.vscode-server` (server binaries under `bin/`, etc.). Taking
- * the whole directory over with a host bind fights that ownership and
- * triggers an endless "configuration changed — rebuild?" loop. Mounting
- * only `extensions/` and `data/User/` leaves the server location under
- * VS Code's control. Named volumes survive container removal (`apply`
- * preserves volumes), so the persisted state outlives a rebuild; the
- * runtime image pre-creates these paths owned by `node` so the fresh
- * volumes initialise node-owned (required for the non-root user per VS
- * Code's docs). `monoceros remove` deletes the volumes. See ADR 0015.
+ * Why volumes on sub-dirs (not a host bind of the whole dir): the IDE
+ * owns its server dir (`bin/` etc.). Taking the whole directory over with
+ * a host bind fights that ownership and triggers an endless
+ * "configuration changed - rebuild?" loop. Mounting only `extensions/`
+ * and `data/User/` leaves the server location under the IDE's control.
+ * Named volumes survive container removal (`apply` preserves volumes), so
+ * the state outlives a rebuild; the runtime image pre-creates these paths
+ * owned by `node` so the fresh volumes initialise node-owned (required
+ * for the non-root user). `monoceros remove` deletes them.
+ *
+ * Returns the full set across IDEs. Callers that mount must filter by the
+ * pinned runtime (see `ideStateVolumesForRuntime`); `remove` deletes the
+ * whole set (`docker volume rm -f` no-ops on absent ones).
+ *
+ * In-container server dirs confirmed empirically per IDE (connect, look):
+ *   - VS Code:    `~/.vscode-server`   (since runtime 1.1.0)
+ *   - VS Codium:  `~/.vscodium-server` (since runtime 1.2.0)
+ * JetBrains / Zed are deliberately not listed yet - add them once their
+ * in-container backend dirs are confirmed on a real connection.
  */
 export function ideStateVolumes(name: string): IdeStateVolume[] {
   return [
     {
       volume: `monoceros-${name}-vscode-extensions`,
       target: '/home/node/.vscode-server/extensions',
+      minRuntime: '1.1.0',
     },
     {
       volume: `monoceros-${name}-vscode-userdata`,
       target: '/home/node/.vscode-server/data/User',
+      minRuntime: '1.1.0',
+    },
+    {
+      volume: `monoceros-${name}-vscodium-extensions`,
+      target: '/home/node/.vscodium-server/extensions',
+      minRuntime: '1.2.0',
+    },
+    {
+      volume: `monoceros-${name}-vscodium-userdata`,
+      target: '/home/node/.vscodium-server/data/User',
+      minRuntime: '1.2.0',
     },
   ];
+}
+
+/**
+ * The IDE-state volumes mountable on a given pinned runtime: those whose
+ * target the image pre-creates node-owned at/above `version`. Unpinned
+ * (legacy) yields none. See ADR 0015 / ADR 0022.
+ */
+export function ideStateVolumesForRuntime(
+  name: string,
+  version?: string,
+): IdeStateVolume[] {
+  if (!version) return [];
+  return ideStateVolumes(name).filter(
+    (v) => compareRuntimeVersions(version, v.minRuntime) >= 0,
+  );
 }
 
 export function buildDevcontainerJson(
@@ -733,11 +775,10 @@ export function buildDevcontainerJson(
   // Code IDE-state volumes (extensions + user settings) — but only when
   // the pinned runtime supports them (ADR 0015/0017); otherwise they'd
   // break on an image without the node-owned dirs.
-  const ideMounts = runtimeSupportsIdeVolumes(opts.runtimeVersion)
-    ? ideStateVolumes(opts.name).map(
-        (v) => `source=${v.volume},target=${v.target},type=volume`,
-      )
-    : [];
+  const ideMounts = ideStateVolumesForRuntime(
+    opts.name,
+    opts.runtimeVersion,
+  ).map((v) => `source=${v.volume},target=${v.target},type=volume`);
   const mounts: string[] = [...homeMounts, ...ideMounts];
   const mountsField = mounts.length > 0 ? { mounts } : {};
 
@@ -842,9 +883,7 @@ export function buildComposeYaml(
   const hasPorts = (opts.ports?.length ?? 0) > 0;
   const lines: string[] = ['services:'];
 
-  const ideVolumes = runtimeSupportsIdeVolumes(opts.runtimeVersion)
-    ? ideStateVolumes(opts.name)
-    : [];
+  const ideVolumes = ideStateVolumesForRuntime(opts.name, opts.runtimeVersion);
 
   lines.push('  workspace:');
   lines.push(`    image: ${resolveRuntimeImage(opts.runtimeVersion)}`);

@@ -15,17 +15,50 @@ const base: CreateOptions = {
 };
 
 describe('VS Code IDE-state volumes (ADR 0015)', () => {
-  it('names a unique extensions + userdata volume per container', () => {
+  it('names unique extensions + userdata volumes per container, per IDE', () => {
     expect(ideStateVolumes('demo')).toEqual([
       {
         volume: 'monoceros-demo-vscode-extensions',
         target: '/home/node/.vscode-server/extensions',
+        minRuntime: '1.1.0',
       },
       {
         volume: 'monoceros-demo-vscode-userdata',
         target: '/home/node/.vscode-server/data/User',
+        minRuntime: '1.1.0',
+      },
+      {
+        volume: 'monoceros-demo-vscodium-extensions',
+        target: '/home/node/.vscodium-server/extensions',
+        minRuntime: '1.2.0',
+      },
+      {
+        volume: 'monoceros-demo-vscodium-userdata',
+        target: '/home/node/.vscodium-server/data/User',
+        minRuntime: '1.2.0',
       },
     ]);
+  });
+
+  it('gates the VS Codium volumes on runtime 1.2.0 (not the 1.1.0 VS Code floor)', () => {
+    // 1.1.0: VS Code volumes mount, VS Codium ones do not (the image
+    // doesn't pre-create node-owned ~/.vscodium-server until 1.2.0).
+    const at110 = buildDevcontainerJson({ ...base, runtimeVersion: '1.1.0' });
+    if (!('runArgs' in at110)) throw new Error('expected image-mode shape');
+    const m110 = (at110.mounts ?? []).join('\n');
+    expect(m110).toContain('.vscode-server/extensions');
+    expect(m110).not.toContain('.vscodium-server');
+
+    // 1.2.0: both IDEs' volumes mount.
+    const at120 = buildDevcontainerJson({ ...base, runtimeVersion: '1.2.0' });
+    if (!('runArgs' in at120)) throw new Error('expected image-mode shape');
+    const m120 = (at120.mounts ?? []).join('\n');
+    expect(m120).toContain(
+      'source=monoceros-sandbox-vscodium-extensions,target=/home/node/.vscodium-server/extensions,type=volume',
+    );
+    expect(m120).toContain(
+      'source=monoceros-sandbox-vscodium-userdata,target=/home/node/.vscodium-server/data/User,type=volume',
+    );
   });
 
   it('image-mode mounts both volumes as type=volume on the .vscode-server sub-dirs (pinned runtime)', () => {

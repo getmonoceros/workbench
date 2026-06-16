@@ -1,6 +1,6 @@
 # ADR 0022: SSH as the Universal IDE Attach Point
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-06-16
 
 ## Context
@@ -120,12 +120,22 @@ the Docker access the builder already has - no new privilege.
 in-container backend sub-directories** (option A, chosen over persisting a
 broad swath of the home directory):
 
-| IDE family       | In-container backend directory                  | Status     |
-| ---------------- | ----------------------------------------------- | ---------- |
-| VS Code Remote   | `~/.vscode-server`                              | confirmed  |
-| VS Codium Remote | (its own server dir, e.g. `~/.vscodium-server`) | to confirm |
-| JetBrains        | `~/.cache/JetBrains` (+ remote-dev backend)     | to confirm |
-| Zed              | `~/.zed_server`                                 | to confirm |
+| IDE family       | In-container backend directory              | Status     | Since runtime |
+| ---------------- | ------------------------------------------- | ---------- | ------------- |
+| VS Code Remote   | `~/.vscode-server`                          | confirmed  | 1.1.0         |
+| VS Codium Remote | `~/.vscodium-server`                        | confirmed  | 1.2.0         |
+| JetBrains        | `~/.cache/JetBrains` (+ remote-dev backend) | to confirm | -             |
+| Zed              | `~/.zed_server`                             | to confirm | -             |
+
+Confirmed via `open-remote-ssh` on Codium: it lays down `~/.vscodium-server`
+with the same `extensions/` + `data/User/` sub-dirs as VS Code, so both get
+named volumes on those two sub-dirs (never the whole server dir - `bin/`
+stays IDE-owned, per ADR 0015). The VS Codium volumes are gated on runtime
+1.2.0, where the image first pre-creates `~/.vscodium-server/{extensions,
+data/User}` node-owned; the VS Code pair stays gated on 1.1.0. JetBrains and
+Zed are added once their in-container backend dirs are confirmed on a real
+connection - until then a builder who needs one opens a ticket (see
+Consequences).
 
 As in ADR 0015, volumes target **sub-directories the IDE writes into**,
 never a whole IDE-owned directory - that lesson (VS Code owns `bin/`)
