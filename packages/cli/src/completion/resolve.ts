@@ -530,7 +530,10 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   },
   apply: {
     positionals: [containerName],
-    flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
+    flags: {
+      '--yes': { type: 'boolean', aliases: ['-y'] },
+      '--open': { type: 'value', values: () => [...OPEN_TOOLS] },
+    },
   },
   upgrade: {
     // First positional is a container name; the second is a version
@@ -552,7 +555,10 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     flags: { '--in': { type: 'value' } },
   },
   logs: { positionals: [containerName] },
-  start: { positionals: [containerName] },
+  start: {
+    positionals: [containerName],
+    flags: { '--open': { type: 'value', values: () => [...OPEN_TOOLS] } },
+  },
   stop: { positionals: [containerName] },
   status: { positionals: [containerName] },
   'add-language': {
