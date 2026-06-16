@@ -45,6 +45,18 @@ selectable component.
 listens on port 22 **inside the container only** - never published to the
 host.
 
+sshd is brought up by an image-baked script (`monoceros-sshd-up.sh`) run
+from each container's `postStartCommand`, **not** the image ENTRYPOINT.
+devcontainer-cli overrides the entrypoint in image mode (it runs the
+container as a `/bin/sh` keep-alive), so the entrypoint never executes -
+the same reason the ADR-0002 egress entrypoint proved unreliable. A
+postStartCommand runs in both image and compose mode and on every start,
+so sshd also survives a `stop`/`start`. The script (via `sudo`; the node
+user has passwordless sudo) generates host keys, installs the builder's
+public key from the `/workspaces/*/.monoceros/ssh/*.pub` glob, and starts
+sshd idempotently. The scaffold only emits the postStartCommand when the
+pinned runtime ships sshd (>= 1.2.0).
+
 ### 2. Per-container keypair, workbench-managed
 
 `apply` mints a dedicated `ed25519` keypair per container:

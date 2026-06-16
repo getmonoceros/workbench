@@ -27,49 +27,6 @@ MODE="${MONOCEROS_EGRESS:-off}"
 
 log() { echo "[monoceros-egress] $*" >&2; }
 
-sshlog() { echo "[monoceros-ssh] $*" >&2; }
-
-# Bring up sshd for the universal IDE attach point (ADR 0022). Runs as
-# root before the privilege drop. sshd listens on loopback only; the
-# host reaches it portless via `docker exec … socat … TCP:127.0.0.1:22`.
-#
-# The builder's per-container public key(s) are minted on the host by
-# `monoceros apply` into `<container>/.monoceros/ssh/*.pub`, which is
-# visible in-container under `/workspaces/*/.monoceros/ssh/` (the whole
-# container dir is bind-mounted there). We glob them in - the same
-# pattern the egress allowlist uses - and install them as the runtime
-# user's authorized_keys with the ownership/permissions sshd requires.
-setup_ssh() {
-  command -v sshd >/dev/null 2>&1 || { sshlog "sshd not installed, skipping"; return 0; }
-
-  local user_home
-  user_home="$(getent passwd "$RUNTIME_USER" | cut -d: -f6)"
-  [[ -n "$user_home" ]] || { sshlog "no home for $RUNTIME_USER, skipping"; return 0; }
-
-  mkdir -p /run/sshd
-  # Generate any missing host keys at runtime (per-container, not baked
-  # into the image). The generated client config disables host-key
-  # checking, so ephemeral host keys don't nag across rebuilds.
-  ssh-keygen -A >/dev/null 2>&1 || true
-
-  local ssh_dir="$user_home/.ssh"
-  local keys="$ssh_dir/authorized_keys"
-  install -d -m 700 -o "$RUNTIME_USER" -g "$RUNTIME_USER" "$ssh_dir"
-  : > "$keys"
-  local count=0
-  shopt -s nullglob
-  for pub in /workspaces/*/.monoceros/ssh/*.pub; do
-    cat "$pub" >> "$keys"
-    count=$((count + 1))
-  done
-  shopt -u nullglob
-  chmod 600 "$keys"
-  chown "$RUNTIME_USER:$RUNTIME_USER" "$keys"
-
-  /usr/sbin/sshd
-  sshlog "sshd up on 127.0.0.1:22 with $count authorized key(s)"
-}
-
 drop_to_user_and_exec() {
   if [[ "$(id -u)" == "0" ]]; then
     exec gosu "$RUNTIME_USER" "$@"
@@ -85,11 +42,6 @@ if [[ "$(id -u)" != "0" ]]; then
   log "running as uid $(id -u), skipping egress configuration"
   exec "$@"
 fi
-
-# Root from here on. Bring up sshd before the egress setup and the
-# privilege drop so the IDE attach point is available regardless of
-# egress mode (sshd is loopback-only; OUTPUT filtering doesn't touch it).
-setup_ssh
 
 if [[ "$MODE" == "off" ]]; then
   log "egress enforcement disabled via MONOCEROS_EGRESS=off"

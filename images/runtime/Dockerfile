@@ -14,7 +14,9 @@
 #     see ADR 0002 for context on why it's not enabled by default)
 #   - `gosu` for the entrypoint's privilege drop to `node`
 #   - `openssh-server` + `socat` for the universal IDE attach point:
-#     the entrypoint runs sshd on loopback, the host reaches it portless
+#     sshd runs on loopback (brought up by `monoceros-sshd-up.sh` via the
+#     container's postStartCommand, NOT the entrypoint - devcontainer-cli
+#     overrides the entrypoint in image mode). The host reaches it portless
 #     via `docker exec … socat … TCP:127.0.0.1:22`. Any SSH-capable IDE
 #     (Codium, IntelliJ, Zed) and a plain terminal attach to the running
 #     container without restarting it. See ADR 0022.
@@ -43,8 +45,8 @@ RUN apt-get update \
 # sshd_config.d (Debian's sshd_config Includes it): key-only auth, no
 # root, no password, and bind to loopback only - nothing is published
 # to the host; the host reaches sshd through `docker exec … socat`. Host
-# keys and /run/sshd are created at runtime by the entrypoint so they
-# don't bake into the image layer.
+# keys and /run/sshd are created at runtime by monoceros-sshd-up.sh so
+# they don't bake into the image layer.
 RUN install -d /etc/ssh/sshd_config.d \
  && printf '%s\n' \
       'ListenAddress 127.0.0.1' \
@@ -53,6 +55,11 @@ RUN install -d /etc/ssh/sshd_config.d \
       'KbdInteractiveAuthentication no' \
       'PubkeyAuthentication yes' \
       > /etc/ssh/sshd_config.d/monoceros.conf
+
+# sshd bring-up script, run from each container's postStartCommand (see
+# scaffold.ts). Baked into the image so it versions with the runtime.
+COPY sshd-up.sh /usr/local/bin/monoceros-sshd-up.sh
+RUN chmod 0755 /usr/local/bin/monoceros-sshd-up.sh
 
 RUN install -d /etc/monoceros
 COPY egress-allow.default.txt /etc/monoceros/egress-allow.default.txt

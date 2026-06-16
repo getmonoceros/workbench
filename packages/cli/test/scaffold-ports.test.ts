@@ -85,6 +85,33 @@ describe('VS Code IDE-state volumes (ADR 0015)', () => {
   });
 });
 
+describe('SSH attach postStartCommand (ADR 0022)', () => {
+  const SSH_CMD = 'sudo /usr/local/bin/monoceros-sshd-up.sh';
+
+  it('image-mode emits the sshd postStartCommand on a runtime that ships sshd', () => {
+    const dc = buildDevcontainerJson({ ...base, runtimeVersion: '1.2.0' });
+    if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
+    expect(dc.postStartCommand).toBe(SSH_CMD);
+  });
+
+  it('compose-mode emits the sshd postStartCommand on a runtime that ships sshd', () => {
+    const dc = buildDevcontainerJson({
+      ...base,
+      runtimeVersion: '1.2.0',
+      services: [resolveService(expandCuratedService('postgres'))],
+    });
+    if ('runArgs' in dc) throw new Error('expected compose-mode shape');
+    expect(dc.postStartCommand).toBe(SSH_CMD);
+  });
+
+  it('omits the postStartCommand when the runtime is below the minimum or unpinned', () => {
+    const old = buildDevcontainerJson({ ...base, runtimeVersion: '1.1.0' });
+    expect(old.postStartCommand).toBeUndefined();
+    const unpinned = buildDevcontainerJson(base);
+    expect(unpinned.postStartCommand).toBeUndefined();
+  });
+});
+
 describe('buildDevcontainerJson — ports & vscode autoForward', () => {
   it('omits ports, customizations, and the proxy network when no ports declared', () => {
     const dc = buildDevcontainerJson(base);

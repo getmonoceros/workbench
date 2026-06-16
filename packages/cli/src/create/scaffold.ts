@@ -15,6 +15,7 @@ import {
   parseLanguageSpec,
   resolveRuntimeImage,
   runtimeSupportsIdeVolumes,
+  runtimeSupportsSshAttach,
   serviceClientAptPackages,
   serviceClientNpmPackages,
   serviceConnectionEnv,
@@ -247,6 +248,11 @@ interface DevcontainerImageMode {
   runArgs: string[];
   forwardPorts: number[];
   postCreateCommand: string;
+  // Brings sshd up on every container start for the IDE attach point
+  // (ADR 0022). Runs an image-baked script via sudo; a lifecycle hook,
+  // not the entrypoint, because devcontainer-cli overrides the entrypoint
+  // in image mode. Only present when the pinned runtime ships sshd.
+  postStartCommand?: string;
   features?: Record<string, Record<string, unknown>>;
   // Env vars injected into the workspace container at start time
   // (inherited by postCreateCommand). Used by add-repo to wire the
@@ -271,6 +277,8 @@ interface DevcontainerComposeMode {
   remoteUser: string;
   forwardPorts: number[];
   postCreateCommand: string;
+  // See DevcontainerImageMode.postStartCommand (ADR 0022).
+  postStartCommand?: string;
   features?: Record<string, Record<string, unknown>>;
   customizations?: DevcontainerCustomizations;
 }
@@ -688,6 +696,16 @@ export function buildDevcontainerJson(
         }
       : undefined;
 
+  // Bring sshd up for the IDE attach point on every start (ADR 0022).
+  // A postStartCommand (lifecycle hook) rather than the image entrypoint:
+  // devcontainer-cli overrides the entrypoint in image mode, so the
+  // entrypoint never runs the daemon. Runs via sudo (node has passwordless
+  // sudo); the image-baked script is idempotent. Gated on the pinned
+  // runtime shipping sshd (>= 1.2.0).
+  const sshPostStart = runtimeSupportsSshAttach(opts.runtimeVersion)
+    ? { postStartCommand: 'sudo /usr/local/bin/monoceros-sshd-up.sh' }
+    : {};
+
   if (needsCompose(opts)) {
     // Compose-mode: per-feature persistent home mounts go onto the
     // workspace service in compose.yaml (see buildComposeYaml). The
@@ -705,6 +723,7 @@ export function buildDevcontainerJson(
       remoteUser: 'node',
       forwardPorts: ports,
       postCreateCommand: '.devcontainer/post-create.sh',
+      ...sshPostStart,
       ...(featuresField ?? {}),
       ...(customizationsField ?? {}),
     };
@@ -772,6 +791,7 @@ export function buildDevcontainerJson(
     runArgs,
     forwardPorts: ports,
     postCreateCommand: '.devcontainer/post-create.sh',
+    ...sshPostStart,
     ...(featuresField ?? {}),
     ...(customizationsField ?? {}),
   };
