@@ -1,6 +1,6 @@
 {
   "name": "@getmonoceros/workbench",
-  "version": "1.28.0",
+  "version": "1.29.0",
   "description": "Monoceros workbench CLI — local, reproducible dev containers with first-class AI coding tooling.",
   "keywords": [
     "devcontainer",
