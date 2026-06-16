@@ -11,7 +11,11 @@ import {
   type DockerLookupExec,
 } from '../devcontainer/locate-running.js';
 import { runShell } from '../devcontainer/shell.js';
-import { sshConfigEntryPath } from '../devcontainer/ssh-attach.js';
+import {
+  isWsl,
+  resolveWindowsProfile,
+  sshConfigEntryPath,
+} from '../devcontainer/ssh-attach.js';
 
 /**
  * `monoceros open <name> <tool>` - attach an editor (or a shell) to a
@@ -30,6 +34,12 @@ interface EditorTool {
   bin: string;
   /** macOS app-bundle bin used as a fallback when the command isn't on PATH. */
   macAppBin: string;
+  /**
+   * Install path relative to a Windows programs dir (Program Files /
+   * %LOCALAPPDATA%\Programs), used as a WSL fallback so `open` finds the
+   * Windows editor without it being on the (inherited) PATH.
+   */
+  winInstallSubpath: string;
   /** Shown when the binary can't be found. */
   setupHint: string;
 }
@@ -40,13 +50,15 @@ const EDITORS: Record<string, EditorTool> = {
     bin: 'code',
     macAppBin:
       '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code',
+    winInstallSubpath: 'Microsoft VS Code/bin/code',
     setupHint:
-      'install the Remote-SSH extension and run "Shell Command: Install \'code\' command in PATH"',
+      'install the Remote-SSH extension; on macOS also run "Shell Command: Install \'code\' command in PATH"',
   },
   codium: {
     label: 'VS Codium',
     bin: 'codium',
     macAppBin: '/Applications/VSCodium.app/Contents/Resources/app/bin/codium',
+    winInstallSubpath: 'VSCodium/bin/codium',
     setupHint:
       'install the "Open Remote - SSH" extension (the codium CLI ships with the app)',
   },
@@ -72,12 +84,27 @@ function resolveOnPath(bin: string): string | null {
 /**
  * Resolve an editor to a runnable binary: the bare command if it's on
  * PATH (let the OS resolve it), else the known macOS app-bundle bin, else
- * null. On Linux the CLI is practically always on PATH.
+ * - under WSL - the Windows install (so `open` works even when the editor
+ * isn't on the inherited PATH; the Windows `bin/<cmd>` is a shell wrapper
+ * that launches the Windows app, the same mechanism that makes a
+ * PATH-resolved `codium` work). Returns null when nothing is found.
  */
-function resolveEditorBinary(tool: EditorTool): string | null {
+async function resolveEditorBinary(tool: EditorTool): Promise<string | null> {
   if (resolveOnPath(tool.bin)) return tool.bin;
   if (process.platform === 'darwin' && existsSync(tool.macAppBin)) {
     return tool.macAppBin;
+  }
+  if (isWsl()) {
+    const candidates = [`/mnt/c/Program Files/${tool.winInstallSubpath}`];
+    const profile = await resolveWindowsProfile();
+    if (profile) {
+      candidates.push(
+        `${profile.homeWsl}/AppData/Local/Programs/${tool.winInstallSubpath}`,
+      );
+    }
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
+    }
   }
   return null;
 }
@@ -98,7 +125,7 @@ export interface RunOpenOptions {
   logger?: { info: (m: string) => void; warn: (m: string) => void };
   // Injectables for tests:
   /** Resolve an editor tool to a runnable binary path (or null). */
-  binResolver?: (tool: EditorTool) => string | null;
+  binResolver?: (tool: EditorTool) => string | null | Promise<string | null>;
   /** Launch the (GUI) editor, detached. */
   launch?: (bin: string, args: readonly string[]) => void;
   /** Lookup for the running container (gates the editor attach). */
@@ -151,7 +178,7 @@ export async function runOpen(opts: RunOpenOptions): Promise<number> {
   }
 
   const resolve = opts.binResolver ?? resolveEditorBinary;
-  const bin = resolve(editor);
+  const bin = await resolve(editor);
   if (!bin) {
     const where =
       process.platform === 'darwin'

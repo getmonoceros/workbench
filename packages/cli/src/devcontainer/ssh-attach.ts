@@ -246,7 +246,7 @@ function runCapture(
   });
 }
 
-function realIsWsl(): boolean {
+export function isWsl(): boolean {
   try {
     if (process.env.WSL_DISTRO_NAME) return true;
     const rel = readFileSync(
@@ -262,7 +262,7 @@ function realIsWsl(): boolean {
 // USERPROFILE via cmd.exe (no extra package; verified on a real box),
 // then wslpath for the /mnt/c view. The Windows username is the last
 // segment of `C:\Users\X`.
-async function realResolveWindowsProfile(): Promise<WindowsProfile | null> {
+export async function resolveWindowsProfile(): Promise<WindowsProfile | null> {
   try {
     const r = await runCapture('cmd.exe', ['/c', 'echo %USERPROFILE%']);
     const homeWin = r.stdout.replace(/\r/g, '').trim();
@@ -297,8 +297,8 @@ function resolveWindowsDeps(
   d?: WindowsBridgeDeps,
 ): Required<WindowsBridgeDeps> {
   return {
-    isWsl: d?.isWsl ?? realIsWsl,
-    resolveProfile: d?.resolveProfile ?? realResolveWindowsProfile,
+    isWsl: d?.isWsl ?? isWsl,
+    resolveProfile: d?.resolveProfile ?? resolveWindowsProfile,
     lockKey: d?.lockKey ?? realLockWindowsKey,
   };
 }
