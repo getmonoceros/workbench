@@ -394,7 +394,13 @@ async function setupWindowsBridge(
   const monoDir = path.join(profile.homeWsl, '.ssh', 'monoceros');
   await fs.mkdir(monoDir, { recursive: true });
   // Key in our own subdir so it can never clobber a user key in `.ssh\`.
-  await fs.copyFile(privateKey, path.join(monoDir, name));
+  // A previous apply locked this file read-only (icacls below), so
+  // copying straight over it would fail with EACCES. Remove it first;
+  // the per-container key is stable, so this just refreshes an identical
+  // file with fresh (inherited) ACLs before we re-lock it.
+  const keyDst = path.join(monoDir, name);
+  await fs.rm(keyDst, { force: true });
+  await fs.copyFile(privateKey, keyDst);
   const keyWin = `${profile.homeWin}\\.ssh\\monoceros\\${name}`;
   await upsertMarkedBlock(
     path.join(profile.homeWsl, '.ssh', 'config'),

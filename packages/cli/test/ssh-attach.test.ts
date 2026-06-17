@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -284,6 +285,44 @@ describe('Windows/WSL bridge', () => {
     const cfg = await readFile(path.join(winHome, '.ssh', 'config'), 'utf8');
     expect(cfg).toContain('Host my-server'); // user content preserved
     expect(cfg.split('Host monoceros-demo').length - 1).toBe(1); // not duplicated
+  });
+
+  it('re-apply refreshes a read-only locked key without skipping the bridge', async () => {
+    const warnings: string[] = [];
+    const logger = { info: () => {}, warn: (m: string) => warnings.push(m) };
+    const keyWsl = path.join(winHome, '.ssh', 'monoceros', 'demo');
+    // Simulate icacls locking by making the copied key read-only, the way
+    // OpenSSH-Windows wants it. A naive overwrite on the next apply would
+    // then fail with EACCES.
+    const deps = {
+      isWsl: () => true,
+      resolveProfile: async () => ({
+        homeWsl: winHome,
+        homeWin: 'C:\\Users\\TestUser',
+        user: 'TestUser',
+      }),
+      lockKey: async () => {
+        await chmod(keyWsl, 0o400);
+      },
+    };
+    const run = () =>
+      setupSshAttach({
+        name: 'demo',
+        targetDir,
+        home,
+        userSshDir,
+        keygen: fakeKeygen().spawn,
+        windows: deps,
+        logger,
+      });
+
+    await run();
+    await run(); // overwrites the now read-only key instead of bailing
+
+    expect(warnings.filter((w) => w.includes('Windows SSH bridge'))).toEqual(
+      [],
+    );
+    expect(existsSync(keyWsl)).toBe(true);
   });
 
   it('removeSshAttach clears the Windows key + block (under WSL)', async () => {
