@@ -1,0 +1,389 @@
+{
+  "schemaVersion": 1,
+  "cliVersion": "1.30.0",
+  "languages": [
+    {
+      "name": "dotnet",
+      "displayName": ".NET",
+      "description": "The .NET SDK via the upstream devcontainer feature. Pin a version with `dotnet:<version>`.",
+      "options": [],
+      "defaultVersion": "latest",
+      "versions": [
+        "latest",
+        "lts",
+        "10",
+        "9",
+        "8",
+        "7",
+        "6"
+      ]
+    },
+    {
+      "name": "go",
+      "displayName": "Go",
+      "description": "The Go toolchain plus golangci-lint via the upstream devcontainer feature. Pin a version with `go:<version>`.",
+      "options": [],
+      "defaultVersion": "latest",
+      "versions": [
+        "latest",
+        "1.24",
+        "1.23"
+      ]
+    },
+    {
+      "name": "java",
+      "displayName": "Java",
+      "description": "A JDK plus Maven and Gradle by default (the upstream feature ships only the JDK), so a plain `languages: [java]` is build-ready. Pin a JDK major with `java:<version>`.",
+      "options": [
+        {
+          "key": "installGradle",
+          "type": "boolean",
+          "surface": "yml",
+          "default": true
+        },
+        {
+          "key": "installMaven",
+          "type": "boolean",
+          "surface": "yml",
+          "default": true
+        }
+      ],
+      "defaultVersion": "latest",
+      "versions": [
+        "latest",
+        "21",
+        "17",
+        "11",
+        "8"
+      ]
+    },
+    {
+      "name": "node",
+      "displayName": "Node.js",
+      "description": "Node.js, built into the runtime image. A bare `node` installs nothing extra; pin a different major with `node:<version>`.",
+      "options": [],
+      "defaultVersion": "22",
+      "versions": [
+        "lts",
+        "latest",
+        "22",
+        "20"
+      ]
+    },
+    {
+      "name": "python",
+      "displayName": "Python",
+      "description": "CPython plus pip and common dev tooling via the upstream devcontainer feature. Pin a version with `python:<version>`.",
+      "options": [],
+      "defaultVersion": "latest",
+      "versions": [
+        "latest",
+        "3.12",
+        "3.11",
+        "3.1",
+        "3.9",
+        "3.8"
+      ]
+    },
+    {
+      "name": "rust",
+      "displayName": "Rust",
+      "description": "rustup plus the stable toolchain (rust-analyzer, rust-src, rustfmt, clippy) via the upstream feature. Pin a version with `rust:<version>`.",
+      "options": [],
+      "defaultVersion": "latest",
+      "versions": [
+        "latest",
+        "1.87"
+      ]
+    }
+  ],
+  "services": [
+    {
+      "name": "mailpit",
+      "displayName": "Mailpit",
+      "description": "SMTP catcher for local dev — apps send mail to it and nothing leaves the machine. SMTP on `mailpit:1025`; web UI + API on 8025 (reach via `monoceros tunnel <name> mailpit:8025`).",
+      "options": [],
+      "defaultPort": 1025
+    },
+    {
+      "name": "mongodb",
+      "displayName": "MongoDB",
+      "description": "MongoDB with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mongodb`.",
+      "options": [
+        {
+          "key": "MONGO_INITDB_DATABASE",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        },
+        {
+          "key": "MONGO_INITDB_ROOT_PASSWORD",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        },
+        {
+          "key": "MONGO_INITDB_ROOT_USERNAME",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        }
+      ],
+      "defaultPort": 27017
+    },
+    {
+      "name": "mysql",
+      "displayName": "MySQL",
+      "description": "MySQL with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mysql`.",
+      "options": [
+        {
+          "key": "MYSQL_DATABASE",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        },
+        {
+          "key": "MYSQL_ROOT_PASSWORD",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        }
+      ],
+      "defaultPort": 3306
+    },
+    {
+      "name": "pgvector",
+      "displayName": "pgvector (PostgreSQL + vectors)",
+      "description": "PostgreSQL with the pgvector extension for embeddings / vector search — a drop-in Postgres. Reachable in-container as host `pgvector`. Enable the extension once with `CREATE EXTENSION vector;` (or in your migration).",
+      "options": [
+        {
+          "key": "POSTGRES_DB",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        },
+        {
+          "key": "POSTGRES_PASSWORD",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        },
+        {
+          "key": "POSTGRES_USER",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        }
+      ],
+      "defaultPort": 5432
+    },
+    {
+      "name": "postgres",
+      "displayName": "PostgreSQL",
+      "description": "PostgreSQL with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `postgres`.",
+      "options": [
+        {
+          "key": "POSTGRES_DB",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        },
+        {
+          "key": "POSTGRES_PASSWORD",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        },
+        {
+          "key": "POSTGRES_USER",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        }
+      ],
+      "defaultPort": 5432
+    },
+    {
+      "name": "redis",
+      "displayName": "Redis",
+      "description": "Redis on the default port with a readiness healthcheck. Reachable in-container as host `redis`.",
+      "options": [],
+      "defaultPort": 6379
+    },
+    {
+      "name": "rustfs",
+      "displayName": "RustFS",
+      "description": "S3-compatible object storage (MinIO-compatible API). S3 API on `rustfs:9000`; web console on 9001 (enable with `RUSTFS_CONSOLE_ENABLE=true`, reach via `monoceros tunnel <name> rustfs:9001`).",
+      "options": [
+        {
+          "key": "RUSTFS_ACCESS_KEY",
+          "type": "string",
+          "surface": "env",
+          "default": "rustfsadmin"
+        },
+        {
+          "key": "RUSTFS_SECRET_KEY",
+          "type": "string",
+          "surface": "env",
+          "default": "rustfsadmin"
+        }
+      ],
+      "defaultPort": 9000
+    }
+  ],
+  "features": [
+    {
+      "name": "atlassian",
+      "displayName": "Atlassian",
+      "description": "Rovo Dev (`acli rovodev`), Teamwork Graph (`twg`) and Forge (`forge`) CLIs sharing one Atlassian account. Auth persists across rebuilds.",
+      "options": [
+        {
+          "key": "apiToken",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "Atlassian API token (id.atlassian.com → Security → API tokens)."
+        },
+        {
+          "key": "bitbucketToken",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "Optional Bitbucket app password; only needed for twg's Bitbucket commands."
+        },
+        {
+          "key": "email",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "Atlassian account email; used with `apiToken` for non-interactive login."
+        },
+        {
+          "key": "forge",
+          "type": "boolean",
+          "surface": "yml",
+          "default": true,
+          "description": "Install the Forge CLI (`forge`) for building Atlassian apps."
+        },
+        {
+          "key": "instance",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "Atlassian site host (`yoursite.atlassian.net`); required by twg."
+        },
+        {
+          "key": "rovodev",
+          "type": "boolean",
+          "surface": "yml",
+          "default": true,
+          "description": "Install acli (with the Rovo Dev agent)."
+        },
+        {
+          "key": "twg",
+          "type": "boolean",
+          "surface": "yml",
+          "default": true,
+          "description": "Install twg (Teamwork Graph CLI)."
+        }
+      ],
+      "documentationURL": "https://developer.atlassian.com/cloud/",
+      "presets": [
+        "forge",
+        "rovodev",
+        "twg"
+      ]
+    },
+    {
+      "name": "claude",
+      "displayName": "Claude Code",
+      "description": "Anthropic's CLI coding assistant. OAuth/subscription login persists across container rebuilds.",
+      "options": [
+        {
+          "key": "apiKey",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "`sk-ant-…` for API auth; empty for OAuth login on first run."
+        },
+        {
+          "key": "permissionMode",
+          "type": "string",
+          "surface": "yml",
+          "default": "auto",
+          "description": "Default Claude permission mode in this container. `auto` = Auto Mode: no per-action prompts and no recurring warning (a background classifier vets actions) — the comfortable default for an isolated container. `ask` prompts as usual; `edits` auto-accepts file edits but prompts for other commands; `bypass` skips all prompts (its one-time warning is pre-accepted). Monoceros writes this to ~/.claude/settings.json on apply; override per-project or with a CLI flag.",
+          "proposals": [
+            "auto",
+            "ask",
+            "edits",
+            "bypass"
+          ]
+        }
+      ],
+      "documentationURL": "https://docs.anthropic.com/en/docs/claude-code",
+      "presets": []
+    },
+    {
+      "name": "github",
+      "displayName": "GitHub CLI",
+      "description": "The official `gh` CLI. Login persists across container rebuilds.",
+      "options": [
+        {
+          "key": "apiToken",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "GitHub PAT (scopes: repo, read:org, gist); empty for `gh auth login` on first run."
+        }
+      ],
+      "documentationURL": "https://cli.github.com/",
+      "presets": []
+    },
+    {
+      "name": "gitlab",
+      "displayName": "GitLab CLI",
+      "description": "The official GitLab CLI (`glab`) for merge requests, issues, CI/CD pipelines and releases. Targets gitlab.com or a self-managed host. Login persists across container rebuilds.",
+      "options": [
+        {
+          "key": "apiToken",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "GitLab personal access token (scopes: `api`, `write_repository`); exported as GITLAB_TOKEN. Empty for `glab auth login` on first run."
+        },
+        {
+          "key": "host",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Self-managed/Dedicated GitLab host (e.g. `gitlab.example.com`); empty targets gitlab.com. Exported as GITLAB_HOST, so every `glab` command uses it without `--hostname`."
+        }
+      ],
+      "documentationURL": "https://gitlab.com/gitlab-org/cli",
+      "presets": []
+    },
+    {
+      "name": "opencode",
+      "displayName": "OpenCode",
+      "description": "sst's open-source, provider-agnostic AI coding agent (TUI). Model + provider key configurable; auth and session state persist across container rebuilds.",
+      "options": [
+        {
+          "key": "apiToken",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "API key for the model provider (derived from `model`); written to `provider.<x>.options.apiKey` in opencode.json. Empty for `opencode auth login` on first run."
+        },
+        {
+          "key": "model",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Default model as `provider/model-id` (e.g. `anthropic/claude-sonnet-4-6`, `openai/gpt-4o-mini`). The provider is derived from the prefix before `/`. Empty: pick interactively on first run."
+        }
+      ],
+      "documentationURL": "https://opencode.ai/docs/",
+      "presets": []
+    }
+  ]
+}

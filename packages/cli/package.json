@@ -39,6 +39,7 @@
     "test": "vitest run",
     "components:sync": "node scripts/sync-components.mjs",
     "manifests:generate": "tsx scripts/generate-feature-manifests.ts",
+    "catalog:json": "tsx scripts/generate-catalog-json.ts",
     "prebuild": "pnpm components:sync",
     "build": "tsup",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"

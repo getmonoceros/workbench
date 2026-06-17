@@ -2,6 +2,8 @@ import { defineCommand } from 'citty';
 import { consola } from 'consola';
 import { loadDescriptorCatalog } from '../catalog/load.js';
 import { expandSelectable } from '../catalog/expand.js';
+import { buildCatalogJson } from '../catalog/catalog-json.js';
+import { CLI_VERSION } from '../version.js';
 import { colorsFor } from '../util/format.js';
 
 // Category-key → human-readable section label. Same order is used
@@ -23,12 +25,28 @@ export const listComponentsCommand = defineCommand({
     name: 'list-components',
     group: 'discovery',
     description:
-      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=…`, grouped by category (Languages, Services, Features). Component names render in cyan, descriptions in default colour; when piped, the formatting drops out and lines become `name<TAB>description` for grep/awk-friendly consumption.',
+      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=…`, grouped by category (Languages, Services, Features). Component names render in cyan, descriptions in default colour; when piped, the formatting drops out and lines become `name<TAB>description` for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json.',
   },
-  args: {},
-  async run() {
+  args: {
+    json: {
+      type: 'boolean',
+      description:
+        'Emit the catalog as a JSON document (name, options, versions, presets per component) instead of the human-readable listing.',
+    },
+  },
+  async run({ args }) {
     try {
-      const catalog = expandSelectable(await loadDescriptorCatalog());
+      const descriptors = await loadDescriptorCatalog();
+
+      // --json: machine-readable projection, no TTY formatting. This is the
+      // canonical shape published as getmonoceros.build/catalog.json.
+      if (args.json) {
+        const doc = buildCatalogJson(descriptors, CLI_VERSION);
+        process.stdout.write(`${JSON.stringify(doc, null, 2)}\n`);
+        process.exit(0);
+      }
+
+      const catalog = expandSelectable(descriptors);
       if (catalog.size === 0) {
         consola.warn(
           'No components found. The workbench checkout looks incomplete.',

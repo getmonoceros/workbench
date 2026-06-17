@@ -4,3 +4,7 @@ build/
 coverage/
 pnpm-lock.yaml
 .claude/
+
+# Generated artifact — `pnpm --filter @getmonoceros/workbench catalog:json`
+# owns its format (JSON.stringify 2-space). Keep prettier from fighting it.
+catalog.json
