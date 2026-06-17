@@ -146,6 +146,22 @@ const PersistentHomeFileSchema = z.object({
   initialContent: z.string().optional(),
 });
 
+/**
+ * One feature-contributed block of WORKSPACE runtime env (the feature-side
+ * sibling of a service's `connectionEnv`, ADR 0021). `vars` maps env-var
+ * names to templates; a template references the feature's own option values
+ * with `${optionName}` and is filled at scaffold time against the resolved
+ * options. When `whenOption` is set, the whole block is emitted only if that
+ * option resolves truthy. Used so a feature can hand the workspace process
+ * environment named vars (e.g. atlassian `forge` -> `FORGE_EMAIL` /
+ * `FORGE_API_TOKEN`) without a per-tool login dance.
+ */
+const WorkspaceEnvBlockSchema = z.object({
+  whenOption: z.string().optional(),
+  vars: z.record(z.string(), z.string()),
+});
+export type WorkspaceEnvBlock = z.infer<typeof WorkspaceEnvBlockSchema>;
+
 /** `category: feature` block — a tool we author and publish to GHCR. */
 export const FeatureBlockSchema = z.object({
   /** Publishable feature version (devcontainer-feature.json `version`). */
@@ -153,8 +169,27 @@ export const FeatureBlockSchema = z.object({
   persistentHomePaths: z.array(z.string().min(1)).optional(),
   persistentHomeFiles: z.array(PersistentHomeFileSchema).optional(),
   vscodeExtensions: z.array(z.string()).optional(),
+  /**
+   * Named runtime env injected into the workspace container (compose
+   * `environment:` / image-mode `containerEnv`). Catalog/CLI-side only — not
+   * emitted into the published devcontainer-feature.json (like `presets`),
+   * because it drives how the workbench wires the container, not the feature
+   * install. See `featureWorkspaceEnv` in create/scaffold.ts.
+   */
+  workspaceEnv: z.array(WorkspaceEnvBlockSchema).optional(),
 });
 export type FeatureBlock = z.infer<typeof FeatureBlockSchema>;
+
+/** Pull the `${option}` tokens referenced by a workspaceEnv template set. */
+function workspaceEnvTokens(vars: Record<string, string>): string[] {
+  const tokens: string[] = [];
+  for (const template of Object.values(vars)) {
+    for (const m of template.matchAll(/\$\{([A-Za-z0-9_]+)\}/g)) {
+      tokens.push(m[1]!);
+    }
+  }
+  return tokens;
+}
 
 export const DescriptorSchema = z
   .object({
@@ -228,6 +263,29 @@ export const DescriptorSchema = z
           path: ['briefing', i, 'whenOption'],
           message: `whenOption '${line.whenOption}' is not a declared option`,
         });
+      }
+    });
+
+    // Every feature.workspaceEnv block must reference declared options, both
+    // in its `whenOption` gate and in each `${token}` of its var templates —
+    // an unknown reference would silently render empty, which is a feature-
+    // author bug worth catching at load time.
+    data.feature?.workspaceEnv?.forEach((block, i) => {
+      if (block.whenOption !== undefined && !optionKeys.has(block.whenOption)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['feature', 'workspaceEnv', i, 'whenOption'],
+          message: `whenOption '${block.whenOption}' is not a declared option`,
+        });
+      }
+      for (const token of workspaceEnvTokens(block.vars)) {
+        if (!optionKeys.has(token)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['feature', 'workspaceEnv', i, 'vars'],
+            message: `workspaceEnv template references '\${${token}}', which is not a declared option`,
+          });
+        }
       }
     });
 

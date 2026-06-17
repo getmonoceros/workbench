@@ -256,4 +256,77 @@ presets:
       /preset 'variant' overrides 'flagB', which is not a declared option/,
     );
   });
+
+  it('accepts a feature.workspaceEnv block that references declared options', async () => {
+    await writeDescriptor(
+      'features',
+      'wsenv',
+      `
+id: wsenv
+category: feature
+displayName: WsEnv
+description: Valid workspaceEnv.
+options:
+  forge: { type: boolean, default: false, surface: yml }
+  email: { type: string, default: '', surface: env }
+feature:
+  version: 1.0.0
+  workspaceEnv:
+    - whenOption: forge
+      vars:
+        FORGE_EMAIL: '\${email}'
+`,
+    );
+    const catalog = await loadDescriptorCatalog(root);
+    const d = catalog.get('wsenv')?.descriptor;
+    expect(d?.feature?.workspaceEnv?.[0]?.vars.FORGE_EMAIL).toBe('${email}');
+  });
+
+  it('rejects a workspaceEnv whenOption that references an unknown option', async () => {
+    await writeDescriptor(
+      'features',
+      'wsenv-when',
+      `
+id: wsenv-when
+category: feature
+displayName: WsEnvWhen
+description: workspaceEnv whenOption points at nothing.
+options:
+  email: { type: string, default: '', surface: env }
+feature:
+  version: 1.0.0
+  workspaceEnv:
+    - whenOption: nope
+      vars:
+        FORGE_EMAIL: '\${email}'
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /whenOption 'nope' is not a declared option/,
+    );
+  });
+
+  it('rejects a workspaceEnv template token that references an unknown option', async () => {
+    await writeDescriptor(
+      'features',
+      'wsenv-token',
+      `
+id: wsenv-token
+category: feature
+displayName: WsEnvToken
+description: workspaceEnv template references a missing option.
+options:
+  forge: { type: boolean, default: false, surface: yml }
+feature:
+  version: 1.0.0
+  workspaceEnv:
+    - whenOption: forge
+      vars:
+        FORGE_EMAIL: '\${email}'
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /workspaceEnv template references '\$\{email\}', which is not a declared option/,
+    );
+  });
 });

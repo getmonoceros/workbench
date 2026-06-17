@@ -3,25 +3,31 @@
 #
 # Installs Atlassian CLIs that share a single Atlassian account:
 #   - Rovo Dev (acli, default on) — the `acli rovodev` AI agent
-#   - Teamwork Graph (twg, default off)
+#   - Teamwork Graph (twg, default on)
+#   - Forge (forge, default on) — the `@forge/cli` app-dev toolchain
 #
-# Each tool is toggled independently via the `rovodev` / `twg`
-# options. Credentials (instance / email / apiToken) are shared
-# across both tools when set; per-tool post-create hooks under
-# /usr/local/share/monoceros/post-create.d/ perform the
-# non-interactive login on first container start.
+# Each tool is toggled independently via the `rovodev` / `twg` / `forge`
+# options. Credentials (instance / email / apiToken) are shared across
+# the tools when set; rovodev and twg get per-tool post-create hooks
+# under /usr/local/share/monoceros/post-create.d/ that perform the
+# non-interactive login on first container start. Forge has no login
+# hook: it reads FORGE_EMAIL / FORGE_API_TOKEN from the workspace
+# runtime env, which the workbench injects from the shared account
+# options (feature.workspaceEnv) — the keychain-free path Atlassian
+# recommends for containers.
 
 set -euo pipefail
 
 ROVODEV="${ROVODEV:-true}"
 TWG="${TWG:-true}"
+FORGE="${FORGE:-true}"
 INSTANCE="${INSTANCE:-}"
 EMAIL="${EMAIL:-}"
 APITOKEN="${APITOKEN:-}"
 BITBUCKETTOKEN="${BITBUCKETTOKEN:-}"
 
-if [ "${ROVODEV}" != "true" ] && [ "${TWG}" != "true" ]; then
-  echo "[atlassian] both rovodev and twg disabled — nothing to install" >&2
+if [ "${ROVODEV}" != "true" ] && [ "${TWG}" != "true" ] && [ "${FORGE}" != "true" ]; then
+  echo "[atlassian] rovodev, twg and forge all disabled — nothing to install" >&2
   exit 0
 fi
 
@@ -182,6 +188,26 @@ EOF
   else
     rm -f "${HOOK}"
     echo "[atlassian/twg] missing instance/email/apiToken — login is manual (\`twg login\` once in the container)"
+  fi
+fi
+
+# ─── Forge (@forge/cli) ───────────────────────────────────────────
+if [ "${FORGE}" = "true" ]; then
+  # Forge is a Node CLI; the runtime ships Node, so a global npm install
+  # is enough. No post-create login hook: `forge login` stores creds in
+  # the OS keychain (libsecret on Linux), which we deliberately do not
+  # carry. Instead Forge reads FORGE_EMAIL / FORGE_API_TOKEN at command
+  # time; the workbench injects them into the workspace runtime env from
+  # this feature's `email` / `apiToken` options (feature.workspaceEnv),
+  # so the right account is in scope without a login step here.
+  echo "[atlassian/forge] installing @forge/cli globally via npm"
+  npm install -g @forge/cli
+  forge --version >/dev/null 2>&1 || {
+    echo "[atlassian/forge] ERROR: install completed but \`forge\` is not on PATH" >&2
+    exit 1
+  }
+  if [ -z "${EMAIL}" ] || [ -z "${APITOKEN}" ]; then
+    echo "[atlassian/forge] no email/apiToken set — set them in the container yml so FORGE_EMAIL/FORGE_API_TOKEN reach the shell"
   fi
 fi
 

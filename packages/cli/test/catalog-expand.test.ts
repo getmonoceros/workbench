@@ -38,18 +38,36 @@ describe('expandSelectable preserves the selectable surface', () => {
     expect(expandedSet).toEqual(initSet);
   });
 
-  it('exposes the atlassian presets as atlassian/twg and atlassian/rovodev', async () => {
+  it('exposes the atlassian presets as atlassian/twg, /rovodev and /forge', async () => {
     const expanded = expandSelectable(
       await loadDescriptorCatalog(componentsRoot),
     );
 
+    // Each single-tool preset pins all three toggles, so it selects exactly
+    // one — the bare `atlassian` selector keeps every toggle at its (on)
+    // default and installs all three.
     const twg = expanded.get('atlassian/twg');
     expect(twg?.category).toBe('feature');
     expect(twg?.componentId).toBe('atlassian');
-    expect(twg?.presetOptions).toEqual({ rovodev: false, twg: true });
+    expect(twg?.presetOptions).toEqual({
+      rovodev: false,
+      twg: true,
+      forge: false,
+    });
 
     const rovodev = expanded.get('atlassian/rovodev');
-    expect(rovodev?.presetOptions).toEqual({ rovodev: true, twg: false });
+    expect(rovodev?.presetOptions).toEqual({
+      rovodev: true,
+      twg: false,
+      forge: false,
+    });
+
+    const forge = expanded.get('atlassian/forge');
+    expect(forge?.presetOptions).toEqual({
+      rovodev: false,
+      twg: false,
+      forge: true,
+    });
 
     // The bare feature keeps its short selector, not the manifest id.
     expect(expanded.has('claude')).toBe(true);

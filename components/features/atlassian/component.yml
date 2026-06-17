@@ -1,7 +1,7 @@
 id: atlassian
 category: feature
 displayName: Atlassian
-description: 'Rovo Dev (`acli rovodev`) and Teamwork Graph (`twg`) CLIs sharing one Atlassian account. Auth persists across rebuilds.'
+description: 'Rovo Dev (`acli rovodev`), Teamwork Graph (`twg`) and Forge (`forge`) CLIs sharing one Atlassian account. Auth persists across rebuilds.'
 documentationURL: https://developer.atlassian.com/cloud/
 options:
   rovodev:
@@ -13,6 +13,11 @@ options:
     type: boolean
     default: true
     description: 'Install twg (Teamwork Graph CLI).'
+    surface: yml
+  forge:
+    type: boolean
+    default: true
+    description: 'Install the Forge CLI (`forge`) for building Atlassian apps.'
     surface: yml
   instance:
     type: string
@@ -35,18 +40,36 @@ options:
     description: "Optional Bitbucket app password; only needed for twg's Bitbucket commands."
     surface: env
 feature:
-  version: 1.1.0
+  version: 1.2.0
   persistentHomePaths: [.config/acli, .rovodev, .config/twg, .agents]
   vscodeExtensions: [Atlassian.atlascode]
+  # Forge is keychain-free in a container: instead of `forge login` (which
+  # needs libsecret), Atlassian's documented path is the FORGE_EMAIL /
+  # FORGE_API_TOKEN env vars, read at command time. We hand them to the
+  # workspace runtime env from the shared account options, gated on the
+  # `forge` toggle. Sibling of a service's connectionEnv (ADR 0021).
+  workspaceEnv:
+    - whenOption: forge
+      vars:
+        FORGE_EMAIL: '${email}'
+        FORGE_API_TOKEN: '${apiToken}'
 briefing:
   - whenOption: rovodev
     text: 'Atlassian Rovo Dev — invoke via `acli rovodev`. Pre-authenticated against the Atlassian account configured in the feature options (shared with twg).'
   - whenOption: twg
     text: 'Atlassian Teamwork Graph CLI (`twg`) — work-data access across Jira, Confluence, Bitbucket, JSM and Assets. Pre-authenticated. Sub-skills cover status rollups, engineering work, ops health and context discovery.'
+  - whenOption: forge
+    text: 'Atlassian Forge CLI (`forge`) for building and deploying Forge apps. Authenticated via FORGE_EMAIL / FORGE_API_TOKEN from the shared account (no `forge login` needed in the container).'
 presets:
   twg:
     rovodev: false
     twg: true
+    forge: false
   rovodev:
     rovodev: true
     twg: false
+    forge: false
+  forge:
+    rovodev: false
+    twg: false
+    forge: true

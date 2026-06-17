@@ -4,7 +4,7 @@ import { workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { descriptorToFeatureManifest } from '../catalog/generate-manifest.js';
-import type { Descriptor } from '../catalog/descriptor.js';
+import type { Descriptor, WorkspaceEnvBlock } from '../catalog/descriptor.js';
 import { writeClaudePermissionMode } from './claude-settings.js';
 import { writeOpencodeConfig } from './opencode-config.js';
 import {
@@ -354,6 +354,14 @@ interface ResolvedFeature {
    * the feature manifest's `x-monoceros.persistentHomeFiles` array.
    */
   persistentHomeFiles: PersistentHomeFile[];
+  /**
+   * Workspace runtime-env blocks from the feature's descriptor
+   * (`feature.workspaceEnv`). Rendered against `options` and injected into
+   * the workspace container's env (compose `environment:` / image
+   * `containerEnv`) by `featureWorkspaceEnv`. Empty for non-Monoceros and
+   * non-feature entries.
+   */
+  workspaceEnv: WorkspaceEnvBlock[];
 }
 
 interface PersistentHomeFile {
@@ -426,6 +434,7 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
       options,
       persistentHomePaths: [],
       persistentHomeFiles: [],
+      workspaceEnv: [],
     });
   }
   // Workspace apt packages: the user's `aptPackages` plus the CLI client tools
@@ -443,6 +452,7 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
       options: { packages: aptPackages.join(',') },
       persistentHomePaths: [],
       persistentHomeFiles: [],
+      workspaceEnv: [],
     });
   }
   if (opts.features) {
@@ -454,6 +464,10 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
         // prod alike — there is no manifest JSON to read.
         const descriptor = featureDescriptor(name);
         const { paths, files } = descriptorPersistentHome(descriptor);
+        // Workspace runtime-env wiring travels with the descriptor (ADR 0021
+        // sibling), CLI-side regardless of whether the feature is built from
+        // local source or pulled from GHCR.
+        const workspaceEnv = descriptor?.feature?.workspaceEnv ?? [];
         // Build from local feature source when available — the checkout's
         // `components/features/<id>/` (dev) or MONOCEROS_FEATURES_DIR_OVERRIDE
         // (e2e). We copy its install.sh and write a freshly generated
@@ -471,6 +485,7 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
             generatedManifest: descriptorToFeatureManifest(descriptor),
             persistentHomePaths: paths,
             persistentHomeFiles: files,
+            workspaceEnv,
           });
           continue;
         }
@@ -479,6 +494,7 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
           options,
           persistentHomePaths: paths,
           persistentHomeFiles: files,
+          workspaceEnv,
         });
         continue;
       }
@@ -487,6 +503,7 @@ export function resolveFeatures(opts: CreateOptions): ResolvedFeature[] {
         options,
         persistentHomePaths: [],
         persistentHomeFiles: [],
+        workspaceEnv: [],
       });
     }
   }
@@ -521,6 +538,55 @@ function descriptorPersistentHome(descriptor: Descriptor | undefined): {
     paths: filterSubpaths(descriptor?.feature?.persistentHomePaths),
     files: filterFileEntries(descriptor?.feature?.persistentHomeFiles),
   };
+}
+
+/** Whether a resolved option value gates a `whenOption` block as "on". */
+function isOptionEnabled(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') return value !== '' && value !== 'false';
+  return false;
+}
+
+/**
+ * Workspace runtime env contributed by features (the feature-side sibling of
+ * `serviceConnectionEnv`, ADR 0021). For each resolved feature, each
+ * `feature.workspaceEnv` block whose `whenOption` (if any) resolves truthy is
+ * rendered: every var template has its `${optionName}` tokens replaced with
+ * the feature's already-resolved option value. The result is injected into the
+ * workspace container's environment (compose `environment:` / image-mode
+ * `containerEnv`).
+ *
+ * A var whose rendered value is empty is dropped: when the builder hasn't
+ * filled the backing secret yet, emitting an empty env var would only mask
+ * the tool's own "not configured" path. This mirrors the atlassian login
+ * hooks, which install only when their credentials are present.
+ */
+export function featureWorkspaceEnv(
+  features: readonly ResolvedFeature[],
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const f of features) {
+    for (const block of f.workspaceEnv) {
+      if (
+        block.whenOption !== undefined &&
+        !isOptionEnabled(f.options[block.whenOption])
+      ) {
+        continue;
+      }
+      for (const [name, template] of Object.entries(block.vars)) {
+        const value = template.replace(
+          /\$\{([A-Za-z0-9_]+)\}/g,
+          (_, token: string) => {
+            const v = f.options[token];
+            return v === undefined || v === null ? '' : String(v);
+          },
+        );
+        if (value !== '') env[name] = value;
+      }
+    }
+  }
+  return env;
 }
 
 function filterSubpaths(raw: unknown): string[] {
@@ -792,6 +858,17 @@ export function buildDevcontainerJson(
     ? { postStartCommand: 'sudo /usr/local/bin/monoceros-sshd-up.sh' }
     : {};
 
+  // Feature-contributed workspace runtime env (`feature.workspaceEnv`). In
+  // compose mode this rides the workspace service's `environment:` block (see
+  // buildComposeYaml); in image mode it becomes a `containerEnv` object on the
+  // devcontainer.json, so every process in the container sees it. (Service
+  // connection env only exists in compose mode, where services live.)
+  const workspaceEnv = featureWorkspaceEnv(resolvedFeatures);
+  const containerEnvField =
+    Object.keys(workspaceEnv).length > 0
+      ? { containerEnv: workspaceEnv }
+      : undefined;
+
   if (needsCompose(opts)) {
     // Compose-mode: per-feature persistent home mounts go onto the
     // workspace service in compose.yaml (see buildComposeYaml). The
@@ -884,6 +961,7 @@ export function buildDevcontainerJson(
     forwardPorts: ports,
     postCreateCommand: '.devcontainer/post-create.sh',
     ...sshPostStart,
+    ...(containerEnvField ?? {}),
     ...(featuresField ?? {}),
     ...(customizationsField ?? {}),
   };
@@ -990,11 +1068,14 @@ export function buildComposeYaml(
   for (const v of ideVolumes) {
     lines.push(`      - ${v.volume}:${v.target}`);
   }
-  // Per-instance connection env for curated services (`<NAME>_URL`,
-  // `<NAME>_HOST`, … - e.g. `POSTGRES_URL`; ADR 0021) so the app and the
-  // in-container agent can connect without knowing the dev-default
-  // credentials. Derived from the already-resolved service env.
-  const wsEnv = serviceConnectionEnv(opts.services);
+  // Per-instance service connection env (`<NAME>_URL`, …; ADR 0021) plus any
+  // feature-contributed workspace env (`feature.workspaceEnv`, e.g. atlassian
+  // forge → FORGE_EMAIL/FORGE_API_TOKEN). Both land in the workspace
+  // container's process environment, visible to every process.
+  const wsEnv = {
+    ...serviceConnectionEnv(opts.services),
+    ...featureWorkspaceEnv(resolvedFeatures),
+  };
   const wsEnvKeys = Object.keys(wsEnv);
   if (wsEnvKeys.length > 0) {
     lines.push('    environment:');

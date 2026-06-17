@@ -62,15 +62,17 @@ describe('descriptorToFeatureManifest', () => {
   it('atlassian: optionHints follow declaration order; briefing keeps whenOption', async () => {
     const m = await generate('atlassian');
     const x = m['x-monoceros'] as Record<string, unknown>;
-    // rovodev/twg are surface:yml (not hints); the four credentials are env.
+    // rovodev/twg/forge are surface:yml (not hints); the four credentials
+    // are env. workspaceEnv is CLI-side only and never reaches the manifest.
     expect(x.optionHints).toEqual([
       'instance',
       'email',
       'apiToken',
       'bitbucketToken',
     ]);
+    expect(x.workspaceEnv).toBeUndefined();
     const lines = (x.briefing as { lines: { whenOption?: string }[] }).lines;
-    expect(lines.map((l) => l.whenOption)).toEqual(['rovodev', 'twg']);
+    expect(lines.map((l) => l.whenOption)).toEqual(['rovodev', 'twg', 'forge']);
   });
 
   it('refuses to generate a manifest for a non-feature descriptor', () => {
