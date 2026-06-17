@@ -58,3 +58,18 @@ jobs:
 
       - name: Format check
         run: pnpm format:check
+
+      # The committed catalog.json is served from the repo (via
+      # raw.githubusercontent.com) and read by the onboarding skill, so it must
+      # never drift from the descriptors or the CLI version. Regenerate it and
+      # fail if the working tree changes — a stale catalog.json then cannot land
+      # on main or pass the release gate. Fix locally with:
+      #   pnpm --filter @getmonoceros/workbench catalog:json  (then commit)
+      - name: Catalog JSON is current
+        run: |
+          pnpm --filter @getmonoceros/workbench catalog:json
+          if ! git diff --quiet -- catalog.json; then
+            echo "::error file=catalog.json::catalog.json is stale. Run 'pnpm --filter @getmonoceros/workbench catalog:json' and commit the result."
+            git --no-pager diff -- catalog.json
+            exit 1
+          fi
