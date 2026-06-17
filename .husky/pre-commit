@@ -1,1 +1,16 @@
+set -e
+
 npx lint-staged
+
+# Keep the committed catalog.json in sync automatically. When this commit
+# touches the component descriptors or the CLI version (the two inputs that
+# change the catalog), regenerate it from the same source the CLI uses and
+# stage it, so it is always part of the commit. The precheck CI guard only
+# *verifies* freshness; this hook is what keeps it fresh in the first place.
+# Scoped to the relevant paths so unrelated commits stay fast.
+# (Prettier ignores catalog.json, so the generator owns its format.)
+if git diff --cached --name-only | grep -qE '^components/|^packages/cli/package\.json$'; then
+  echo "[pre-commit] components or CLI version changed - regenerating catalog.json"
+  pnpm --filter @getmonoceros/workbench catalog:json
+  git add catalog.json
+fi
