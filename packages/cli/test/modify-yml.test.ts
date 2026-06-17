@@ -442,7 +442,9 @@ describe('add-*/remove-* against the yml', () => {
     ).rejects.toThrow(/'node' is a language, not a feature[\s\S]*add-language/);
   });
 
-  it('runAddFeature errors when re-adding with different options', async () => {
+  it('runAddFeature errors when re-adding a plain feature with different options', async () => {
+    // Plain feature / raw ref keeps the overwrite-protected behavior: once
+    // it's in the yml, re-adding with different options is an error.
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({
       ...baseOpts,
@@ -467,13 +469,9 @@ describe('add-*/remove-* against the yml', () => {
     await runAddFeature({
       ...baseOpts,
       name: 'demo',
-      ref: 'atlassian',
+      ref: 'atlassian', // bare selector: not a preset, overwrite-protected
       monocerosHome: home,
     });
-    // Builder picked the short name `atlassian` first. The conflict
-    // error should echo that form — not the resolved OCI ref — so the
-    // suggested `monoceros remove-feature atlassian` matches what
-    // they're already typing and works in their muscle memory.
     await expect(
       runAddFeature({
         ...baseOpts,
@@ -485,6 +483,51 @@ describe('add-*/remove-* against the yml', () => {
     ).rejects.toThrow(
       /Feature atlassian is already configured[\s\S]*monoceros remove-feature atlassian/,
     );
+  });
+
+  it('runAddFeature adds a sub-tool preset into an existing entry without dropping siblings', async () => {
+    // The reported case: atlassian already configured for twg only; adding
+    // the forge sub-tool flips forge on and leaves twg/rovodev as they were
+    // (booleans OR — true wins).
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian/twg', // rovodev:false, twg:true, forge:false
+      monocerosHome: home,
+    });
+    const second = await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian/forge', // rovodev:false, twg:false, forge:true
+      monocerosHome: home,
+    });
+    expect(second.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('twg: true'); // preserved — OR never clears it
+    expect(yml).toContain('forge: true'); // the added sub-tool
+    expect(yml).toContain('rovodev: false'); // still off (false OR false)
+    // env placeholders from the original add survive the merge
+    expect(yml).toMatch(/^\s+apiToken: \$\{ATLASSIAN_API_TOKEN\}\s*$/m);
+  });
+
+  it('runAddFeature re-adding the same sub-tool preset is a no-op', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian/twg',
+      monocerosHome: home,
+    });
+    const before = await ymlOf('demo');
+    const second = await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian/twg',
+      monocerosHome: home,
+    });
+    expect(second.status).toBe('no-change');
+    expect(await ymlOf('demo')).toBe(before);
   });
 
   it('runAddFeature on a fresh init yml keeps the routing section header at column 0', async () => {

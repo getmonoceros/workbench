@@ -12,6 +12,7 @@ import {
 import type { FeatureOptions, RepoEntry } from '../create/types.js';
 import { deriveRepoName } from '../create/scaffold.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
+import { mergeFeatureOptions } from '../init/components.js';
 import {
   buildFeatureHeaderCommentBefore,
   featureOptionHints,
@@ -505,55 +506,80 @@ export function addInstallUrlToDoc(doc: Document, url: string): boolean {
 }
 
 /**
- * Add (or no-op) a devcontainer feature entry. Mirrors the legacy
- * `add-feature` semantics: re-adding the same ref with different
- * options is an explicit error (the builder must remove + re-add to
- * change options); same ref + same options is a no-op.
+ * Add a devcontainer feature entry, with two behaviors when the same ref
+ * is already present, picked by `isPreset`:
  *
- * `displayName` is what the builder typed on the command line —
- * either a short-name (`atlassian` / `atlassian/twg`) or the full
- * OCI ref. Used in error messages so the suggestion to run
- * `monoceros remove-feature <X>` echoes the form they're familiar
- * with rather than the always-the-full-ref form. Defaults to `ref`
- * when omitted.
+ *   - sub-tool selector (`atlassian/twg`, `isPreset: true`): merge the
+ *     selector's options into the existing entry with the same rule `init`
+ *     uses to combine components — booleans OR (true wins), strings
+ *     override. So adding `atlassian/forge` to an entry that already has
+ *     `twg: true` flips forge on and leaves twg alone. A merge that changes
+ *     nothing is a no-op (false); otherwise the options update in place
+ *     (true). It is purely additive: it never switches a sibling toggle off.
+ *
+ *   - plain feature (`claude`, `github`), bare selector, or raw OCI ref
+ *     (`isPreset: false`): once present it isn't silently rewritten. Same
+ *     options = no-op; different options = an explicit error (remove +
+ *     re-add to change them).
+ *
+ * `displayName` is the form the builder typed (short-name or full ref),
+ * echoed in the conflict error so the `monoceros remove-feature <X>` hint
+ * matches what they ran. Defaults to `ref`.
+ *
+ * Credential option hints (`surface: env`) are filled as ACTIVE `${VAR}`
+ * placeholders on whichever options block is written, so an empty/missing
+ * `${VAR}` resolves to "" at apply (the transform then skips it → the
+ * monoceros-config default is inherited, or the option stays unset). The
+ * matching env vars are seeded blank by runAddFeature. Only keys not
+ * already present get a placeholder (featureOptionHints filters them out).
  */
 export function addFeatureToDoc(
   doc: Document,
   ref: string,
   options: FeatureOptions = {},
-  displayName?: string,
+  opts: { isPreset?: boolean; displayName?: string } = {},
 ): boolean {
   const seq = ensureSeq(doc, 'features');
-  const label = displayName ?? ref;
-
-  // Credential option hints become ACTIVE `${VAR}` placeholders in the
-  // options block (not a commented skeleton): an empty/missing `${VAR}`
-  // resolves to "" at apply and the transform skips it → the
-  // monoceros-config default is inherited, or the option stays unset.
-  // The matching env vars are seeded blank by runAddFeature. Only keys
-  // the caller didn't already set get a placeholder (featureOptionHints
-  // filters those out).
+  const label = opts.displayName ?? ref;
   const summary = loadFeatureManifestSummary(ref);
-  const hints = featureOptionHints(summary, ref, Object.keys(options));
-  const mergedOptions: FeatureOptions = { ...options };
-  for (const h of hints) mergedOptions[h.key] = h.placeholder;
+  const withHints = (o: FeatureOptions): FeatureOptions => {
+    const out: FeatureOptions = { ...o };
+    for (const h of featureOptionHints(summary, ref, Object.keys(out))) {
+      out[h.key] = h.placeholder;
+    }
+    return out;
+  };
 
   for (const item of seq.items) {
     if (!isMap(item)) continue;
     const itemRef = item.get('ref');
     if (itemRef !== ref) continue;
-    // Same ref: check options equality. Use the live doc's toJS so the
-    // sub-map's scalars resolve to plain values; passing doc as the
-    // schema/context is required by yaml@2.
+    // Same ref already present. Use the live doc's toJS so the sub-map's
+    // scalars resolve to plain values; passing doc as the schema/context
+    // is required by yaml@2.
     const itemJs = item.toJS(doc) as { options?: FeatureOptions };
     const existingJs = itemJs.options ?? {};
-    if (JSON.stringify(existingJs) === JSON.stringify(mergedOptions)) {
+
+    if (opts.isPreset) {
+      // Additive sub-tool merge — booleans OR, so a sibling never gets
+      // switched off by adding another tool.
+      const merged = withHints(mergeFeatureOptions(existingJs, options));
+      if (JSON.stringify(existingJs) === JSON.stringify(merged)) {
+        return false;
+      }
+      item.set('options', merged);
+      return true;
+    }
+
+    // Plain feature / raw ref: overwrite-protected.
+    if (JSON.stringify(existingJs) === JSON.stringify(withHints(options))) {
       return false;
     }
     throw new Error(
       `Feature ${label} is already configured with different options. Remove it first (\`monoceros remove-feature ${label}\`) before re-adding.`,
     );
   }
+  const mergedOptions = withHints(options);
   const entry = new YAMLMap();
   entry.set('ref', ref);
   if (Object.keys(mergedOptions).length > 0) {

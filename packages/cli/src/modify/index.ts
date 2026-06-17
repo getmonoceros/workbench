@@ -698,11 +698,15 @@ export async function runAddFeature(
     ...resolved.defaultOptions,
     ...(input.options ?? {}),
   };
-  // Hand the user's typed form (short-name or full ref) to the AST
-  // mutator so any error message it produces echoes the form the
-  // builder is using rather than always the resolved OCI ref.
+  // A sub-tool selector (`atlassian/twg`) merges additively into an
+  // already-present entry; a plain feature / raw ref keeps the
+  // overwrite-protected behavior. `raw` is the form the builder typed,
+  // echoed in the conflict error so the remove-feature hint matches.
   const result = await mutate(input, (doc) =>
-    addFeatureToDoc(doc, resolved.ref, merged, raw),
+    addFeatureToDoc(doc, resolved.ref, merged, {
+      isPreset: resolved.isPreset,
+      displayName: raw,
+    }),
   );
 
   // Seed the feature's credential vars into <name>.env (the same
@@ -743,13 +747,19 @@ export async function runAddFeature(
  * entry; the entry's `options` (if any) become the default option
  * values the caller's `--` overrides apply on top of. Unknown short
  * names produce an error that lists the available features.
+ *
+ * `isPreset` marks a sub-tool selector (`atlassian/twg`) as opposed to a
+ * bare feature (`atlassian`, `claude`) or a raw OCI ref. Only a preset
+ * merges additively into an already-present entry; the rest keep the
+ * overwrite-protected behavior (re-adding with different options errors).
  */
 async function resolveFeatureRefOrShortname(input: string): Promise<{
   ref: string;
   defaultOptions: FeatureOptions;
+  isPreset: boolean;
 }> {
   if (REGEX.featureRef.test(input)) {
-    return { ref: input, defaultOptions: {} };
+    return { ref: input, defaultOptions: {}, isPreset: false };
   }
   const catalog = await loadComponentCatalog();
   const component = catalog.get(input);
@@ -792,9 +802,12 @@ async function resolveFeatureRefOrShortname(input: string): Promise<{
     );
   }
   const [first] = features;
+  // `base/preset` selectors carry a `/`; a bare selector does not (a raw
+  // OCI ref with slashes is handled above).
   return {
     ref: first!.ref,
     defaultOptions: { ...(first!.options ?? {}) },
+    isPreset: input.includes('/'),
   };
 }
 

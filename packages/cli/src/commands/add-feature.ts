@@ -9,7 +9,7 @@ export const addFeatureCommand = defineCommand({
     name: 'add-feature',
     group: 'edit',
     description:
-      'Add a devcontainer feature by ref to the container config. Options follow `--` as `key=value` pairs. Idempotent (same ref + same options is a no-op). Adding the same ref with different options is an error.',
+      'Add a devcontainer feature by ref to the container config. Options follow `--` as `key=value` pairs. Adding a sub-tool selector (e.g. `atlassian/forge`) to an already-present feature merges it in additively, keeping the other sub-tools on. A plain feature already present with different options is an error (remove + re-add to change it).',
   },
   args: {
     name: {
