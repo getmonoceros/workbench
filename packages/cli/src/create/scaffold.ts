@@ -20,6 +20,7 @@ import {
   serviceClientNpmPackages,
   serviceConnectionEnv,
   serviceDefersStart,
+  DEFERRED_SERVICE_PROFILE,
 } from './catalog.js';
 import type { CreateOptions } from './types.js';
 
@@ -1098,6 +1099,15 @@ export function buildComposeYaml(
     // so docker doesn't auto-mkdir them as root.
     lines.push(`  ${svc.name}:`);
     lines.push(`    image: ${svc.image}`);
+    // Deferred services (ADR 0025) carry a compose profile so the
+    // profile-less `devcontainer up` skips them; the host-side second wave
+    // brings them up with `--profile`. Without this, devcontainer-cli's
+    // `docker compose up -d` starts every (non-profiled) service in the
+    // first wave — before the repo clone — defeating the deferral.
+    if (serviceDefersStart(svc.name)) {
+      lines.push('    profiles:');
+      lines.push(`      - ${DEFERRED_SERVICE_PROFILE}`);
+    }
     // `user:` lets an image that runs as a fixed non-root uid write its
     // host bind-mounted data dir (the apply-created dir is owned by the
     // apply user; on native Linux the container uid can't write it and

@@ -385,6 +385,17 @@ export function knownServices(): string[] {
 }
 
 /**
+ * Compose profile assigned to deferred services so `devcontainer up`'s
+ * profile-less `docker compose up -d` does NOT start them (a profiled
+ * service is skipped unless its profile is active). The second wave brings
+ * them up with `--profile <this>`. This is the mechanism that actually
+ * holds back the first-wave start — `runServices` does not, because
+ * devcontainer-cli's compose `up` ignores it for which services boot.
+ * See ADR 0025.
+ */
+export const DEFERRED_SERVICE_PROFILE = 'monoceros-deferred';
+
+/**
  * Whether a service starts in the host-side second wave (after the
  * in-container clone) rather than together with the workspace. Resolved
  * by catalog name — `deferStart` is a hidden, descriptor-only attribute,

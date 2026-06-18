@@ -5,6 +5,7 @@ import { Writable } from 'node:stream';
 import { consola } from 'consola';
 import { type DockerExec } from '../proxy/index.js';
 import { createSecretMaskStream } from '../util/mask-secrets.js';
+import { DEFERRED_SERVICE_PROFILE } from '../create/catalog.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 
 export { type DockerExec, type DockerResult } from '../proxy/index.js';
@@ -281,17 +282,20 @@ export async function startDeferredServices(
   opts.logger?.info(
     `Starting deferred service(s): ${opts.services.join(', ')}…`,
   );
-  // `--quiet-pull`: a first apply pulls the service image here, and the
-  // per-layer download progress (hundreds of lines) would flood the
-  // terminal AFTER the main spinner has already finished. The flag keeps
-  // the summary lines (`<svc> Pulled`, `Container … Started`) and drops
-  // the byte-by-byte noise.
+  // `--profile`: the deferred services carry the DEFERRED_SERVICE_PROFILE
+  // in compose.yaml so `devcontainer up`'s profile-less `up` skipped them;
+  // we activate that profile here to bring them up. `--quiet-pull`: a first
+  // apply pulls the service image here, and the per-layer download progress
+  // (hundreds of lines) would flood the terminal AFTER the main spinner has
+  // already finished — the flag keeps the summary lines and drops the noise.
   return spawnFn(
     [
       '-f',
       composeFile,
       '-p',
       projectName,
+      '--profile',
+      DEFERRED_SERVICE_PROFILE,
       'up',
       '-d',
       '--quiet-pull',

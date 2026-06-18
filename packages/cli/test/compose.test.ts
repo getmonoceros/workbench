@@ -155,6 +155,8 @@ describe('compose actions', () => {
           composeFile,
           '-p',
           projectName,
+          '--profile',
+          'monoceros-deferred',
           'up',
           '-d',
           '--quiet-pull',

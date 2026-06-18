@@ -44,6 +44,21 @@ describe('deferred service start (ADR 0025)', () => {
     });
     expect(yaml).toContain('keycloak:');
     expect(yaml).toContain('command: "start-dev --import-realm"');
+    // Deferred services carry the compose profile so `devcontainer up`'s
+    // profile-less `up` skips them in the first wave (ADR 0025).
+    expect(yaml).toMatch(
+      /keycloak:[\s\S]*profiles:\s*\n\s*- monoceros-deferred/,
+    );
+  });
+
+  it('does NOT add a profile to an eager (non-deferred) service', () => {
+    const yaml = buildComposeYaml({
+      ...base,
+      runtimeVersion: '1.3.2',
+      services: [resolveService(expandCuratedService('postgres'))],
+    });
+    expect(yaml).toContain('postgres:');
+    expect(yaml).not.toContain('monoceros-deferred');
   });
 });
 

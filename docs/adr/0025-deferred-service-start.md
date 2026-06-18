@@ -62,16 +62,29 @@ the clone) has completed.
 
 Mechanism:
 
-1. The generated `devcontainer.json` lists only **non-deferred** services
-   under `runServices`. The deferred service is still defined in
-   `compose.yaml`, just not auto-started.
+1. The deferred service gets a **compose profile** (`monoceros-deferred`)
+   in the generated `compose.yaml`. `devcontainer up` runs a profile-less
+   `docker compose up -d`, and Compose **skips** a service whose profile is
+   not active — so the deferred service does not boot in the first wave.
+   It is also left out of the devcontainer.json `runServices`.
 2. After `runContainerCycle` returns in `runApply` (an existing seam),
-   Monoceros runs `docker compose -p <project> up -d <deferred services>`.
-   Compose is additive, so this joins the deferred service to the same
-   project the devcontainer-cli created.
+   Monoceros runs `docker compose -p <project> --profile monoceros-deferred
+up -d <deferred services>` — activating the profile brings them up, joined
+   to the same project the devcontainer-cli created.
 3. The same two-wave logic applies to `monoceros start`. (On a restart
    the cloned files already exist on disk, so the deferral is harmless
    but no longer strictly necessary; keeping it uniform is simplest.)
+
+> **Why a profile, not just `runServices`** (lesson from the first e2e
+> run): excluding the service from `runServices` does **not** hold it
+> back. `@devcontainers/cli` brings the compose project up with a bare
+> `docker compose up -d` (no service list), which starts **every**
+> non-profiled service regardless of `runServices`. The deferred service
+> booted in the first wave anyway — before the clone — so it imported no
+> realm AND tripped the ADR 0012 trap (Docker pre-created its bind-mount
+> source dir, and the post-create clone guard then skipped the clone). A
+> compose profile is the only thing that reliably keeps `docker compose
+up` from starting it.
 
 `deferStart` is a **descriptor-only, hidden** field for now: it lives in
 the service descriptor's `service:` block (`ServiceBlockSchema`, ADR 0020)
