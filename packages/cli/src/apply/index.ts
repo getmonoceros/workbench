@@ -655,6 +655,38 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       logger: internalLogger,
     });
 
+    // Second wave (ADR 0025): bring up services deferred out of the initial
+    // `devcontainer up` now that post-create (the clone) has run — as a
+    // spinner phase BEFORE "container ready", part of the same activity, not
+    // a separate line after it. Compose output goes to the log (off-screen
+    // in spinner mode). A failure is surfaced but does not flip the result.
+    if (exitCode === 0) {
+      const deferred = createOpts.services
+        .filter((s) => serviceDefersStart(s.name))
+        .map((s) => s.name);
+      if (deferred.length > 0) {
+        if (progress) progress.setPhase('starting services…');
+        try {
+          const deferExit = await startDeferredServices({
+            root: targetDir,
+            services: deferred,
+            logSink: applyLog.sink,
+            silent: progress !== null,
+            logger: internalLogger,
+          });
+          if (deferExit !== 0) {
+            containerLogger.warn?.(
+              `Deferred service(s) ${deferred.join(', ')} did not start cleanly (exit ${deferExit}). The workspace is up; bring them up with \`monoceros start ${opts.name}\`.`,
+            );
+          }
+        } catch (err) {
+          containerLogger.warn?.(
+            `Could not start deferred service(s) ${deferred.join(', ')}: ${err instanceof Error ? err.message : String(err)}. The workspace is up.`,
+          );
+        }
+      }
+    }
+
     // Stop the spinner and surface the outcome. In spinner mode the
     // failure path also prints the captured tail (~15 last lines of the
     // devcontainer-cli stream) so the builder sees the actual error
@@ -679,39 +711,6 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     // line that used to print above the spinner. Mirrored into the log
     // file with ANSI escapes stripped so `cat …apply-….log` stays
     // readable.
-    // Second wave (ADR 0025): start services deferred out of the initial
-    // `devcontainer up`, now that post-create (the repo clone) has run, so a
-    // service bind-mounting a cloned repo file (e.g. Keycloak's realm.json)
-    // finds it present at boot. Best-effort: a failure here is surfaced as a
-    // warning but does NOT flip the apply result — the workspace itself is up.
-    if (exitCode === 0) {
-      const deferred = createOpts.services
-        .filter((s) => serviceDefersStart(s.name))
-        .map((s) => s.name);
-      if (deferred.length > 0) {
-        try {
-          const deferExit = await startDeferredServices({
-            root: targetDir,
-            services: deferred,
-            logSink: applyLog.sink,
-            // Spinner mode (interactive): keep compose's raw container/pull
-            // lines in the log, not on screen. Verbose mode streams live.
-            silent: progress !== null,
-            logger: containerLogger,
-          });
-          if (deferExit !== 0) {
-            containerLogger.warn?.(
-              `Deferred service(s) ${deferred.join(', ')} did not start cleanly (exit ${deferExit}). The workspace is up; bring them up with \`monoceros start ${opts.name}\` or \`docker compose up -d\`.`,
-            );
-          }
-        } catch (err) {
-          containerLogger.warn?.(
-            `Could not start deferred service(s) ${deferred.join(', ')}: ${err instanceof Error ? err.message : String(err)}. The workspace is up.`,
-          );
-        }
-      }
-    }
-
     if (exitCode === 0) {
       const summaryLines = buildApplySummary(createOpts);
       if (summaryLines.length > 0) {
