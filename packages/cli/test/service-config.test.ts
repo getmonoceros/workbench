@@ -66,6 +66,25 @@ describe('expandCuratedService / isCuratedService', () => {
     });
   });
 
+  it('expands keycloak with a command + admin env, no volumes/healthcheck (ADR 0025)', () => {
+    expect(serviceDefersStart('keycloak')).toBe(true);
+    const svc = expandCuratedService('keycloak');
+    expect(svc.image).toBe('quay.io/keycloak/keycloak:26.6');
+    expect(svc.command).toBe('start-dev --import-realm');
+    expect(svc.env).toEqual({
+      KC_BOOTSTRAP_ADMIN_USERNAME: '${KC_BOOTSTRAP_ADMIN_USERNAME}',
+      KC_BOOTSTRAP_ADMIN_PASSWORD: '${KC_BOOTSTRAP_ADMIN_PASSWORD}',
+    });
+    expect(svc.connectionEnv?.URL).toBe('http://${host}:${port}');
+    expect(svc.connectionEnv?.USER).toBe('${KC_BOOTSTRAP_ADMIN_USERNAME}');
+    // No persistent data dir (ephemeral H2) and no healthcheck.
+    expect(svc.volumes).toBeUndefined();
+    expect(svc.healthcheck).toBeUndefined();
+    // `deferStart` is hidden — resolved by catalog lookup, never baked
+    // into the yml service object.
+    expect('deferStart' in svc).toBe(false);
+  });
+
   it('exposes literal env dev-defaults for .env seeding', () => {
     expect(curatedServiceEnvDefaults('postgres')).toEqual({
       POSTGRES_USER: 'monoceros',

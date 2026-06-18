@@ -14,6 +14,39 @@ const base: CreateOptions = {
   services: [],
 };
 
+describe('deferred service start (ADR 0025)', () => {
+  it('excludes a deferred service from runServices, keeps eager ones', () => {
+    const dc = buildDevcontainerJson({
+      ...base,
+      runtimeVersion: '1.3.2',
+      services: [
+        resolveService(expandCuratedService('postgres')),
+        resolveService(expandCuratedService('keycloak')),
+      ],
+    }) as { runServices?: string[] };
+    expect(dc.runServices).toEqual(['postgres']);
+  });
+
+  it('omits runServices entirely when every service is deferred', () => {
+    const dc = buildDevcontainerJson({
+      ...base,
+      runtimeVersion: '1.3.2',
+      services: [resolveService(expandCuratedService('keycloak'))],
+    }) as { runServices?: string[] };
+    expect(dc.runServices).toBeUndefined();
+  });
+
+  it('still defines the deferred service (with its command) in compose.yaml', () => {
+    const yaml = buildComposeYaml({
+      ...base,
+      runtimeVersion: '1.3.2',
+      services: [resolveService(expandCuratedService('keycloak'))],
+    });
+    expect(yaml).toContain('keycloak:');
+    expect(yaml).toContain('command: "start-dev --import-realm"');
+  });
+});
+
 describe('VS Code IDE-state volumes (ADR 0015)', () => {
   it('names unique extensions + userdata volumes per container, per IDE', () => {
     expect(ideStateVolumes('demo')).toEqual([

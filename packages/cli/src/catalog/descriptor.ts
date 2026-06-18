@@ -98,6 +98,13 @@ export type LanguageBlock = z.infer<typeof LanguageBlockSchema>;
 export const ServiceBlockSchema = z.object({
   image: z.string().min(1),
   defaultPort: z.number().int().positive().optional(),
+  /**
+   * Compose `command:` for the service container — the process to run
+   * instead of the image's default CMD. Baked into the expanded yml
+   * (visible + editable, unlike `deferStart`). E.g. Keycloak needs
+   * `start-dev --import-realm` because its image has no auto-start default.
+   */
+  command: z.string().optional(),
   dataMount: z.string().optional(),
   /**
    * Compose `user:` for the service container (e.g. `"0:0"`). Needed for

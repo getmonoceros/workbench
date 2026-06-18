@@ -114,12 +114,12 @@ the import mount (where it reads `realm.json`) and a `command`
   change. Only `apply` and `start` gain the two-wave logic.
 - The second-wave `compose up` runs host-side, where Monoceros has
   docker/compose access - no new privilege, no workspace-side docker.
-- Edge case to handle: if **every** service is deferred, `runServices`
-  is empty; `devcontainer up` then brings up only the workspace. Verify
-  the CLI tolerates an empty `runServices`.
-- A failure of the second-wave start should surface in the `apply`
-  outcome (whether it hard-fails the apply or warns like the Traefik
-  bookkeeping is a small follow-up decision at implementation time).
+- Edge case handled: if **every** service is deferred, `runServices` is
+  omitted entirely, so `devcontainer up` brings up only the workspace
+  (covered by a scaffold test).
+- A failure of the second-wave start is surfaced as a **warning** and
+  does **not** flip the apply/start result - the workspace itself is up,
+  and the builder can retry the deferred service with `monoceros start`.
 
 ## Rejected alternatives
 

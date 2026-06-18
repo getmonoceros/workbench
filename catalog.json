@@ -99,6 +99,27 @@
   ],
   "services": [
     {
+      "name": "keycloak",
+      "displayName": "Keycloak",
+      "description": "Keycloak identity & access management (OAuth2 / OpenID Connect / SAML) for local dev. Reachable in-container as host `keycloak`. Starts in dev mode and imports realm JSON from a repo you mount; see the usage notes.",
+      "options": [
+        {
+          "key": "KC_BOOTSTRAP_ADMIN_PASSWORD",
+          "type": "string",
+          "surface": "env",
+          "default": "admin"
+        },
+        {
+          "key": "KC_BOOTSTRAP_ADMIN_USERNAME",
+          "type": "string",
+          "surface": "env",
+          "default": "admin"
+        }
+      ],
+      "documentationURL": "https://www.keycloak.org/",
+      "defaultPort": 8080
+    },
+    {
       "name": "mailpit",
       "displayName": "Mailpit",
       "description": "SMTP catcher for local dev — apps send mail to it and nothing leaves the machine. SMTP on `mailpit:1025`; web UI + API on 8025 (reach via `monoceros tunnel <name> mailpit:8025`).",

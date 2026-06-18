@@ -1,0 +1,41 @@
+id: keycloak
+category: service
+displayName: Keycloak
+description: 'Keycloak identity & access management (OAuth2 / OpenID Connect / SAML) for local dev. Reachable in-container as host `keycloak`. Starts in dev mode and imports realm JSON from a repo you mount; see the usage notes.'
+documentationURL: https://www.keycloak.org/
+service:
+  image: quay.io/keycloak/keycloak:26.6
+  defaultPort: 8080
+  # Dev mode + realm import. The Keycloak image has no auto-start default,
+  # so a command is mandatory. `--import-realm` reads every *.json from
+  # /opt/keycloak/data/import at startup (a no-op if the dir is empty).
+  command: start-dev --import-realm
+  # Starts in a host-side second wave AFTER the repo clone (ADR 0025), so a
+  # mounted realm.json / theme from the project is present at boot. No
+  # dataMount: the dev H2 database is ephemeral and re-seeds from the
+  # mounted realm JSON on every apply. No healthcheck: the service is not
+  # in runServices (nothing gates on it) and the image ships no curl.
+  deferStart: true
+  connectionEnv:
+    URL: http://${host}:${port}
+    HOST: ${host}
+    PORT: ${port}
+    USER: ${KC_BOOTSTRAP_ADMIN_USERNAME}
+    PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+options:
+  KC_BOOTSTRAP_ADMIN_USERNAME:
+    type: string
+    default: admin
+    surface: env
+  KC_BOOTSTRAP_ADMIN_PASSWORD:
+    type: string
+    default: admin
+    surface: env
+usageNotes:
+  - 'Realm import: keep your realm export(s) in the repo and bind-mount them into `/opt/keycloak/data/import`. Add an entry to the service `volumes:`, e.g. `projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro`. With no mount, Keycloak starts with an empty realm.'
+  - 'Multiple realms from different projects: one file-mount per realm to a distinct target name (two directories cannot mount onto the same target). Keycloak imports every *.json in the import dir.'
+  - 'Custom theme: bind-mount it into `/opt/keycloak/themes/<name>`, e.g. `projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>`, then set `loginTheme`/`accountTheme` to `<name>` in the realm. In dev mode themes are not cached, so edits show on reload.'
+  - 'Paths are relative to the container root (`projects/<app>/...`); Monoceros resolves the bind source for you. Do not turn off the deferred start while mounting a repo file - the file would not exist at boot.'
+  - 'Import is one-way: admin-UI changes live in the Keycloak database, not the file. To keep them, export the realm and overwrite the committed JSON.'
+briefing:
+  - text: 'Keycloak (identity & access management) runs as service `keycloak`. Reach it at `$KEYCLOAK_URL` (admin user `$KEYCLOAK_USER` / `$KEYCLOAK_PASSWORD`). Realms come from JSON files the project mounts into `/opt/keycloak/data/import`; the database is ephemeral and re-seeds from them on each apply.'

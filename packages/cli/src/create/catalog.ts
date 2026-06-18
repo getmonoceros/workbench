@@ -300,6 +300,12 @@ export interface ServiceEntry {
    */
   client?: Readonly<{ apt?: readonly string[]; npm?: readonly string[] }>;
   /**
+   * Compose `command:` baked into the expanded yml (visible + editable).
+   * The process to run instead of the image's default CMD, e.g. Keycloak's
+   * `start-dev --import-realm`. See descriptor.ts.
+   */
+  command?: string;
+  /**
    * Start this service in a host-side SECOND WAVE, after `devcontainer up`
    * (and the in-container clone) has finished, rather than together with
    * the workspace. For services that bind-mount a file from a cloned repo
@@ -355,6 +361,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
             : {}),
           ...(svc.connectionEnv ? { connectionEnv: svc.connectionEnv } : {}),
           ...(svc.client ? { client: svc.client } : {}),
+          ...(svc.command ? { command: svc.command } : {}),
           ...(svc.deferStart ? { deferStart: true } : {}),
         };
         return [key, entry];
@@ -437,6 +444,7 @@ export function expandCuratedService(name: string): ServiceObject {
       : {}),
     ...(def.dataMount ? { volumes: [`data:${def.dataMount}`] } : {}),
     ...(def.user ? { user: def.user } : {}),
+    ...(def.command ? { command: def.command } : {}),
     ...(def.healthcheck ? { healthcheck: def.healthcheck } : {}),
     // Bake the connection-env templates into the yml (suffix → template) so
     // they travel with the service: a renamed/duplicated instance keeps them,
