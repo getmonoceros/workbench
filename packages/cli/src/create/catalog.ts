@@ -306,6 +306,13 @@ export interface ServiceEntry {
    */
   command?: string;
   /**
+   * Example bind-mounts rendered as a COMMENTED `volumes:` scaffold in the
+   * generated yml (not active volumes). For services that need a project
+   * file the catalog can't path-resolve, e.g. Keycloak's realm.json.
+   * See descriptor.ts.
+   */
+  exampleVolumes?: readonly string[];
+  /**
    * Start this service in a host-side SECOND WAVE, after `devcontainer up`
    * (and the in-container clone) has finished, rather than together with
    * the workspace. For services that bind-mount a file from a cloned repo
@@ -362,6 +369,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
           ...(svc.connectionEnv ? { connectionEnv: svc.connectionEnv } : {}),
           ...(svc.client ? { client: svc.client } : {}),
           ...(svc.command ? { command: svc.command } : {}),
+          ...(svc.exampleVolumes ? { exampleVolumes: svc.exampleVolumes } : {}),
           ...(svc.deferStart ? { deferStart: true } : {}),
         };
         return [key, entry];
@@ -385,6 +393,15 @@ export function knownServices(): string[] {
  */
 export function serviceDefersStart(name: string): boolean {
   return SERVICE_CATALOG[name]?.deferStart === true;
+}
+
+/**
+ * Example bind-mounts for a curated service, rendered as a commented
+ * `volumes:` scaffold in the generated yml (see init/service-doc.ts).
+ * Empty for services without any. Looked up by catalog name.
+ */
+export function curatedServiceExampleVolumes(name: string): readonly string[] {
+  return SERVICE_CATALOG[name]?.exampleVolumes ?? [];
 }
 
 /**

@@ -8,9 +8,14 @@ import {
 import {
   DEFAULT_RUNTIME_VERSION,
   expandCuratedService,
+  curatedServiceExampleVolumes,
   LANGUAGE_CATALOG,
 } from '../create/catalog.js';
-import { renderCustomService, renderServiceObjectBody } from './service-doc.js';
+import {
+  exampleVolumesComment,
+  renderCustomService,
+  renderServiceObjectBody,
+} from './service-doc.js';
 import { GIT_IDENTITY_VAR } from '../config/env-file.js';
 
 /**
@@ -235,6 +240,12 @@ export function generateDocumentedYml(
         const body = renderServiceObjectBody(expandCuratedService(svc));
         lines.push(`#   - ${body[0]}`);
         for (const line of body.slice(1)) lines.push(`#     ${line}`);
+        const exComment = exampleVolumesComment(
+          curatedServiceExampleVolumes(svc),
+        );
+        if (exComment) {
+          for (const cl of exComment.split('\n')) lines.push(`#    ${cl}`);
+        }
       }
     }
     lines.push('');
@@ -346,6 +357,12 @@ function pushServiceEntry(out: string[], svc: InitService): void {
   const body = renderServiceObjectBody(expandCuratedService(svc.name));
   out.push(`  - ${body[0]}`);
   for (const line of body.slice(1)) out.push(`    ${line}`);
+  const exComment = exampleVolumesComment(
+    curatedServiceExampleVolumes(svc.name),
+  );
+  if (exComment) {
+    for (const cl of exComment.split('\n')) out.push(`    #${cl}`);
+  }
 }
 
 const FEATURES_HEADER_ACTIVE =

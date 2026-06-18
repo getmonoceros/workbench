@@ -16,6 +16,11 @@ service:
   # mounted realm JSON on every apply. No healthcheck: the service is not
   # in runServices (nothing gates on it) and the image ships no curl.
   deferStart: true
+  # Rendered as a COMMENTED volumes: scaffold in the yml (the catalog
+  # can't know your repo path). Uncomment + edit to mount realm/theme.
+  exampleVolumes:
+    - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro
+    - projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>
   connectionEnv:
     URL: http://${host}:${port}
     HOST: ${host}

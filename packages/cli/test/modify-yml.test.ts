@@ -168,6 +168,30 @@ describe('add-*/remove-* against the yml', () => {
     expect(env).toContain('POSTGRES_DB=monoceros');
   });
 
+  it('runAddService keycloak: deferred command + commented volumes scaffold (ADR 0025)', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const result = await runAddService({
+      ...baseOpts,
+      name: 'demo',
+      service: 'keycloak',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('- name: keycloak');
+    expect(yml).toContain('command: start-dev --import-realm');
+    // The example volumes ride as a COMMENTED scaffold — the `volumes:` key
+    // is commented too, because an active but empty `volumes:` parses to
+    // null and apply rejects it.
+    expect(yml).toMatch(/#\s*volumes:/);
+    expect(yml).toContain('/opt/keycloak/data/import/<app>.json:ro');
+    expect(yml).toContain('/opt/keycloak/themes/<app>');
+    // No active (null) volumes key leaked in — the yml still validates.
+    const { validateConfig } = await import('../src/config/schema.js');
+    const { parse } = await import('yaml');
+    expect(() => validateConfig(parse(yml))).not.toThrow();
+  });
+
   it('runAddService scaffolds a custom image with name + commented hints', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     const result = await runAddService({

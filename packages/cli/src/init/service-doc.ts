@@ -95,6 +95,25 @@ export function renderCustomService(
 }
 
 /**
+ * A commented `volumes:` scaffold for a curated service that ships example
+ * bind-mounts (e.g. Keycloak's realm.json / theme). Returned as a comment
+ * string (no leading `#` — the caller / serializer adds it), the same shape
+ * as renderCustomService's `comment`. The `volumes:` key is commented too:
+ * an active but empty `volumes:` parses to null and `apply` rejects it, so
+ * the whole block stays commented until the builder uncomments + edits.
+ * Returns `undefined` when there are no example volumes.
+ */
+export function exampleVolumesComment(
+  exampleVolumes: readonly string[],
+): string | undefined {
+  if (exampleVolumes.length === 0) return undefined;
+  return [
+    ' volumes:                   # uncomment + edit to mount your realm/theme',
+    ...exampleVolumes.map((v) => `   - ${v}`),
+  ].join('\n');
+}
+
+/**
  * One-line builder-facing hint printed after a custom service is added,
  * pointing at the commented scaffold the builder needs to fill in.
  */

@@ -9,7 +9,9 @@ import {
   serviceClientAptPackages,
   serviceClientNpmPackages,
   serviceDefersStart,
+  curatedServiceExampleVolumes,
 } from '../src/create/catalog.js';
+import { exampleVolumesComment } from '../src/init/service-doc.js';
 import { buildComposeYaml } from '../src/create/scaffold.js';
 import {
   parseEnvFile,
@@ -83,6 +85,27 @@ describe('expandCuratedService / isCuratedService', () => {
     // `deferStart` is hidden — resolved by catalog lookup, never baked
     // into the yml service object.
     expect('deferStart' in svc).toBe(false);
+    // Example bind-mounts are likewise NOT active volumes — they render as
+    // a commented scaffold, so the expanded object has no `volumes`.
+    expect('exampleVolumes' in svc).toBe(false);
+  });
+
+  it('exposes keycloak example volumes as a commented scaffold, not active (ADR 0025)', () => {
+    const ex = curatedServiceExampleVolumes('keycloak');
+    expect(ex).toEqual([
+      'projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro',
+      'projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>',
+    ]);
+    // ordinary services ship none
+    expect(curatedServiceExampleVolumes('postgres')).toEqual([]);
+    // the comment block comments the `volumes:` key itself (an active
+    // empty volumes: would parse to null and apply would reject it)
+    const comment = exampleVolumesComment(ex);
+    expect(comment).toMatch(/^ volumes:/);
+    expect(comment).toContain(
+      '   - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro',
+    );
+    expect(exampleVolumesComment([])).toBeUndefined();
   });
 
   it('exposes literal env dev-defaults for .env seeding', () => {
