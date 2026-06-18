@@ -693,6 +693,10 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
           const deferExit = await startDeferredServices({
             root: targetDir,
             services: deferred,
+            logSink: applyLog.sink,
+            // Spinner mode (interactive): keep compose's raw container/pull
+            // lines in the log, not on screen. Verbose mode streams live.
+            silent: progress !== null,
             logger: containerLogger,
           });
           if (deferExit !== 0) {

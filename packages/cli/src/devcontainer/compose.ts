@@ -30,6 +30,39 @@ export const spawnDockerCompose: ComposeSpawn = (args, cwd) => {
   });
 };
 
+// A `docker compose` spawn that routes the (secret-masked) output to a
+// log sink, and to the screen only when not silent. Used for the deferred
+// second wave (ADR 0025): in the apply spinner UI its raw container/pull
+// lines would litter the screen after "container ready" — they belong in
+// the log file, like the main devcontainer-cli stream (ADR 0013). In
+// verbose mode (no spinner) silent is false, so it streams live as usual.
+function spawnDockerComposeTo(opts: {
+  logSink?: NodeJS.WritableStream;
+  silent?: boolean;
+}): ComposeSpawn {
+  return (args, cwd) =>
+    new Promise((resolve, reject) => {
+      const child = spawn('docker', ['compose', ...args], {
+        cwd,
+        stdio: ['inherit', 'pipe', 'pipe'],
+      });
+      const route = (
+        src: NodeJS.ReadableStream | null,
+        screen: NodeJS.WriteStream,
+      ): void => {
+        if (!src) return;
+        src.pipe(createSecretMaskStream()).on('data', (chunk: Buffer) => {
+          opts.logSink?.write(chunk);
+          if (!opts.silent) screen.write(chunk);
+        });
+      };
+      route(child.stdout, process.stdout);
+      route(child.stderr, process.stderr);
+      child.on('error', reject);
+      child.on('exit', (code) => resolve(code ?? 0));
+    });
+}
+
 // Direct invocation of `docker <args>` with no shell wrapper.
 // BOTH stdout and stderr are buffered, never live-streamed: the
 // cleanup pipeline routinely runs docker calls that are expected to
@@ -261,6 +294,10 @@ export interface DeferredStartOptions {
   /** Service names to bring up in the second wave (ADR 0025). */
   services: string[];
   spawn?: ComposeSpawn;
+  /** Tee the compose output here (the apply log). */
+  logSink?: NodeJS.WritableStream;
+  /** Keep the compose output off the screen (spinner mode); it still goes to logSink. */
+  silent?: boolean;
   logger?: { info: (message: string) => void };
 }
 
@@ -278,7 +315,15 @@ export async function startDeferredServices(
 ): Promise<number> {
   if (opts.services.length === 0) return 0;
   const { composeFile, projectName } = resolveCompose(opts.root);
-  const spawnFn = opts.spawn ?? spawnDockerCompose;
+  // Route the raw container/pull lines to the log (off-screen in spinner
+  // mode); the one status line below is all the screen needs. A test-
+  // injected spawn wins (and ignores the sink).
+  const spawnFn =
+    opts.spawn ??
+    spawnDockerComposeTo({
+      ...(opts.logSink ? { logSink: opts.logSink } : {}),
+      ...(opts.silent ? { silent: true } : {}),
+    });
   opts.logger?.info(
     `Starting deferred service(s): ${opts.services.join(', ')}…`,
   );
