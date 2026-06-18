@@ -8,3 +8,8 @@ pnpm-lock.yaml
 # Generated artifact — `pnpm --filter @getmonoceros/workbench catalog:json`
 # owns its format (JSON.stringify 2-space). Keep prettier from fighting it.
 catalog.json
+
+# Hand-authored skill content (SKILL.md). It is prose/instructions read by
+# Claude, and its bytes must match the published zip; don't let prettier reflow
+# it (that would force a needless re-zip + web redeploy on every format pass).
+skills/

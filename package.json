@@ -18,7 +18,8 @@
     "cli": "pnpm --filter @getmonoceros/workbench start",
     "image:build": "docker build -t monoceros-runtime:dev images/runtime",
     "image:rebuild": "docker build --no-cache -t monoceros-runtime:dev images/runtime",
-    "sandbox:reset": "bash scripts/sandbox-reset.sh"
+    "sandbox:reset": "bash scripts/sandbox-reset.sh",
+    "skill:zip": "rm -f skills/monoceros-guide.zip && (cd skills && zip -rX monoceros-guide.zip monoceros-guide -x '*.DS_Store')"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",

@@ -57,6 +57,11 @@ components/features/*/devcontainer-feature.json
 # Anything under here is owner-only and stays out of the OSS repo.
 docs/private/
 
+# Built skill bundle - produced by `pnpm skill:zip` from skills/<name>/ and
+# copied by hand into monoceros-web/public/. The source is committed; the zip
+# is a throwaway build artifact, not version-controlled.
+skills/*.zip
+
 # Machine-local Claude Code files — owner-only, never in the OSS repo:
 # the auto-loaded local memory pointer (points at sibling repos checked
 # out only on this machine), the preview-tool launch shim, and personal
