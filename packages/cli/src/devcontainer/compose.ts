@@ -281,8 +281,22 @@ export async function startDeferredServices(
   opts.logger?.info(
     `Starting deferred service(s): ${opts.services.join(', ')}…`,
   );
+  // `--quiet-pull`: a first apply pulls the service image here, and the
+  // per-layer download progress (hundreds of lines) would flood the
+  // terminal AFTER the main spinner has already finished. The flag keeps
+  // the summary lines (`<svc> Pulled`, `Container … Started`) and drops
+  // the byte-by-byte noise.
   return spawnFn(
-    ['-f', composeFile, '-p', projectName, 'up', '-d', ...opts.services],
+    [
+      '-f',
+      composeFile,
+      '-p',
+      projectName,
+      'up',
+      '-d',
+      '--quiet-pull',
+      ...opts.services,
+    ],
     opts.root,
   );
 }

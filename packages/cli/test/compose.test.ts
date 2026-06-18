@@ -157,6 +157,7 @@ describe('compose actions', () => {
           projectName,
           'up',
           '-d',
+          '--quiet-pull',
           'keycloak',
           'authz',
         ],
