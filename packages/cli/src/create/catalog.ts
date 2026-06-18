@@ -299,6 +299,14 @@ export interface ServiceEntry {
    * `mongosh`.
    */
   client?: Readonly<{ apt?: readonly string[]; npm?: readonly string[] }>;
+  /**
+   * Start this service in a host-side SECOND WAVE, after `devcontainer up`
+   * (and the in-container clone) has finished, rather than together with
+   * the workspace. For services that bind-mount a file from a cloned repo
+   * (Keycloak realm.json, …). Hidden / descriptor-only: not a yml field,
+   * resolved here by name via `serviceDefersStart`. See ADR 0025.
+   */
+  deferStart?: boolean;
 }
 
 // The `monoceros` user/password/db below are deliberate dev-only
@@ -347,6 +355,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
             : {}),
           ...(svc.connectionEnv ? { connectionEnv: svc.connectionEnv } : {}),
           ...(svc.client ? { client: svc.client } : {}),
+          ...(svc.deferStart ? { deferStart: true } : {}),
         };
         return [key, entry];
       }),
@@ -358,6 +367,17 @@ export function knownLanguages(): string[] {
 
 export function knownServices(): string[] {
   return Object.keys(SERVICE_CATALOG).sort();
+}
+
+/**
+ * Whether a service starts in the host-side second wave (after the
+ * in-container clone) rather than together with the workspace. Resolved
+ * by catalog name — `deferStart` is a hidden, descriptor-only attribute,
+ * so a renamed instance (yml `name` ≠ catalog id) is treated as
+ * non-deferred. See ADR 0025.
+ */
+export function serviceDefersStart(name: string): boolean {
+  return SERVICE_CATALOG[name]?.deferStart === true;
 }
 
 /**

@@ -3,7 +3,8 @@ import { consola } from 'consola';
 import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
 import { readConfig } from '../config/io.js';
 import { containerConfigPath, containerDir } from '../config/paths.js';
-import { runStart } from '../devcontainer/compose.js';
+import { runStart, startDeferredServices } from '../devcontainer/compose.js';
+import { serviceDefersStart } from '../create/catalog.js';
 import { OPEN_TOOLS, runOpen } from '../open/index.js';
 import { ensureProxy } from '../proxy/index.js';
 import { preflightHostPort } from '../proxy/port-check.js';
@@ -38,6 +39,11 @@ export const startCommand = defineCommand({
       // call when the proxy is already up. See ADR 0007.
       let needsProxy = false;
       let hostPort = 80;
+      // Services deferred out of the initial `devcontainer up` (ADR 0025),
+      // resolved by catalog name from the yml. Brought up in a second wave
+      // after `runStart` so a service bind-mounting a cloned repo file finds
+      // it present at boot.
+      let deferred: string[] = [];
       try {
         const parsed = await readConfig(containerConfigPath(args.name));
         if ((parsed.config.routing?.ports ?? []).length > 0) {
@@ -45,6 +51,9 @@ export const startCommand = defineCommand({
           const global = await readMonocerosConfig();
           hostPort = proxyHostPort(global);
         }
+        deferred = (parsed.config.services ?? [])
+          .filter((s) => serviceDefersStart(s.name))
+          .map((s) => s.name);
       } catch (err) {
         consola.warn(
           `Could not read container yml ahead of start: ${err instanceof Error ? err.message : String(err)}. Skipping Traefik pre-flight.`,
@@ -55,6 +64,26 @@ export const startCommand = defineCommand({
         await ensureProxy({ hostPort });
       }
       const exitCode = await runStart({ root: containerDir(args.name) });
+      // Second wave (ADR 0025): start deferred services after the workspace
+      // is up. Best-effort — a failure is surfaced but the start result stands.
+      if (exitCode === 0 && deferred.length > 0) {
+        try {
+          const deferExit = await startDeferredServices({
+            root: containerDir(args.name),
+            services: deferred,
+            logger: consola,
+          });
+          if (deferExit !== 0) {
+            consola.warn(
+              `Deferred service(s) ${deferred.join(', ')} did not start cleanly (exit ${deferExit}).`,
+            );
+          }
+        } catch (err) {
+          consola.warn(
+            `Could not start deferred service(s) ${deferred.join(', ')}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
       // `--open` is a convenience on top of a successful start. A failure
       // here (editor not found, etc.) must not mask the start result, so
       // it surfaces as a warning and the start's exit code stands.

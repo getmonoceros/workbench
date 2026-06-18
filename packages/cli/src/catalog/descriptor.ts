@@ -138,6 +138,22 @@ export const ServiceBlockSchema = z.object({
     })
     .optional(),
   vscodeExtensions: z.array(z.string()).optional(),
+  /**
+   * Start this service in a SECOND WAVE, host-side, *after* `devcontainer
+   * up` (and thus the in-container repo clone in post-create) has
+   * finished — instead of together with the workspace at `compose up`.
+   * For a service that bind-mounts a file from a cloned repo (e.g.
+   * Keycloak's `realm.json`, a Postgres `init.sql`): the file does not
+   * exist at the normal parallel start, but is on disk by the time the
+   * second wave runs. See ADR 0025.
+   *
+   * Deliberately a HIDDEN, descriptor-only field: it is NOT exposed in the
+   * user-facing yml schema and not baked into the expanded service object.
+   * The start paths resolve it by catalog lookup on the service name
+   * (`serviceDefersStart`). Caveat: a deferred service is NOT reachable
+   * during the workspace's post-create.
+   */
+  deferStart: z.boolean().optional(),
 });
 export type ServiceBlock = z.infer<typeof ServiceBlockSchema>;
 

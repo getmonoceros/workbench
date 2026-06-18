@@ -10,6 +10,7 @@ import {
   runStart,
   runStatus,
   runStop,
+  startDeferredServices,
 } from '../src/devcontainer/compose.js';
 
 describe('resolveCompose', () => {
@@ -134,6 +135,57 @@ describe('compose actions', () => {
         spawn: async () => 0,
       }),
     ).rejects.toThrow(/No \.devcontainer\/ at/);
+  });
+
+  it('startDeferredServices brings the named services up -d in the project (ADR 0025)', async () => {
+    const calls: { args: string[]; cwd: string }[] = [];
+    const exitCode = await startDeferredServices({
+      root: solution,
+      services: ['keycloak', 'authz'],
+      spawn: async (args, cwd) => {
+        calls.push({ args, cwd });
+        return 0;
+      },
+    });
+    expect(exitCode).toBe(0);
+    expect(calls).toEqual([
+      {
+        args: [
+          '-f',
+          composeFile,
+          '-p',
+          projectName,
+          'up',
+          '-d',
+          'keycloak',
+          'authz',
+        ],
+        cwd: solution,
+      },
+    ]);
+  });
+
+  it('startDeferredServices is a no-op with no deferred services', async () => {
+    let called = false;
+    const exitCode = await startDeferredServices({
+      root: solution,
+      services: [],
+      spawn: async () => {
+        called = true;
+        return 0;
+      },
+    });
+    expect(exitCode).toBe(0);
+    expect(called).toBe(false);
+  });
+
+  it('startDeferredServices propagates the compose exit code', async () => {
+    const exitCode = await startDeferredServices({
+      root: solution,
+      services: ['keycloak'],
+      spawn: async () => 7,
+    });
+    expect(exitCode).toBe(7);
   });
 
   it('runStop issues `stop` and preserves volumes', async () => {

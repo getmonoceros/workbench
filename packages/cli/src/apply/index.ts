@@ -33,6 +33,7 @@ import { solutionConfigToCreateOptions } from '../config/transform.js';
 import {
   resolveRuntimeImage,
   runtimeSupportsSshAttach,
+  serviceDefersStart,
 } from '../create/catalog.js';
 import {
   type KeygenSpawn,
@@ -57,7 +58,11 @@ import {
 import { buildApplySummary, formatApplySummary } from './apply-summary.js';
 import { writeBriefing } from '../briefing/index.js';
 import { loadComponentCatalog } from '../init/components.js';
-import { type DockerExec, runContainerCycle } from '../devcontainer/compose.js';
+import {
+  type DockerExec,
+  runContainerCycle,
+  startDeferredServices,
+} from '../devcontainer/compose.js';
 import { resolveContainerImageId } from '../devcontainer/images.js';
 import {
   DEFAULT_UPGRADE_STALE_DAYS,
@@ -674,6 +679,35 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     // line that used to print above the spinner. Mirrored into the log
     // file with ANSI escapes stripped so `cat …apply-….log` stays
     // readable.
+    // Second wave (ADR 0025): start services deferred out of the initial
+    // `devcontainer up`, now that post-create (the repo clone) has run, so a
+    // service bind-mounting a cloned repo file (e.g. Keycloak's realm.json)
+    // finds it present at boot. Best-effort: a failure here is surfaced as a
+    // warning but does NOT flip the apply result — the workspace itself is up.
+    if (exitCode === 0) {
+      const deferred = createOpts.services
+        .filter((s) => serviceDefersStart(s.name))
+        .map((s) => s.name);
+      if (deferred.length > 0) {
+        try {
+          const deferExit = await startDeferredServices({
+            root: targetDir,
+            services: deferred,
+            logger: containerLogger,
+          });
+          if (deferExit !== 0) {
+            containerLogger.warn?.(
+              `Deferred service(s) ${deferred.join(', ')} did not start cleanly (exit ${deferExit}). The workspace is up; bring them up with \`monoceros start ${opts.name}\` or \`docker compose up -d\`.`,
+            );
+          }
+        } catch (err) {
+          containerLogger.warn?.(
+            `Could not start deferred service(s) ${deferred.join(', ')}: ${err instanceof Error ? err.message : String(err)}. The workspace is up.`,
+          );
+        }
+      }
+    }
+
     if (exitCode === 0) {
       const summaryLines = buildApplySummary(createOpts);
       if (summaryLines.length > 0) {

@@ -8,6 +8,7 @@ import {
   serviceConnectionEnv,
   serviceClientAptPackages,
   serviceClientNpmPackages,
+  serviceDefersStart,
 } from '../src/create/catalog.js';
 import { buildComposeYaml } from '../src/create/scaffold.js';
 import {
@@ -91,6 +92,21 @@ describe('deriveServiceName', () => {
     expect(deriveServiceName('postgres:16-alpine')).toBe('postgres');
     expect(deriveServiceName('ghcr.io/foo/Bar:1')).toBe('bar');
     expect(deriveServiceName('ghcr.io:5000/x/app')).toBe('app');
+  });
+});
+
+describe('serviceDefersStart (ADR 0025)', () => {
+  it('is false for an unknown / renamed service', () => {
+    expect(serviceDefersStart('not-a-catalog-service')).toBe(false);
+    expect(serviceDefersStart('my-renamed-keycloak')).toBe(false);
+  });
+
+  it('does not defer the ordinary infra services', () => {
+    // Deferral is opt-in per descriptor; backing stores must come up with
+    // the workspace so post-create (migrations/seeds) can reach them.
+    for (const svc of ['postgres', 'mysql', 'mongodb', 'redis']) {
+      expect(serviceDefersStart(svc)).toBe(false);
+    }
   });
 });
 

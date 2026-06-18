@@ -19,6 +19,7 @@ import {
   serviceClientAptPackages,
   serviceClientNpmPackages,
   serviceConnectionEnv,
+  serviceDefersStart,
 } from './catalog.js';
 import type { CreateOptions } from './types.js';
 
@@ -870,6 +871,13 @@ export function buildDevcontainerJson(
       : undefined;
 
   if (needsCompose(opts)) {
+    // Deferred services (ADR 0025) are left OUT of runServices so
+    // `devcontainer up` does not start them with the workspace; they come up
+    // host-side in a second wave after post-create (the clone) has run.
+    const eagerServices = opts.services
+      .filter((s) => !serviceDefersStart(s.name))
+      .map((s) => s.name);
+
     // Compose-mode: per-feature persistent home mounts go onto the
     // workspace service in compose.yaml (see buildComposeYaml). The
     // devcontainer.json just references compose. Network membership
@@ -879,9 +887,7 @@ export function buildDevcontainerJson(
       name: opts.name,
       dockerComposeFile: 'compose.yaml',
       service: 'workspace',
-      ...(opts.services.length > 0
-        ? { runServices: opts.services.map((s) => s.name) }
-        : {}),
+      ...(eagerServices.length > 0 ? { runServices: eagerServices } : {}),
       workspaceFolder: `/workspaces/${opts.name}`,
       remoteUser: 'node',
       forwardPorts: ports,

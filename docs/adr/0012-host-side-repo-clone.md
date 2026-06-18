@@ -17,6 +17,13 @@
 > it **before** `compose up` — remains open and should be solved
 > **container-side** (e.g. a clone init step in Compose that services
 > depend on via `depends_on`), not via the host. See backlog.md.
+>
+> **Resolved (2026-06-18) by [ADR 0025](0025-deferred-service-start.md):**
+> a per-service `deferStart` flag starts such a service in a second wave
+> _after_ the in-container clone has run, so the bind-mounted repo file
+> exists at its boot. The mechanism differs from the `depends_on` idea
+> sketched above (the clone is not a compose service), but it closes the
+> same gap.
 
 ---
 

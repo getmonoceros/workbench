@@ -255,6 +255,38 @@ async function runComposeAction(
   return spawnFn(['-f', composeFile, '-p', projectName, ...subArgs], opts.root);
 }
 
+export interface DeferredStartOptions {
+  root: string;
+  /** Service names to bring up in the second wave (ADR 0025). */
+  services: string[];
+  spawn?: ComposeSpawn;
+  logger?: { info: (message: string) => void };
+}
+
+/**
+ * Bring up services that were deliberately left out of the initial
+ * `devcontainer up` (ADR 0025) — the "second wave". Runs host-side AFTER
+ * `devcontainer up` has returned, i.e. after post-create (the repo clone)
+ * has finished, so a service that bind-mounts a cloned repo file finds it
+ * present at boot. The services are named explicitly so the already-running
+ * workspace container is untouched; `up -d` is a no-op for anything already
+ * up. A no-op (returns 0) when there are no deferred services.
+ */
+export async function startDeferredServices(
+  opts: DeferredStartOptions,
+): Promise<number> {
+  if (opts.services.length === 0) return 0;
+  const { composeFile, projectName } = resolveCompose(opts.root);
+  const spawnFn = opts.spawn ?? spawnDockerCompose;
+  opts.logger?.info(
+    `Starting deferred service(s): ${opts.services.join(', ')}…`,
+  );
+  return spawnFn(
+    ['-f', composeFile, '-p', projectName, 'up', '-d', ...opts.services],
+    opts.root,
+  );
+}
+
 export interface StartOptions {
   root: string;
   spawn?: DevcontainerSpawn;
