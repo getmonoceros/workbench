@@ -1231,17 +1231,38 @@ export function extractRepoHost(url: string): string | null {
 
 /**
  * Compute the deduped, sorted set of context-derived extension
- * recommendations for `opts`: one entry per curated service that
- * declares `vscodeExtensions` (e.g. a DB client when postgres/mysql/
- * redis is present), plus the host-specific extensions for each repo.
- * Feature-bound extensions are NOT included — features auto-install
- * their own via the manifest. See ADR 0016.
+ * recommendations for `opts`, aggregated across every curated component
+ * that declares `vscodeExtensions` — languages, services and features —
+ * plus the host-specific extensions for each repo. This is the one surface
+ * both attach modes (Dev-Containers and the SSH default, ADR 0022) read,
+ * so it must include features too (their manifest auto-install only fires
+ * on a Dev-Containers attach). See ADR 0016.
  */
 export function computeExtensionRecommendations(opts: CreateOptions): string[] {
   const recs = new Set<string>();
+  // Languages (ADR 0016): the curated language descriptor's recommended
+  // extensions (e.g. python → ms-python.*, go → golang.go).
+  for (const langSpec of opts.languages) {
+    const parsed = parseLanguageSpec(langSpec);
+    if (!parsed) continue;
+    for (const ext of LANGUAGE_CATALOG[parsed.name]?.vscodeExtensions ?? []) {
+      recs.add(ext);
+    }
+  }
+  // Services (e.g. a DB client when postgres/mysql/redis is present).
   for (const svc of opts.services) {
-    const catalogEntry = SERVICE_CATALOG[svc.name];
-    for (const ext of catalogEntry?.vscodeExtensions ?? []) {
+    for (const ext of SERVICE_CATALOG[svc.name]?.vscodeExtensions ?? []) {
+      recs.add(ext);
+    }
+  }
+  // Features: previously left out (they auto-install via the published
+  // manifest's customizations), but that only fires on a Dev-Containers
+  // attach — over the SSH-attach default (ADR 0022) it never runs. So we
+  // also recommend them here, the one surface both attach modes read.
+  for (const rawRef of Object.keys(opts.features ?? {})) {
+    const match = matchMonocerosFeature(rawRef);
+    const descriptor = match ? featureDescriptor(match.name) : undefined;
+    for (const ext of descriptor?.feature?.vscodeExtensions ?? []) {
       recs.add(ext);
     }
   }

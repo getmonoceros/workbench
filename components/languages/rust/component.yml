@@ -6,3 +6,4 @@ language:
   feature: ghcr.io/devcontainers/features/rust:1
   defaultVersion: latest
   versions: [latest, 1.87]
+  vscodeExtensions: [rust-lang.rust-analyzer]

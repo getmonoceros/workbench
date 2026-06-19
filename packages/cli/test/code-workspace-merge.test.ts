@@ -245,6 +245,36 @@ describe('computeExtensionRecommendations', () => {
     expect(recs).toEqual(['cweijan.vscode-database-client2']);
   });
 
+  it('recommends the curated extensions for a language (ADR 0016)', () => {
+    expect(
+      computeExtensionRecommendations(opts({ languages: ['python'] })),
+    ).toEqual(['ms-python.python', 'ms-python.vscode-pylance']);
+    expect(
+      computeExtensionRecommendations(opts({ languages: ['go'] })),
+    ).toEqual(['golang.go']);
+    // node ships no recommendation (native JS/TS support).
+    expect(
+      computeExtensionRecommendations(opts({ languages: ['node'] })),
+    ).toEqual([]);
+  });
+
+  it('lists both C# variants so VS Code and Codium each pick their own', () => {
+    expect(
+      computeExtensionRecommendations(opts({ languages: ['dotnet'] })),
+    ).toEqual(['ms-dotnettools.csharp', 'muhammad-sammy.csharp']);
+  });
+
+  it('recommends feature extensions too (no longer manifest-only, ADR 0016/0022)', () => {
+    const recs = computeExtensionRecommendations(
+      opts({
+        features: {
+          'ghcr.io/getmonoceros/monoceros-features/claude-code:1': {},
+        },
+      }),
+    );
+    expect(recs).toContain('anthropic.claude-code');
+  });
+
   it('recommends GitHub PR + Actions for a github repo, GitLab workflow for a gitlab repo', () => {
     const recs = computeExtensionRecommendations(
       opts({

@@ -6,6 +6,7 @@ language:
   feature: ghcr.io/devcontainers/features/java:1
   defaultVersion: latest
   versions: [latest, 21, 17, 11, 8]
+  vscodeExtensions: [vscjava.vscode-java-pack]
 options:
   installMaven:
     type: boolean

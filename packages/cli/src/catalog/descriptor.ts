@@ -91,6 +91,16 @@ export const LanguageBlockSchema = z.object({
    * (`versions: [latest, 21, 17]`) without quoting.
    */
   versions: z.array(z.coerce.string()).optional(),
+  /**
+   * VS Code extensions to *recommend* (not auto-install) when this language
+   * is present, written to the `.code-workspace` `extensions.recommendations`
+   * (ADR 0016). List every editor variant where editors diverge: VS Code and
+   * VSCodium each resolve recommendation IDs against their own registry (MS
+   * Marketplace / Open VSX) and silently skip what they can't find, so an
+   * ID that only exists for one editor is simply ignored by the other. E.g.
+   * `[ms-python.python, ms-python.vscode-pylance]` — Codium drops Pylance.
+   */
+  vscodeExtensions: z.array(z.string()).optional(),
 });
 export type LanguageBlock = z.infer<typeof LanguageBlockSchema>;
 

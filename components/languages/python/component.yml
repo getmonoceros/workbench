@@ -6,3 +6,6 @@ language:
   feature: ghcr.io/devcontainers/features/python:1
   defaultVersion: latest
   versions: [latest, 3.12, 3.11, 3.10, 3.9, 3.8]
+  # Pylance is MS-Marketplace-only (not on Open VSX); VSCodium silently
+  # skips it and keeps ms-python.python. See ADR 0016.
+  vscodeExtensions: [ms-python.python, ms-python.vscode-pylance]

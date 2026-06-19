@@ -6,3 +6,4 @@ language:
   feature: ghcr.io/devcontainers/features/go:1
   defaultVersion: latest
   versions: [latest, 1.24, 1.23]
+  vscodeExtensions: [golang.go]

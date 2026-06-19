@@ -135,6 +135,12 @@ export interface LanguageEntry {
    * — see `resolveFeatures`); a different version triggers the feature.
    */
   defaultVersion?: string;
+  /**
+   * VS Code extensions to recommend in the `.code-workspace` when this
+   * language is present (ADR 0016). See descriptor.ts for the cross-editor
+   * (VS Code / Codium) list-both rationale.
+   */
+  vscodeExtensions?: readonly string[];
 }
 
 // ─── Descriptor-derived catalogs (ADR 0020) ──────────────────────
@@ -205,6 +211,9 @@ export const LANGUAGE_CATALOG: Readonly<Record<string, LanguageEntry>> =
           ...(Object.keys(ymlOptions).length > 0 ? { ymlOptions } : {}),
           ...(c.descriptor.language!.defaultVersion !== undefined
             ? { defaultVersion: c.descriptor.language!.defaultVersion }
+            : {}),
+          ...(c.descriptor.language!.vscodeExtensions
+            ? { vscodeExtensions: c.descriptor.language!.vscodeExtensions }
             : {}),
         };
         return [key, entry];
