@@ -4,6 +4,8 @@ import { bootstrapDockerGroup } from './devcontainer/docker-group-bootstrap.js';
 import { maybeRenderHelp } from './help.js';
 import { consumeInnerArgsFromProcessArgv } from './inner-args.js';
 import { main } from './main.js';
+import { scheduleUpdateNotice } from './update/notifier.js';
+import { CLI_VERSION } from './version.js';
 
 // On Linux: transparently re-exec under the docker group if the
 // current shell hasn't loaded it yet (typical after a fresh
@@ -25,6 +27,15 @@ bootstrapDockerGroup();
 consumeInnerArgsFromProcessArgv();
 
 async function entry(): Promise<void> {
+  // Self-update notice (ADR-less, best-effort): reads a cached latest
+  // version and, if newer, prints a one-line update hint at exit; refreshes
+  // the cache via a detached background process when stale. Never blocks,
+  // never throws. See update/notifier.ts for the skip rules.
+  scheduleUpdateNotice({
+    currentVersion: CLI_VERSION,
+    commandName: process.argv.slice(2).find((a) => !a.startsWith('-')),
+  });
+
   // We render `--help` ourselves so the USAGE line shows positional
   // arguments *before* `[OPTIONS]`, matching the
   // `monoceros <command> <containername> [<args> …]` convention. Citty's

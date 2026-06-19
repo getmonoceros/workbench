@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs';
+import { promises as fsp, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { monocerosHome } from './paths.js';
 
@@ -28,6 +28,14 @@ export interface BuiltImageRecord {
 export interface MachineState {
   lastUpgradeAt?: string;
   builtImages?: BuiltImageRecord[];
+  /**
+   * The latest `@getmonoceros/workbench` version seen on npm, cached by the
+   * background update check so commands can show an update notice without a
+   * network call on the hot path. See update/notifier.ts.
+   */
+  latestVersion?: string;
+  /** ISO-8601 instant the update check last ran (success OR failure). */
+  lastVersionCheckAt?: string;
 }
 
 /** Default staleness threshold (days) for the `apply` upgrade nudge. */
@@ -44,6 +52,27 @@ export async function readMachineState(
   try {
     const raw = await fsp.readFile(machineStatePath(home), 'utf8');
     const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return parsed as MachineState;
+    }
+  } catch {
+    // ENOENT or malformed — treat as empty.
+  }
+  return {};
+}
+
+/**
+ * Synchronous read for the hot path (the update notice is decided at CLI
+ * startup, before any await, and printed in a sync `process.on('exit')`
+ * handler). Missing or malformed file → empty state (never throws).
+ */
+export function readMachineStateSync(
+  home: string = monocerosHome(),
+): MachineState {
+  try {
+    const parsed: unknown = JSON.parse(
+      readFileSync(machineStatePath(home), 'utf8'),
+    );
     if (typeof parsed === 'object' && parsed !== null) {
       return parsed as MachineState;
     }
@@ -73,6 +102,22 @@ export async function recordBuiltImage(
     (r) => r.imageId !== record.imageId,
   );
   state.builtImages = [...rest, record];
+  await writeMachineState(state, home);
+}
+
+/**
+ * Record an update check. Always stamps `lastVersionCheckAt` (so a failed
+ * fetch still backs off the interval instead of re-spawning every command);
+ * updates `latestVersion` only when a version was actually fetched. Merges
+ * into existing state, never clobbering builtImages / lastUpgradeAt.
+ */
+export async function recordVersionCheck(
+  opts: { latestVersion?: string; nowIso: string },
+  home: string = monocerosHome(),
+): Promise<void> {
+  const state = await readMachineState(home);
+  state.lastVersionCheckAt = opts.nowIso;
+  if (opts.latestVersion) state.latestVersion = opts.latestVersion;
   await writeMachineState(state, home);
 }
 

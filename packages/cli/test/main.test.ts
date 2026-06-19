@@ -45,6 +45,9 @@ describe('monoceros main command', () => {
       // Internal helper used by the shell-completion wrappers; not
       // user-facing but part of the registered subcommand surface.
       '__complete',
+      // Internal background worker for the self-update notice (ADR-less);
+      // hidden, spawned detached by scheduleUpdateNotice.
+      '__update-check',
     ];
 
     const subCommands = main.subCommands;

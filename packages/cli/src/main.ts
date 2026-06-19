@@ -9,6 +9,7 @@ import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
 import { completionCommand } from './commands/completion.js';
 import { __completeCommand } from './commands/__complete.js';
+import { __updateCheckCommand } from './commands/__update-check.js';
 import { initCommand } from './commands/init.js';
 import { listComponentsCommand } from './commands/list-components.js';
 import { logsCommand } from './commands/logs.js';
@@ -71,5 +72,6 @@ export const main = defineCommand({
     tunnel: tunnelCommand,
     completion: completionCommand,
     __complete: __completeCommand,
+    '__update-check': __updateCheckCommand,
   },
 });
