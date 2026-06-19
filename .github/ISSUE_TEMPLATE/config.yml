@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://getmonoceros.build/docs
+    about: Command reference and guides live here. Check before filing.

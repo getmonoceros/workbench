@@ -1,0 +1,43 @@
+name: Feature / enhancement
+description: Propose a new capability or an improvement to an existing one
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep it focused on one capability. If you have several, file them separately.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the workbench does this touch?
+      options:
+        - cli
+        - runtime
+        - features
+        - services
+        - docs
+        - web
+        - not sure
+    validations:
+      required: false
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to do, and what is in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should Monoceros do? CLI shape, yml/config, behaviour.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false

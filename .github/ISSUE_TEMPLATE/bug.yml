@@ -1,0 +1,49 @@
+name: Bug report
+description: Something does not work the way it should
+labels: ['bug']
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - cli
+        - runtime
+        - features
+        - services
+        - docs
+        - web
+        - not sure
+    validations:
+      required: false
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact monoceros commands / yml, ideally copy-paste.
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: monoceros --version
+    validations:
+      required: false
+  - type: dropdown
+    id: os
+    attributes:
+      label: Host OS
+      options:
+        - macOS
+        - Linux
+        - Windows/WSL
+    validations:
+      required: false
