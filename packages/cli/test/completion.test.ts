@@ -209,6 +209,85 @@ describe('resolveCompletions', () => {
     expect(r).toContain('--in=');
   });
 
+  it('completes run --in with workspace directories (host-side, container off)', async () => {
+    await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
+    // Materialize a workspace tree: scaffolding + a cloned app with
+    // nested source dirs and noise (node_modules / dot-dirs).
+    const ws = path.join(home, 'container', 'sandbox');
+    await mkdir(path.join(ws, '.devcontainer'), { recursive: true });
+    await mkdir(path.join(ws, 'projects', 'myApp', 'src'), { recursive: true });
+    await mkdir(
+      path.join(ws, 'projects', 'myApp', 'node_modules', 'left-pad'),
+      {
+        recursive: true,
+      },
+    );
+    await mkdir(path.join(ws, 'projects', 'myApp', '.git'), {
+      recursive: true,
+    });
+
+    const r = await resolveCompletions(
+      'monoceros run sandbox --in ',
+      'monoceros run sandbox --in '.length,
+      { monocerosHome: home },
+    );
+    expect(r).toContain('projects');
+    expect(r).toContain('projects/myApp');
+    expect(r).toContain('projects/myApp/src');
+    // Noise stays out.
+    expect(r).not.toContain('.devcontainer');
+    expect(r).not.toContain('projects/myApp/node_modules');
+    expect(r).not.toContain('projects/myApp/.git');
+  });
+
+  it('completes run --in=<frag> by prefix, re-emitting the --in= prefix', async () => {
+    await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
+    const ws = path.join(home, 'container', 'sandbox');
+    await mkdir(path.join(ws, 'projects', 'myApp'), { recursive: true });
+    await mkdir(path.join(ws, 'home'), { recursive: true });
+
+    const r = await resolveCompletions(
+      'monoceros run sandbox --in=pro',
+      'monoceros run sandbox --in=pro'.length,
+      { monocerosHome: home },
+    );
+    expect(r).toContain('--in=projects');
+    expect(r).toContain('--in=projects/myApp');
+    expect(r).not.toContain('--in=home');
+  });
+
+  it('run --in keeps non-projects top-level dirs to one level (no data-tree flood)', async () => {
+    await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
+    const ws = path.join(home, 'container', 'sandbox');
+    // Service data writes a deep tree under `data/`; we offer `data`
+    // but must not recurse into it (that's noise, never an `--in` target).
+    await mkdir(path.join(ws, 'data', 'mysql', 'monoceros'), {
+      recursive: true,
+    });
+    await mkdir(path.join(ws, 'projects', 'myApp', 'src'), { recursive: true });
+
+    const r = await resolveCompletions(
+      'monoceros run sandbox --in ',
+      'monoceros run sandbox --in '.length,
+      { monocerosHome: home },
+    );
+    expect(r).toContain('data');
+    expect(r).not.toContain('data/mysql');
+    expect(r).not.toContain('data/mysql/monoceros');
+    // projects is still walked deeply.
+    expect(r).toContain('projects/myApp/src');
+  });
+
+  it('run --in with no materialized container yields no suggestions', async () => {
+    await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
+    const r = await resolveCompletions(
+      'monoceros run sandbox --in ',
+      'monoceros run sandbox --in '.length,
+      { monocerosHome: home },
+    );
+    expect(r).toEqual([]);
+  });
+
   it('does not leak run --in into the inner command after `--`', async () => {
     await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
     const r = await resolveCompletions(

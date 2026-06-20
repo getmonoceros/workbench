@@ -352,6 +352,101 @@ async function listContainerNames(ctx: Ctx): Promise<string[]> {
     .sort();
 }
 
+/**
+ * The container name a lifecycle command is operating on, read from the
+ * tokens already on the line. Every such command takes the name as its
+ * first positional (`monoceros <cmd> <name> …`), so we walk the tokens
+ * after the program + command and return the first non-flag one. Flag
+ * tokens (`--in`, `--yes`, `--in=foo`) are skipped. Returns `undefined`
+ * when the name hasn't been typed yet (e.g. completing `--in` before the
+ * name) — callers then have nothing to enumerate against.
+ */
+function containerNameFromCtx(ctx: Ctx): string | undefined {
+  // ctx.prev[0] is the program, [1] is the command; the name follows.
+  for (let i = 2; i < ctx.prev.length; i++) {
+    const t = ctx.prev[i]!;
+    if (t === '--') break;
+    if (t.startsWith('-')) continue;
+    return t;
+  }
+  return undefined;
+}
+
+/** Directory names never worth offering as a completion target. */
+const WORKSPACE_DIR_SKIP = new Set(['node_modules']);
+/**
+ * How deep to walk under `projects/`. Cloned apps sit at `projects/<app>`
+ * (depth 1) and their own source dirs a level or two below — 4 covers
+ * those without recursing into deep dependency trees.
+ */
+const PROJECTS_DIR_MAX_DEPTH = 4;
+
+/**
+ * Recursively collect directory paths under `dir`, relative to it and
+ * capped at `maxDepth` levels. Dot-directories (`.git`, `.devcontainer`,
+ * …) and `node_modules` are skipped as noise. Symlinks are not followed
+ * (`isDirectory()` is false for them), so a self-referential link can't
+ * loop. Returns `[]` for a missing / unreadable directory.
+ *
+ * The shared host-side enumeration behind `run --in` completion (and the
+ * `projects/<app>` completion in #13).
+ */
+async function collectDirs(dir: string, maxDepth: number): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(at: string, rel: string, depth: number): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(at, { withFileTypes: true });
+    } catch {
+      return; // unreadable / missing dir — nothing to add
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (e.name.startsWith('.')) continue;
+      if (WORKSPACE_DIR_SKIP.has(e.name)) continue;
+      const childRel = rel ? `${rel}/${e.name}` : e.name;
+      out.push(childRel);
+      if (depth + 1 < maxDepth) {
+        await walk(path.join(at, e.name), childRel, depth + 1);
+      }
+    }
+  }
+  await walk(dir, '', 0);
+  return out;
+}
+
+/**
+ * Directory paths inside a materialized container's workspace, relative
+ * to the workspace root, for `run --in <dir>` completion. The workspace
+ * root is `<MONOCEROS_HOME>/container/<name>/`, bind-mounted into the
+ * container at `/workspaces/<name>` — so a host-side walk yields exactly
+ * the relative paths `--in` accepts, and works with the container
+ * stopped.
+ *
+ * Scope mirrors how the workspace is used: top-level dirs one level deep
+ * (so service-data trees under e.g. `data/` don't flood the list), plus
+ * a deep walk under `projects/`, where cloned apps and their source dirs
+ * live.
+ */
+async function listContainerWorkspaceDirs(
+  home: string,
+  name: string,
+): Promise<string[]> {
+  const root = path.join(home, 'container', name);
+  const top = await collectDirs(root, 1);
+  const projects = (
+    await collectDirs(path.join(root, 'projects'), PROJECTS_DIR_MAX_DEPTH)
+  ).map((p) => `projects/${p}`);
+  return [...new Set([...top, ...projects])].sort();
+}
+
+async function listRunInDirs(ctx: Ctx): Promise<string[]> {
+  const name = containerNameFromCtx(ctx);
+  if (!name) return [];
+  const home = ctx.opts.monocerosHome ?? monocerosHome();
+  return listContainerWorkspaceDirs(home, name);
+}
+
 async function listFeatureComponents(): Promise<string[]> {
   const catalog = await loadComponentCatalog();
   return [...catalog.values()]
@@ -552,7 +647,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   open: { positionals: [containerName, () => [...OPEN_TOOLS]] },
   run: {
     positionals: [containerName],
-    flags: { '--in': { type: 'value' } },
+    flags: { '--in': { type: 'value', values: (ctx) => listRunInDirs(ctx) } },
   },
   logs: { positionals: [containerName] },
   start: {
