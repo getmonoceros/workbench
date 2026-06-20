@@ -226,6 +226,34 @@ No-op on macOS / native Linux (`realIsWsl()` is false). JetBrains Gateway
 on Windows reads the same Windows config + ProxyCommand, so it is expected
 to work like Codium - to be confirmed on a real Gateway connection.
 
+#### Windows: the Claude desktop app needs a direct port, not a ProxyCommand
+
+The Claude desktop app connects with a bundled `ssh2` (not system OpenSSH).
+On Windows it spawns the `ProxyCommand` via `sh -c`, and Windows has no `sh`
+(`spawn sh ENOENT`) - so the docker-exec transport never runs and the
+connect times out. The same `ssh2` also does **not** trust-on-first-use: it
+rejects a host whose key is not already in `~/.ssh/known_hosts` (it reads
+`~/.ssh/known_hosts` and ignores the `UserKnownHostsFile` directive). System
+OpenSSH (terminal, VS Code/Codium/JetBrains) is unaffected - it runs the
+ProxyCommand fine and honours `StrictHostKeyChecking no`. So for the Windows
+desktop app only:
+
+- **Direct port instead of ProxyCommand.** A Windows-side socat forwarder in
+  the container (env-gated, sshd stays loopback-only) listens on a container
+  port that `apply` publishes to `127.0.0.1:<port>` on the host; the Windows
+  `Host` block becomes `HostName 127.0.0.1` / `Port <port>`, no ProxyCommand.
+- **Stable host keys.** `sshd-up.sh` now persists the host keys across
+  rebuilds (instead of regenerating), so a `known_hosts` entry stays valid.
+- **`apply` writes the host key to `~/.ssh/known_hosts`** - under the alias
+  `monoceros-<name>` on macOS/Linux, under `[127.0.0.1]:<port>` on Windows -
+  so `ssh2`'s no-TOFU check passes.
+
+Consequences for existing paths: **none on macOS/Linux** - they keep the
+portless ProxyCommand transport; the stable host key is invisible to system
+OpenSSH (it disables host-key checking) and the `known_hosts` entry only
+matters to the app. The one new exposure is the Windows `127.0.0.1`-bound,
+key-only published port.
+
 ### 6. Always-on host-browser bridge for attach sessions
 
 The Host-Browser-Bridge (a relay `xdg-open` whose URL is opened on the host

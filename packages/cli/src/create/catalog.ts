@@ -63,6 +63,14 @@ const MIN_RUNTIME_FOR_IDE_VOLUMES = '1.1.0';
 // in, like MIN_RUNTIME_FOR_IDE_VOLUMES above.
 const MIN_RUNTIME_FOR_SSH_ATTACH = '1.2.0';
 
+// Minimum runtime that persists SSH host keys across rebuilds + ships the
+// Windows ssh bridge forwarder (ADR 0022 revision). At/above it, `apply`
+// records the container's (now stable) host key in `~/.ssh/known_hosts` - the
+// Claude desktop app's ssh2 requires it (no trust-on-first-use) - and on
+// Windows publishes a host-loopback port for a direct (no-ProxyCommand)
+// connection. Below it, none of that is emitted.
+const MIN_RUNTIME_FOR_HOST_KEY_PINNING = '1.3.4';
+
 // Minimum runtime that ships the always-on browser-bridge plumbing: a
 // permanent relay `xdg-open` on PATH plus `BROWSER` pointing at it, so a
 // tool in ANY session (including one spawned by an IDE/desktop-app SSH
@@ -126,6 +134,17 @@ export function runtimeSupportsSshAttach(version?: string): boolean {
 export function runtimeSupportsBrowserBridge(version?: string): boolean {
   if (!version) return false;
   return compareRuntimeVersions(version, MIN_RUNTIME_FOR_BROWSER_BRIDGE) >= 0;
+}
+
+/**
+ * Whether the pinned runtime persists host keys + ships the Windows ssh
+ * bridge forwarder (ADR 0022 revision). Gates `apply`'s `known_hosts` write
+ * and the Windows host-loopback port publish. False when unpinned or below
+ * the minimum.
+ */
+export function runtimeSupportsHostKeyPinning(version?: string): boolean {
+  if (!version) return false;
+  return compareRuntimeVersions(version, MIN_RUNTIME_FOR_HOST_KEY_PINNING) >= 0;
 }
 
 export interface LanguageEntry {

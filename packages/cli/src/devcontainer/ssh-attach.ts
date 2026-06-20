@@ -310,18 +310,41 @@ function resolveWindowsDeps(
   };
 }
 
-function windowsHostBlock(hostAlias: string, keyWin: string): string {
-  // Host keys are ephemeral and the transport is docker-exec, so disable
-  // host-key checking (same rationale as the WSL/host entry). `docker`
-  // resolves to docker.exe on the Windows PATH; socat runs in-container.
+/**
+ * Deterministic host-loopback port for the Windows ssh bridge of a container.
+ * Picked from the IANA dynamic/private range (49152-65535) by hashing the
+ * name, so it's stable across applies and unlikely to collide with a dev
+ * server. The same value is published by the scaffold and forwarded to sshd
+ * by `sshd-up.sh`.
+ */
+export function windowsSshPort(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  }
+  return 49152 + (h % 16384);
+}
+
+function windowsHostBlock(
+  hostAlias: string,
+  keyWin: string,
+  port: number,
+): string {
+  // The Claude desktop app's bundled ssh2 cannot run a ProxyCommand on
+  // Windows (it spawns it via `sh`, which Windows lacks), so connect DIRECTLY
+  // to the host-loopback port that `apply` publishes (sshd-up.sh forwards it
+  // to the in-container sshd). Host-key checking is disabled for system ssh;
+  // the app's ssh2 ignores that and uses ~/.ssh/known_hosts, which `apply`
+  // populates with the (now stable) host key under `[127.0.0.1]:<port>`.
   return [
     `Host ${hostAlias}`,
+    `    HostName 127.0.0.1`,
+    `    Port ${port}`,
     `    User node`,
     `    IdentityFile ${keyWin}`,
     `    IdentitiesOnly yes`,
     `    StrictHostKeyChecking no`,
     `    UserKnownHostsFile NUL`,
-    `    ProxyCommand docker exec -i ${hostAlias} socat - TCP:127.0.0.1:22`,
   ].join('\n');
 }
 
@@ -412,7 +435,7 @@ async function setupWindowsBridge(
   await upsertMarkedBlock(
     path.join(profile.homeWsl, '.ssh', 'config'),
     hostAlias,
-    windowsHostBlock(hostAlias, keyWin),
+    windowsHostBlock(hostAlias, keyWin, windowsSshPort(name)),
   );
   await deps.lockKey(keyWin, profile.user);
   logger.info(
@@ -484,6 +507,84 @@ export async function setupSshAttach(
   }
 
   return { hostAlias, configured: true };
+}
+
+/** Replace (or append) the single `known_hosts` line for `hostId`. */
+async function upsertKnownHost(
+  knownHostsPath: string,
+  hostId: string,
+  typeAndKey: string,
+): Promise<void> {
+  await fs.mkdir(path.dirname(knownHostsPath), { recursive: true });
+  let existing = '';
+  try {
+    existing = await fs.readFile(knownHostsPath, 'utf8');
+  } catch {
+    existing = '';
+  }
+  // Drop any prior line for this exact host id (our own, or a stale one from
+  // an earlier ephemeral key), keep everything else, then append the current.
+  const kept = existing
+    .split('\n')
+    .filter((l) => l.trim().length > 0 && l.split(/\s+/)[0] !== hostId);
+  const next = `${[...kept, `${hostId} ${typeAndKey}`].join('\n')}\n`;
+  await fs.writeFile(knownHostsPath, next);
+}
+
+/**
+ * Record the container's (now stable, ADR 0022 revision) SSH host key in
+ * `~/.ssh/known_hosts` so the Claude desktop app's `ssh2` - which does no
+ * trust-on-first-use - accepts the host. Reads the public host key persisted
+ * by `sshd-up.sh` under the container dir. Runs AFTER the container is up (the
+ * key is generated on first start). Best-effort: a missing key (older runtime)
+ * is a silent no-op. System OpenSSH ignores this (it disables host-key
+ * checking), so this only affects the app.
+ *
+ *  - macOS/Linux: keyed by the alias `monoceros-<name>` (ProxyCommand path).
+ *  - Windows (WSL): also written to the Windows `~/.ssh/known_hosts`, keyed by
+ *    `[127.0.0.1]:<port>` (the direct-port path).
+ */
+export async function recordHostKey(opts: {
+  name: string;
+  targetDir: string;
+  userSshDir?: string;
+  windows?: WindowsBridgeDeps;
+}): Promise<void> {
+  const pubPath = path.join(
+    opts.targetDir,
+    '.monoceros',
+    'ssh',
+    'host',
+    'ssh_host_ed25519_key.pub',
+  );
+  let line = '';
+  try {
+    line = (await fs.readFile(pubPath, 'utf8')).trim();
+  } catch {
+    return; // no persisted host key (older runtime / not up yet) - skip
+  }
+  const parts = line.split(/\s+/);
+  if (parts.length < 2) return;
+  const typeAndKey = `${parts[0]} ${parts[1]}`;
+
+  const userSshDir = opts.userSshDir ?? path.join(os.homedir(), '.ssh');
+  await upsertKnownHost(
+    path.join(userSshDir, 'known_hosts'),
+    `monoceros-${opts.name}`,
+    typeAndKey,
+  );
+
+  const deps = resolveWindowsDeps(opts.windows);
+  if (deps.isWsl()) {
+    const profile = await deps.resolveProfile();
+    if (profile) {
+      await upsertKnownHost(
+        path.join(profile.homeWsl, '.ssh', 'known_hosts'),
+        `[127.0.0.1]:${windowsSshPort(opts.name)}`,
+        typeAndKey,
+      );
+    }
+  }
 }
 
 /**

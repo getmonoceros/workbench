@@ -6,6 +6,7 @@ import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { descriptorToFeatureManifest } from '../catalog/generate-manifest.js';
 import type { Descriptor, WorkspaceEnvBlock } from '../catalog/descriptor.js';
 import { writeClaudePermissionMode } from './claude-settings.js';
+import { isWsl, windowsSshPort } from '../devcontainer/ssh-attach.js';
 import { writeOpencodeConfig } from './opencode-config.js';
 import {
   BUILTIN_LANGUAGES,
@@ -15,6 +16,7 @@ import {
   parseLanguageSpec,
   compareRuntimeVersions,
   resolveRuntimeImage,
+  runtimeSupportsHostKeyPinning,
   runtimeSupportsSshAttach,
   serviceClientAptPackages,
   serviceClientNpmPackages,
@@ -787,6 +789,21 @@ export function ideStateVolumesForRuntime(
   );
 }
 
+/**
+ * The host-loopback ssh port to publish for the Windows direct-port attach
+ * (ADR 0022 revision), or null when it doesn't apply: only on a WSL apply
+ * (the Windows desktop app's ssh2 can't run a ProxyCommand) and only when the
+ * pinned runtime forwards it (>= 1.3.4). When set, the scaffold publishes
+ * `127.0.0.1:<port>:<port>` and sets `MONOCEROS_SSH_PUBLISH_PORT` so
+ * `sshd-up.sh` bridges it to the in-container sshd. macOS/Linux: always null
+ * (they keep the portless ProxyCommand transport).
+ */
+export function windowsBridgePort(opts: CreateOptions): number | null {
+  return runtimeSupportsHostKeyPinning(opts.runtimeVersion) && isWsl()
+    ? windowsSshPort(opts.name)
+    : null;
+}
+
 export function buildDevcontainerJson(
   opts: CreateOptions,
   dockerMode: DockerMode = 'rootful',
@@ -878,7 +895,13 @@ export function buildDevcontainerJson(
   // buildComposeYaml); in image mode it becomes a `containerEnv` object on the
   // devcontainer.json, so every process in the container sees it. (Service
   // connection env only exists in compose mode, where services live.)
-  const workspaceEnv = featureWorkspaceEnv(resolvedFeatures);
+  const sshBridgePort = windowsBridgePort(opts);
+  const workspaceEnv = {
+    ...featureWorkspaceEnv(resolvedFeatures),
+    ...(sshBridgePort
+      ? { MONOCEROS_SSH_PUBLISH_PORT: String(sshBridgePort) }
+      : {}),
+  };
   const containerEnvField =
     Object.keys(workspaceEnv).length > 0
       ? { containerEnv: workspaceEnv }
@@ -970,6 +993,11 @@ export function buildDevcontainerJson(
     runArgs.push('--network=monoceros-proxy');
     runArgs.push(`--network-alias=${opts.name}`);
   }
+  // Windows direct-port attach (ADR 0022 revision): publish the ssh bridge
+  // port on host loopback. macOS/Linux: sshBridgePort is null, nothing added.
+  if (sshBridgePort !== null) {
+    runArgs.push('-p', `127.0.0.1:${sshBridgePort}:${sshBridgePort}`);
+  }
 
   return {
     name: opts.name,
@@ -1030,6 +1058,7 @@ export function buildComposeYaml(
 ): string {
   void dockerMode;
   const hasPorts = (opts.ports?.length ?? 0) > 0;
+  const sshBridgePort = windowsBridgePort(opts);
   const lines: string[] = ['services:'];
 
   const ideVolumes = ideStateVolumesForRuntime(opts.name, opts.runtimeVersion);
@@ -1049,6 +1078,12 @@ export function buildComposeYaml(
   // iptables setup; see ADR 0002.
   lines.push('    cap_add:');
   lines.push('      - NET_ADMIN');
+  // Windows direct-port attach (ADR 0022 revision): publish the ssh bridge
+  // port on host loopback. macOS/Linux: sshBridgePort is null, nothing added.
+  if (sshBridgePort !== null) {
+    lines.push('    ports:');
+    lines.push(`      - "127.0.0.1:${sshBridgePort}:${sshBridgePort}"`);
+  }
   if (hasPorts) {
     // Workspace joins both the compose-default network (so it can
     // reach postgres/redis/… that share the project) and the
@@ -1092,9 +1127,12 @@ export function buildComposeYaml(
   // feature-contributed workspace env (`feature.workspaceEnv`, e.g. atlassian
   // forge → FORGE_EMAIL/FORGE_API_TOKEN). Both land in the workspace
   // container's process environment, visible to every process.
-  const wsEnv = {
+  const wsEnv: Record<string, string> = {
     ...serviceConnectionEnv(opts.services),
     ...featureWorkspaceEnv(resolvedFeatures),
+    ...(sshBridgePort
+      ? { MONOCEROS_SSH_PUBLISH_PORT: String(sshBridgePort) }
+      : {}),
   };
   const wsEnvKeys = Object.keys(wsEnv);
   if (wsEnvKeys.length > 0) {

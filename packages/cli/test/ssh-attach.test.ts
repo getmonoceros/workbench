@@ -12,10 +12,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  recordHostKey,
   removeSshAttach,
   setupSshAttach,
   sshConfigEntryPath,
   sshProxyScriptPath,
+  windowsSshPort,
   type KeygenSpawn,
 } from '../src/devcontainer/ssh-attach.js';
 
@@ -234,16 +236,17 @@ describe('Windows/WSL bridge', () => {
     expect(existsSync(path.join(winHome, '.ssh', 'monoceros', 'demo'))).toBe(
       true,
     );
-    // marked block with Windows key path, container name, docker-exec proxy
+    // marked block with Windows key path + DIRECT host-loopback port (the
+    // Claude app's ssh2 can't run a ProxyCommand on Windows - ADR 0022 rev).
     const cfg = await readFile(path.join(winHome, '.ssh', 'config'), 'utf8');
     expect(cfg).toContain('# >>> monoceros monoceros-demo >>>');
     expect(cfg).toContain('Host monoceros-demo');
     expect(cfg).toContain(
       'IdentityFile C:\\Users\\TestUser\\.ssh\\monoceros\\demo',
     );
-    expect(cfg).toContain(
-      'ProxyCommand docker exec -i monoceros-demo socat - TCP:127.0.0.1:22',
-    );
+    expect(cfg).toContain('HostName 127.0.0.1');
+    expect(cfg).toContain(`Port ${windowsSshPort('demo')}`);
+    expect(cfg).not.toContain('ProxyCommand');
     expect(cfg).toContain('# <<< monoceros monoceros-demo <<<');
     // icacls invoked on the Windows key path for the resolved user
     expect(locked).toEqual([
@@ -348,5 +351,71 @@ describe('Windows/WSL bridge', () => {
     );
     const cfg = await readFile(path.join(winHome, '.ssh', 'config'), 'utf8');
     expect(cfg).not.toContain('Host monoceros-demo');
+  });
+});
+
+describe('windowsSshPort', () => {
+  it('is deterministic and in the dynamic/private port range', () => {
+    const p = windowsSshPort('demo');
+    expect(p).toBe(windowsSshPort('demo'));
+    expect(p).toBeGreaterThanOrEqual(49152);
+    expect(p).toBeLessThanOrEqual(65535);
+    expect(windowsSshPort('other')).not.toBe(p); // name-keyed
+  });
+});
+
+describe('recordHostKey', () => {
+  let root: string;
+  let userSshDir: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'mono-hk-'));
+    userSshDir = path.join(root, 'home', '.ssh');
+    const hostDir = path.join(root, '.monoceros', 'ssh', 'host');
+    await mkdir(hostDir, { recursive: true });
+    await writeFile(
+      path.join(hostDir, 'ssh_host_ed25519_key.pub'),
+      'ssh-ed25519 AAAATESTKEY root@monoceros-demo\n',
+    );
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('writes the host key to known_hosts under the alias (type+key, no comment)', async () => {
+    await recordHostKey({
+      name: 'demo',
+      targetDir: root,
+      userSshDir,
+      windows: { isWsl: () => false },
+    });
+    const kh = await readFile(path.join(userSshDir, 'known_hosts'), 'utf8');
+    expect(kh).toContain('monoceros-demo ssh-ed25519 AAAATESTKEY');
+    expect(kh).not.toContain('root@monoceros-demo'); // comment stripped
+  });
+
+  it('upserts — re-recording does not duplicate the line', async () => {
+    const opts = {
+      name: 'demo',
+      targetDir: root,
+      userSshDir,
+      windows: { isWsl: () => false },
+    };
+    await recordHostKey(opts);
+    await recordHostKey(opts);
+    const kh = await readFile(path.join(userSshDir, 'known_hosts'), 'utf8');
+    const hits = kh.split('\n').filter((l) => l.startsWith('monoceros-demo '));
+    expect(hits).toHaveLength(1);
+  });
+
+  it('is a silent no-op when no host key has been persisted yet', async () => {
+    await rm(path.join(root, '.monoceros'), { recursive: true, force: true });
+    await recordHostKey({
+      name: 'demo',
+      targetDir: root,
+      userSshDir,
+      windows: { isWsl: () => false },
+    });
+    expect(existsSync(path.join(userSshDir, 'known_hosts'))).toBe(false);
   });
 });

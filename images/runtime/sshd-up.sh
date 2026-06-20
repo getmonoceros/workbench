@@ -21,10 +21,38 @@ if ! command -v sshd >/dev/null 2>&1; then
 fi
 
 mkdir -p /run/sshd
-# Generate any missing host keys at runtime (per-container, not baked
-# into the image). The generated client config disables host-key
-# checking, so ephemeral host keys don't nag across rebuilds.
+# Host keys: PERSIST them across rebuilds (ADR 0022 revision). The Claude
+# desktop app's bundled ssh2 does no trust-on-first-use - it rejects a host
+# whose key isn't already in known_hosts - and `apply` records the key there,
+# so it must stay stable. We keep the durable copy under the bind-mounted
+# container dir (`.monoceros/ssh/host/`, the same place the client key lives,
+# and host-readable so `apply` can publish the pubkey). sshd itself uses the
+# copies in /etc/ssh (correct perms on the container fs; a bind-mount's perms
+# can trip sshd's strict host-key check). Restore -> fill-missing -> save.
+host_store=""
+for d in /workspaces/*/.monoceros/ssh; do
+  if [ -d "$d" ]; then
+    host_store="$d/host"
+    break
+  fi
+done
+if [ -n "$host_store" ]; then
+  mkdir -p "$host_store"
+  for k in "$host_store"/ssh_host_*; do
+    if [ -e "$k" ]; then
+      cp -p "$k" /etc/ssh/ || true
+    fi
+  done
+fi
+# Generate any host keys still missing (first run, or a new type).
 ssh-keygen -A >/dev/null 2>&1 || true
+# sshd refuses private host keys that are group/world readable.
+chmod 600 /etc/ssh/ssh_host_*_key 2>/dev/null || true
+chmod 644 /etc/ssh/ssh_host_*_key.pub 2>/dev/null || true
+if [ -n "$host_store" ]; then
+  cp -p /etc/ssh/ssh_host_*_key "$host_store"/ 2>/dev/null || true
+  cp -p /etc/ssh/ssh_host_*_key.pub "$host_store"/ 2>/dev/null || true
+fi
 
 # Install the builder's per-container public key(s) as the runtime user's
 # authorized_keys. The keys are minted on the host by `monoceros apply`
@@ -52,4 +80,16 @@ if [[ -s /run/sshd.pid ]] && kill -0 "$(cat /run/sshd.pid)" 2>/dev/null; then
 else
   /usr/sbin/sshd
   echo "[monoceros-ssh] sshd up on 127.0.0.1:22 ($count authorized key(s))" >&2
+fi
+
+# Windows attach (ADR 0022 revision): the Claude desktop app cannot use a
+# ProxyCommand on Windows (its ssh2 spawns it via `sh`, which Windows lacks),
+# so on Windows applies `apply` publishes a host port and sets
+# MONOCEROS_SSH_PUBLISH_PORT. sshd stays loopback-only; a socat bridge listens
+# on that port on the container interface and forwards to sshd. Idempotent.
+port="${MONOCEROS_SSH_PUBLISH_PORT:-}"
+if [[ -n "$port" ]] && ! pgrep -f "TCP-LISTEN:${port}," >/dev/null 2>&1; then
+  setsid socat "TCP-LISTEN:${port},fork,reuseaddr" TCP:127.0.0.1:22 \
+    >/dev/null 2>&1 &
+  echo "[monoceros-ssh] ssh bridge listening on :${port} -> 127.0.0.1:22" >&2
 fi

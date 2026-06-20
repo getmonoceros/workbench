@@ -33,12 +33,14 @@ import { solutionConfigToCreateOptions } from '../config/transform.js';
 import {
   resolveRuntimeImage,
   runtimeSupportsBrowserBridge,
+  runtimeSupportsHostKeyPinning,
   runtimeSupportsSshAttach,
   serviceDefersStart,
 } from '../create/catalog.js';
 import { spawnBridgeDaemon } from '../devcontainer/bridge-daemon.js';
 import {
   type KeygenSpawn,
+  recordHostKey,
   setupSshAttach,
 } from '../devcontainer/ssh-attach.js';
 import {
@@ -720,6 +722,24 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       // relay (>= 1.3.3); idempotent + best-effort (never blocks apply).
       if (runtimeSupportsBrowserBridge(createOpts.runtimeVersion)) {
         spawnBridgeDaemon(targetDir);
+      }
+
+      // Record the container's (now stable) SSH host key in ~/.ssh/known_hosts
+      // so the Claude desktop app's ssh2 (no trust-on-first-use) accepts it -
+      // under the alias on macOS/Linux, under [127.0.0.1]:<port> on Windows.
+      // The host key is persisted by sshd-up.sh (>= 1.3.4). Best-effort.
+      if (runtimeSupportsHostKeyPinning(createOpts.runtimeVersion)) {
+        try {
+          await recordHostKey({
+            name: opts.name,
+            targetDir,
+            ...(opts.sshUserSshDir ? { userSshDir: opts.sshUserSshDir } : {}),
+          });
+        } catch (err) {
+          (logger.warn ?? logger.info)(
+            `Recording the SSH host key skipped: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
 
       const summaryLines = buildApplySummary(createOpts);
