@@ -66,6 +66,15 @@ RUN chmod 0755 /usr/local/bin/monoceros-sshd-up.sh
 COPY workspace-login.sh /etc/profile.d/monoceros-workspace.sh
 RUN chmod 0644 /etc/profile.d/monoceros-workspace.sh
 
+# Always-on host-browser-bridge relay (ADR 0022 follow-up). A real `xdg-open`
+# on PATH that relays a URL to the host-side bridge daemon via a bind-mounted
+# file. `BROWSER` points at it so tools using either open convention reach the
+# host browser from EVERY session - including an IDE/desktop-app SSH attach,
+# not just `monoceros run`/`shell` (which prepend their own per-session relay).
+COPY xdg-open-relay.sh /usr/local/bin/xdg-open
+RUN chmod 0755 /usr/local/bin/xdg-open
+ENV BROWSER=/usr/local/bin/xdg-open
+
 RUN install -d /etc/monoceros
 COPY egress-allow.default.txt /etc/monoceros/egress-allow.default.txt
 
@@ -81,6 +90,9 @@ COPY egress-allow.default.txt /etc/monoceros/egress-allow.default.txt
 #   - VS Codium -> ~/.vscodium-server
 #   - JetBrains -> ~/.cache/JetBrains (+ /RemoteDev/dist for the shared
 #     backend distribution), ~/.config/JetBrains, ~/.local/share/JetBrains
+#   - Claude Code SSH remote server -> ~/.claude/remote (since 1.3.3): a
+#     volume keeps its rpc socket off the VirtioFS ~/.claude host mount,
+#     whose chmod-on-socket fails with EINVAL (docker/for-mac#6614).
 # chown the XDG parents (~/.cache, ~/.config, ~/.local) recursively, NOT
 # just the JetBrains leaves: `mkdir -p` creates the intermediate ~/.local
 # and ~/.local/share as root, and a leaf-only chown would leave those
@@ -94,8 +106,10 @@ RUN mkdir -p /home/node/.vscode-server/extensions \
              /home/node/.cache/JetBrains/RemoteDev/dist \
              /home/node/.config/JetBrains \
              /home/node/.local/share/JetBrains \
+             /home/node/.claude/remote \
  && chown -R node:node /home/node/.vscode-server /home/node/.vscodium-server \
-      /home/node/.cache /home/node/.config /home/node/.local
+      /home/node/.cache /home/node/.config /home/node/.local \
+      /home/node/.claude
 
 COPY entrypoint.sh /usr/local/bin/monoceros-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/monoceros-entrypoint.sh

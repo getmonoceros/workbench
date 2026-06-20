@@ -32,9 +32,11 @@ import type { SolutionConfig } from '../config/schema.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
 import {
   resolveRuntimeImage,
+  runtimeSupportsBrowserBridge,
   runtimeSupportsSshAttach,
   serviceDefersStart,
 } from '../create/catalog.js';
+import { spawnBridgeDaemon } from '../devcontainer/bridge-daemon.js';
 import {
   type KeygenSpawn,
   setupSshAttach,
@@ -712,6 +714,14 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     // file with ANSI escapes stripped so `cat …apply-….log` stays
     // readable.
     if (exitCode === 0) {
+      // Start the host-side browser-bridge daemon so a tool in ANY container
+      // session (an IDE/desktop-app SSH attach, not just `monoceros run`) can
+      // open the host browser. Gated on the runtime shipping the always-on
+      // relay (>= 1.3.3); idempotent + best-effort (never blocks apply).
+      if (runtimeSupportsBrowserBridge(createOpts.runtimeVersion)) {
+        spawnBridgeDaemon(targetDir);
+      }
+
       const summaryLines = buildApplySummary(createOpts);
       if (summaryLines.length > 0) {
         const formatted = formatApplySummary(summaryLines);

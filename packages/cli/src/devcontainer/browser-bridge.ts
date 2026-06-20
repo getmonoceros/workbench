@@ -5,8 +5,20 @@ import path from 'node:path';
 import type { DevcontainerSpawn } from './cli.js';
 
 // Dir under the container root (bind-mounted into the workspace) holding the
-// relay `xdg-open` and the captured URL during an interactive session.
-const RELAY_DIRNAME = '.monoceros-bridge';
+// relay `xdg-open` and the captured URL. Used both by the per-session bridge
+// (`monoceros run`/`shell`) and the always-on bridge daemon — both watch the
+// same `url` file, which the relay `xdg-open` writes.
+export const RELAY_DIRNAME = '.monoceros-bridge';
+
+/** Host-side relay dir for a container root. */
+export function relayDir(root: string): string {
+  return path.join(root, RELAY_DIRNAME);
+}
+
+/** Host-side url-file the relay `xdg-open` writes to (and the watcher reads). */
+export function relayUrlFile(root: string): string {
+  return path.join(relayDir(root), 'url');
+}
 
 /**
  * Parse the localhost callback target out of an OAuth URL. Returns the port +
@@ -129,10 +141,10 @@ export async function startBrowserBridge(opts: {
   root: string;
   spawn: DevcontainerSpawn;
 }): Promise<BrowserBridge> {
-  const relayDir = path.join(opts.root, RELAY_DIRNAME);
-  const relayScript = path.join(relayDir, 'xdg-open');
-  const urlFile = path.join(relayDir, 'url');
-  await fsp.mkdir(relayDir, { recursive: true });
+  const dir = relayDir(opts.root);
+  const relayScript = path.join(dir, 'xdg-open');
+  const urlFile = relayUrlFile(opts.root);
+  await fsp.mkdir(dir, { recursive: true });
   await fsp.rm(urlFile, { force: true });
   await fsp.writeFile(
     relayScript,
@@ -141,6 +153,35 @@ export async function startBrowserBridge(opts: {
   );
   await fsp.chmod(relayScript, 0o755);
 
+  const watcher = watchRelayUrl({
+    urlFile,
+    root: opts.root,
+    spawn: opts.spawn,
+  });
+
+  return {
+    relayDirInContainer: `/workspaces/${opts.name}/${RELAY_DIRNAME}`,
+    async dispose(): Promise<void> {
+      watcher.dispose();
+      await fsp.rm(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+/**
+ * Watch the relay url-file and open each new URL on the host browser,
+ * replaying a localhost OAuth callback into the container when the URL
+ * carries one. This is the reusable engine shared by the per-session bridge
+ * (`startBrowserBridge`, wired into `monoceros run`/`shell`) and the always-on
+ * bridge daemon (which runs it for a container's whole lifetime). The disposer
+ * stops the poll + closes any callback listeners but does NOT touch the relay
+ * dir — the caller owns that.
+ */
+export function watchRelayUrl(opts: {
+  urlFile: string;
+  root: string;
+  spawn: DevcontainerSpawn;
+}): { dispose(): void } {
   const servers: http.Server[] = [];
   // Last URL we relayed, so repeated `xdg-open` calls each open (not just the
   // first OAuth one). A tool that opens the running app (`xdg-open
@@ -182,10 +223,10 @@ export async function startBrowserBridge(opts: {
   };
 
   const poll = setInterval(() => {
-    if (!existsSync(urlFile)) return;
+    if (!existsSync(opts.urlFile)) return;
     let content = '';
     try {
-      content = readFileSync(urlFile, 'utf8');
+      content = readFileSync(opts.urlFile, 'utf8');
     } catch {
       return;
     }
@@ -196,11 +237,9 @@ export async function startBrowserBridge(opts: {
   }, 250);
 
   return {
-    relayDirInContainer: `/workspaces/${opts.name}/${RELAY_DIRNAME}`,
-    async dispose(): Promise<void> {
+    dispose(): void {
       clearInterval(poll);
       for (const s of servers) s.close();
-      await fsp.rm(relayDir, { recursive: true, force: true });
     },
   };
 }

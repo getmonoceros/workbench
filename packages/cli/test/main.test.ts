@@ -48,6 +48,9 @@ describe('monoceros main command', () => {
       // Internal background worker for the self-update notice (ADR-less);
       // hidden, spawned detached by scheduleUpdateNotice.
       '__update-check',
+      // Internal host-side browser-bridge daemon (ADR 0022 follow-up);
+      // hidden, spawned detached by apply/start.
+      '__bridge',
     ];
 
     const subCommands = main.subCommands;

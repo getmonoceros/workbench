@@ -166,6 +166,7 @@ describe('runRemove', () => {
     // Per-container volumes are removed...
     expect(volumeRm).toContain('monoceros-sandbox-jetbrains-cache');
     expect(volumeRm).toContain('monoceros-sandbox-vscode-extensions');
+    expect(volumeRm).toContain('monoceros-sandbox-claude-remote');
     // ...but the machine-wide shared backend is NOT (other containers use it).
     expect(volumeRm).not.toContain('monoceros-jetbrains-dist');
   });

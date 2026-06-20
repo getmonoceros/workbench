@@ -8,6 +8,7 @@ import { addPortCommand } from './commands/add-port.js';
 import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
 import { completionCommand } from './commands/completion.js';
+import { __bridgeCommand } from './commands/__bridge.js';
 import { __completeCommand } from './commands/__complete.js';
 import { __updateCheckCommand } from './commands/__update-check.js';
 import { initCommand } from './commands/init.js';
@@ -73,5 +74,6 @@ export const main = defineCommand({
     completion: completionCommand,
     __complete: __completeCommand,
     '__update-check': __updateCheckCommand,
+    __bridge: __bridgeCommand,
   },
 });

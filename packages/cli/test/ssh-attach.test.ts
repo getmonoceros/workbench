@@ -82,6 +82,11 @@ describe('setupSshAttach', () => {
     const proxy = await readFile(proxyPath, 'utf8');
     expect(proxy).toContain(`devcontainer.local_folder=${targetDir}`);
     expect(proxy).toContain('socat - TCP:127.0.0.1:22');
+    // PATH is augmented so a GUI launcher (minimal launchd PATH) still
+    // finds the Docker Desktop CLI under /usr/local/bin or /opt/homebrew/bin.
+    expect(proxy).toContain(
+      'PATH="/usr/local/bin:/opt/homebrew/bin:/Applications/Docker.app/Contents/Resources/bin:$PATH"',
+    );
     const mode = (await stat(proxyPath)).mode & 0o111;
     expect(mode).not.toBe(0);
 

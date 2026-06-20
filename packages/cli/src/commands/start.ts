@@ -3,8 +3,12 @@ import { consola } from 'consola';
 import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
 import { readConfig } from '../config/io.js';
 import { containerConfigPath, containerDir } from '../config/paths.js';
+import { spawnBridgeDaemon } from '../devcontainer/bridge-daemon.js';
 import { runStart, startDeferredServices } from '../devcontainer/compose.js';
-import { serviceDefersStart } from '../create/catalog.js';
+import {
+  runtimeSupportsBrowserBridge,
+  serviceDefersStart,
+} from '../create/catalog.js';
 import { OPEN_TOOLS, runOpen } from '../open/index.js';
 import { ensureProxy } from '../proxy/index.js';
 import { preflightHostPort } from '../proxy/port-check.js';
@@ -44,8 +48,10 @@ export const startCommand = defineCommand({
       // after `runStart` so a service bind-mounting a cloned repo file finds
       // it present at boot.
       let deferred: string[] = [];
+      let runtimeVersion: string | undefined;
       try {
         const parsed = await readConfig(containerConfigPath(args.name));
+        runtimeVersion = parsed.config.runtimeVersion;
         if ((parsed.config.routing?.ports ?? []).length > 0) {
           needsProxy = true;
           const global = await readMonocerosConfig();
@@ -64,6 +70,12 @@ export const startCommand = defineCommand({
         await ensureProxy({ hostPort });
       }
       const exitCode = await runStart({ root: containerDir(args.name) });
+      // Re-establish the host-side browser bridge for this freshly-started
+      // container (same gating + best-effort as apply); the previous daemon
+      // self-exited when the container last stopped.
+      if (exitCode === 0 && runtimeSupportsBrowserBridge(runtimeVersion)) {
+        spawnBridgeDaemon(containerDir(args.name));
+      }
       // Second wave (ADR 0025): start deferred services after the workspace
       // is up. Best-effort — a failure is surfaced but the start result stands.
       if (exitCode === 0 && deferred.length > 0) {

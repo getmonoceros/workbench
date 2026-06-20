@@ -756,6 +756,19 @@ export function ideStateVolumes(name: string): IdeStateVolume[] {
       target: '/home/node/.local/share/JetBrains',
       minRuntime: '1.3.0',
     },
+    // Claude Code's SSH remote server (`claude-ssh`, used by the desktop
+    // app attaching over SSH). It binds its rpc socket under
+    // `~/.claude/remote/run/<id>/rpc.sock` and chmods it - which fails
+    // with EINVAL on the VirtioFS/`fakeowner` host mount that backs
+    // `~/.claude` on Docker Desktop (docker/for-mac#6614). A named volume
+    // puts the whole `remote/` tree on container-native storage where
+    // chmod-on-socket works, and persists the (~230 MB) downloaded server
+    // across rebuilds. The rest of `~/.claude` stays host-mounted.
+    {
+      volume: `monoceros-${name}-claude-remote`,
+      target: '/home/node/.claude/remote',
+      minRuntime: '1.3.3',
+    },
   ];
 }
 

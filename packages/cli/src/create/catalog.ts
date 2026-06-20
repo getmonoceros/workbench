@@ -63,6 +63,14 @@ const MIN_RUNTIME_FOR_IDE_VOLUMES = '1.1.0';
 // in, like MIN_RUNTIME_FOR_IDE_VOLUMES above.
 const MIN_RUNTIME_FOR_SSH_ATTACH = '1.2.0';
 
+// Minimum runtime that ships the always-on browser-bridge plumbing: a
+// permanent relay `xdg-open` on PATH plus `BROWSER` pointing at it, so a
+// tool in ANY session (including one spawned by an IDE/desktop-app SSH
+// attach, not just `monoceros run`/`shell`) can open the host browser via
+// the host-side bridge daemon. Below this the image has neither, so apply
+// skips spawning the daemon. Frozen at the introducing version.
+const MIN_RUNTIME_FOR_BROWSER_BRIDGE = '1.3.3';
+
 /**
  * Resolve a pinned `runtimeVersion` to a concrete image ref.
  * `MONOCEROS_BASE_IMAGE_OVERRIDE` (dev) always wins. With no pin we fall
@@ -107,6 +115,17 @@ export function runtimeSupportsIdeVolumes(version?: string): boolean {
 export function runtimeSupportsSshAttach(version?: string): boolean {
   if (!version) return false;
   return compareRuntimeVersions(version, MIN_RUNTIME_FOR_SSH_ATTACH) >= 0;
+}
+
+/**
+ * Whether the pinned runtime ships the always-on browser-bridge relay
+ * (`xdg-open` on PATH + `BROWSER`). False when unpinned or below the
+ * minimum - those containers have no relay, so apply does not spawn the
+ * host-side bridge daemon (it would watch a file nothing ever writes).
+ */
+export function runtimeSupportsBrowserBridge(version?: string): boolean {
+  if (!version) return false;
+  return compareRuntimeVersions(version, MIN_RUNTIME_FOR_BROWSER_BRIDGE) >= 0;
 }
 
 export interface LanguageEntry {

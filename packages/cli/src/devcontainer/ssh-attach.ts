@@ -139,6 +139,13 @@ function proxyScriptContent(name: string, targetDir: string): string {
 # Resolves the container by the devcontainer.local_folder label (the
 # same handle 'monoceros shell' uses), so it follows rebuilds.
 set -e
+# GUI launchers (IDEs, Claude Desktop) start a ProxyCommand with a
+# minimal PATH: on macOS launchd hands out only /usr/bin:/bin:/usr/sbin:
+# /sbin, so a bare \`docker\` (Docker Desktop installs it under
+# /usr/local/bin or /opt/homebrew/bin) isn't found. Prepend the common
+# Docker locations so the same script works from a login shell and a GUI
+# launcher alike.
+PATH="/usr/local/bin:/opt/homebrew/bin:/Applications/Docker.app/Contents/Resources/bin:$PATH"
 cid=$(docker ps -q \\
   --filter "label=devcontainer.local_folder=${targetDir}" \\
   --filter status=running | head -n1)

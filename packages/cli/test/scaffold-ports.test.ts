@@ -106,7 +106,27 @@ describe('VS Code IDE-state volumes (ADR 0015)', () => {
         target: '/home/node/.local/share/JetBrains',
         minRuntime: '1.3.0',
       },
+      {
+        volume: 'monoceros-demo-claude-remote',
+        target: '/home/node/.claude/remote',
+        minRuntime: '1.3.3',
+      },
     ]);
+  });
+
+  it('mounts the Claude remote-server volume only from runtime 1.3.3', () => {
+    // 1.3.2: the image does not pre-create ~/.claude/remote node-owned yet.
+    const at132 = buildDevcontainerJson({ ...base, runtimeVersion: '1.3.2' });
+    if (!('runArgs' in at132)) throw new Error('expected image-mode shape');
+    expect((at132.mounts ?? []).join('\n')).not.toContain('claude-remote');
+
+    // 1.3.3: the volume mounts on ~/.claude/remote (off the VirtioFS host
+    // mount, so the rpc-socket chmod works).
+    const at133 = buildDevcontainerJson({ ...base, runtimeVersion: '1.3.3' });
+    if (!('runArgs' in at133)) throw new Error('expected image-mode shape');
+    expect((at133.mounts ?? []).join('\n')).toContain(
+      'source=monoceros-sandbox-claude-remote,target=/home/node/.claude/remote,type=volume',
+    );
   });
 
   it('per-container JetBrains volumes at 1.3.0, shared dist only from 1.3.2', () => {

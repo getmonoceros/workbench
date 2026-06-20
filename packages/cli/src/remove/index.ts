@@ -16,6 +16,7 @@ import {
   type DockerExec,
 } from '../devcontainer/compose.js';
 import { ideStateVolumes } from '../create/scaffold.js';
+import { stopBridgeDaemon } from '../devcontainer/bridge-daemon.js';
 import { removeSshAttach } from '../devcontainer/ssh-attach.js';
 import { maybeStopProxy } from '../proxy/index.js';
 import { removeDynamicConfig } from '../proxy/dynamic.js';
@@ -182,6 +183,14 @@ export async function runRemove(
       });
     }
     logger.info(`Backup written to ${prettyPath(backupPath)}.`);
+  }
+
+  // Stop the host-side browser-bridge daemon (if running) before we delete
+  // the container dir its pid file lives in. It would self-exit once it
+  // noticed the container gone, but stopping it here is immediate and avoids
+  // racing the directory removal. Best-effort.
+  if (hasContainer) {
+    await stopBridgeDaemon(containerPath);
   }
 
   // ── Step 3: delete host-side state ─────────────────────────────

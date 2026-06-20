@@ -125,6 +125,7 @@ broad swath of the home directory):
 | VS Code Remote   | `~/.vscode-server`                                    | confirmed  | 1.1.0         |
 | VS Codium Remote | `~/.vscodium-server`                                  | confirmed  | 1.2.0         |
 | JetBrains        | `~/.cache/JetBrains` + `~/.config` + `~/.local/share` | confirmed  | 1.3.0         |
+| Claude Code SSH  | `~/.claude/remote`                                    | confirmed  | 1.3.3         |
 | Zed              | `~/.zed_server`                                       | to confirm | -             |
 
 Confirmed via `open-remote-ssh` on Codium: it lays down `~/.vscodium-server`
@@ -164,6 +165,20 @@ node-owned there); the per-container JetBrains volumes are gated on 1.3.0.
 This is the only place a Monoceros volume is shared across containers,
 justified by the multi-GB, container-identical distribution - the same
 reasoning that makes the proxy a singleton.
+
+Claude Code's own desktop app attaches over this same SSH point and joins
+the allowlist for a different reason than the IDEs. Its `claude-ssh` remote
+server binds an rpc socket under `~/.claude/remote/run/<id>/rpc.sock` and
+`chmod`s it; on Docker Desktop `~/.claude` is a VirtioFS/`fakeowner` host
+mount, where `chmod` on a **socket inode** fails with `EINVAL`
+(docker/for-mac#6614) - the daemon never reaches accept and the app times
+out with "Failed to start remote server". A per-container
+`monoceros-<name>-claude-remote` volume puts the whole `remote/` tree on
+container-native storage where the chmod works, and persists the (~230 MB)
+downloaded server across rebuilds. Only `remote/` moves to the volume; the
+rest of `~/.claude` (auth, config) stays on the host mount, host-visible.
+Gated on runtime 1.3.3 (the image pre-creates `~/.claude/remote`
+node-owned there).
 
 As in ADR 0015, volumes target **sub-directories the IDE writes into**,
 never a whole IDE-owned directory - that lesson (VS Code owns `bin/`)
@@ -210,6 +225,39 @@ plain `ssh.exe monoceros-<name>` and Codium both connect):
 No-op on macOS / native Linux (`realIsWsl()` is false). JetBrains Gateway
 on Windows reads the same Windows config + ProxyCommand, so it is expected
 to work like Codium - to be confirmed on a real Gateway connection.
+
+### 6. Always-on host-browser bridge for attach sessions
+
+The Host-Browser-Bridge (a relay `xdg-open` whose URL is opened on the host
+by a watching host process) was wired only into `monoceros run`/`shell`: the
+watcher lived in that transient CLI process, and `wrapExec` put the relay on
+`PATH` + `$BROWSER` for that one exec. A session this attach point creates -
+the IDE/desktop-app remote server spawns the shell or agent directly in the
+container - goes through neither, so a tool inside (or the agent opening the
+running app) had no way to reach the host browser. This was the deferred
+"in-container terminals don't get the bridge" limitation.
+
+The fix makes the bridge always-on for a running container, in two halves:
+
+- **Relay in the image, not per-session** (>= 1.3.3): a real `xdg-open` at
+  `/usr/local/bin/xdg-open` (on PATH) that writes the URL to the single
+  workspace's `.monoceros-bridge/url`, plus `ENV BROWSER` pointing at it. So
+  EVERY process - interactive or not, including ones the `claude-ssh` daemon
+  spawns - relays through it without any per-session env wiring. It is
+  self-healing (recreates the relay dir if a `run`/`shell` session disposed
+  it) and exits 0 unconditionally.
+- **A host-side daemon bound to the container lifecycle.** `apply`/`start`
+  spawn a detached `monoceros __bridge <root>` that runs the SAME watcher
+  (`watchRelayUrl`, shared with the per-session bridge) for the container's
+  whole lifetime: it opens each relayed URL on the host and replays a
+  localhost OAuth callback in. It self-exits when the container stops (polls
+  `isWorkspaceRunning`), is SIGTERM'd by `remove`, and a pid file under the
+  relay dir makes the spawn idempotent. Gated on runtime 1.3.3 (below that
+  the image has no relay, so the daemon would watch a file nothing writes).
+
+The `~/.claude/remote` volume (section 4 table) is what lets the remote
+server start at all on Docker Desktop; this is what lets a tool in that
+session reach the host browser once it has.
 
 ## Rationale
 
