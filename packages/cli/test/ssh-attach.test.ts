@@ -249,6 +249,13 @@ describe('Windows/WSL bridge', () => {
     expect(cfg).toContain(`Port ${windowsSshPort('demo')}`);
     expect(cfg).not.toContain('ProxyCommand');
     expect(cfg).toContain('# <<< monoceros monoceros-demo <<<');
+    // The unix config.d entry (read by the app via the WSL ~/.ssh/config
+    // Include, and by `ssh` in the WSL terminal) must ALSO be direct under
+    // WSL - the Claude app's ssh2 trips on a ProxyCommand there.
+    const unixEntry = await readFile(sshConfigEntryPath(home, 'demo'), 'utf8');
+    expect(unixEntry).toContain('HostName 127.0.0.1');
+    expect(unixEntry).toContain(`Port ${windowsSshPort('demo')}`);
+    expect(unixEntry).not.toContain('ProxyCommand');
     // icacls invoked on the Windows key path for the resolved user
     expect(locked).toEqual([
       { p: 'C:\\Users\\TestUser\\.ssh\\monoceros\\demo', u: 'TestUser' },
