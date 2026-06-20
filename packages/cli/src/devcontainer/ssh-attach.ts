@@ -56,6 +56,14 @@ export interface SetupSshAttachOptions {
   keygen?: KeygenSpawn;
   logger?: { info: (m: string) => void; warn: (m: string) => void };
   /**
+   * Host-loopback port for the Windows direct-port attach (ADR 0022
+   * revision), set only when the pinned runtime publishes it (>= 1.3.4). When
+   * given, the Windows `Host` block is a direct `HostName`/`Port`; otherwise
+   * it keeps the portless docker-exec ProxyCommand (works for system OpenSSH /
+   * IDEs on older runtimes). Ignored off WSL.
+   */
+  windowsDirectPort?: number | null;
+  /**
    * Windows/WSL bridge injectables. Omitted in production (real WSL
    * detection + cmd.exe/wslpath/icacls); tests stub them to write into a
    * temp dir without a real WSL. See the Windows bridge section.
@@ -328,23 +336,36 @@ export function windowsSshPort(name: string): number {
 function windowsHostBlock(
   hostAlias: string,
   keyWin: string,
-  port: number,
+  port: number | null,
 ): string {
-  // The Claude desktop app's bundled ssh2 cannot run a ProxyCommand on
-  // Windows (it spawns it via `sh`, which Windows lacks), so connect DIRECTLY
-  // to the host-loopback port that `apply` publishes (sshd-up.sh forwards it
-  // to the in-container sshd). Host-key checking is disabled for system ssh;
-  // the app's ssh2 ignores that and uses ~/.ssh/known_hosts, which `apply`
-  // populates with the (now stable) host key under `[127.0.0.1]:<port>`.
-  return [
+  const head = [
     `Host ${hostAlias}`,
-    `    HostName 127.0.0.1`,
-    `    Port ${port}`,
     `    User node`,
     `    IdentityFile ${keyWin}`,
     `    IdentitiesOnly yes`,
     `    StrictHostKeyChecking no`,
     `    UserKnownHostsFile NUL`,
+  ];
+  if (port !== null) {
+    // Runtime >= 1.3.4: connect DIRECTLY to the host-loopback port `apply`
+    // publishes (sshd-up.sh forwards it to the in-container sshd). The Claude
+    // desktop app's bundled ssh2 cannot run a ProxyCommand on Windows (it
+    // spawns it via `sh`, absent there); it ignores `UserKnownHostsFile` and
+    // uses ~/.ssh/known_hosts, which `apply` populates with the host key.
+    return [
+      `Host ${hostAlias}`,
+      `    HostName 127.0.0.1`,
+      `    Port ${port}`,
+      ...head.slice(1),
+    ].join('\n');
+  }
+  // Older runtime: no published port, so keep the portless docker-exec
+  // ProxyCommand. System OpenSSH (terminal, VS Code/Codium/JetBrains) runs it
+  // fine on Windows; the Claude app can't (no `sh`) until the container is on
+  // a runtime that publishes the port.
+  return [
+    ...head,
+    `    ProxyCommand docker exec -i ${hostAlias} socat - TCP:127.0.0.1:22`,
   ].join('\n');
 }
 
@@ -410,6 +431,7 @@ async function setupWindowsBridge(
   name: string,
   hostAlias: string,
   privateKey: string,
+  directPort: number | null,
   deps: Required<WindowsBridgeDeps>,
   logger: { info: (m: string) => void; warn: (m: string) => void },
 ): Promise<void> {
@@ -435,7 +457,7 @@ async function setupWindowsBridge(
   await upsertMarkedBlock(
     path.join(profile.homeWsl, '.ssh', 'config'),
     hostAlias,
-    windowsHostBlock(hostAlias, keyWin, windowsSshPort(name)),
+    windowsHostBlock(hostAlias, keyWin, directPort),
   );
   await deps.lockKey(keyWin, profile.user);
   logger.info(
@@ -497,6 +519,7 @@ export async function setupSshAttach(
       opts.name,
       hostAlias,
       keys.privateKey,
+      opts.windowsDirectPort ?? null,
       resolveWindowsDeps(opts.windows),
       logger,
     );

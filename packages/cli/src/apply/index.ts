@@ -42,6 +42,7 @@ import {
   type KeygenSpawn,
   recordHostKey,
   setupSshAttach,
+  windowsSshPort,
 } from '../devcontainer/ssh-attach.js';
 import {
   needsCompose,
@@ -477,6 +478,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         name: opts.name,
         targetDir,
         home,
+        // Direct-port Windows block only when the runtime publishes the port
+        // (>= 1.3.4); otherwise the Windows block keeps the ProxyCommand.
+        windowsDirectPort: runtimeSupportsHostKeyPinning(
+          createOpts.runtimeVersion,
+        )
+          ? windowsSshPort(opts.name)
+          : null,
         ...(opts.sshKeygen ? { keygen: opts.sshKeygen } : {}),
         ...(opts.sshUserSshDir ? { userSshDir: opts.sshUserSshDir } : {}),
         logger: idLogger,

@@ -229,6 +229,7 @@ describe('Windows/WSL bridge', () => {
       home,
       userSshDir,
       keygen: fakeKeygen().spawn,
+      windowsDirectPort: windowsSshPort('demo'),
       windows: deps,
     });
 
@@ -252,6 +253,24 @@ describe('Windows/WSL bridge', () => {
     expect(locked).toEqual([
       { p: 'C:\\Users\\TestUser\\.ssh\\monoceros\\demo', u: 'TestUser' },
     ]);
+  });
+
+  it('falls back to the ProxyCommand block when no direct port is given (older runtime)', async () => {
+    const { deps } = winDeps();
+    await setupSshAttach({
+      name: 'demo',
+      targetDir,
+      home,
+      userSshDir,
+      keygen: fakeKeygen().spawn,
+      // windowsDirectPort omitted -> runtime < 1.3.4
+      windows: deps,
+    });
+    const cfg = await readFile(path.join(winHome, '.ssh', 'config'), 'utf8');
+    expect(cfg).toContain(
+      'ProxyCommand docker exec -i monoceros-demo socat - TCP:127.0.0.1:22',
+    );
+    expect(cfg).not.toContain('HostName 127.0.0.1');
   });
 
   it('does nothing when not under WSL', async () => {
