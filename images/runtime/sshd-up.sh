@@ -84,10 +84,11 @@ fi
 
 # Windows attach (ADR 0022 revision): the Claude desktop app cannot use a
 # ProxyCommand on Windows (its ssh2 spawns it via `sh`, which Windows lacks),
-# so on Windows applies `apply` publishes a host port and sets
-# MONOCEROS_SSH_PUBLISH_PORT. sshd stays loopback-only; a socat bridge listens
-# on that port on the container interface and forwards to sshd. Idempotent.
-port="${MONOCEROS_SSH_PUBLISH_PORT:-}"
+# so on Windows applies `apply` passes a host port as the first ARGUMENT (env
+# would not survive the `sudo` this script runs under). sshd stays
+# loopback-only; a socat bridge listens on that port on the container
+# interface and forwards to sshd. Idempotent.
+port="${1:-${MONOCEROS_SSH_PUBLISH_PORT:-}}"
 if [[ -n "$port" ]] && ! pgrep -f "TCP-LISTEN:${port}," >/dev/null 2>&1; then
   setsid socat "TCP-LISTEN:${port},fork,reuseaddr" TCP:127.0.0.1:22 \
     >/dev/null 2>&1 &

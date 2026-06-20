@@ -793,7 +793,7 @@ export function ideStateVolumesForRuntime(
  * The host-loopback ssh port to publish for the Windows direct-port attach
  * (ADR 0022 revision), or null when it doesn't apply: only on a WSL apply
  * (the Windows desktop app's ssh2 can't run a ProxyCommand) and only when the
- * pinned runtime forwards it (>= 1.3.4). When set, the scaffold publishes
+ * pinned runtime forwards it (>= 1.3.5). When set, the scaffold publishes
  * `127.0.0.1:<port>:<port>` and sets `MONOCEROS_SSH_PUBLISH_PORT` so
  * `sshd-up.sh` bridges it to the in-container sshd. macOS/Linux: always null
  * (they keep the portless ProxyCommand transport).
@@ -886,8 +886,17 @@ export function buildDevcontainerJson(
   // entrypoint never runs the daemon. Runs via sudo (node has passwordless
   // sudo); the image-baked script is idempotent. Gated on the pinned
   // runtime shipping sshd (>= 1.2.0).
+  // Pass the Windows ssh-bridge port as an ARGUMENT (not env): the script
+  // runs under `sudo`, which strips the environment, so an env var never
+  // reaches it. Empty arg on macOS/Linux. sshd-up.sh starts the socat
+  // forwarder only when the arg is present.
+  const sshBridgePort = windowsBridgePort(opts);
   const sshPostStart = runtimeSupportsSshAttach(opts.runtimeVersion)
-    ? { postStartCommand: 'sudo /usr/local/bin/monoceros-sshd-up.sh' }
+    ? {
+        postStartCommand: `sudo /usr/local/bin/monoceros-sshd-up.sh${
+          sshBridgePort !== null ? ` ${sshBridgePort}` : ''
+        }`,
+      }
     : {};
 
   // Feature-contributed workspace runtime env (`feature.workspaceEnv`). In
@@ -895,7 +904,6 @@ export function buildDevcontainerJson(
   // buildComposeYaml); in image mode it becomes a `containerEnv` object on the
   // devcontainer.json, so every process in the container sees it. (Service
   // connection env only exists in compose mode, where services live.)
-  const sshBridgePort = windowsBridgePort(opts);
   const workspaceEnv = {
     ...featureWorkspaceEnv(resolvedFeatures),
     ...(sshBridgePort

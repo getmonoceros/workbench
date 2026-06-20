@@ -479,7 +479,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         targetDir,
         home,
         // Direct-port Windows block only when the runtime publishes the port
-        // (>= 1.3.4); otherwise the Windows block keeps the ProxyCommand.
+        // (>= 1.3.5); otherwise the Windows block keeps the ProxyCommand.
         windowsDirectPort: runtimeSupportsHostKeyPinning(
           createOpts.runtimeVersion,
         )
@@ -735,7 +735,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       // Record the container's (now stable) SSH host key in ~/.ssh/known_hosts
       // so the Claude desktop app's ssh2 (no trust-on-first-use) accepts it -
       // under the alias on macOS/Linux, under [127.0.0.1]:<port> on Windows.
-      // The host key is persisted by sshd-up.sh (>= 1.3.4). Best-effort.
+      // The host key is persisted by sshd-up.sh (>= 1.3.5). Best-effort.
       if (runtimeSupportsHostKeyPinning(createOpts.runtimeVersion)) {
         try {
           await recordHostKey({

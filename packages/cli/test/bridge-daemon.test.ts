@@ -72,4 +72,22 @@ describe('runBridgeDaemon lifecycle', () => {
     // The pid file is created on start and removed on exit.
     expect(existsSync(bridgePidFile(root))).toBe(false);
   });
+
+  it('clears a leftover URL file on start so a stale URL is not auto-opened', async () => {
+    const urlFile = path.join(root, '.monoceros-bridge', 'url');
+    await fsp.mkdir(path.dirname(urlFile), { recursive: true });
+    await fsp.writeFile(
+      urlFile,
+      'https://stale.example/from-a-prior-session\n',
+    );
+
+    await runBridgeDaemon({
+      root,
+      dockerExec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+      spawn: async () => 0,
+      lifecheckMs: 10,
+    });
+
+    expect(existsSync(urlFile)).toBe(false);
+  });
 });

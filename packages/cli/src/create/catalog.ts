@@ -63,13 +63,16 @@ const MIN_RUNTIME_FOR_IDE_VOLUMES = '1.1.0';
 // in, like MIN_RUNTIME_FOR_IDE_VOLUMES above.
 const MIN_RUNTIME_FOR_SSH_ATTACH = '1.2.0';
 
-// Minimum runtime that persists SSH host keys across rebuilds + ships the
-// Windows ssh bridge forwarder (ADR 0022 revision). At/above it, `apply`
-// records the container's (now stable) host key in `~/.ssh/known_hosts` - the
-// Claude desktop app's ssh2 requires it (no trust-on-first-use) - and on
-// Windows publishes a host-loopback port for a direct (no-ProxyCommand)
-// connection. Below it, none of that is emitted.
-const MIN_RUNTIME_FOR_HOST_KEY_PINNING = '1.3.4';
+// Minimum runtime that persists SSH host keys across rebuilds + ships a
+// WORKING Windows ssh bridge forwarder (ADR 0022 revision). 1.3.4 shipped the
+// forwarder but read its port from an env var that `sudo` stripped, so it
+// never started - the direct-port block was dead. 1.3.5 reads the port as an
+// argument. At/above it, `apply` records the container's (stable) host key in
+// `~/.ssh/known_hosts` (the Claude desktop app's ssh2 requires it - no
+// trust-on-first-use) and on Windows publishes a host-loopback port for a
+// direct (no-ProxyCommand) connection. Below it, none of that is emitted
+// (Windows keeps the ProxyCommand block, which works for system OpenSSH).
+const MIN_RUNTIME_FOR_HOST_KEY_PINNING = '1.3.5';
 
 // Minimum runtime that ships the always-on browser-bridge plumbing: a
 // permanent relay `xdg-open` on PATH plus `BROWSER` pointing at it, so a

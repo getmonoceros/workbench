@@ -120,6 +120,11 @@ export async function runBridgeDaemon(opts: {
   const lifecheckMs = opts.lifecheckMs ?? 5000;
 
   await fsp.mkdir(relayDir(root), { recursive: true });
+  // Drop any leftover URL from a previous session BEFORE watching - otherwise
+  // the daemon would open a stale URL in the host browser the moment it starts
+  // (e.g. right after `apply`/`upgrade`). Only URLs written while we watch
+  // should open. Mirrors what the per-session bridge does on startup.
+  await fsp.rm(relayUrlFile(root), { force: true });
   await fsp.writeFile(bridgePidFile(root), String(process.pid));
 
   const watcher = watchRelayUrl({

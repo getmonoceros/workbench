@@ -57,7 +57,7 @@ export interface SetupSshAttachOptions {
   logger?: { info: (m: string) => void; warn: (m: string) => void };
   /**
    * Host-loopback port for the Windows direct-port attach (ADR 0022
-   * revision), set only when the pinned runtime publishes it (>= 1.3.4). When
+   * revision), set only when the pinned runtime publishes it (>= 1.3.5). When
    * given, the Windows `Host` block is a direct `HostName`/`Port`; otherwise
    * it keeps the portless docker-exec ProxyCommand (works for system OpenSSH /
    * IDEs on older runtimes). Ignored off WSL.
@@ -347,7 +347,7 @@ function windowsHostBlock(
     `    UserKnownHostsFile NUL`,
   ];
   if (port !== null) {
-    // Runtime >= 1.3.4: connect DIRECTLY to the host-loopback port `apply`
+    // Runtime >= 1.3.5: connect DIRECTLY to the host-loopback port `apply`
     // publishes (sshd-up.sh forwards it to the in-container sshd). The Claude
     // desktop app's bundled ssh2 cannot run a ProxyCommand on Windows (it
     // spawns it via `sh`, absent there); it ignores `UserKnownHostsFile` and
