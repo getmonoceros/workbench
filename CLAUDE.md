@@ -131,6 +131,28 @@ cwd is irrelevant — everything goes through convention.
   different home (and so you don't leave a proxy corpse behind for the
   builder). Details in the README under “Developing on the workbench”.
 
+## Working an issue (board workflow)
+
+When you are asked to work a GitHub issue, drive it through the
+**🦄 Project Monoceros** board. Statuses, in order:
+`Backlog → Ready → In progress → In review → Done & Delivered`.
+
+1. **In progress** - move the issue here before writing code. If it
+   isn't on the board yet, add it first, then set the status.
+2. **Implement** - do the work.
+3. **In review** - once it's done, everything is pushed, and the
+   release pipelines are running, move it to In review and add an issue
+   comment describing what you changed. (On this repo a version-bump
+   push publishes, so delivery happens here too - see the release model
+   below.)
+4. **Done & Delivered** - the closing step, after the review. This is
+   the user's call: they move it themselves or tell you to. Never move
+   an issue to Done & Delivered on your own.
+
+Board fields can be renamed (e.g. "Done" → "Done & Delivered"):
+re-query the live Status options before relying on a name, don't trust
+a remembered value.
+
 ## The workbench's own stack (not the containers built with it)
 
 - pnpm workspaces
