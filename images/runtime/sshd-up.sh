@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Monoceros: bring up sshd for the universal IDE attach point (ADR 0022).
 #
-# Invoked from the container's `postStartCommand` (the devcontainer
-# lifecycle), NOT the image ENTRYPOINT: devcontainer-cli overrides the
-# entrypoint in image mode (it runs the container as `/bin/sh -c <keep
-# alive>`), so the entrypoint is not a reliable place to start daemons.
-# postStartCommand runs in both image and compose mode and on every
-# container start, so sshd survives a stop/start too.
+# Invoked from two places: the image ENTRYPOINT (every container start)
+# and the container's `postStartCommand` (the devcontainer lifecycle, on
+# apply / `monoceros start`). The entrypoint invocation is what makes sshd
+# survive a plain `docker restart` / Docker Desktop restart / host reboot:
+# those restart PID 1 (the entrypoint) but do NOT re-run the
+# postStartCommand. For the entrypoint to run as PID 1 in image mode the
+# scaffold sets `overrideCommand: false` (devcontainer-cli otherwise
+# replaces the entrypoint with its own keep-alive); in compose mode the
+# image entrypoint always runs. The postStartCommand stays as the
+# apply/start path.
 #
 # Idempotent: safe to run on every start. Needs root (binds port 22,
 # writes /run/sshd, reads host keys); the lifecycle invokes it via sudo.
@@ -84,10 +88,12 @@ fi
 
 # Windows attach (ADR 0022 revision): the Claude desktop app cannot use a
 # ProxyCommand on Windows (its ssh2 spawns it via `sh`, which Windows lacks),
-# so on Windows applies `apply` passes a host port as the first ARGUMENT (env
-# would not survive the `sudo` this script runs under). sshd stays
-# loopback-only; a socat bridge listens on that port on the container
-# interface and forwards to sshd. Idempotent.
+# so on Windows applies the bridge port is wired both ways: the
+# postStartCommand passes it as the first ARGUMENT (env would not survive the
+# `sudo` it runs under), while the entrypoint runs as root and lets it through
+# the env (MONOCEROS_SSH_PUBLISH_PORT). Either path resolves the same port.
+# sshd stays loopback-only; a socat bridge listens on that port on the
+# container interface and forwards to sshd. Idempotent.
 port="${1:-${MONOCEROS_SSH_PUBLISH_PORT:-}}"
 if [[ -n "$port" ]] && ! pgrep -f "TCP-LISTEN:${port}," >/dev/null 2>&1; then
   setsid socat "TCP-LISTEN:${port},fork,reuseaddr" TCP:127.0.0.1:22 \

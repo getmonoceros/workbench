@@ -14,9 +14,15 @@
 #     see ADR 0002 for context on why it's not enabled by default)
 #   - `gosu` for the entrypoint's privilege drop to `node`
 #   - `openssh-server` + `socat` for the universal IDE attach point:
-#     sshd runs on loopback (brought up by `monoceros-sshd-up.sh` via the
-#     container's postStartCommand, NOT the entrypoint - devcontainer-cli
-#     overrides the entrypoint in image mode). The host reaches it portless
+#     sshd runs on loopback (brought up by `monoceros-sshd-up.sh` from the
+#     entrypoint on every container start, plus the container's
+#     postStartCommand on apply/start). Starting it from the entrypoint is
+#     what lets sshd survive a plain `docker restart` / Docker Desktop
+#     restart / host reboot, which restarts PID 1 but does NOT re-run the
+#     devcontainer postStartCommand. In image mode the scaffold sets
+#     `overrideCommand: false` (gated on the runtime version) so this
+#     entrypoint actually runs as PID 1 - otherwise devcontainer-cli
+#     overrides it with its own keepalive. The host reaches sshd portless
 #     via `docker exec … socat … TCP:127.0.0.1:22`. Any SSH-capable IDE
 #     (Codium, IntelliJ, Zed) and a plain terminal attach to the running
 #     container without restarting it. See ADR 0022.
@@ -56,8 +62,9 @@ RUN install -d /etc/ssh/sshd_config.d \
       'PubkeyAuthentication yes' \
       > /etc/ssh/sshd_config.d/monoceros.conf
 
-# sshd bring-up script, run from each container's postStartCommand (see
-# scaffold.ts). Baked into the image so it versions with the runtime.
+# sshd bring-up script, run from the entrypoint on every container start
+# AND from each container's postStartCommand (see entrypoint.sh / scaffold.ts).
+# Baked into the image so it versions with the runtime.
 COPY sshd-up.sh /usr/local/bin/monoceros-sshd-up.sh
 RUN chmod 0755 /usr/local/bin/monoceros-sshd-up.sh
 

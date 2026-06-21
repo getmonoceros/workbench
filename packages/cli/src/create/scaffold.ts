@@ -16,6 +16,7 @@ import {
   parseLanguageSpec,
   compareRuntimeVersions,
   resolveRuntimeImage,
+  runtimeSupportsEntrypointSshd,
   runtimeSupportsHostKeyPinning,
   runtimeSupportsSshAttach,
   serviceClientAptPackages,
@@ -257,6 +258,16 @@ interface DevcontainerImageMode {
   // not the entrypoint, because devcontainer-cli overrides the entrypoint
   // in image mode. Only present when the pinned runtime ships sshd.
   postStartCommand?: string;
+  // When false, devcontainer-cli runs the image's own ENTRYPOINT + CMD as
+  // PID 1 instead of replacing them with its keep-alive. Set false on a
+  // runtime whose entrypoint brings up sshd (issue #20) so that entrypoint
+  // actually runs on every container start - that is what lets sshd recover
+  // after a plain `docker restart` / Docker Desktop restart / host reboot
+  // (which restart PID 1 but never re-run the postStartCommand). Omitted
+  // (devcontainer default) on older runtimes, which lack the entrypoint
+  // bring-up and a baked keep-alive CMD. Image mode only: in compose mode the
+  // image entrypoint already runs as PID 1.
+  overrideCommand?: boolean;
   features?: Record<string, Record<string, unknown>>;
   // Env vars injected into the workspace container at start time
   // (inherited by postCreateCommand). Used by add-repo to wire the
@@ -880,12 +891,17 @@ export function buildDevcontainerJson(
         }
       : undefined;
 
-  // Bring sshd up for the IDE attach point on every start (ADR 0022).
-  // A postStartCommand (lifecycle hook) rather than the image entrypoint:
-  // devcontainer-cli overrides the entrypoint in image mode, so the
-  // entrypoint never runs the daemon. Runs via sudo (node has passwordless
-  // sudo); the image-baked script is idempotent. Gated on the pinned
-  // runtime shipping sshd (>= 1.2.0).
+  // Bring sshd up for the IDE attach point (ADR 0022). The postStartCommand
+  // (a devcontainer lifecycle hook) runs it on apply / `monoceros start`. It
+  // does NOT run on a plain `docker restart` / Docker Desktop restart / host
+  // reboot - those restart PID 1 but skip the lifecycle hooks, which is why
+  // sshd used to stay down until the next `monoceros start` (issue #20). The
+  // durable fix is the image entrypoint, which runs `sshd-up.sh` on every
+  // start; in image mode that entrypoint only runs as PID 1 when we turn off
+  // devcontainer-cli's command override (see overrideCommand below). The
+  // postStartCommand stays as the first-run / `monoceros start` path.
+  // Runs via sudo (node has passwordless sudo); the image-baked script is
+  // idempotent. Gated on the pinned runtime shipping sshd (>= 1.2.0).
   // Pass the Windows ssh-bridge port as an ARGUMENT (not env): the script
   // runs under `sudo`, which strips the environment, so an env var never
   // reaches it. Empty arg on macOS/Linux. sshd-up.sh starts the socat
@@ -1007,6 +1023,19 @@ export function buildDevcontainerJson(
     runArgs.push('-p', `127.0.0.1:${sshBridgePort}:${sshBridgePort}`);
   }
 
+  // Run the image's own ENTRYPOINT + CMD as PID 1 instead of devcontainer-cli's
+  // keep-alive override, so the entrypoint's sshd bring-up fires on every
+  // container start - the fix for sshd dying after a `docker restart` /
+  // Docker Desktop restart / host reboot (issue #20). Only safe at/above the
+  // runtime that ships that entrypoint AND a baked keep-alive CMD; older
+  // runtimes keep the devcontainer default (we omit the field). Compose mode
+  // needs no equivalent: the image entrypoint already runs as PID 1 there.
+  const overrideCommandField = runtimeSupportsEntrypointSshd(
+    opts.runtimeVersion,
+  )
+    ? { overrideCommand: false }
+    : {};
+
   return {
     name: opts.name,
     image: resolveRuntimeImage(opts.runtimeVersion),
@@ -1017,6 +1046,7 @@ export function buildDevcontainerJson(
     forwardPorts: ports,
     postCreateCommand: '.devcontainer/post-create.sh',
     ...sshPostStart,
+    ...overrideCommandField,
     ...(containerEnvField ?? {}),
     ...(featuresField ?? {}),
     ...(customizationsField ?? {}),

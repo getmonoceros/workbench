@@ -43,6 +43,18 @@ if [[ "$(id -u)" != "0" ]]; then
   exec "$@"
 fi
 
+# Bring up the IDE-attach sshd (ADR 0022) on EVERY container start. A plain
+# `docker restart` / Docker Desktop restart / host reboot restarts PID 1 (this
+# entrypoint) but does NOT re-run the devcontainer postStartCommand, so the
+# entrypoint is the only hook that fires then. We're root here, so the Windows
+# bridge port reaches the script via MONOCEROS_SSH_PUBLISH_PORT in the env (no
+# `sudo` to strip it). Idempotent + best-effort: a failure must never block the
+# container from coming up. The script is a no-op when sshd isn't installed.
+# (postStartCommand still runs it on apply / `monoceros start` too.)
+if [[ -x /usr/local/bin/monoceros-sshd-up.sh ]]; then
+  /usr/local/bin/monoceros-sshd-up.sh || true
+fi
+
 if [[ "$MODE" == "off" ]]; then
   log "egress enforcement disabled via MONOCEROS_EGRESS=off"
   drop_to_user_and_exec "$@"

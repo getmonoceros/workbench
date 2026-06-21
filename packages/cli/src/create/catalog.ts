@@ -74,6 +74,16 @@ const MIN_RUNTIME_FOR_SSH_ATTACH = '1.2.0';
 // (Windows keeps the ProxyCommand block, which works for system OpenSSH).
 const MIN_RUNTIME_FOR_HOST_KEY_PINNING = '1.3.5';
 
+// Minimum runtime whose entrypoint brings up sshd on every container start
+// (issue #20). Below this, sshd came up only from the devcontainer
+// postStartCommand, which a plain `docker restart` / Docker Desktop restart /
+// host reboot does NOT re-run - so sshd stayed down until `monoceros start`.
+// At/above it the image entrypoint runs `monoceros-sshd-up.sh`, and the
+// scaffold sets `overrideCommand: false` in image mode so that entrypoint
+// actually runs as PID 1 (devcontainer-cli otherwise replaces it with its own
+// keep-alive). Frozen at the introducing version.
+const MIN_RUNTIME_FOR_ENTRYPOINT_SSHD = '1.3.6';
+
 // Minimum runtime that ships the always-on browser-bridge plumbing: a
 // permanent relay `xdg-open` on PATH plus `BROWSER` pointing at it, so a
 // tool in ANY session (including one spawned by an IDE/desktop-app SSH
@@ -148,6 +158,20 @@ export function runtimeSupportsBrowserBridge(version?: string): boolean {
 export function runtimeSupportsHostKeyPinning(version?: string): boolean {
   if (!version) return false;
   return compareRuntimeVersions(version, MIN_RUNTIME_FOR_HOST_KEY_PINNING) >= 0;
+}
+
+/**
+ * Whether the pinned runtime's entrypoint brings up sshd on every container
+ * start (issue #20). Gates the image-mode `overrideCommand: false`: only at/
+ * above this version does the image have both the entrypoint sshd bring-up and
+ * a baked keep-alive CMD, so turning off devcontainer-cli's command override
+ * is safe (the entrypoint becomes PID 1 and keeps the container alive). False
+ * when unpinned or below the minimum - those containers keep the default
+ * override and recover sshd only via `monoceros start`.
+ */
+export function runtimeSupportsEntrypointSshd(version?: string): boolean {
+  if (!version) return false;
+  return compareRuntimeVersions(version, MIN_RUNTIME_FOR_ENTRYPOINT_SSHD) >= 0;
 }
 
 export interface LanguageEntry {

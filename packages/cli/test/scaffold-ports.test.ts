@@ -265,6 +265,39 @@ describe('SSH attach postStartCommand (ADR 0022)', () => {
   });
 });
 
+describe('entrypoint sshd bring-up overrideCommand (issue #20)', () => {
+  it('image-mode sets overrideCommand:false on a runtime whose entrypoint starts sshd', () => {
+    const dc = buildDevcontainerJson({ ...base, runtimeVersion: '1.3.6' }) as {
+      overrideCommand?: boolean;
+      runArgs?: string[];
+    };
+    if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
+    expect(dc.overrideCommand).toBe(false);
+  });
+
+  it('image-mode omits overrideCommand below the minimum or when unpinned', () => {
+    const old = buildDevcontainerJson({
+      ...base,
+      runtimeVersion: '1.3.5',
+    }) as { overrideCommand?: boolean };
+    expect(old.overrideCommand).toBeUndefined();
+    const unpinned = buildDevcontainerJson(base) as {
+      overrideCommand?: boolean;
+    };
+    expect(unpinned.overrideCommand).toBeUndefined();
+  });
+
+  it('compose-mode never sets overrideCommand (the image entrypoint runs as PID 1 there)', () => {
+    const dc = buildDevcontainerJson({
+      ...base,
+      runtimeVersion: '1.3.6',
+      services: [resolveService(expandCuratedService('postgres'))],
+    }) as { overrideCommand?: boolean };
+    if ('runArgs' in dc) throw new Error('expected compose-mode shape');
+    expect(dc.overrideCommand).toBeUndefined();
+  });
+});
+
 describe('deterministic workspace container name (ADR 0022)', () => {
   it('image-mode pins --name=monoceros-<name> in runArgs', () => {
     const dc = buildDevcontainerJson({ ...base, runtimeVersion: '1.2.0' });

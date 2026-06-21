@@ -57,6 +57,26 @@ public key from the `/workspaces/*/.monoceros/ssh/*.pub` glob, and starts
 sshd idempotently. The scaffold only emits the postStartCommand when the
 pinned runtime ships sshd (>= 1.2.0).
 
+**Revision (issue #20, runtime >= 1.3.6): also start sshd from the
+entrypoint.** The claim above that "a postStartCommand runs on every start"
+holds only for devcontainer-managed starts (`apply` / `monoceros start`). A
+plain `docker restart`, a Docker Desktop restart, or a host reboot restarts
+the container's PID 1 but does **not** re-run the devcontainer lifecycle
+hooks - so sshd stayed down until the next `monoceros start`. The fix moves
+the bring-up to where it belongs for a "survives any restart" daemon: the
+image entrypoint runs `monoceros-sshd-up.sh` on every container start. The
+original objection (the entrypoint never executes in image mode because
+devcontainer-cli overrides the command) is removed by setting
+`overrideCommand: false` in the image-mode `devcontainer.json`, so the image's
+own ENTRYPOINT + a baked `CMD ["sleep","infinity"]` keep-alive run as PID 1.
+Compose mode needs no change - the image entrypoint already runs there. The
+entrypoint runs as root, so the Windows bridge port reaches the script through
+`MONOCEROS_SSH_PUBLISH_PORT` in the container env (no `sudo` to strip it),
+while the postStartCommand keeps passing it as an argument. The
+postStartCommand is kept as the first-run / `monoceros start` path. Gated on
+the runtime version because the keep-alive `CMD` and entrypoint bring-up only
+exist from 1.3.6 on; below it the default override stays.
+
 ### 2. Per-container keypair, workbench-managed
 
 `apply` mints a dedicated `ed25519` keypair per container:
