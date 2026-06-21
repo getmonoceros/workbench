@@ -64,7 +64,8 @@ describe('expandCuratedService / isCuratedService', () => {
         PASSWORD: '${POSTGRES_PASSWORD}',
         DB: '${POSTGRES_DB}',
       },
-      restart: 'unless-stopped',
+      // No `restart:` default (issue #19) - services match the workspace's
+      // no-restart-policy so the whole group stays down after a Docker restart.
     });
   });
 

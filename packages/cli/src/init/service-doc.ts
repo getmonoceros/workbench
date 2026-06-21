@@ -89,7 +89,8 @@ export function renderCustomService(
     '   - rel/host/path:/in/container:ro',
     ' healthcheck:',
     '   test: curl -f http://localhost:8080/health',
-    ' restart: unless-stopped',
+    ' restart: unless-stopped     # optional; off by default so the whole',
+    '                             # group stays down after a Docker restart',
   ].join('\n');
   return { bodyLines, comment };
 }

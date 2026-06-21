@@ -157,7 +157,9 @@ describe('add-*/remove-* against the yml', () => {
     // seeded into <name>.env instead of baked into the shareable yml.
     expect(yml).toContain('POSTGRES_USER: ${POSTGRES_USER}');
     expect(yml).toContain('- data:/var/lib/postgresql');
-    expect(yml).toContain('restart: unless-stopped');
+    // No `restart:` policy on curated services (issue #19) so the whole
+    // compose group stays down after a Docker/host restart until `start`.
+    expect(yml).not.toContain('restart:');
     expect(yml).toMatch(/healthcheck:/);
     const env = await fs.readFile(
       path.join(home, 'container-configs', 'demo.env'),

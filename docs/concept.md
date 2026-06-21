@@ -95,7 +95,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - data:/var/lib/postgresql
-    restart: unless-stopped
     healthcheck:
       test:
         ['CMD', 'pg_isready', '-U', '${POSTGRES_USER}', '-d', '${POSTGRES_DB}']

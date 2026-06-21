@@ -219,7 +219,9 @@ describe('runInit', () => {
       'utf8',
     );
     expect(yml).toContain('POSTGRES_USER: ${POSTGRES_USER}');
-    expect(yml).toContain('restart: unless-stopped');
+    // No `restart:` policy on curated services (issue #19) so the whole
+    // compose group stays down after a Docker/host restart until `start`.
+    expect(yml).not.toContain('restart:');
     const env = await readFile(
       path.join(monocerosHome, 'container-configs', 'sandbox.env'),
       'utf8',

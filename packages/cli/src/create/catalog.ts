@@ -552,7 +552,13 @@ export function expandCuratedService(name: string): ServiceObject {
     // they travel with the service: a renamed/duplicated instance keeps them,
     // and `serviceConnectionEnv` prefixes by the instance's current name.
     ...(def.connectionEnv ? { connectionEnv: { ...def.connectionEnv } } : {}),
-    restart: 'unless-stopped',
+    // No `restart:` default on purpose (issue #19). The workspace container
+    // carries no restart policy, so on a Docker/host restart it stays down
+    // until `monoceros start`; defaulting services to `unless-stopped` made
+    // them auto-start ALONE, without the workbench they belong to. Leaving it
+    // off keeps the whole compose group's restart behavior uniform - nothing
+    // comes back on its own. `restart` stays a per-service opt-in in the yml
+    // (schema.ts) for builders who deliberately want a policy.
   };
 }
 
