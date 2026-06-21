@@ -285,8 +285,7 @@ If you added DOCKER_HOST or DOCKER_CONTEXT to ~/.bashrc / ~/.profile
 the 'unset' above only affects your current shell. Otherwise new
 terminals keep pointing at the rootless socket.
 
-Then re-run this installer. Background: see $(dim "docs/docker-on-linux.md")
-in the workbench repo.
+Then re-run this installer. Background: $(dim "https://getmonoceros.build/docs/start/requirements/")
 EOF
   exit 1
 fi
