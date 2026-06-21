@@ -50,4 +50,4 @@ Full command reference at
 
 ## License
 
-MIT — see `LICENSE` in the repository root.
+Apache-2.0 - see `LICENSE`.
