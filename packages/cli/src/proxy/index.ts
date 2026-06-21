@@ -34,6 +34,14 @@ export const PROXY_NETWORK_NAME = 'monoceros-proxy';
 /** Traefik release we pin against. Bump deliberately, not floating. */
 export const TRAEFIK_IMAGE = 'traefik:v3.3';
 
+// Restart policy for the proxy singleton. `unless-stopped` brings it back
+// after a Docker Desktop / host restart but respects a deliberate
+// `docker stop` (and `maybeStopProxy` still `rm -f`s it when no port-
+// container is left). Unlike the dev-container group - which intentionally
+// stays down until `monoceros start` - the proxy is shared infrastructure:
+// if it exists at all, a port-container needed it, so reviving it is right.
+export const PROXY_RESTART_POLICY = 'unless-stopped';
+
 export interface DockerResult {
   stdout: string;
   stderr: string;
@@ -101,9 +109,10 @@ export function proxyDynamicDir(home?: string): string {
  * Steps (all idempotent):
  *   1. mkdir -p on the dynamic-config dir (user-owned).
  *   2. `docker network create monoceros-proxy` if missing.
- *   3. If the container exists but is stopped → `docker start`.
- *      If it doesn't exist → `docker run -d` with the canonical args.
- *      If it's already running → no-op.
+ *   3. If the container exists → heal its restart policy in place
+ *      (`docker update --restart`), then `docker start` if stopped (no-op
+ *      if already running). If it doesn't exist → `docker run -d` with the
+ *      canonical args, including the restart policy.
  *
  * Throws with a docker-cli-flavored error message on the first
  * failure. Callers that want to soft-fail (e.g. apply continuing
@@ -134,6 +143,19 @@ export async function ensureProxy(opts: ProxyOptions = {}): Promise<void> {
     PROXY_CONTAINER_NAME,
   ]);
   if (state.exitCode === 0) {
+    // The proxy exists. Ensure it carries a restart policy so it comes back
+    // on its own after a Docker Desktop / host restart: once the proxy
+    // exists, some container needed a port before the restart, so reviving
+    // it is always correct. Proxies created before this change have no
+    // policy; `docker update` heals them in place without a teardown.
+    // Best-effort - a daemon that rejects the update must not break an
+    // otherwise-healthy proxy.
+    await docker([
+      'update',
+      '--restart',
+      PROXY_RESTART_POLICY,
+      PROXY_CONTAINER_NAME,
+    ]);
     if (state.stdout.trim() === 'true') return; // already up
     const start = await docker(['start', PROXY_CONTAINER_NAME]);
     if (start.exitCode !== 0) {
@@ -158,6 +180,11 @@ export async function ensureProxy(opts: ProxyOptions = {}): Promise<void> {
     '-d',
     '--name',
     PROXY_CONTAINER_NAME,
+    // Survive a Docker Desktop / host restart on its own (see the heal-in-
+    // place note above). `maybeStopProxy` still removes it when the last
+    // port-container goes away, so it never lingers without a consumer.
+    '--restart',
+    PROXY_RESTART_POLICY,
     '--network',
     PROXY_NETWORK_NAME,
     '-p',

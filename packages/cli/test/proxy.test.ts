@@ -101,13 +101,17 @@ describe('ensureProxy', () => {
     expect(runCall.join(' ')).toContain('--providers.file.directory=');
     expect(runCall.join(' ')).toContain('--providers.file.watch=true');
     expect(runCall.join(' ')).toContain('--providers.docker=false');
+    // Fresh proxy carries a restart policy so it survives a Docker restart.
+    expect(runCall).toContain('--restart');
+    expect(runCall).toContain('unless-stopped');
   });
 
-  it('starts the container in place when it exists but is stopped', async () => {
+  it('heals the restart policy and starts the container when it exists but is stopped', async () => {
     const docker = fakeDocker((args, call) => {
       if (call === 0) return ok(); // network exists
       if (call === 1) return ok('false\n'); // container exists but stopped
-      if (call === 2) return ok(); // docker start → ok
+      if (call === 2) return ok(); // docker update → ok
+      if (call === 3) return ok(); // docker start → ok
       return ok();
     });
     await ensureProxy({
@@ -118,12 +122,19 @@ describe('ensureProxy', () => {
     expect(docker.calls.map((c) => c[0])).toEqual([
       'network',
       'inspect',
+      'update',
       'start',
     ]);
-    expect(docker.calls[2]).toEqual(['start', PROXY_CONTAINER_NAME]);
+    expect(docker.calls[2]).toEqual([
+      'update',
+      '--restart',
+      'unless-stopped',
+      PROXY_CONTAINER_NAME,
+    ]);
+    expect(docker.calls[3]).toEqual(['start', PROXY_CONTAINER_NAME]);
   });
 
-  it('is a no-op when the singleton is already running', async () => {
+  it('heals the restart policy and does not re-start when already running', async () => {
     const docker = fakeDocker((args, call) => {
       if (call === 0) return ok(); // network exists
       if (call === 1) return ok('true\n'); // container running
@@ -134,7 +145,13 @@ describe('ensureProxy', () => {
       monocerosHome: home,
       logger: silentLogger,
     });
-    expect(docker.calls).toHaveLength(2);
+    // network inspect + container inspect + `docker update` (heal), then
+    // return — no `start`/`run` because it is already up.
+    expect(docker.calls.map((c) => c[0])).toEqual([
+      'network',
+      'inspect',
+      'update',
+    ]);
   });
 
   it('surfaces docker errors with the stderr verbatim', async () => {
