@@ -57,10 +57,19 @@ jobs:
     needs: [precheck, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      # write: create the cli-v<version> tag + GitHub Release after publish
+      contents: write
+      # write: npm OIDC trusted publishing (unchanged from workflow level)
+      id-token: write
     env:
       PACKAGE: '@getmonoceros/workbench'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history + tags so git-cliff can build the release notes
+          # and the previous-tag lookup works (see scripts/gh-release.sh).
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -118,6 +127,23 @@ jobs:
         # is auto-attached for trusted-publishing runs, no explicit
         # --provenance flag needed.
         run: npm publish --access public
+
+      # Technical release notes from the conventional-commit history,
+      # scoped to packages/cli. Non-fatal: the package is already on npm,
+      # a notes hiccup must not turn the release red. CLI is the artifact
+      # users install, so it carries the repo's "Latest" release.
+      - name: GitHub Release + tag
+        if: steps.check.outputs.skip == 'false'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/gh-release.sh \
+            "cli-v${{ steps.ver.outputs.version }}" \
+            "CLI v${{ steps.ver.outputs.version }}" \
+            "cli-v*" \
+            "packages/cli/**" \
+            true
 
       - name: Summary
         run: |

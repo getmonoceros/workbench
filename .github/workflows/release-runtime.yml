@@ -44,10 +44,19 @@ jobs:
     needs: [precheck, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      # write: create the runtime-v<version> tag + GitHub Release
+      contents: write
+      # write: push the image to GHCR (unchanged from workflow level)
+      packages: write
     env:
       IMAGE: ghcr.io/getmonoceros/monoceros-runtime
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history + tags for git-cliff release notes (see
+          # scripts/gh-release.sh).
+          fetch-depth: 0
 
       - name: Read version
         id: ver
@@ -104,6 +113,21 @@ jobs:
             ${{ env.IMAGE }}:${{ steps.ver.outputs.major }}
             ${{ env.IMAGE }}:latest
           provenance: false
+
+      # Technical release notes from the commit history, scoped to
+      # images/runtime. Non-fatal: the image is already in GHCR.
+      - name: GitHub Release + tag
+        if: steps.check.outputs.skip == 'false'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/gh-release.sh \
+            "runtime-v${{ steps.ver.outputs.version }}" \
+            "Runtime v${{ steps.ver.outputs.version }}" \
+            "runtime-v*" \
+            "images/runtime/**" \
+            false
 
       - name: Summary
         run: |

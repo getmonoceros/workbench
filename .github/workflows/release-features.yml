@@ -52,8 +52,17 @@ jobs:
     needs: [precheck, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      # write: create a feature-<id>-v<version> tag + Release per feature
+      contents: write
+      # write: push feature artifacts to GHCR (unchanged from workflow level)
+      packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history + tags for git-cliff release notes (see
+          # scripts/gh-release.sh).
+          fetch-depth: 0
 
       # Generate each feature's devcontainer-feature.json from its
       # component.yml descriptor (ADR 0020) — the json is a build artifact,
@@ -79,6 +88,7 @@ jobs:
       - name: Publish features with bumped versions
         env:
           NAMESPACE: getmonoceros/monoceros-features
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -105,6 +115,18 @@ jobs:
               --namespace "$NAMESPACE" \
               "$dir"
             published+=("$name@$version")
+
+            # Technical release notes for this feature, scoped to its
+            # own directory. Inline `|| true`-style guard so a notes
+            # failure never aborts the publish loop (the artifact is
+            # already in GHCR).
+            scripts/gh-release.sh \
+              "feature-${name}-v${version}" \
+              "Feature ${name} v${version}" \
+              "feature-${name}-v*" \
+              "${dir}**" \
+              false \
+              || echo "::warning title=release-notes::failed for ${name}@${version}"
           done
 
           {

@@ -1,0 +1,41 @@
+# git-cliff config — turns the conventional-commit history into the body
+# of a per-artifact GitHub Release (see scripts/gh-release.sh). Each
+# release is scoped to one artifact's paths via `--include-path`, so the
+# version header is left to the GitHub Release title; this template emits
+# only the grouped change list.
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | upper_first }}\
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+# Drop anything that isn't a recognised conventional commit (merge
+# commits, WIP, etc.) instead of dumping it in a "other" bucket.
+filter_unconventional = true
+filter_commits = true
+split_commits = false
+# Group order is controlled by the hidden "<!-- N -->" sort markers,
+# which the template strips with `striptags`.
+commit_parsers = [
+  { message = "^feat", group = "<!-- 0 -->Features" },
+  { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^refactor", group = "<!-- 3 -->Refactor" },
+  { message = "^docs", group = "<!-- 4 -->Documentation" },
+  { message = "^test", group = "<!-- 5 -->Testing" },
+  { message = "^ci|^build", group = "<!-- 6 -->Build & CI" },
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^chore", group = "<!-- 7 -->Chores" },
+  { message = ".*", group = "<!-- 8 -->Other" },
+]
+sort_commits = "oldest"
+topo_order = false
