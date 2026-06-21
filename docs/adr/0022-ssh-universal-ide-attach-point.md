@@ -156,7 +156,7 @@ stays IDE-owned, per ADR 0015). The VS Codium volumes are gated on runtime
 in-container backend dir is confirmed - until then a builder who needs it
 opens a ticket (see Consequences).
 
-JetBrains (confirmed via WebStorm over Gateway) is different and forced a
+JetBrains (confirmed via WebStorm in the Toolbox App) is different and forced a
 departure from ADR 0015's strict per-container rule. Measured footprint
 under `~/.cache/JetBrains/RemoteDev`: `dist/` is the ~3 GB IDE backend
 distribution, **identical across containers**; its siblings `active/`,
@@ -216,7 +216,7 @@ connection per IDE (connect, `ls ~`), not guessed.
 
 On Windows the CLI runs in WSL (ADR 0011), so the `Host monoceros-<name>`
 entry + key + ProxyCommand land in WSL's `~/.ssh/config`. But the editor
-(Codium / VS Code / JetBrains Gateway) runs on **Windows** and reads
+(Codium / VS Code / the JetBrains Toolbox App) runs on **Windows** and reads
 `C:\Users\<user>\.ssh\config` - it never sees the WSL entry, so
 `monoceros-<name>` is unresolvable. Docker Desktop's WSL2 backend is the
 bridgehead: the same daemon (hence the same container) is reachable from
@@ -242,9 +242,12 @@ plain `ssh.exe monoceros-<name>` and Codium both connect):
   WSL side.
 - `remove` clears the Windows key + marked block too.
 
-No-op on macOS / native Linux (`realIsWsl()` is false). JetBrains Gateway
-on Windows reads the same Windows config + ProxyCommand, so it is expected
-to work like Codium - to be confirmed on a real Gateway connection.
+No-op on macOS / native Linux (`realIsWsl()` is false). JetBrains attaches
+through the **Toolbox App** now (it replaced the standalone Gateway, which is
+Linux-host-only): on Windows it discovers `node@monoceros-<name>` from the
+Windows `~/.ssh/config` this bridge writes and connects - confirmed working.
+The Claude desktop app needs a different transport on Windows; see the
+revision below.
 
 #### Windows: the Claude desktop app needs a direct port, not a ProxyCommand
 
@@ -311,7 +314,7 @@ session reach the host browser once it has.
 
 - **One SSH contract, many editors.** Instead of a per-IDE extension story,
   the workbench exposes a single attach point and is done. Codium,
-  IntelliJ (JetBrains Gateway / Remote Development), Zed, and any terminal
+  IntelliJ (via the JetBrains Toolbox App), Zed, and any terminal
   tool all ride the same `sshd`.
 - **No restart.** Once the container is up, attaching is just connecting.
   This removes the "why would I restart a running container" friction of
