@@ -265,6 +265,28 @@ describe('SSH attach postStartCommand (ADR 0022)', () => {
   });
 });
 
+describe('group restart policy (issue #22)', () => {
+  it('image-mode runArgs carry --restart=unless-stopped', () => {
+    const dc = buildDevcontainerJson({ ...base, runtimeVersion: '1.3.6' });
+    if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
+    expect(dc.runArgs).toContain('--restart=unless-stopped');
+  });
+
+  it('compose-mode workspace service carries restart: unless-stopped', () => {
+    const yaml = buildComposeYaml({
+      ...base,
+      runtimeVersion: '1.3.6',
+      services: [resolveService(expandCuratedService('postgres'))],
+    });
+    // The workspace block (first service) and the postgres service both
+    // declare the policy, so the whole group comes back together.
+    expect(yaml).toContain("    command: 'sleep infinity'");
+    expect(
+      yaml.match(/restart: unless-stopped/g)?.length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('entrypoint sshd bring-up overrideCommand (issue #20)', () => {
   it('image-mode sets overrideCommand:false on a runtime whose entrypoint starts sshd', () => {
     const dc = buildDevcontainerJson({ ...base, runtimeVersion: '1.3.6' }) as {

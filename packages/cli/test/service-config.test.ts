@@ -338,6 +338,34 @@ describe('buildComposeYaml — generic service objects', () => {
     expect(yaml).not.toMatch(/ports:/);
   });
 
+  it('defaults a service with no explicit restart to unless-stopped (issue #22)', () => {
+    const yaml = buildComposeYaml({
+      ...base,
+      services: [{ name: 'redis', image: 'redis:7', env: {}, volumes: [] }],
+    });
+    // Workspace + redis both carry the default, so the group comes back
+    // together: two `restart: unless-stopped` lines.
+    expect(yaml.match(/restart: unless-stopped/g)).toHaveLength(2);
+  });
+
+  it('honors an explicit per-service restart over the default (issue #22)', () => {
+    const yaml = buildComposeYaml({
+      ...base,
+      services: [
+        {
+          name: 'redis',
+          image: 'redis:7',
+          env: {},
+          volumes: [],
+          restart: 'no',
+        },
+      ],
+    });
+    // redis opts out with `no`; the workspace keeps the default (one match).
+    expect(yaml).toContain('    restart: no');
+    expect(yaml.match(/restart: unless-stopped/g)).toHaveLength(1);
+  });
+
   it('emits `user:` for a service that sets it, omits it otherwise', () => {
     const withUser = buildComposeYaml({
       ...base,

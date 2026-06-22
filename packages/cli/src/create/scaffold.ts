@@ -56,6 +56,15 @@ const REPO_URL_RE = /^[A-Za-z0-9@:/+_~.#=&?-]+$/;
 // because the regex alone allows pure-dot segments.
 const REPO_PATH_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 
+// Default restart policy for the whole dev-container group (workspace +
+// services). `unless-stopped` brings back exactly what was running when
+// Docker (Desktop / daemon / host) restarted, while a deliberate `monoceros
+// stop` - a real `docker/compose stop` that sets Docker's manual-stop bit -
+// keeps the group down. Same value the proxy singleton uses
+// (`PROXY_RESTART_POLICY`), so the entire stack recovers uniformly. A
+// per-service `restart:` in the yml overrides this default. See ADR 0026.
+const GROUP_RESTART_POLICY = 'unless-stopped';
+
 /**
  * Derive a repo name from its URL.
  *
@@ -1012,7 +1021,15 @@ export function buildDevcontainerJson(
   // both modes. apply removes the prior container (by label) before
   // recreating, so the name is free on rebuild. SSH still resolves by
   // label, not this name. See ADR 0022.
-  const runArgs = ['--cap-add=NET_ADMIN', `--name=monoceros-${opts.name}`];
+  // `--restart=unless-stopped`: image-mode equivalent of the compose
+  // workspace `restart:` - the workspace comes back after a Docker/host
+  // restart if it was running, and stays down after a deliberate `monoceros
+  // stop` (issue #22).
+  const runArgs = [
+    '--cap-add=NET_ADMIN',
+    `--name=monoceros-${opts.name}`,
+    `--restart=${GROUP_RESTART_POLICY}`,
+  ];
   if (ports.length > 0) {
     runArgs.push('--network=monoceros-proxy');
     runArgs.push(`--network-alias=${opts.name}`);
@@ -1110,6 +1127,9 @@ export function buildComposeYaml(
   // by compose-project label, so the rename doesn't affect it.
   lines.push(`    container_name: monoceros-${opts.name}`);
   lines.push("    command: 'sleep infinity'");
+  // Come back after a Docker/host restart if the group was running (issue
+  // #22). A deliberate `monoceros stop` (real `compose stop`) keeps it down.
+  lines.push(`    restart: ${GROUP_RESTART_POLICY}`);
   // No `user:` directive here — the runtime image's entrypoint runs as
   // root to set up iptables, then drops to the `node` user via gosu
   // before exec'ing the command. NET_ADMIN is required for that
@@ -1204,9 +1224,11 @@ export function buildComposeYaml(
     if (svc.user !== undefined) {
       lines.push(`    user: ${composeScalar(svc.user)}`);
     }
-    if (svc.restart) {
-      lines.push(`    restart: ${svc.restart}`);
-    }
+    // Default the whole group to `unless-stopped` (issue #22) so a service
+    // comes back with the workspace after a Docker/host restart. An explicit
+    // per-service `restart:` in the yml overrides the default (e.g. `no` to
+    // opt a single service out).
+    lines.push(`    restart: ${svc.restart ?? GROUP_RESTART_POLICY}`);
     if (svc.command !== undefined) {
       lines.push(`    command: ${composeScalar(svc.command)}`);
     }
