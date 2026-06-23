@@ -69,10 +69,20 @@ export function spawnBridgeDaemon(root: string): void {
     const self = process.argv[1];
     if (!self) return;
     mkdirSync(relayDir(root), { recursive: true });
-    const child = spawn(process.execPath, [self, '__bridge', root], {
-      detached: true,
-      stdio: 'ignore',
-    });
+    // Propagate process.execArgv so the detached worker runs under the same
+    // loader as the foreground CLI. In production this is empty (plain `node
+    // dist/bin.js`). In dev the CLI runs via tsx (`tsx src/bin.ts`), where
+    // execArgv carries the tsx require/import flags — without them, `node
+    // <self> __bridge` on the .ts entry crashes on the first .js→.ts import
+    // and the bridge never starts.
+    const child = spawn(
+      process.execPath,
+      [...process.execArgv, self, '__bridge', root],
+      {
+        detached: true,
+        stdio: 'ignore',
+      },
+    );
     // Record the pid immediately so a near-simultaneous second spawn sees a
     // live daemon (the worker re-writes the same pid on startup). unref so the
     // foreground command can exit without waiting on the daemon.
