@@ -12,6 +12,7 @@ import { __bridgeCommand } from './commands/__bridge.js';
 import { __completeCommand } from './commands/__complete.js';
 import { __updateCheckCommand } from './commands/__update-check.js';
 import { initCommand } from './commands/init.js';
+import { listAppsCommand } from './commands/list-apps.js';
 import { listComponentsCommand } from './commands/list-components.js';
 import { logsCommand } from './commands/logs.js';
 import { openCommand } from './commands/open.js';
@@ -43,6 +44,7 @@ export const main = defineCommand({
   },
   subCommands: {
     init: initCommand,
+    'list-apps': listAppsCommand,
     'list-components': listComponentsCommand,
     shell: shellCommand,
     open: openCommand,

@@ -278,6 +278,55 @@ describe('resolveCompletions', () => {
     expect(r).toContain('projects/myApp/src');
   });
 
+  it('completes <app> for `start <name>` from launch configs (host-side, container off)', async () => {
+    await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
+    const ws = path.join(home, 'container', 'sandbox');
+    for (const app of ['web', 'apps/api']) {
+      await mkdir(path.join(ws, 'projects', app, '.monoceros'), {
+        recursive: true,
+      });
+      await writeFile(
+        path.join(ws, 'projects', app, '.monoceros', 'launch.json'),
+        JSON.stringify({ configurations: [{ name: 'dev', command: 'x' }] }),
+      );
+    }
+    // A project without a launch config must not show up.
+    await mkdir(path.join(ws, 'projects', 'docs'), { recursive: true });
+
+    const r = await resolveCompletions(
+      'monoceros start sandbox ',
+      'monoceros start sandbox '.length,
+      { monocerosHome: home },
+    );
+    expect(r).toContain('web');
+    expect(r).toContain('apps/api');
+    expect(r).not.toContain('docs');
+  });
+
+  it("completes --target from the already-typed app's launch config", async () => {
+    await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
+    const ws = path.join(home, 'container', 'sandbox');
+    await mkdir(path.join(ws, 'projects', 'web', '.monoceros'), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(ws, 'projects', 'web', '.monoceros', 'launch.json'),
+      JSON.stringify({
+        configurations: [
+          { name: 'dev', command: 'x' },
+          { name: 'storybook', command: 'y' },
+        ],
+      }),
+    );
+
+    const r = await resolveCompletions(
+      'monoceros start sandbox web --target ',
+      'monoceros start sandbox web --target '.length,
+      { monocerosHome: home },
+    );
+    expect(r).toEqual(['dev', 'storybook']);
+  });
+
   it('run --in with no materialized container yields no suggestions', async () => {
     await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
     const r = await resolveCompletions(

@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { defineCommand } from 'citty';
+import { consola } from 'consola';
 import { containerDir, containerLogsDir } from '../config/paths.js';
+import { readLaunchConfig, resolveTarget } from '../config/launch-config.js';
 import { runLogs } from '../devcontainer/compose.js';
 import { dispatch } from './_dispatch.js';
 
@@ -26,7 +27,7 @@ export const logsCommand = defineCommand({
     name: 'logs',
     group: 'run',
     description:
-      'Tail logs from a compose service of the named dev-container, or from a long-running app started inside it (logs/<app>.log). Pass --no-follow for a one-shot dump.',
+      'Tail logs from a compose service of the named dev-container, or from a long-running app started inside it. Pass --no-follow for a one-shot dump.',
   },
   args: {
     name: {
@@ -35,10 +36,16 @@ export const logsCommand = defineCommand({
         'Container name (yml in $MONOCEROS_HOME/container-configs/).',
       required: true,
     },
-    service: {
+    app: {
+      type: 'positional',
+      description:
+        'An app (a path under projects/ with .monoceros/launch.json) whose log to tail, or a compose service (e.g. postgres). Defaults to all compose services.',
+      required: false,
+    },
+    target: {
       type: 'string',
       description:
-        'A compose service (e.g. postgres) or an app whose log is at logs/<service>.log. Defaults to all compose services.',
+        'Which launch target of the app to tail (defaults to its "default" target, or its only one).',
     },
     follow: {
       type: 'boolean',
@@ -49,21 +56,36 @@ export const logsCommand = defineCommand({
     },
   },
   run({ args }) {
-    const service = typeof args.service === 'string' ? args.service : undefined;
-    // App log written by a detached in-container server takes precedence when
-    // a matching file exists; otherwise fall through to compose service logs.
-    if (service) {
-      const logFile = path.join(containerLogsDir(args.name), `${service}.log`);
-      if (existsSync(logFile)) {
-        return dispatch(() => tailLogFile(logFile, args.follow));
+    const app = typeof args.app === 'string' ? args.app : undefined;
+    const target = typeof args.target === 'string' ? args.target : undefined;
+    return dispatch(async () => {
+      if (app) {
+        // An app with a launch config tails logs/<app>/<target>.log; resolve
+        // the target host-side (works with the container stopped).
+        const cfg = await readLaunchConfig(args.name, app);
+        if (cfg) {
+          const t = resolveTarget(cfg, target, app);
+          const logFile = path.join(
+            containerLogsDir(args.name),
+            app,
+            `${t.name}.log`,
+          );
+          return tailLogFile(logFile, args.follow);
+        }
+        if (target) {
+          // --target only makes sense for an app with a launch config.
+          consola.warn(
+            `No launch config for "${app}" — ignoring --target and treating "${app}" as a compose service.`,
+          );
+        }
+        // No launch config: fall through to treating it as a compose service.
+        return runLogs({
+          root: containerDir(args.name),
+          service: app,
+          follow: args.follow,
+        });
       }
-    }
-    return dispatch(() =>
-      runLogs({
-        root: containerDir(args.name),
-        ...(service ? { service } : {}),
-        follow: args.follow,
-      }),
-    );
+      return runLogs({ root: containerDir(args.name), follow: args.follow });
+    });
   },
 });

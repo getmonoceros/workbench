@@ -281,46 +281,58 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     lines.push('');
     lines.push(
       'When you build something that serves on a port (a web app, an API),',
-      'start it as a **detached** background process so it keeps running after',
-      'this session ends. A plain `npm start` (or any foreground start) dies',
-      'the moment the user exits you or closes the terminal — and then',
-      `\`${input.containerName}.localhost\` returns 502 Bad Gateway.`,
+      'it must keep running after this session ends. A plain `npm start` (or',
+      'any foreground start) dies the moment the user exits you or closes the',
+      `terminal, and then \`${input.containerName}.localhost\` returns 502 Bad Gateway.`,
     );
     lines.push('');
     lines.push(
-      "Launch it in a new session with `setsid`, using the project's own",
-      'start command, and record the process-group PID + log under the',
-      "container's logs directory:",
+      "Declare it in the app's own launch config at",
+      '`projects/<app>/.monoceros/launch.json`, then start it with',
+      '`monoceros-ctl`. Add or update an entry whenever you set up a',
+      'long-running server. The file travels with the app, so the human can',
+      'restart it later without knowing your start command:',
     );
     lines.push('');
-    lines.push('```');
+    lines.push('```json');
+    lines.push('{');
+    lines.push('  "configurations": [');
     lines.push(
-      `setsid sh -c 'echo $$ >/workspaces/${input.containerName}/logs/<app>.pid; \\`,
+      `    { "name": "web", "command": "<the project's start command>", "port": ${input.ports[0]}, "default": true }`,
     );
-    lines.push(
-      `  exec <the project's start command> >/workspaces/${input.containerName}/logs/<app>.log 2>&1' </dev/null &`,
-    );
-    lines.push('```');
-    lines.push('');
-    lines.push(
-      'Use whatever start command the project actually uses (`npm start`,',
-      '`./mvnw spring-boot:run`, `python app.py`, `go run .`, …) — do not force',
-      'a language-specific one. `<app>` is a short name you choose.',
-    );
-    lines.push('');
-    lines.push('To stop it, kill the whole process group (also stops children');
-    lines.push('like node under npm or java under maven):');
-    lines.push('');
-    lines.push('```');
-    lines.push(
-      `kill -TERM -$(cat /workspaces/${input.containerName}/logs/<app>.pid)`,
-    );
+    lines.push('  ]');
+    lines.push('}');
     lines.push('```');
     lines.push('');
     lines.push(
-      `The user can follow the output with \`monoceros logs ${input.containerName} <app>\``,
-      'on the host. The server must listen on `0.0.0.0` (not `127.0.0.1`) on',
-      'the exposed port, or Traefik cannot reach it.',
+      'Use whatever start command the project actually uses (`npm run dev`,',
+      '`./mvnw spring-boot:run`, `python manage.py runserver`, `go run .`, …).',
+      'Do not force a language-specific one. `<app>` is the path under',
+      '`projects/`; `port` must be a port already exposed on the container.',
+    );
+    lines.push('');
+    lines.push('Start it, stop it, tail its log:');
+    lines.push('');
+    lines.push('```');
+    lines.push('monoceros-ctl start <app>');
+    lines.push('monoceros-ctl stop <app>');
+    lines.push('monoceros-ctl logs <app>');
+    lines.push('```');
+    lines.push('');
+    lines.push(
+      '`start` launches it detached (it survives your session) and, when a',
+      '`port` is set, waits until it actually listens before returning. Add',
+      '`--target <name>` when the app declares more than one configuration.',
+      'The human can do the same from the host with',
+      `\`monoceros start ${input.containerName} <app>\` / \`monoceros stop ${input.containerName} <app>\`,`,
+      `and follow output with \`monoceros logs ${input.containerName} <app>\`.`,
+    );
+    lines.push('');
+    lines.push(
+      'The server must listen on `0.0.0.0` (not `127.0.0.1`) on the exposed',
+      'port, or Traefik cannot reach it. You only have the ports already',
+      'declared on the container; if you need another, ask the human to add it',
+      `on the host (\`monoceros add-port ${input.containerName} <port>\`) and re-apply.`,
     );
     lines.push('');
   }

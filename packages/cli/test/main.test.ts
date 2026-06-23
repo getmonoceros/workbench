@@ -13,6 +13,7 @@ describe('monoceros main command', () => {
   it('registers the M1 + M2.5 subcommand surface plus the M4 completion command', async () => {
     const expected = [
       'init',
+      'list-apps',
       'list-components',
       'shell',
       'open',

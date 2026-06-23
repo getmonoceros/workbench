@@ -1,6 +1,7 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { monocerosHome } from '../config/paths.js';
+import { listApps, readLaunchConfig } from '../config/launch-config.js';
 import { loadComponentCatalog } from '../init/components.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
 import { knownLanguages, knownServices } from '../create/catalog.js';
@@ -372,6 +373,50 @@ function containerNameFromCtx(ctx: Ctx): string | undefined {
   return undefined;
 }
 
+/** The n-th positional token (skipping flags) after `monoceros <cmd>`. */
+function positionalFromCtx(ctx: Ctx, n: number): string | undefined {
+  const positionals: string[] = [];
+  for (let i = 2; i < ctx.prev.length; i++) {
+    const t = ctx.prev[i]!;
+    if (t === '--') break;
+    if (t.startsWith('-')) continue;
+    positionals.push(t);
+  }
+  return positionals[n];
+}
+
+/**
+ * App candidates for `start/stop/logs <name> <app>` — paths under
+ * `projects/` carrying a launch config. Pure host-side filesystem walk
+ * (works with the container stopped), context-sensitive on the container
+ * name already on the line.
+ */
+async function listAppCandidates(ctx: Ctx): Promise<string[]> {
+  const name = containerNameFromCtx(ctx);
+  if (!name) return [];
+  try {
+    return await listApps(name, ctx.opts.monocerosHome);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * `--target` candidates: the config names from the already-typed app's
+ * launch config (positional 1, after the container name at positional 0).
+ */
+async function listTargetCandidates(ctx: Ctx): Promise<string[]> {
+  const name = containerNameFromCtx(ctx);
+  const app = positionalFromCtx(ctx, 1);
+  if (!name || !app) return [];
+  try {
+    const cfg = await readLaunchConfig(name, app, ctx.opts.monocerosHome);
+    return cfg ? cfg.configurations.map((t) => t.name) : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Directory names never worth offering as a completion target. */
 const WORKSPACE_DIR_SKIP = new Set(['node_modules']);
 /**
@@ -569,6 +614,7 @@ async function resolveFeatureRefForCompletion(
 
 const ALL_COMMANDS = [
   'init',
+  'list-apps',
   'list-components',
   'shell',
   'open',
@@ -649,13 +695,27 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     positionals: [containerName],
     flags: { '--in': { type: 'value', values: (ctx) => listRunInDirs(ctx) } },
   },
-  logs: { positionals: [containerName] },
-  start: {
-    positionals: [containerName],
-    flags: { '--open': { type: 'value', values: () => [...OPEN_TOOLS] } },
+  logs: {
+    positionals: [containerName, (ctx) => listAppCandidates(ctx)],
+    flags: {
+      '--target': { type: 'value', values: (ctx) => listTargetCandidates(ctx) },
+    },
   },
-  stop: { positionals: [containerName] },
+  start: {
+    positionals: [containerName, (ctx) => listAppCandidates(ctx)],
+    flags: {
+      '--target': { type: 'value', values: (ctx) => listTargetCandidates(ctx) },
+      '--open': { type: 'value', values: () => [...OPEN_TOOLS] },
+    },
+  },
+  stop: {
+    positionals: [containerName, (ctx) => listAppCandidates(ctx)],
+    flags: {
+      '--target': { type: 'value', values: (ctx) => listTargetCandidates(ctx) },
+    },
+  },
   status: { positionals: [containerName] },
+  'list-apps': { positionals: [containerName] },
   'add-language': {
     positionals: [containerName, () => listLanguageNames()],
   },

@@ -1610,6 +1610,10 @@ export function buildPostCreateScript(opts: CreateOptions): string {
     '# identity values in.',
     `git config --global include.path "/workspaces/${opts.name}/.monoceros/gitconfig"`,
     '',
+    "# Container-global gitignore: keeps each app's .monoceros/ launch-config",
+    '# dir out of the app repo by default. Per-app opt-in re-includes it.',
+    `git config --global core.excludesFile "/workspaces/${opts.name}/.monoceros/global-gitignore"`,
+    '',
     '# Per-feature post-create hooks. Each Monoceros-curated feature',
     '# may drop a script into /usr/local/share/monoceros/post-create.d/',
     '# during its install.sh — typical job is a non-interactive login',
@@ -1848,7 +1852,18 @@ export async function writeScaffold(
   // wrapping git repo. Always overwrite — content is fixed.
   await fs.writeFile(
     path.join(monocerosDir, '.gitignore'),
-    'git-credentials*\ngitconfig\n',
+    'git-credentials*\ngitconfig\nglobal-gitignore\n',
+  );
+
+  // Container-global gitignore wired as git's `core.excludesFile` in
+  // post-create. It excludes the per-app launch-config dir
+  // (`projects/<app>/.monoceros/`) from EVERY repo in the container by
+  // default, so it doesn't pollute the builder's app repo. Opting into
+  // versioning is per app via the app's own `.gitignore`
+  // (`.monoceros/*` + `!.monoceros/launch.json`, or `!.monoceros/`).
+  await fs.writeFile(
+    path.join(monocerosDir, 'global-gitignore'),
+    '.monoceros/\n',
   );
 
   const devcontainerJson = buildDevcontainerJson(opts, dockerMode);

@@ -68,6 +68,12 @@ RUN install -d /etc/ssh/sshd_config.d \
 COPY sshd-up.sh /usr/local/bin/monoceros-sshd-up.sh
 RUN chmod 0755 /usr/local/bin/monoceros-sshd-up.sh
 
+# In-container companion for long-running app servers. The host command
+# `monoceros start/stop <name> <app>` is a `docker exec` onto this script;
+# the build agent calls it directly. Reads projects/<app>/.monoceros/launch.json.
+COPY monoceros-ctl.sh /usr/local/bin/monoceros-ctl
+RUN chmod 0755 /usr/local/bin/monoceros-ctl
+
 # Land interactive SSH/login shells in /workspaces/<name> instead of
 # $HOME (ADR 0022). profile.d is sourced by login shells.
 COPY workspace-login.sh /etc/profile.d/monoceros-workspace.sh
