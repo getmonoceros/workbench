@@ -138,7 +138,9 @@ When you are asked to work a GitHub issue, drive it through the
 `Backlog → Ready → In progress → In review → Done & Delivered`.
 
 1. **In progress** - move the issue here before writing code. If it
-   isn't on the board yet, add it first, then set the status.
+   isn't on the board yet, add it first, then set the status. When you
+   move an issue to In progress, always assign it to the repo owner
+   (@thorque) at the same time.
 2. **Implement** - do the work.
 3. **In review** - once it's done, everything is pushed, and the
    release pipelines are running, move it to In review and add an issue
