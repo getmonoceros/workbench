@@ -321,11 +321,20 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     lines.push('');
     lines.push(
       '`start` launches it detached (it survives your session) and, when a',
-      '`port` is set, waits until it actually listens before returning. Add',
-      '`--target <name>` when the app declares more than one configuration.',
-      'The human can do the same from the host with',
+      '`port` is set, waits until it actually listens before returning. The',
+      'human can do the same from the host with',
       `\`monoceros start ${input.containerName} <app>\` / \`monoceros stop ${input.containerName} <app>\`,`,
       `and follow output with \`monoceros logs ${input.containerName} <app>\`.`,
+    );
+    lines.push('');
+    lines.push(
+      'An app can declare several servers (e.g. an API and a web frontend).',
+      'Mark every server that should come up together with `"default": true`;',
+      '`monoceros-ctl start <app>` (no `--target`) then starts the whole default',
+      'set in the order the entries appear in the file, waiting for each',
+      "server's `port` to listen before starting the next - so order an entry",
+      'before anything that depends on it. If one fails to come up, the rest are',
+      'not started. Pass `--target <name>` to start or stop a single one.',
     );
     lines.push('');
     lines.push(

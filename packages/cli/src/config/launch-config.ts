@@ -84,7 +84,6 @@ function validate(parsed: unknown, where: string): LaunchConfig {
     throw new Error(`${where}: missing "configurations" array`);
   }
   const seen = new Set<string>();
-  let defaults = 0;
   const configurations: LaunchTarget[] = obj.configurations.map((raw, i) => {
     if (typeof raw !== 'object' || raw === null) {
       throw new Error(`${where}: configuration #${i} is not an object`);
@@ -100,7 +99,6 @@ function validate(parsed: unknown, where: string): LaunchConfig {
     if (typeof t.command !== 'string' || t.command.length === 0) {
       throw new Error(`${where}: target "${t.name}" is missing "command"`);
     }
-    if (t.default === true) defaults += 1;
     return {
       name: t.name,
       command: t.command,
@@ -112,9 +110,6 @@ function validate(parsed: unknown, where: string): LaunchConfig {
       ...(t.default === true ? { default: true } : {}),
     };
   });
-  if (defaults > 1) {
-    throw new Error(`${where}: more than one target marked "default"`);
-  }
   return {
     version: typeof obj.version === 'number' ? obj.version : 1,
     configurations,
@@ -149,10 +144,19 @@ export async function readLaunchConfig(
   return validate(parsed, file);
 }
 
+/** The targets started when `--target` is omitted, in declared order. */
+export function defaultTargets(config: LaunchConfig): LaunchTarget[] {
+  const marked = config.configurations.filter((t) => t.default);
+  if (marked.length > 0) return marked;
+  // No explicit default: the sole target is the implicit one.
+  return config.configurations.length === 1 ? config.configurations : [];
+}
+
 /**
- * Pick the target to run. With a name, returns that target (or throws if it
- * doesn't exist). Without a name: the `default` target, or the sole target
- * when there is exactly one; otherwise throws asking for `--target`.
+ * Pick a SINGLE target - for callers that act on exactly one (e.g. `logs`).
+ * With a name, returns that target (or throws if it doesn't exist). Without a
+ * name, resolves the default only when it is unambiguous (one default, or a
+ * sole target); a multi-target default set throws asking for `--target`.
  */
 export function resolveTarget(
   config: LaunchConfig,
@@ -168,11 +172,13 @@ export function resolveTarget(
     }
     return found;
   }
-  const marked = config.configurations.find((t) => t.default);
-  if (marked) return marked;
-  if (config.configurations.length === 1) return config.configurations[0]!;
+  const defaults = defaultTargets(config);
+  if (defaults.length === 1) return defaults[0]!;
+  const names = config.configurations.map((t) => t.name).join(', ');
   throw new Error(
-    `${appRel} has ${config.configurations.length} targets and no default — pass --target (${config.configurations.map((t) => t.name).join(', ')})`,
+    defaults.length === 0
+      ? `${appRel} has ${config.configurations.length} targets and no default: pass --target (${names})`
+      : `${appRel} has multiple default targets: pass --target to pick one (${defaults.map((t) => t.name).join(', ')})`,
   );
 }
 

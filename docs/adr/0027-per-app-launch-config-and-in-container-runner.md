@@ -106,3 +106,28 @@ env?, default? }`, at most one `default`. `command` is a single string run
   liveness snapshot taken **before** teardown, designed together with ADR 0026
   / issue #22.
 - pids permanently leave `logs/`; a future reader of `logs/` sees only logs.
+
+## Update (2026-06-23, #24): multiple default targets
+
+The original spec allowed **at most one** `default`. Real use (an app whose API
+and web frontend belong together) showed that "start the app" often means
+"start a set". Revised:
+
+- **Any number of targets may be `default: true`.** `start <app>` with no
+  `--target` starts the whole default set; a single default behaves as before.
+- **Declared array order is the start order.** Because `start` already waits for
+  a target's `port` to listen before returning, ordering an entry before the
+  things that depend on it (both with ports) gives real sequencing without a
+  `dependsOn` concept. A target without a port has no readiness signal: started
+  in order, but the next does not wait.
+- **Fail-fast.** If a target in the set does not come up (process dies, or its
+  port never listens within the window), the remaining ones are not started.
+- **Single-target callers** (`logs`, `stop --target`, `start --target`) still
+  resolve exactly one; a multi-target default set with no `--target` is an error
+  for them.
+- `stop <app>` with no `--target` mirrors start: it stops the same default set
+  (best-effort, no fail-fast).
+
+Ships in runtime 1.5.0 (the runner does the set iteration) + CLI 1.35.0 (relaxed
+validation, briefing). An explicit `dependsOn` for port-less ordering stays out
+of scope unless a real need appears.

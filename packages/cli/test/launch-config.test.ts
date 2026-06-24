@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
+  defaultTargets,
   listApps,
   readLaunchConfig,
   resolveTarget,
@@ -77,16 +78,15 @@ describe('readLaunchConfig', () => {
     );
   });
 
-  it('rejects more than one default', async () => {
+  it('allows multiple defaults (a start set)', async () => {
     await writeLaunch('acme', 'web', {
       configurations: [
-        { name: 'a', command: 'a', default: true },
-        { name: 'b', command: 'b', default: true },
+        { name: 'api', command: 'a', default: true },
+        { name: 'web', command: 'b', default: true },
       ],
     });
-    await expect(readLaunchConfig('acme', 'web', home)).rejects.toThrow(
-      /more than one target marked "default"/,
-    );
+    const cfg = await readLaunchConfig('acme', 'web', home);
+    expect(cfg?.configurations.filter((t) => t.default)).toHaveLength(2);
   });
 
   it('rejects a target missing its command', async () => {
@@ -139,8 +139,54 @@ describe('resolveTarget', () => {
       ],
     };
     expect(() => resolveTarget(ambiguous, undefined, 'app')).toThrow(
-      /pass --target/,
+      /no default/,
     );
+  });
+
+  it('throws on a multi-target default set (single-target callers must pick)', () => {
+    const multi: LaunchConfig = {
+      version: 1,
+      configurations: [
+        { name: 'api', command: 'a', default: true },
+        { name: 'web', command: 'b', default: true },
+      ],
+    };
+    expect(() => resolveTarget(multi, undefined, 'app')).toThrow(
+      /multiple default/,
+    );
+  });
+});
+
+describe('defaultTargets', () => {
+  it('returns the marked defaults in declared order', () => {
+    const cfg: LaunchConfig = {
+      version: 1,
+      configurations: [
+        { name: 'api', command: 'a', default: true },
+        { name: 'docs', command: 'd' },
+        { name: 'web', command: 'b', default: true },
+      ],
+    };
+    expect(defaultTargets(cfg).map((t) => t.name)).toEqual(['api', 'web']);
+  });
+
+  it('falls back to the sole target when none is marked', () => {
+    const cfg: LaunchConfig = {
+      version: 1,
+      configurations: [{ name: 'only', command: 'a' }],
+    };
+    expect(defaultTargets(cfg).map((t) => t.name)).toEqual(['only']);
+  });
+
+  it('is empty when multiple targets and none marked', () => {
+    const cfg: LaunchConfig = {
+      version: 1,
+      configurations: [
+        { name: 'a', command: 'a' },
+        { name: 'b', command: 'b' },
+      ],
+    };
+    expect(defaultTargets(cfg)).toEqual([]);
   });
 });
 
