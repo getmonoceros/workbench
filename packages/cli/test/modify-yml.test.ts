@@ -1403,6 +1403,40 @@ describe('add-*/remove-* against the yml', () => {
     expect(dyn).toContain('http://demo:6006');
   });
 
+  it('runAddPort refreshes the briefing (AGENTS.md) for a materialized container', async () => {
+    await writeYml('webapp', 'schemaVersion: 1\nname: webapp\n');
+    // Materialize the container dir so the live hot-reload path also rewrites
+    // the briefing (it skips when the container was never applied).
+    await mkdir(path.join(home, 'container', 'webapp'), { recursive: true });
+
+    const result = await runAddPort({
+      ...portOpts,
+      name: 'webapp',
+      ports: [5173],
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+
+    const agents = await fs.readFile(
+      path.join(home, 'container', 'webapp', 'AGENTS.md'),
+      'utf8',
+    );
+    expect(agents).toContain('5173');
+  });
+
+  it('runAddPort does not write a briefing when the container is not materialized', async () => {
+    await writeYml('nomat', 'schemaVersion: 1\nname: nomat\n');
+    const result = await runAddPort({
+      ...portOpts,
+      name: 'nomat',
+      ports: [5173],
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    // No container/<name>/ dir existed, so nothing was created there.
+    expect(existsSync(path.join(home, 'container', 'nomat'))).toBe(false);
+  });
+
   it('runAddPort is a no-op when every port is already present', async () => {
     await writeYml(
       'demo',

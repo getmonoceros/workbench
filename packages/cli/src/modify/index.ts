@@ -68,7 +68,9 @@ import {
   exampleVolumesComment,
   customServiceHint,
 } from '../init/service-doc.js';
-import { deriveRepoName } from '../create/scaffold.js';
+import { deriveRepoName, normalizeOptions } from '../create/scaffold.js';
+import { solutionConfigToCreateOptions } from '../config/transform.js';
+import { writeBriefing } from '../briefing/index.js';
 import type { FeatureOptions, RepoEntry } from '../create/types.js';
 import {
   addAptPackagesToDoc,
@@ -338,6 +340,45 @@ export function runAddAptPackages(
   return mutate(input, (doc) => addAptPackagesToDoc(doc, input.packages));
 }
 
+/**
+ * Regenerate the AI-tool briefing (AGENTS.md / CLAUDE.md) from the current yml.
+ * Only the modify commands that take effect LIVE call this - add/remove-port
+ * hot-reload the Traefik routes, add-repo clones on the fly - so their change
+ * is in effect immediately and the briefing's "Exposed ports" / "Cloned repos"
+ * sections must not lag until the next apply. The apply-only commands
+ * (features, languages, …) deliberately do NOT: their change is not
+ * materialized yet, so refreshing the briefing would over-claim.
+ *
+ * Best-effort: skipped when the container was never materialized, and any
+ * failure is swallowed (the yml write stands; the next apply regenerates the
+ * briefing regardless).
+ */
+async function refreshBriefingFromYml(
+  name: string,
+  home: string,
+): Promise<void> {
+  const targetDir = containerDir(name, home);
+  try {
+    await fs.access(targetDir);
+  } catch {
+    return; // never applied — first apply writes the briefing
+  }
+  try {
+    const parsed = await readConfig(containerConfigPath(name, home));
+    const globalConfig = await readMonocerosConfig({ monocerosHome: home });
+    const createOpts = normalizeOptions(
+      solutionConfigToCreateOptions(
+        parsed.config,
+        globalConfig?.defaults?.features ?? {},
+      ),
+    );
+    const components = await loadComponentCatalog();
+    await writeBriefing({ targetDir, createOpts, components });
+  } catch {
+    /* best-effort: the next apply regenerates the briefing */
+  }
+}
+
 export async function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
   const url = input.url.trim();
   if (url.length === 0) {
@@ -447,6 +488,10 @@ export async function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
   // back the yml write. See ADR 0007's add-port symmetry.
   if (result.status === 'updated') {
     await tryCloneInRunningContainer(input, entry);
+    await refreshBriefingFromYml(
+      input.name,
+      input.monocerosHome ?? defaultMonocerosHome(),
+    );
   }
   return result;
 }
@@ -661,6 +706,10 @@ export async function runAddPort(input: AddPortInput): Promise<ModifyResult> {
   // yml write. See ADR 0007.
   if (result.status === 'updated') {
     await syncPortsToProxy(input);
+    await refreshBriefingFromYml(
+      input.name,
+      input.monocerosHome ?? defaultMonocerosHome(),
+    );
   }
   return result;
 }
@@ -888,6 +937,10 @@ export async function runRemovePort(
   // ADR 0007.
   if (result.status === 'updated') {
     await syncPortsToProxy(input);
+    await refreshBriefingFromYml(
+      input.name,
+      input.monocerosHome ?? defaultMonocerosHome(),
+    );
   }
   return result;
 }
