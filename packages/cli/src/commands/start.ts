@@ -121,7 +121,14 @@ async function bringContainerUp(
       await preflightHostPort(hostPort);
       await ensureProxy({ hostPort });
     }
-    const exitCode = await runStart({ root: containerDir(args.name) });
+    // Capture the raw `devcontainer up` banner/JSON (silent) and drop the
+    // "Bringing devcontainer up…" line (no-op logger); on success we print a
+    // clean status line instead. A failure still surfaces the captured output.
+    const exitCode = await runStart({
+      root: containerDir(args.name),
+      silent: true,
+      logger: { info: () => {} },
+    });
     // Re-establish the host-side browser bridge for this freshly-started
     // container (same gating + best-effort as apply); the previous daemon
     // self-exited when the container last stopped.
@@ -147,6 +154,9 @@ async function bringContainerUp(
           `Could not start deferred service(s) ${deferred.join(', ')}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
+    }
+    if (exitCode === 0) {
+      consola.success(`Container '${args.name}' is up.`);
     }
     // `--open` is a convenience on top of a successful start. A failure
     // here (editor not found, etc.) must not mask the start result, so

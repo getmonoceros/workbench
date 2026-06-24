@@ -46,10 +46,22 @@ export const stopCommand = defineCommand({
       return dispatch(() => runAppCtl(args.name, ctlArgs('stop', app, target)));
     }
     return dispatch(async () => {
+      const service =
+        typeof args.service === 'string' ? args.service : undefined;
+      // Drop runStop's own "Stopped 'name'." line; print a clean status line
+      // below instead (consistent with `start`).
       const exit = await runStop({
         root: containerDir(args.name),
-        ...(typeof args.service === 'string' ? { service: args.service } : {}),
+        ...(service ? { service } : {}),
+        logger: { info: () => {} },
       });
+      if (exit === 0) {
+        consola.success(
+          service
+            ? `Container '${args.name}' service '${service}' stopped.`
+            : `Container '${args.name}' stopped.`,
+        );
+      }
       // Tear down the Traefik singleton if this was the last container
       // depending on it. Cheap idempotent call — no-ops when the proxy
       // network is already gone or other containers are still attached.
