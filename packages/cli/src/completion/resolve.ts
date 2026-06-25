@@ -1,6 +1,8 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import { monocerosHome } from '../config/paths.js';
+import { containerConfigPath, monocerosHome } from '../config/paths.js';
+import { readConfig } from '../config/io.js';
+import { solutionConfigToCreateOptions } from '../config/transform.js';
 import { listApps, readLaunchConfig } from '../config/launch-config.js';
 import { loadComponentCatalog } from '../init/components.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
@@ -402,6 +404,30 @@ async function listAppCandidates(ctx: Ctx): Promise<string[]> {
 }
 
 /**
+ * Second-positional candidates for `status <name> <app|service>`: the apps
+ * (launch configs under `projects/`) plus the services the yml declares -
+ * exactly the two things that positional narrows to. Host-side and
+ * best-effort: a missing/unreadable yml just drops the service half.
+ */
+async function listAppOrServiceCandidates(ctx: Ctx): Promise<string[]> {
+  const name = containerNameFromCtx(ctx);
+  if (!name) return [];
+  const apps = await listApps(name, ctx.opts.monocerosHome).catch(() => []);
+  let services: string[] = [];
+  try {
+    const parsed = await readConfig(
+      containerConfigPath(name, ctx.opts.monocerosHome),
+    );
+    services = solutionConfigToCreateOptions(parsed.config).services.map(
+      (s) => s.name,
+    );
+  } catch {
+    // no yml, or it doesn't parse — offer apps only
+  }
+  return [...new Set([...apps, ...services])].sort();
+}
+
+/**
  * `--target` candidates: the config names from the already-typed app's
  * launch config (positional 1, after the container name at positional 0).
  */
@@ -714,7 +740,9 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
       '--target': { type: 'value', values: (ctx) => listTargetCandidates(ctx) },
     },
   },
-  status: { positionals: [containerName] },
+  status: {
+    positionals: [containerName, (ctx) => listAppOrServiceCandidates(ctx)],
+  },
   'list-apps': { positionals: [containerName] },
   'add-language': {
     positionals: [containerName, () => listLanguageNames()],

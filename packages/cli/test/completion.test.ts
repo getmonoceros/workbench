@@ -303,6 +303,37 @@ describe('resolveCompletions', () => {
     expect(r).not.toContain('docs');
   });
 
+  it('completes `status <name> <app|service>` with apps AND declared services', async () => {
+    await writeFile(
+      path.join(home, 'container-configs', 'sandbox.yml'),
+      [
+        'schemaVersion: 1',
+        'runtimeVersion: 1.6.0',
+        'name: sandbox',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:16',
+        '',
+      ].join('\n'),
+    );
+    const ws = path.join(home, 'container', 'sandbox');
+    await mkdir(path.join(ws, 'projects', 'web', '.monoceros'), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(ws, 'projects', 'web', '.monoceros', 'launch.json'),
+      JSON.stringify({ configurations: [{ name: 'dev', command: 'x' }] }),
+    );
+
+    const r = await resolveCompletions(
+      'monoceros status sandbox ',
+      'monoceros status sandbox '.length,
+      { monocerosHome: home },
+    );
+    expect(r).toContain('web'); // app
+    expect(r).toContain('postgres'); // declared service
+  });
+
   it("completes --target from the already-typed app's launch config", async () => {
     await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
     const ws = path.join(home, 'container', 'sandbox');
