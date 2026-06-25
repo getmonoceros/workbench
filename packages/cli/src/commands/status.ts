@@ -1,6 +1,11 @@
 import { defineCommand } from 'citty';
-import { containerDir } from '../config/paths.js';
-import { runStatus } from '../devcontainer/compose.js';
+import {
+  gatherStatus,
+  renderApp,
+  renderService,
+  renderStatus,
+} from '../status/index.js';
+import { colorsFor } from '../util/format.js';
 import { dispatch } from './_dispatch.js';
 
 export const statusCommand = defineCommand({
@@ -8,7 +13,7 @@ export const statusCommand = defineCommand({
     name: 'status',
     group: 'run',
     description:
-      'Show whether the compose services for the named dev-container are running.',
+      'Show the dev-container at a glance: container, services and apps (up/down), the ports it routes, and what the yml built in. With an <app> (or a service name), narrow to just that.',
   },
   args: {
     name: {
@@ -17,18 +22,32 @@ export const statusCommand = defineCommand({
         'Container name (yml in $MONOCEROS_HOME/container-configs/).',
       required: true,
     },
-    service: {
-      type: 'string',
+    app: {
+      type: 'positional',
       description:
-        'Restrict to a single compose service (e.g. postgres). Defaults to all.',
+        'Narrow to one app (a path under projects/ with .monoceros/launch.json) or one compose service (e.g. postgres). Omit for the whole stack.',
+      required: false,
     },
   },
   run({ args }) {
-    return dispatch(() =>
-      runStatus({
-        root: containerDir(args.name),
-        ...(typeof args.service === 'string' ? { service: args.service } : {}),
-      }),
-    );
+    const filter = typeof args.app === 'string' ? args.app : undefined;
+    return dispatch(async () => {
+      const model = await gatherStatus(args.name);
+      // status output is a report → stdout, so colours drop out when piped.
+      const p = colorsFor(process.stdout);
+      let block: string;
+      if (filter) {
+        // Dispatch like `logs <name> [<app>]`: an app the launch config knows
+        // → its targets; otherwise a compose service; otherwise an error.
+        const isApp = model.apps.some((a) => a.app === filter);
+        block = isApp
+          ? renderApp(model, filter, p)
+          : renderService(model, filter, p);
+      } else {
+        block = renderStatus(model, p);
+      }
+      process.stdout.write(`\n${block}\n`);
+      return 0;
+    });
   },
 });

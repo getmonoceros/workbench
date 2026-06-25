@@ -104,7 +104,10 @@ env?, default? }`, at most one `default`. `command` is a single string run
   process leaves a stale pid file, and after apply the container is recreated
   so the pid number is meaningless (pid recycling). The correct fix is a
   liveness snapshot taken **before** teardown, designed together with ADR 0026
-  / issue #22.
+  / issue #22. **(Superseded by ADR 0028:** the simpler model treats the pid
+  file's presence as the desired state and reconciles after bring-up, so no
+  pre-teardown snapshot is needed - a crashed-but-wanted target coming back is
+  the intended `unless-stopped` behavior, not a bug to design around.)
 - pids permanently leave `logs/`; a future reader of `logs/` sees only logs.
 
 ## Update (2026-06-23, #24): multiple default targets

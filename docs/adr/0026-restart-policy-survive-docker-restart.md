@@ -77,3 +77,14 @@ uniform across workspace and services, just in the other direction.
   policy until re-applied.
 - A per-service `restart: no` (or `always`) in the yml still wins, so a builder
   can tune a single service without losing the group default.
+
+## Update (2026-06-25, #23 / ADR 0028): apps follow the same contract
+
+This ADR said the group comes back but the builder's app does **not** (it was
+never a workbench-managed process). ADR 0028 narrows that gap: an app started
+and not deliberately stopped is now "wanted", and `monoceros-ctl reconcile`
+restores the wanted set - the same `unless-stopped` contract this ADR chose for
+the group, now extended to apps. ADR 0028 wires it into `apply` (the container
+recreate). Wiring the same `reconcile` into the runtime entrypoint so apps also
+come back after a plain Docker restart / host reboot (the case this ADR is
+about) is the remaining step, tracked as a separate issue.

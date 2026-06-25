@@ -32,11 +32,13 @@ import type { SolutionConfig } from '../config/schema.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
 import {
   resolveRuntimeImage,
+  runtimeSupportsAppRestart,
   runtimeSupportsBrowserBridge,
   runtimeSupportsHostKeyPinning,
   runtimeSupportsSshAttach,
   serviceDefersStart,
 } from '../create/catalog.js';
+import { hasWantedApps, runAppCtl } from '../devcontainer/app-control.js';
 import { spawnBridgeDaemon } from '../devcontainer/bridge-daemon.js';
 import {
   type KeygenSpawn,
@@ -746,6 +748,31 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         } catch (err) {
           (logger.warn ?? logger.info)(
             `Recording the SSH host key skipped: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      // Restore apps that were running before this apply. The container was
+      // recreated, so every long-running server the builder had up was torn
+      // down with it. `monoceros-ctl reconcile` brings back exactly the set
+      // that was "wanted" (a present-but-now-dead pid file under
+      // `.monoceros/run/`, which survives the recreate on the bind mount),
+      // skipping anything an explicit `monoceros stop` cleared - the same
+      // `unless-stopped` contract the container group already follows (ADR
+      // 0026 / 0028). Gated on the runtime shipping `reconcile`; the host-side
+      // `hasWantedApps` probe keeps it (and its output) out of the common case
+      // where nothing was running. Best-effort: never fails the apply. Output
+      // (▸ app / ✓ target) streams straight through.
+      if (
+        runtimeSupportsAppRestart(createOpts.runtimeVersion) &&
+        (await hasWantedApps(opts.name, home))
+      ) {
+        progressOut.write(`\n  ${dim('restoring apps that were running…')}\n`);
+        try {
+          await runAppCtl(opts.name, ['reconcile']);
+        } catch (err) {
+          (logger.warn ?? logger.info)(
+            `Restoring running apps skipped: ${err instanceof Error ? err.message : String(err)}. Bring them back with \`monoceros start ${opts.name} <app>\`.`,
           );
         }
       }

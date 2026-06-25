@@ -23,7 +23,7 @@ export type DockerLookupExec = (
   args: readonly string[],
 ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
 
-const realDockerLookup: DockerLookupExec = (args) => {
+export const realDockerLookup: DockerLookupExec = (args) => {
   return new Promise((resolve, reject) => {
     const child = spawn('docker', args as string[], {
       stdio: ['ignore', 'pipe', 'pipe'],

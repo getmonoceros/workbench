@@ -92,6 +92,19 @@ const MIN_RUNTIME_FOR_ENTRYPOINT_SSHD = '1.3.6';
 // skips spawning the daemon. Frozen at the introducing version.
 const MIN_RUNTIME_FOR_BROWSER_BRIDGE = '1.3.3';
 
+// Minimum runtime whose `monoceros-ctl` carries the `reconcile` subcommand
+// (ADR 0028): it restarts every "wanted" app target (one started and not
+// cleanly stopped) that is currently down. Below this the image's runner has
+// no `reconcile`, so apply does not try to restore running apps after a
+// bring-up. Frozen at the introducing version.
+const MIN_RUNTIME_FOR_APP_RESTART = '1.6.0';
+
+// Minimum runtime whose `monoceros-ctl list` understands `--json` (NDJSON,
+// one object per target). Gates the Apps section of `monoceros status`: below
+// this the runner has no machine-readable surface, so status omits per-app run
+// state. Same image as the `reconcile` work; frozen at the introducing version.
+const MIN_RUNTIME_FOR_APP_STATUS = '1.6.0';
+
 /**
  * Resolve a pinned `runtimeVersion` to a concrete image ref.
  * `MONOCEROS_BASE_IMAGE_OVERRIDE` (dev) always wins. With no pin we fall
@@ -172,6 +185,29 @@ export function runtimeSupportsHostKeyPinning(version?: string): boolean {
 export function runtimeSupportsEntrypointSshd(version?: string): boolean {
   if (!version) return false;
   return compareRuntimeVersions(version, MIN_RUNTIME_FOR_ENTRYPOINT_SSHD) >= 0;
+}
+
+/**
+ * Whether the pinned runtime's `monoceros-ctl` ships the `reconcile`
+ * subcommand (ADR 0028). Gates apply's post-bring-up "restore running apps"
+ * step: only at/above this version can the runner restart the targets that
+ * were up before the recreate. False when unpinned or below the minimum -
+ * those containers simply come back with apps stopped (the prior behavior).
+ */
+export function runtimeSupportsAppRestart(version?: string): boolean {
+  if (!version) return false;
+  return compareRuntimeVersions(version, MIN_RUNTIME_FOR_APP_RESTART) >= 0;
+}
+
+/**
+ * Whether the pinned runtime's `monoceros-ctl list` supports `--json`. Gates
+ * the per-app run-state (Apps section) of `monoceros status`. False when
+ * unpinned or below the minimum - status still renders the container, services,
+ * ports and built-in sections, just without live app state.
+ */
+export function runtimeSupportsAppStatus(version?: string): boolean {
+  if (!version) return false;
+  return compareRuntimeVersions(version, MIN_RUNTIME_FOR_APP_STATUS) >= 0;
 }
 
 export interface LanguageEntry {

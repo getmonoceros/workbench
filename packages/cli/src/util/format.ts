@@ -20,6 +20,7 @@ const ESC = '\x1b[';
 const ANSI_BOLD = `${ESC}1m`;
 const ANSI_UNDERLINE = `${ESC}4m`;
 const ANSI_CYAN = `${ESC}36m`;
+const ANSI_GREEN = `${ESC}32m`;
 const ANSI_GREY = `${ESC}90m`;
 const ANSI_RESET = `${ESC}0m`;
 
@@ -46,6 +47,8 @@ export interface Palette {
   bold: (s: string) => string;
   underline: (s: string) => string;
   cyan: (s: string) => string;
+  /** Green — a "running / up" status marker (`✓`). */
+  green: (s: string) => string;
   dim: (s: string) => string;
   /**
    * Section marker — bold + underlined with a `▸` chevron prefix.
@@ -64,6 +67,7 @@ function makePalette(isTty: boolean): Palette {
     bold: (s) => wrap(s, ANSI_BOLD),
     underline: (s) => wrap(s, ANSI_UNDERLINE),
     cyan: (s) => wrap(s, ANSI_CYAN),
+    green: (s) => wrap(s, ANSI_GREEN),
     dim: (s) => wrap(s, ANSI_GREY),
     sectionLine: (label) => wrap(`▸ ${label}`, ANSI_BOLD, ANSI_UNDERLINE),
   };
@@ -86,5 +90,6 @@ const stderrPalette = makePalette(process.stderr.isTTY ?? false);
 export const bold = stderrPalette.bold;
 export const underline = stderrPalette.underline;
 export const cyan = stderrPalette.cyan;
+export const green = stderrPalette.green;
 export const dim = stderrPalette.dim;
 export const sectionLine = stderrPalette.sectionLine;

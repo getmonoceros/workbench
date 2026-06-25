@@ -11,6 +11,7 @@
 #   monoceros-ctl stop  <app> [--target <t>]
 #   monoceros-ctl logs  <app> [--target <t>] [--no-follow]
 #   monoceros-ctl list
+#   monoceros-ctl reconcile
 #
 # An app is a directory under projects/ that carries
 # .monoceros/launch.json. The launch config is read here (never guessed);
@@ -19,6 +20,9 @@
 # Runtime state is kept OUT of logs/ (logs are logs): pid files live under
 # .monoceros/run/<app>/<target>.pid, logs under logs/<app>/<target>.log.
 # Both dirs are inside the workspace bind-mount, so the host sees them too.
+# The PRESENCE of a pid file doubles as the "wanted" marker (it is written by
+# start and removed only by an explicit stop), which `reconcile` reads to bring
+# back what an `apply` / restart tore down. See ADR 0028.
 set -euo pipefail
 
 die() {
@@ -311,15 +315,17 @@ cmd_logs() {
 }
 
 cmd_list() {
+  local json="$1"
   local file app t pidf marker detail isdefault
   shopt -s nullglob globstar
   for file in "$WS"/projects/**/.monoceros/launch.json; do
     app="${file#"$WS"/projects/}"
     app="${app%/.monoceros/launch.json}"
-    hdr "$app"
+    [ "$json" != "1" ] && hdr "$app"
     while IFS= read -r t; do
       pidf="$(run_dir "$app")/$t.pid"
       isdefault="$(jq -r --arg n "$t" '.configurations[] | select(.name == $n) | .default // false' "$file")"
+      if [ "$json" = "1" ]; then list_one_json "$file" "$app" "$t" "$pidf" "$isdefault"; continue; fi
       if pid_alive "$pidf"; then
         marker="${C_GREEN}✓${C_RESET}"
         detail="running    ${C_GREY}pid $(cat "$pidf")${C_RESET}"
@@ -333,15 +339,71 @@ cmd_list() {
   done
 }
 
+# Emit one target as a single-line JSON object (NDJSON, one per target). The
+# host `monoceros status` parses this line-by-line - a machine-readable surface
+# over the same liveness check the human `list` uses, so there is one source of
+# truth and no ANSI to scrape. pid/port are JSON null when absent.
+list_one_json() { # <launch.json> <app> <target> <pidfile> <isdefault>
+  local file="$1" app="$2" t="$3" pidf="$4" isdefault="$5"
+  local running pid port
+  if pid_alive "$pidf"; then running=true; pid="$(cat "$pidf")"; else running=false; pid=null; fi
+  port="$(jq -r --arg n "$t" '.configurations[] | select(.name == $n) | .port // empty' "$file")"
+  [ -n "$port" ] || port=null
+  [ "$isdefault" = "true" ] || isdefault=false
+  jq -cn --arg app "$app" --arg target "$t" \
+    --argjson running "$running" --argjson pid "$pid" \
+    --argjson port "$port" --argjson dflt "$isdefault" \
+    '{"app":$app,"target":$target,"running":$running,"pid":$pid,"port":$port,"default":$dflt}'
+}
+
+# Bring back every "wanted" target that isn't currently alive. The PRESENCE of
+# a <target>.pid file is the want-marker: it is written by `start`, removed only
+# by an explicit `stop`, and left behind (with a now-dead pid) when the process
+# crashed or the container was recreated (`apply`) / restarted. Its CONTENT is
+# the last pid, checked for liveness via `kill -0`. So "pid file present but not
+# alive" is exactly the set the builder wanted up that an apply/restart tore
+# down - the set to restore. This is why no pre-teardown liveness snapshot is
+# needed: the intent already persists across the recreate in the bind-mount.
+#
+# Best-effort: one target failing to come back never aborts the rest (unlike
+# `start`'s fail-fast default set). Orphans are reaped, not resurrected: if the
+# app's launch.json or the target is gone (config changed since it was started),
+# the stale pid file is removed. We never signal an old pid - start_one only
+# reads it to decide "already running", and writes a fresh one when it launches;
+# right after a recreate nothing it manages is up, so that read is a no-op.
+# Across-target ordering is not guaranteed (declared order is `start`'s job);
+# reconcile restores each independently-started server on its own. See ADR 0028.
+cmd_reconcile() {
+  local runroot="$WS/.monoceros/run"
+  [ -d "$runroot" ] || return 0
+  shopt -s nullglob globstar
+  local pidf rel app target file last_app=""
+  for pidf in "$runroot"/**/*.pid; do
+    pid_alive "$pidf" && continue
+    rel="${pidf#"$runroot"/}"           # <apprel>/<target>.pid
+    target="$(basename "$rel" .pid)"
+    app="$(dirname "$rel")"
+    file="$(launch_json "$app")"
+    if [ ! -f "$file" ] || ! jq -e --arg n "$target" \
+        '.configurations[] | select(.name == $n)' "$file" >/dev/null 2>&1; then
+      rm -f "$pidf"                      # orphan: config or target gone - reap
+      continue
+    fi
+    if [ "$app" != "$last_app" ]; then hdr "$app"; last_app="$app"; fi
+    start_one "$app" "$target" || true
+  done
+}
+
 main() {
   local sub="${1:-}"; shift || true
-  local app="" target="" follow="1"
+  local app="" target="" follow="1" json="0"
   # First non-flag positional is the app; --target takes a value.
   while [ $# -gt 0 ]; do
     case "$1" in
       --target) target="${2:-}"; shift 2 ;;
       --target=*) target="${1#--target=}"; shift ;;
       --no-follow) follow="0"; shift ;;
+      --json) json="1"; shift ;;
       -*) die "unknown flag: $1" ;;
       *) [ -z "$app" ] && app="$1"; shift ;;
     esac
@@ -351,7 +413,8 @@ main() {
     start) [ -n "$app" ] || die "usage: monoceros-ctl start <app> [--target <t>]"; cmd_start "$app" "$target" ;;
     stop)  [ -n "$app" ] || die "usage: monoceros-ctl stop <app> [--target <t>]";  cmd_stop "$app" "$target" ;;
     logs)  [ -n "$app" ] || die "usage: monoceros-ctl logs <app> [--target <t>] [--no-follow]"; cmd_logs "$app" "$target" "$follow" ;;
-    list)  cmd_list ;;
+    list)  cmd_list "$json" ;;
+    reconcile) cmd_reconcile ;;
     ""|-h|--help|help)
       cat <<'EOF'
 monoceros-ctl — start/stop long-running app servers inside the container
@@ -359,7 +422,11 @@ monoceros-ctl — start/stop long-running app servers inside the container
   monoceros-ctl start <app> [--target <t>]   start an app's server (detached)
   monoceros-ctl stop  <app> [--target <t>]   stop it (kills the process group)
   monoceros-ctl logs  <app> [--target <t>]   tail its log (--no-follow to dump)
-  monoceros-ctl list                         list apps, targets and run state
+  monoceros-ctl list [--json]                list apps, targets and run state
+                                             (--json: NDJSON for `monoceros status`)
+  monoceros-ctl reconcile                    restart every "wanted" target (one
+                                             not cleanly stopped) that is down -
+                                             run by `apply` after bring-up
 
 <app> is a path under projects/ that carries .monoceros/launch.json.
 --target defaults to the config marked "default" (or the only one).

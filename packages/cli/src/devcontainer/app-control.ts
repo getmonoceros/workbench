@@ -1,3 +1,5 @@
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { containerDir } from '../config/paths.js';
 import {
   findRunningContainerByLocalFolder,
@@ -51,6 +53,41 @@ export async function runAppCtl(
   const exec = opts.exec ?? realContainerExec;
   const result = await exec(id, ['monoceros-ctl', ...ctlArgs]);
   return result.exitCode;
+}
+
+/**
+ * Whether any app target is "wanted" - i.e. was started and not cleanly
+ * stopped. The presence of a `.monoceros/run/<app>/<target>.pid` file is that
+ * marker (written by `start`, removed only by an explicit `stop`); see
+ * monoceros-ctl + ADR 0028. Read host-side off the bind mount so `apply` can
+ * skip the in-container `reconcile` (and its header) entirely when there is
+ * nothing to restore - the common case. The pid contents are irrelevant here;
+ * after a recreate they are stale anyway, the file's presence is the signal.
+ */
+export async function hasWantedApps(
+  name: string,
+  home?: string,
+): Promise<boolean> {
+  const runRoot = path.join(containerDir(name, home), '.monoceros', 'run');
+
+  async function anyPid(dir: string): Promise<boolean> {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (await anyPid(path.join(dir, e.name))) return true;
+      } else if (e.isFile() && e.name.endsWith('.pid')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  return anyPid(runRoot);
 }
 
 /** Build the `monoceros-ctl` argv for an app subcommand, appending `--target` when set. */
