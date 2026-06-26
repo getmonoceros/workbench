@@ -381,11 +381,13 @@ describe('Windows/WSL bridge', () => {
 });
 
 describe('windowsSshPort', () => {
-  it('is deterministic and in the dynamic/private port range', () => {
+  it('is deterministic and below the Windows dynamic port range', () => {
     const p = windowsSshPort('demo');
     expect(p).toBe(windowsSshPort('demo'));
-    expect(p).toBeGreaterThanOrEqual(49152);
-    expect(p).toBeLessThanOrEqual(65535);
+    // Must stay clear of the 49152-65535 dynamic/private range that
+    // Hyper-V reserves on WSL2 (Docker `/forwards/expose` 500 otherwise).
+    expect(p).toBeGreaterThanOrEqual(20000);
+    expect(p).toBeLessThanOrEqual(39999);
     expect(windowsSshPort('other')).not.toBe(p); // name-keyed
   });
 });

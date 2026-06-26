@@ -224,13 +224,19 @@ interface ResolvedCompose {
 }
 
 // Match the project name `@devcontainers/cli` derives when it brings a
-// compose-mode devcontainer up: `<root-basename>_devcontainer`.
-// Aligning here means `monoceros start/stop/status/logs` and the
-// implicit `devcontainer up` from `monoceros run/shell` act on the
-// same compose project — without it docker would create two parallel
-// stacks.
+// compose-mode devcontainer up: it lowercases `<root-basename>_devcontainer`
+// and strips characters outside [a-z0-9_-] (docker compose rejects
+// project names with uppercase letters). Aligning here means `monoceros
+// start/stop/status/logs` and the implicit `devcontainer up` from
+// `monoceros run/shell` act on the same compose project — without the
+// same normalization an uppercase container name (e.g. `FFC`) yields
+// `FFC_devcontainer` here while the CLI brings the stack up as
+// `ffc_devcontainer`, so docker rejects our `-p` (deferred services
+// fail to start) and creates a second parallel stack.
 export function composeProjectName(root: string): string {
-  return `${path.basename(root)}_devcontainer`;
+  return `${path.basename(root)}_devcontainer`
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
 }
 
 /**

@@ -335,17 +335,22 @@ function resolveWindowsDeps(
 
 /**
  * Deterministic host-loopback port for the Windows ssh bridge of a container.
- * Picked from the IANA dynamic/private range (49152-65535) by hashing the
- * name, so it's stable across applies and unlikely to collide with a dev
- * server. The same value is published by the scaffold and forwarded to sshd
- * by `sshd-up.sh`.
+ * Hashed from the name so it's stable across applies. Mapped into 20000-39999
+ * on purpose: the IANA dynamic/private range (49152-65535) is exactly what
+ * Windows/Hyper-V reserves for itself in blocks (`netsh int ipv4 show
+ * excludedportrange`), and Docker Desktop on WSL2 then fails to bind a fixed
+ * listener that lands in a reserved block — surfacing as `ports are not
+ * available: … /forwards/expose returned unexpected status: 500`. 20000-39999
+ * sits above the common dev-server ports (3000/5173/8080/8000) and below the
+ * dynamic range, so it dodges both. The same value is published by the
+ * scaffold and forwarded to sshd by `sshd-up.sh`.
  */
 export function windowsSshPort(name: string): number {
   let h = 0;
   for (let i = 0; i < name.length; i++) {
     h = (h * 31 + name.charCodeAt(i)) >>> 0;
   }
-  return 49152 + (h % 16384);
+  return 20000 + (h % 20000);
 }
 
 function windowsHostBlock(

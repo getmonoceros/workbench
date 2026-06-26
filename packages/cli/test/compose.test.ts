@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  composeProjectName,
   resolveCompose,
   runContainerCycle,
   runLogs,
@@ -12,6 +13,23 @@ import {
   runStop,
   startDeferredServices,
 } from '../src/devcontainer/compose.js';
+
+describe('composeProjectName', () => {
+  it('appends _devcontainer to the root basename', () => {
+    expect(composeProjectName('/home/u/.monoceros/container/demo')).toBe(
+      'demo_devcontainer',
+    );
+  });
+
+  it('lowercases uppercase container names to match @devcontainers/cli', () => {
+    // Without this, `FFC` yields `FFC_devcontainer` while the CLI brings
+    // the stack up as `ffc_devcontainer`; docker compose rejects the
+    // uppercase `-p` and the deferred-service wave fails.
+    expect(composeProjectName('/home/u/.monoceros/container/FFC')).toBe(
+      'ffc_devcontainer',
+    );
+  });
+});
 
 describe('resolveCompose', () => {
   let tmp: string;
