@@ -36,6 +36,13 @@ export interface AgentsMdInput {
   features: readonly FeatureDisplay[];
   repos: readonly RepoEntry[];
   ports: readonly number[];
+  /**
+   * Host port the Traefik proxy binds (`routing.hostPort`, default 80).
+   * Anything other than 80 surfaces in the `.localhost` URLs as a
+   * `:<port>` suffix — without it the agent would be told the wrong URL
+   * and hit a dead `:80`. Optional so direct callers/tests default to 80.
+   */
+  hostPort?: number;
 }
 
 export interface FeatureDisplay {
@@ -54,6 +61,12 @@ export interface FeatureDisplay {
 
 export function generateAgentsMd(input: AgentsMdInput): string {
   const lines: string[] = [];
+
+  // `.localhost` URLs carry the proxy host port only when it isn't the
+  // default 80 — so `routing.hostPort: 8080` yields `…localhost:8080`,
+  // and the common case stays a clean port-less URL.
+  const hostPort = input.hostPort ?? 80;
+  const portSuffix = hostPort === 80 ? '' : `:${hostPort}`;
 
   lines.push('# Monoceros Container — Stack Briefing');
   lines.push('');
@@ -191,18 +204,18 @@ export function generateAgentsMd(input: AgentsMdInput): string {
       const port = input.ports[i]!;
       if (i === 0) {
         lines.push(
-          `- ${port} (default route) → http://${input.containerName}.localhost`,
+          `- ${port} (default route) → http://${input.containerName}.localhost${portSuffix}`,
         );
       } else {
         lines.push(
-          `- ${port} → http://${input.containerName}-${port}.localhost`,
+          `- ${port} → http://${input.containerName}-${port}.localhost${portSuffix}`,
         );
       }
     }
     lines.push('');
     lines.push(
       'To show the user a running app, open it in their host browser with',
-      `\`xdg-open http://${input.containerName}.localhost\` — Monoceros relays`,
+      `\`xdg-open http://${input.containerName}.localhost${portSuffix}\` — Monoceros relays`,
       'browser-opens from the container to the host machine. Also tell the user',
       'the URL, so they can open it themselves if no bridge is active.',
     );
@@ -222,7 +235,7 @@ export function generateAgentsMd(input: AgentsMdInput): string {
       '  Angular `--allowed-hosts`, CRA `DANGEROUSLY_DISABLE_HOST_CHECK`;',
       '- it does **not pin the HMR/live-reload socket** to a fixed host or port',
       '  — let it follow the page URL (e.g. for Vite, do not set',
-      '  `server.hmr.clientPort`), so HMR works on `<name>.localhost` and over',
+      `  \`server.hmr.clientPort\`), so HMR works on \`<name>.localhost${portSuffix}\` and over`,
       '  the LAN alike;',
       '- the **backend is reached via the dev-server proxy** under a relative',
       '  path (Vite `server.proxy`, Angular `proxy.conf.json`, CRA',
@@ -310,7 +323,7 @@ export function generateAgentsMd(input: AgentsMdInput): string {
       'When you build something that serves on a port (a web app, an API),',
       'it must keep running after this session ends. A plain `npm start` (or',
       'any foreground start) dies the moment the user exits you or closes the',
-      `terminal, and then \`${input.containerName}.localhost\` returns 502 Bad Gateway.`,
+      `terminal, and then \`${input.containerName}.localhost${portSuffix}\` returns 502 Bad Gateway.`,
     );
     lines.push('');
     lines.push(
@@ -449,6 +462,7 @@ export function agentsMdInputFromCreateOptions(
   opts: CreateOptions,
   featureDisplayMap: ReadonlyMap<string, string>,
   manifestLoader?: (ref: string) => FeatureManifestSummary | undefined,
+  hostPort = 80,
 ): AgentsMdInput {
   const features: FeatureDisplay[] = [];
   for (const [ref, userOptions] of Object.entries(opts.features ?? {})) {
@@ -470,6 +484,7 @@ export function agentsMdInputFromCreateOptions(
     features,
     repos: opts.repos ?? [],
     ports: opts.ports ?? [],
+    hostPort,
   };
 }
 

@@ -28,6 +28,20 @@ const dockerStubs = {
       exitCode: 1,
     });
   },
+  // Proxy absent, but a live container publishes the port (the
+  // `docker ps --filter publish=…` call returns a row).
+  proxyAbsentLiveContainer(name: string, image: string): DockerExec {
+    return async (args) => {
+      if (args[0] === 'ps') {
+        return { stdout: `${name} (${image})\n`, stderr: '', exitCode: 0 };
+      }
+      return {
+        stdout: '',
+        stderr: 'Error: No such object: ' + PROXY_CONTAINER_NAME,
+        exitCode: 1,
+      };
+    };
+  },
 };
 
 describe('preflightHostPort', () => {
@@ -75,7 +89,7 @@ describe('preflightHostPort', () => {
     });
   });
 
-  it('throws with an actionable hint on EADDRINUSE', async () => {
+  it('throws the leftover-holder hint on EADDRINUSE when no container publishes the port', async () => {
     await expect(
       preflightHostPort(80, {
         docker: dockerStubs.proxyAbsent(),
@@ -85,10 +99,10 @@ describe('preflightHostPort', () => {
           message: 'address already in use',
         }),
       }),
-    ).rejects.toThrow(/Host port 80 is already in use/);
+    ).rejects.toThrow(/Host port 80 is in use, but no Docker container/);
   });
 
-  it('mentions the routing.hostPort fallback in the EADDRINUSE message', async () => {
+  it('recommends a daemon restart and the routing.hostPort fallback for a leftover holder', async () => {
     try {
       await preflightHostPort(80, {
         docker: dockerStubs.proxyAbsent(),
@@ -101,10 +115,30 @@ describe('preflightHostPort', () => {
       throw new Error('expected to throw');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      expect(msg).toContain('docker-proxy');
+      expect(msg).toContain('systemctl restart docker');
       expect(msg).toContain('routing:');
       expect(msg).toContain('hostPort');
       expect(msg).toContain('monoceros-config.yml');
-      expect(msg).toMatch(/lsof|ss -tlnp/);
+    }
+  });
+
+  it('names the live container holding the port when one publishes it', async () => {
+    try {
+      await preflightHostPort(80, {
+        docker: dockerStubs.proxyAbsentLiveContainer('web', 'nginx:latest'),
+        portProbe: async () => ({
+          ok: false,
+          code: 'EADDRINUSE',
+          message: 'address already in use',
+        }),
+      });
+      throw new Error('expected to throw');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      expect(msg).toContain('published by a running container');
+      expect(msg).toContain('web (nginx:latest)');
+      expect(msg).toContain('docker stop web');
     }
   });
 
@@ -164,7 +198,7 @@ describe('realPortProbe (live integration)', () => {
         preflightHostPort(port, {
           docker: dockerStubs.proxyAbsent(),
         }),
-      ).rejects.toThrow(/already in use/i);
+      ).rejects.toThrow(/in use/i);
     } finally {
       heldServer?.close();
       heldServer = undefined;

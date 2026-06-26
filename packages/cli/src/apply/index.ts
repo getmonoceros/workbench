@@ -510,7 +510,12 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // the container itself is functional.
   try {
     const components = await loadComponentCatalog();
-    await writeBriefing({ targetDir, createOpts, components });
+    await writeBriefing({
+      targetDir,
+      createOpts,
+      components,
+      hostPort: proxyHostPort(globalConfig),
+    });
   } catch (err) {
     const msg = `briefing files not written: ${err instanceof Error ? err.message : String(err)}`;
     (logger.warn ?? logger.info)(msg);

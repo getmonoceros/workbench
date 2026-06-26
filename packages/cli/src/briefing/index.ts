@@ -50,6 +50,7 @@ export async function writeBriefing(input: WriteBriefingInput): Promise<void> {
       input.createOpts,
       featureDisplayMap(input.components),
       manifestLoader,
+      input.hostPort ?? 80,
     ),
   );
   const claudeBody = generateClaudeMd();
@@ -73,6 +74,12 @@ export interface WriteBriefingInput {
   createOpts: CreateOptions;
   /** Loaded component catalog — used to map feature refs to display names. */
   components: ReadonlyMap<string, Component>;
+  /**
+   * Resolved Traefik host port (`routing.hostPort`, default 80). Flows
+   * into the briefing's `.localhost` URLs so a non-80 proxy port shows
+   * the correct `:<port>` suffix. Optional; defaults to 80.
+   */
+  hostPort?: number;
   /**
    * Pre-loaded citty subcommand map. Tests pass a minimal map here;
    * runtime callers can leave this `undefined` and the function will

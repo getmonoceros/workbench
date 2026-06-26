@@ -170,6 +170,42 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('xdg-open http://demo.localhost');
   });
 
+  it('keeps .localhost URLs suffix-free at the default host port 80', () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: [],
+      services: [],
+      features: [],
+      repos: [],
+      ports: [3000, 5173],
+      hostPort: 80,
+    });
+    // No `:80` clutter in the common case.
+    expect(md).toContain('http://demo.localhost');
+    expect(md).not.toContain('demo.localhost:80');
+  });
+
+  it('appends the host-port suffix to every .localhost URL when hostPort != 80', () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: [],
+      services: [],
+      features: [],
+      repos: [],
+      ports: [3000, 5173],
+      hostPort: 8080,
+    });
+    // Default + secondary routes, xdg-open, HMR hint, and the 502 note all
+    // carry the :8080 suffix — otherwise the agent hits a dead :80.
+    expect(md).toContain('3000 (default route) → http://demo.localhost:8080');
+    expect(md).toContain('5173 → http://demo-5173.localhost:8080');
+    expect(md).toContain('xdg-open http://demo.localhost:8080');
+    expect(md).toContain('`<name>.localhost:8080`');
+    expect(md).toContain('`demo.localhost:8080` returns 502 Bad Gateway');
+    // And never a bare port-less default route.
+    expect(md).not.toContain('(default route) → http://demo.localhost\n');
+  });
+
   it('always emits the @import to the commands reference at the end', () => {
     const md = generateAgentsMd({
       containerName: 'demo',
@@ -184,6 +220,19 @@ describe('AGENTS.md generator', () => {
   });
 
   describe('agentsMdInputFromCreateOptions', () => {
+    it('defaults hostPort to 80 and carries an explicit hostPort through', () => {
+      const opts: CreateOptions = {
+        name: 'demo',
+        languages: [],
+        services: [],
+      };
+      expect(agentsMdInputFromCreateOptions(opts, new Map()).hostPort).toBe(80);
+      expect(
+        agentsMdInputFromCreateOptions(opts, new Map(), undefined, 8080)
+          .hostPort,
+      ).toBe(8080);
+    });
+
     it('falls back to the components-catalog displayName when no manifest briefing is available, and to the ref tail otherwise', () => {
       const opts: CreateOptions = {
         name: 'demo',
