@@ -5,6 +5,7 @@ import {
   type DockerExec,
   type ProxyLogger,
 } from './index.js';
+import { cyan, dim } from '../util/format.js';
 
 /**
  * Pre-flight check on the host port the Traefik singleton would bind.
@@ -191,6 +192,26 @@ async function containersPublishing(
     .filter((l) => l.length > 0);
 }
 
+/**
+ * Shared tail for both EADDRINUSE messages: the "move Monoceros off the
+ * port" config snippet, then the abort line. Kept in one place so the
+ * two formatters stay identical where they overlap.
+ */
+function hostPortFallbackLines(hostPort: number): string[] {
+  return [
+    dim('Or set a different proxy port in ') +
+      cyan('~/.monoceros/monoceros-config.yml') +
+      dim(':'),
+    '    ' + cyan('schemaVersion: 1'),
+    '    ' + cyan('routing:'),
+    '    ' + cyan('  hostPort: 8080'),
+    '',
+    dim(
+      `Aborting. Re-run once port ${hostPort} is free or a different port is set.`,
+    ),
+  ];
+}
+
 /** A running container in this engine publishes the port. */
 export function formatLiveContainerError(
   hostPort: number,
@@ -200,17 +221,13 @@ export function formatLiveContainerError(
   return [
     `Host port ${hostPort} is in use: it is published by a running container.`,
     '',
-    `Monoceros needs that port for its Traefik proxy. The container(s) holding it:`,
-    ...containers.map((c) => `  - ${c}`),
+    dim('Held by:'),
+    ...containers.map((c) => '    ' + cyan(c)),
     '',
-    `Stop or re-map it, then re-run, e.g.:`,
+    dim('Stop or re-map it, then re-run:'),
+    '    ' + cyan(`docker stop ${firstName}`),
     '',
-    `    docker stop ${firstName}`,
-    '',
-    `Or move Monoceros off the port: set \`routing.hostPort\` in`,
-    `~/.monoceros/monoceros-config.yml.`,
-    '',
-    `Aborting. Re-run after the conflict is resolved.`,
+    ...hostPortFallbackLines(hostPort),
   ].join('\n');
 }
 
@@ -224,31 +241,16 @@ export function formatLiveContainerError(
  */
 export function formatLeftoverHolderError(hostPort: number): string {
   return [
-    `Host port ${hostPort} is in use, but no Docker container in the active`,
-    `engine publishes it.`,
+    `Host port ${hostPort} is in use, but no running container publishes it.`,
     '',
-    `This is almost always a leftover Docker port-forwarder (docker-proxy)`,
-    `whose container is already gone. It is left behind when a native Docker`,
-    `daemon is restarted while a container held the port, which is common with`,
-    `dockerd-via-systemd inside WSL (WSL restarts it on every shutdown). The`,
-    `forwarder keeps the port bound with nothing behind it. Two ways out:`,
+    dim('Most likely a leftover docker-proxy whose container is already gone'),
+    dim('(a native dockerd in WSL strands these on restart), or a holder in'),
+    dim('another Docker engine. Fix it one of two ways, then re-run:'),
     '',
-    `  1) Recommended: reap the leftover by restarting the Docker daemon`,
-    `     (harmless, it just clears stale forwarders):`,
-    `        WSL / native dockerd:  sudo systemctl restart docker`,
-    `        Docker Desktop:        restart it from its menu`,
-    `     Then re-run.`,
+    dim('Reap the leftover by restarting the Docker daemon (harmless):'),
+    '    ' + cyan('sudo systemctl restart docker'),
     '',
-    `  2) Or move Monoceros off port ${hostPort}. Edit (or create)`,
-    `     ~/.monoceros/monoceros-config.yml and add:`,
-    '',
-    `        schemaVersion: 1`,
-    `        routing:`,
-    `          hostPort: 8080      # any free port`,
-    '',
-    `     URLs then become http://<name>.localhost:8080/.`,
-    '',
-    `Aborting. Re-run after the conflict is resolved.`,
+    ...hostPortFallbackLines(hostPort),
   ].join('\n');
 }
 
@@ -266,15 +268,18 @@ export function formatHostPortHeldError(
   return [
     `Cannot reach host port ${hostPort}: ${systemMessage}`,
     '',
-    `This is not the typical "port already in use" case.`,
-    `Monoceros's pre-flight uses a TCP-connect probe (not a bind), so`,
-    `EACCES / privileged-port errors normally don't appear here. Most`,
-    `likely something on your host network stack (firewall, network`,
-    `namespace, …) is interfering with loopback connects.`,
+    dim('This is not the typical "port already in use" case. The pre-flight'),
+    dim('uses a TCP-connect probe (not a bind), so EACCES / privileged-port'),
+    dim('errors normally do not appear here. Most likely something on your'),
+    dim('host network stack (firewall, network namespace) is interfering with'),
+    dim('loopback connects.'),
     '',
-    'Workaround: move Monoceros off this port by setting',
-    '`routing.hostPort` in ~/.monoceros/monoceros-config.yml.',
+    dim('Workaround: move Monoceros off this port by setting ') +
+      cyan('routing.hostPort') +
+      dim(' in ') +
+      cyan('~/.monoceros/monoceros-config.yml') +
+      dim('.'),
     '',
-    `Aborting. Re-run after the issue is resolved.`,
+    dim('Aborting. Re-run after the issue is resolved.'),
   ].join('\n');
 }

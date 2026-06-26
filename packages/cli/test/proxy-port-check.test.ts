@@ -99,7 +99,7 @@ describe('preflightHostPort', () => {
           message: 'address already in use',
         }),
       }),
-    ).rejects.toThrow(/Host port 80 is in use, but no Docker container/);
+    ).rejects.toThrow(/Host port 80 is in use, but no running container/);
   });
 
   it('recommends a daemon restart and the routing.hostPort fallback for a leftover holder', async () => {
