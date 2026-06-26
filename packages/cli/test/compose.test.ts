@@ -218,7 +218,17 @@ describe('compose actions', () => {
         return 0;
       },
     });
-    expect(calls).toEqual([['-f', composeFile, '-p', projectName, 'stop']]);
+    expect(calls).toEqual([
+      [
+        '-f',
+        composeFile,
+        '-p',
+        projectName,
+        '--profile',
+        'monoceros-deferred',
+        'stop',
+      ],
+    ]);
   });
 
   it('runStatus issues `ps`', async () => {
@@ -230,7 +240,17 @@ describe('compose actions', () => {
         return 0;
       },
     });
-    expect(calls).toEqual([['-f', composeFile, '-p', projectName, 'ps']]);
+    expect(calls).toEqual([
+      [
+        '-f',
+        composeFile,
+        '-p',
+        projectName,
+        '--profile',
+        'monoceros-deferred',
+        'ps',
+      ],
+    ]);
   });
 
   it('runLogs follows by default', async () => {
@@ -243,7 +263,16 @@ describe('compose actions', () => {
       },
     });
     expect(calls).toEqual([
-      ['-f', composeFile, '-p', projectName, 'logs', '-f'],
+      [
+        '-f',
+        composeFile,
+        '-p',
+        projectName,
+        '--profile',
+        'monoceros-deferred',
+        'logs',
+        '-f',
+      ],
     ]);
   });
 
@@ -257,7 +286,17 @@ describe('compose actions', () => {
         return 0;
       },
     });
-    expect(calls).toEqual([['-f', composeFile, '-p', projectName, 'logs']]);
+    expect(calls).toEqual([
+      [
+        '-f',
+        composeFile,
+        '-p',
+        projectName,
+        '--profile',
+        'monoceros-deferred',
+        'logs',
+      ],
+    ]);
   });
 
   it('appends --service when filtering stop/status/logs', async () => {
@@ -280,8 +319,26 @@ describe('compose actions', () => {
       },
     });
     expect(calls).toEqual([
-      ['-f', composeFile, '-p', projectName, 'stop', 'postgres'],
-      ['-f', composeFile, '-p', projectName, 'logs', 'redis'],
+      [
+        '-f',
+        composeFile,
+        '-p',
+        projectName,
+        '--profile',
+        'monoceros-deferred',
+        'stop',
+        'postgres',
+      ],
+      [
+        '-f',
+        composeFile,
+        '-p',
+        projectName,
+        '--profile',
+        'monoceros-deferred',
+        'logs',
+        'redis',
+      ],
     ]);
   });
 

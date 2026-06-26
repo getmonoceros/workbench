@@ -292,7 +292,23 @@ async function runComposeAction(
   const { composeFile, projectName } = resolveCompose(opts.root);
   const spawnFn = opts.spawn ?? spawnDockerCompose;
   const subArgs = buildSubArgs(opts.service);
-  return spawnFn(['-f', composeFile, '-p', projectName, ...subArgs], opts.root);
+  // Activate the deferred-service profile so `stop`/`ps`/`logs` see the
+  // services that were brought up in the second wave (ADR 0025).
+  // docker compose ignores profile-gated services unless the profile is
+  // active, so without this a deferred keycloak keeps running through
+  // `monoceros stop` and never shows up in `status`/`logs`.
+  return spawnFn(
+    [
+      '-f',
+      composeFile,
+      '-p',
+      projectName,
+      '--profile',
+      DEFERRED_SERVICE_PROFILE,
+      ...subArgs,
+    ],
+    opts.root,
+  );
 }
 
 export interface DeferredStartOptions {
