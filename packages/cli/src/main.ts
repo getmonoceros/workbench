@@ -27,6 +27,7 @@ import { removePortCommand } from './commands/remove-port.js';
 import { removeRepoCommand } from './commands/remove-repo.js';
 import { removeServiceCommand } from './commands/remove-service.js';
 import { runCommand } from './commands/run.js';
+import { shareCommand } from './commands/share.js';
 import { shellCommand } from './commands/shell.js';
 import { startCommand } from './commands/start.js';
 import { statusCommand } from './commands/status.js';
@@ -73,6 +74,7 @@ export const main = defineCommand({
     'remove-port': removePortCommand,
     port: portCommand,
     tunnel: tunnelCommand,
+    share: shareCommand,
     completion: completionCommand,
     __complete: __completeCommand,
     '__update-check': __updateCheckCommand,

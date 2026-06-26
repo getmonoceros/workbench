@@ -51,7 +51,7 @@ export interface DockerSpawnHandle {
   kill: (signal: NodeJS.Signals) => void;
 }
 
-const defaultDockerSpawn: DockerSpawn = (args) => {
+export const defaultDockerSpawn: DockerSpawn = (args) => {
   const child: ChildProcess = spawn('docker', args, {
     stdio: 'inherit',
   });
@@ -93,7 +93,7 @@ function signalNumber(signal: NodeJS.Signals): number {
  * SIGINT still reaches docker run, which catches it and triggers
  * container teardown. We just wait for `exited`.
  */
-const installSigintDefault = (handler: () => void): (() => void) => {
+export const installSigintDefault = (handler: () => void): (() => void) => {
   process.on('SIGINT', handler);
   return () => process.off('SIGINT', handler);
 };

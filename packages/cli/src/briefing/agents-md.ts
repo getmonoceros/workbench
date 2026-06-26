@@ -207,6 +207,33 @@ export function generateAgentsMd(input: AgentsMdInput): string {
       'the URL, so they can open it themselves if no bridge is active.',
     );
     lines.push('');
+    lines.push('### Dev servers (so the proxy and LAN can reach them)');
+    lines.push('');
+    lines.push(
+      'A dev server you start must be reachable through the Monoceros proxy',
+      '(and, when the user shares it to their phone/LAN, over the network).',
+      'Configure it so:',
+    );
+    lines.push('');
+    lines.push(
+      '- it **listens on `0.0.0.0`**, not `127.0.0.1` (otherwise the proxy',
+      '  cannot reach it);',
+      '- it **accepts the proxy/LAN hostnames** — Vite `server.allowedHosts`,',
+      '  Angular `--allowed-hosts`, CRA `DANGEROUSLY_DISABLE_HOST_CHECK`;',
+      '- it does **not pin the HMR/live-reload socket** to a fixed host or port',
+      '  — let it follow the page URL (e.g. for Vite, do not set',
+      '  `server.hmr.clientPort`), so HMR works on `<name>.localhost` and over',
+      '  the LAN alike;',
+      '- the **backend is reached via the dev-server proxy** under a relative',
+      '  path (Vite `server.proxy`, Angular `proxy.conf.json`, CRA',
+      '  `setupProxy.js`) so the browser only ever talks to one origin.',
+    );
+    lines.push('');
+    lines.push(
+      'These are dev-server-only settings (a production build ignores them), so',
+      'they are safe to keep.',
+    );
+    lines.push('');
   }
 
   lines.push('## How to extend this container');

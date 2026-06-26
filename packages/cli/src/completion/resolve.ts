@@ -669,6 +669,7 @@ const ALL_COMMANDS = [
   'remove-port',
   'port',
   'tunnel',
+  'share',
   'completion',
 ] as const;
 
@@ -810,6 +811,9 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
       '--local-port': { type: 'value' },
       '--local-address': { type: 'value' },
     },
+  },
+  share: {
+    positionals: [containerName, (ctx) => listAppCandidates(ctx)],
   },
   completion: {
     positionals: [() => listShellNames()],
