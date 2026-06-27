@@ -25,7 +25,7 @@ import {
   serviceDefersStart,
   DEFERRED_SERVICE_PROFILE,
 } from './catalog.js';
-import type { CreateOptions } from './types.js';
+import type { CreateOptions, RepoEntry, ResolvedService } from './types.js';
 
 // Debian/Ubuntu apt package name rules: start with alphanumeric, then
 // alphanumerics + `.+-` are allowed. We intentionally don't allow shell
@@ -1100,6 +1100,50 @@ export function composeVolumeSource(spec: string, serviceName: string): string {
   return `../${relative}:${rest}`;
 }
 
+// Host source directories to pre-create for service bind-mounts that are
+// NOT the `data:` shorthand (e.g. Keycloak's theme dir). Without this,
+// Docker auto-creates a missing bind source as a ROOT-owned empty dir and
+// the service crashes on first start (Keycloak dies when the configured
+// volume dir is absent — common when standing up a brand-new app where the
+// realm/theme is to be created inside the running container).
+//
+// Paths are relative to the container root (same basis as the volume spec).
+// Two deliberate exclusions:
+//   - Sources at/under a configured repo's clone target (`projects/<repo>`)
+//     are left alone: that content comes from the in-container clone
+//     (deferStart, ADR 0025), and pre-creating the dir would make
+//     `projects/<repo>` exist and silently SKIP the clone-guard.
+//   - File-looking sources (last segment has an extension, e.g.
+//     `realm.json`) get their PARENT dir created, not the path itself — a
+//     file can't be conjured, but the directory it lives in should exist.
+export function serviceVolumeHostDirs(
+  services: ResolvedService[],
+  repos: RepoEntry[] = [],
+): string[] {
+  const cloneTargets = repos.map((r) => `projects/${r.path}`);
+  const dirs = new Set<string>();
+  for (const svc of services) {
+    for (const vol of svc.volumes) {
+      const src = vol.split(':')[0]!;
+      if (src === 'data') continue; // handled via the per-service data dir
+      const rel = src.startsWith('./') ? src.slice(2) : src;
+      // Covered by a repo clone → the clone provides it; don't pre-create.
+      if (cloneTargets.some((t) => rel === t || rel.startsWith(`${t}/`))) {
+        continue;
+      }
+      const slash = rel.lastIndexOf('/');
+      const lastSeg = slash === -1 ? rel : rel.slice(slash + 1);
+      const dir = lastSeg.includes('.')
+        ? slash === -1
+          ? '' // file at the container root — nothing to create
+          : rel.slice(0, slash)
+        : rel;
+      if (dir) dirs.add(dir);
+    }
+  }
+  return [...dirs];
+}
+
 // Hand-rolled YAML for compose.yaml. The shape is narrow enough that
 // avoiding a YAML dependency outweighs the cost of careful indentation.
 //
@@ -1814,6 +1858,13 @@ export async function writeScaffold(
       if (hasDataVolume) {
         await fs.mkdir(path.join(dataDir, svc.name), { recursive: true });
       }
+    }
+    // Pre-create host source dirs for the OTHER (non-`data`) service bind
+    // mounts, so docker doesn't auto-mkdir a missing source as root and
+    // crash the service (e.g. Keycloak's theme dir on a brand-new app).
+    // Repo-backed sources are skipped — the clone provides them.
+    for (const dir of serviceVolumeHostDirs(opts.services, opts.repos)) {
+      await fs.mkdir(path.join(targetDir, dir), { recursive: true });
     }
   }
 

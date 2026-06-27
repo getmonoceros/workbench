@@ -12,7 +12,10 @@ import {
   curatedServiceExampleVolumes,
 } from '../src/create/catalog.js';
 import { exampleVolumesComment } from '../src/init/service-doc.js';
-import { buildComposeYaml } from '../src/create/scaffold.js';
+import {
+  buildComposeYaml,
+  serviceVolumeHostDirs,
+} from '../src/create/scaffold.js';
 import {
   parseEnvFile,
   interpolate,
@@ -150,6 +153,69 @@ describe('serviceDefersStart (ADR 0025)', () => {
     for (const svc of ['postgres', 'mysql', 'mongodb', 'redis']) {
       expect(serviceDefersStart(svc)).toBe(false);
     }
+  });
+});
+
+describe('serviceVolumeHostDirs', () => {
+  const svc = (volumes: string[]): ResolvedService => ({
+    name: 'keycloak',
+    image: 'quay.io/keycloak/keycloak:26.6',
+    env: {},
+    volumes,
+  });
+
+  it('ignores the data: shorthand (handled via the per-service data dir)', () => {
+    expect(serviceVolumeHostDirs([svc(['data:/opt/keycloak/data'])])).toEqual(
+      [],
+    );
+  });
+
+  it('pre-creates a directory-looking host source (e.g. a theme dir)', () => {
+    expect(
+      serviceVolumeHostDirs([
+        svc(['projects/app/keycloak/theme:/opt/keycloak/themes/app']),
+      ]),
+    ).toEqual(['projects/app/keycloak/theme']);
+  });
+
+  it('pre-creates only the PARENT of a file-looking host source', () => {
+    expect(
+      serviceVolumeHostDirs([
+        svc([
+          'projects/app/keycloak/realm.json:/opt/keycloak/data/import/app.json:ro',
+        ]),
+      ]),
+    ).toEqual(['projects/app/keycloak']);
+  });
+
+  it('strips a leading ./ from the source path', () => {
+    expect(
+      serviceVolumeHostDirs([svc(['./config/keycloak:/opt/keycloak/conf'])]),
+    ).toEqual(['config/keycloak']);
+  });
+
+  it('skips sources at/under a configured repo clone target (clone provides them)', () => {
+    // The repo `app` clones into projects/app; pre-creating a dir there would
+    // make projects/app exist and silently skip the clone-guard (ADR 0025).
+    const dirs = serviceVolumeHostDirs(
+      [svc(['projects/app/keycloak/theme:/opt/keycloak/themes/app'])],
+      [{ url: 'https://example.com/app.git', path: 'app' }],
+    );
+    expect(dirs).toEqual([]);
+  });
+
+  it('still pre-creates sources NOT covered by a repo clone target', () => {
+    const dirs = serviceVolumeHostDirs(
+      [svc(['projects/other/keycloak/theme:/opt/keycloak/themes/app'])],
+      [{ url: 'https://example.com/app.git', path: 'app' }],
+    );
+    expect(dirs).toEqual(['projects/other/keycloak/theme']);
+  });
+
+  it('dedupes repeated sources across services', () => {
+    expect(
+      serviceVolumeHostDirs([svc(['shared/conf:/a']), svc(['shared/conf:/b'])]),
+    ).toEqual(['shared/conf']);
   });
 });
 
