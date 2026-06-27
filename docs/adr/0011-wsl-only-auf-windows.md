@@ -115,6 +115,36 @@ As of 1.12, **WSL is the only supported Windows path**. Concretely:
   was never built for Windows containers anyway — Linux containers are
   the assumption of the entire image pipeline.
 
+## Update 2026-06-28 — Managed WSL distro, not manual WSL setup
+
+ADR 0011's core decision stands: Monoceros runs as a Linux tool inside
+WSL; there is no Windows-host port. What this revises is the onboarding
+consequence above ("the setup hurdle is marginally higher: open a WSL
+distro, apt-install Node, run `install.sh`"). Field observation: two
+first-time Windows users (one .NET, one Java backend, both on pure
+Windows) stalled exactly there — they had never used WSL, had to set it
+up themselves, and one was uncomfortable with the command line. Manual
+WSL setup is the real barrier, not a tab switch.
+
+New model (see [#32](https://github.com/getmonoceros/workbench/issues/32)):
+Monoceros ships and manages its **own** WSL distro (`monoceros-ubuntu`,
+imported via `wsl --import` from a Monoceros rootfs), not Docker
+Desktop's appliance distro. The user never installs, configures, or
+opens WSL:
+
+- the CLI runs inside the distro (no porting — POSIX/bash/ssh-attach
+  code unchanged);
+- `MONOCEROS_HOME` lives in the distro's ext4, so dev-container bind
+  mounts stay native-fast;
+- a thin Windows shim forwards `monoceros <cmd>` to
+  `wsl -d monoceros-ubuntu -- monoceros <cmd>`;
+- `%USERPROFILE%\.monoceros` is a directory symlink into the distro's
+  `~/.monoceros`, created by the elevated installer — a normal `C:\`
+  path for editing ymls/envs and dropping skills.
+
+WSL remains the execution environment (0011 holds); only the manual
+setup is replaced by managed provisioning.
+
 ## References
 
 - [`install.sh`](../../install.sh) — the only installer
