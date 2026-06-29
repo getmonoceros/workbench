@@ -115,11 +115,15 @@ function openInBrowser(url: string): void {
           return false;
         }
       })());
+  // Use PowerShell's Start-Process with a single-quoted URL: `cmd /c start`
+  // treats `&` as a command separator and truncates OAuth URLs at the first
+  // query param. Works on native Windows and via WSL interop alike.
+  const psOpen = `Start-Process '${url.replace(/'/g, "''")}'`;
   const [cmd, args] =
     platform === 'darwin'
       ? ['open', [url]]
       : platform === 'win32' || wsl
-        ? ['cmd.exe', ['/c', 'start', '', url]]
+        ? ['powershell.exe', ['-NoProfile', '-Command', psOpen]]
         : ['xdg-open', [url]];
   try {
     const child = spawn(cmd as string, args as string[], {
