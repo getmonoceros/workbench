@@ -100,11 +100,26 @@ export function wrapExec(
 /** Open a URL in the host's default browser. Best-effort, never throws. */
 function openInBrowser(url: string): void {
   const platform = process.platform;
+  // Under WSL the "host" is a headless Linux distro with no xdg-open / no
+  // browser (e.g. Monoceros's managed distro on Windows). Reach the Windows
+  // browser via interop instead.
+  const wsl =
+    platform === 'linux' &&
+    (!!process.env.WSL_DISTRO_NAME ||
+      (() => {
+        try {
+          return readFileSync('/proc/sys/kernel/osrelease', 'utf8')
+            .toLowerCase()
+            .includes('microsoft');
+        } catch {
+          return false;
+        }
+      })());
   const [cmd, args] =
     platform === 'darwin'
       ? ['open', [url]]
-      : platform === 'win32'
-        ? ['cmd', ['/c', 'start', '', url]]
+      : platform === 'win32' || wsl
+        ? ['cmd.exe', ['/c', 'start', '', url]]
         : ['xdg-open', [url]];
   try {
     const child = spawn(cmd as string, args as string[], {
