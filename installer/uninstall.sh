@@ -54,8 +54,8 @@ menu_select() {
       if [ "$i" -eq "$sel" ]; then printf '\033[2K  %s> %s%s\n' "$CYAN" "${opts[$i]}" "$RESET" >&2
       else printf '\033[2K    %s\n' "${opts[$i]}" >&2; fi
     done
-    IFS= read -rsn1 key 2>/dev/null || true
-    if [ "$key" = $'\033' ]; then read -rsn2 -t 0.01 rest 2>/dev/null || true; key+="$rest"; fi
+    IFS= read -rsn1 key </dev/tty 2>/dev/null || true
+    if [ "$key" = $'\033' ]; then read -rsn2 -t 0.01 rest </dev/tty 2>/dev/null || true; key+="$rest"; fi
     case "$key" in
       $'\033[A'|k) sel=$(( (sel - 1 + n) % n )) ;;
       $'\033[B'|j) sel=$(( (sel + 1) % n )) ;;
@@ -69,8 +69,9 @@ say ""
 say "${BOLD}Monoceros uninstaller${RESET}"
 say ""
 
-# ── Scope: arrow menu when interactive; --purge flag otherwise ─────
-if [ "$PURGE" -eq 0 ] && [ -t 0 ]; then
+# ── Scope: arrow menu when a terminal is reachable (works under `curl | bash`
+#    too, where stdin is the pipe but /dev/tty is the terminal); else --purge. ─
+if [ "$PURGE" -eq 0 ] && [ -r /dev/tty ]; then
   menu_select "What should be removed?  ($(dim 'Up/Down, Enter; Esc cancels')" \
     "Remove Monoceros, keep ~/.monoceros (configs + backups, resume later)" \
     "Remove everything, including ~/.monoceros"
@@ -81,7 +82,7 @@ if [ "$PURGE" -eq 0 ] && [ -t 0 ]; then
       say ""
       warn "This deletes ~/.monoceros (configs + backups) and cannot be undone."
       printf "  Type %smonoceros%s to confirm: " "$BOLD" "$RESET" >&2
-      read -r confirm 2>/dev/null || true
+      read -r confirm </dev/tty 2>/dev/null || true
       if [ "${confirm:-}" != "monoceros" ]; then say ""; warn "Not confirmed - nothing changed."; exit 0; fi
       ;;
     *) say ""; say "  Cancelled - nothing changed."; exit 0 ;;
