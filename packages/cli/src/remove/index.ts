@@ -178,9 +178,42 @@ export async function runRemove(
       await fs.copyFile(envPath, path.join(backupPath, `${opts.name}.env`));
     }
     if (hasContainer) {
-      await fs.cp(containerPath, path.join(backupPath, 'container'), {
-        recursive: true,
-      });
+      const dst = path.join(backupPath, 'container');
+      try {
+        await fs.cp(containerPath, dst, { recursive: true });
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== 'EACCES' && code !== 'EPERM') {
+          throw err;
+        }
+        // Same root-owned-files quirk the delete step handles below: the
+        // container creates files the unprivileged monoceros process can't
+        // read (the 0600 SSH host key, root-owned service data dirs). The
+        // plain fs.cp can't copy them — fall back to a throw-away alpine
+        // container (root) to copy the tree, preserving perms/owners.
+        logger.info(
+          `[remove] backup hit ${code} on root-owned files; copying via a throw-away alpine container…`,
+        );
+        await fs.mkdir(dst, { recursive: true });
+        const { exitCode, stderr } = await dockerExec([
+          'run',
+          '--rm',
+          '-v',
+          `${containerPath}:/src:ro`,
+          '-v',
+          `${dst}:/dst`,
+          'alpine:3.21',
+          'sh',
+          '-c',
+          'cp -a /src/. /dst/',
+        ]);
+        if (exitCode !== 0) {
+          throw new Error(
+            `docker-based backup of ${containerPath} failed (exit ${exitCode}` +
+              `${stderr.trim() ? `: ${stderr.trim()}` : ''}).`,
+          );
+        }
+      }
     }
     logger.info(`Backup written to ${prettyPath(backupPath)}.`);
   }
