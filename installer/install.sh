@@ -232,11 +232,17 @@ if ! docker info >/dev/null 2>&1; then
       fail "Docker isn't available here: only Docker Desktop's WSL integration shim is present."
       cat >&2 <<EOF
 
-Start Docker Desktop on Windows and enable WSL integration for this
-distro (Settings → Resources → WSL integration), then re-run this
-installer.
+Pick one, then re-run this installer.
 
-Not using Docker Desktop anymore? Install native Docker Engine instead:
+Docker Desktop: in a Windows PowerShell (not this WSL shell), install it
+per-user (no admin, no UAC prompt):
+
+  ${CYAN}winget install Docker.DockerDesktop --override "install --user --accept-license"${RESET}
+
+If it's already installed, just start it. Either way, enable WSL
+integration for this distro (Settings → Resources → WSL integration).
+
+Native Docker Engine: right here in this distro, no Docker Desktop:
 
   ${CYAN}curl -fsSL https://get.docker.com | sudo sh${RESET}
   ${CYAN}sudo usermod -aG docker \$USER${RESET}
