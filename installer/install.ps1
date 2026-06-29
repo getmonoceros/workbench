@@ -53,7 +53,8 @@ if (-not $PSCommandPath -or -not (Test-Admin)) {
     $self = Join-Path $env:TEMP 'monoceros-install.ps1'
     try { Invoke-RestMethod -Uri $SelfUrl -OutFile $self } catch { Write-Host "  Could not download the installer from $SelfUrl" -ForegroundColor Red; return }
   }
-  try { Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File', $self) | Out-Null }
+  # -NoExit so the elevated window stays open after the install, showing the summary.
+  try { Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList @('-NoProfile','-NoExit','-ExecutionPolicy','Bypass','-File', $self) | Out-Null }
   catch { Write-Host '  Elevation was declined. Re-run from an elevated PowerShell.' -ForegroundColor Yellow }
   return
 }
