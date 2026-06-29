@@ -74,9 +74,10 @@ say ""
 # ── Scope: arrow menu when a terminal is reachable (works under `curl | bash`
 #    too, where stdin is the pipe but /dev/tty is the terminal); else --purge. ─
 if [ "$PURGE" -eq 0 ] && [ -r /dev/tty ]; then
-  menu_select "What should be removed?  ($(dim 'Up/Down, Enter; Esc cancels')" \
+  menu_select "What should be removed?  ($(dim 'Up/Down, Enter'))" \
     "Remove Monoceros, keep ~/.monoceros (configs + backups, resume later)" \
-    "Remove everything, including ~/.monoceros"
+    "Remove everything, including ~/.monoceros" \
+    "Cancel"
   case "$REPLY_IDX" in
     0) PURGE=0 ;;
     1)

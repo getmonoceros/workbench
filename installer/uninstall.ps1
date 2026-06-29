@@ -178,11 +178,12 @@ Write-Host '   Uninstall Monoceros' -ForegroundColor White
 Write-Host ('   ' + (([string][char]0x2500) * 19)) -ForegroundColor DarkGray
 Write-Host ''
 
-$choice = Read-Menu 'What should be removed?  (Up/Down, Enter; Esc cancels)' @(
+$choice = Read-Menu 'What should be removed?  (Up/Down, Enter)' @(
   'Remove Monoceros, keep the distro and my configs (resume later)',
-  'Remove everything, including the distro and all data'
+  'Remove everything, including the distro and all data',
+  'Cancel'
 )
-if ($choice -lt 0) { Stop-Spinner; Write-Host ''; Write-Host '   Cancelled.' -ForegroundColor Yellow; exit 0 }
+if ($choice -lt 0 -or $choice -eq 2) { Stop-Spinner; Write-Host ''; Write-Host '   Cancelled.' -ForegroundColor Yellow; exit 0 }
 $everything = ($choice -eq 1)
 if ($everything) {
   Write-Host ''
