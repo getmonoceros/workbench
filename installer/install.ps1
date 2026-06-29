@@ -356,7 +356,7 @@ if [ -f "$TPL" ] && [ ! -f "$HOME/.monoceros/monoceros-config.yml" ]; then cp "$
   Write-Host '   ' -NoNewline; Write-Host $CHECK -ForegroundColor Green -NoNewline; Write-Host $readyLine -ForegroundColor White
   Write-Host ''
   Write-Host '   Your container configs live here:' -ForegroundColor Gray
-  Write-Host "       $LinkPath" -ForegroundColor Cyan
+  Write-Host "       $LinkPath\container-configs" -ForegroundColor Cyan
   Write-Host ''
   Write-Host '   Get started in a new unprivileged terminal:' -ForegroundColor Gray
   Write-Host '       monoceros init  myapp --with-languages=node --with-features=claude' -ForegroundColor Cyan -NoNewline; Write-Host '   # describe a dev container' -ForegroundColor DarkGray
