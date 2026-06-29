@@ -55,7 +55,9 @@ menu_select() {
       else printf '\033[2K    %s\n' "${opts[$i]}" >&2; fi
     done
     IFS= read -rsn1 key </dev/tty 2>/dev/null || true
-    if [ "$key" = $'\033' ]; then read -rsn2 -t 0.01 rest </dev/tty 2>/dev/null || true; key+="$rest"; fi
+    # -t 1 (integer): bash 3.2 on macOS rejects fractional timeouts. Arrow bytes
+    # arrive as a burst so this returns instantly; only a lone Esc waits ~1s.
+    if [ "$key" = $'\033' ]; then read -rsn2 -t 1 rest </dev/tty 2>/dev/null || true; key+="$rest"; fi
     case "$key" in
       $'\033[A'|k) sel=$(( (sel - 1 + n) % n )) ;;
       $'\033[B'|j) sel=$(( (sel + 1) % n )) ;;
