@@ -229,6 +229,7 @@ if ! docker info >/dev/null 2>&1; then
   if [[ "$PLATFORM" == "wsl" ]]; then
     docker_real="$(readlink -f "$(command -v docker)" 2>/dev/null || true)"
     if [[ "$docker_real" == */docker-desktop/* ]] || [ -d /mnt/wsl/docker-desktop ]; then
+      distro="${WSL_DISTRO_NAME:-this distro}"
       fail "Docker isn't available here: only Docker Desktop's WSL integration shim is present."
       cat >&2 <<EOF
 
@@ -239,8 +240,11 @@ per-user (no admin, no UAC prompt):
 
   ${CYAN}winget install Docker.DockerDesktop --override "install --user --accept-license"${RESET}
 
-If it's already installed, just start it. Either way, enable WSL
-integration for this distro (Settings → Resources → WSL integration).
+If it's already installed, just start it. Then enable WSL integration for
+this distro and Apply & Restart. Docker Desktop → Settings → Resources →
+WSL integration → turn on:
+
+  ${BOLD}${distro}${RESET}
 
 Native Docker Engine: right here in this distro, no Docker Desktop:
 
