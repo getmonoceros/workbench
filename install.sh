@@ -96,12 +96,10 @@ NODE_MIN_MAJOR=20
 # Detect host OS once so prereq hints can show only the relevant
 # commands. uname -s is POSIX-standard:
 #   Darwin → macOS (Docker Desktop)
-#   Linux  → native Linux vs WSL, split because the install/start advice
-#            differs. Both get native Docker Engine guidance (get.docker.com,
-#            `service docker start`); WSL only adds a one-line "or enable
-#            Docker Desktop WSL integration" alternative. The managed-distro
-#            Windows installer owns the Docker Desktop path; install.sh is the
-#            bring-your-own-Docker route.
+#   Linux  → native Linux (Docker Engine) OR WSL (Docker Desktop) — split
+#            because the "daemon not reachable" advice differs: native Linux
+#            gets the docker-group / systemctl hints, WSL gets "start Docker
+#            Desktop" (no docker group / systemctl there).
 #   *      → unknown; fall back to generic doc links
 case "$(uname -s)" in
   Darwin) PLATFORM="macos" ;;
@@ -189,23 +187,6 @@ Other paths: $(dim "https://docs.docker.com/engine/install/")
 Then re-run this installer.
 EOF
       ;;
-    wsl)
-      cat >&2 <<EOF
-
-Monoceros needs Docker. Install Docker Engine inside this WSL distro:
-
-  ${CYAN}sudo -v${RESET}
-  ${CYAN}curl -fsSL https://get.docker.com | sudo sh${RESET}
-  ${CYAN}sudo usermod -aG docker \$USER${RESET}
-
-Then start it (WSL has no systemd unless you enabled it):
-
-  ${CYAN}sudo service docker start${RESET}
-
-Using Docker Desktop instead? Enable its WSL integration for this distro.
-Then re-run this installer.
-EOF
-      ;;
     *)
       cat >&2 <<EOF
 
@@ -235,13 +216,9 @@ EOF
     wsl)
       cat >&2 <<EOF
 
-Start the Docker daemon in this distro:
-
-  ${CYAN}sudo service docker start${RESET}
-
-(systemd users: ${CYAN}sudo systemctl start docker${RESET}.) Using Docker
-Desktop instead? Enable its WSL integration for this distro.
-Then re-run this installer.
+Start Docker Desktop on Windows and make sure WSL integration is enabled
+for this distro (Docker Desktop → Settings → Resources → WSL integration).
+Wait until it's running, then re-run this installer.
 EOF
       ;;
     linux)
