@@ -18,12 +18,26 @@
 
 .PARAMETER DistroName  Managed distro name. Default 'monoceros'.
 #>
-[CmdletBinding()]
 param(
   [string]$DistroName = 'monoceros'
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ── Bootstrap: run from a file ─────────────────────────────────────
+# Via `irm <url> | iex` there is no script file; the arrow menu and the `exit`
+# calls need a real script process (a stray `exit` would close the user's
+# interactive shell). Download self to a temp file and relaunch as -File
+# (-NoExit so the result stays visible), then return. No elevation needed -
+# uninstall only removes things the user owns.
+$SelfUrl = 'https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/uninstall.ps1'
+if (-not $PSCommandPath) {
+  $self = Join-Path $env:TEMP 'monoceros-uninstall.ps1'
+  try { Invoke-RestMethod -Uri $SelfUrl -OutFile $self } catch { Write-Host "  Could not download the uninstaller from $SelfUrl" -ForegroundColor Red; return }
+  try { Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-NoExit','-ExecutionPolicy','Bypass','-File', $self) | Out-Null }
+  catch { Write-Host '  Could not relaunch from a file.' -ForegroundColor Yellow }
+  return
+}
 $SettingsPath = Join-Path $env:APPDATA 'Docker\settings-store.json'
 $ShimDir      = Join-Path $env:LOCALAPPDATA 'Monoceros\bin'
 $LinkPath     = Join-Path $env:USERPROFILE '.monoceros'
