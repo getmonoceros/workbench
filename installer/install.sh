@@ -233,13 +233,13 @@ if ! docker info >/dev/null 2>&1; then
       fail "Docker isn't available here: only Docker Desktop's WSL integration shim is present."
       cat >&2 <<EOF
 
-Monoceros uses Docker Desktop. In a Windows PowerShell (not this WSL
-shell), install it per-user (no admin, no UAC prompt):
+Monoceros uses Docker. In a Windows PowerShell (not this WSL shell),
+install Docker Desktop per-user (no admin, no UAC prompt):
 
   ${CYAN}winget install Docker.DockerDesktop --override "install --user --accept-license"${RESET}
 
-If it's already installed, start it and wait for the dashboard to come up.
-Then turn on WSL integration for this distro and Apply & Restart:
+Start Docker Desktop and wait for the dashboard to come up. Then turn on
+WSL integration for this distro and Apply & Restart:
 
   Docker Desktop → Settings → Resources → WSL integration → turn on: ${BOLD}${distro}${RESET}
 
