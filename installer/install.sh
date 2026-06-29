@@ -233,16 +233,38 @@ Wait until the whale icon stops animating, then re-run this installer.
 EOF
       ;;
     wsl)
-      cat >&2 <<EOF
+      # The 'docker' on PATH may be Docker Desktop's WSL-integration shim
+      # (a symlink into /mnt/wsl/docker-desktop) rather than a native Engine.
+      # When Desktop is stopped/uninstalled/not integrated, its daemon isn't
+      # reachable. Detect that via the resolved CLI path (works even after a
+      # `wsl --shutdown` drops the tmpfs mount and leaves the symlink dangling)
+      # and steer to Docker Desktop; otherwise it's a stopped native daemon.
+      docker_real="$(readlink -f "$(command -v docker)" 2>/dev/null || true)"
+      if [[ "$docker_real" == */docker-desktop/* ]] || [ -d /mnt/wsl/docker-desktop ]; then
+        cat >&2 <<EOF
+
+The 'docker' here comes from Docker Desktop's WSL integration, but its
+daemon isn't reachable. Start Docker Desktop on Windows and enable WSL
+integration for this distro (Settings → Resources → WSL integration),
+then re-run this installer.
+
+Not using Docker Desktop anymore? Install native Docker Engine instead:
+
+  ${CYAN}curl -fsSL https://get.docker.com | sudo sh${RESET}
+  ${CYAN}sudo usermod -aG docker \$USER${RESET}
+  ${CYAN}sudo service docker start${RESET}
+EOF
+      else
+        cat >&2 <<EOF
 
 Start the Docker daemon in this distro:
 
   ${CYAN}sudo service docker start${RESET}
 
-(systemd users: ${CYAN}sudo systemctl start docker${RESET}.) Using Docker
-Desktop instead? Enable its WSL integration for this distro.
+(systemd users: ${CYAN}sudo systemctl start docker${RESET}.)
 Then re-run this installer.
 EOF
+      fi
       ;;
     linux)
       cat >&2 <<EOF
