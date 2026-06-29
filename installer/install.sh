@@ -678,28 +678,30 @@ fi
 section "Next steps"
 
 say ""
-say "  Activate in this shell $(dim "(zsh/bash cache PATH-binaries at startup;")"
-say "  $(dim "a freshly-installed monoceros is only visible after a hash rebuild)"):"
+if [[ -n "$cli_version" ]]; then
+  ok "Monoceros $cli_version is ready."
+else
+  ok "Monoceros is ready."
+fi
+say ""
+say "  Your container configs live here:"
+say "      $(cmd "$monoceros_home/container-configs")"
+say ""
+# zsh/bash cache PATH-binaries at startup, so a freshly-installed monoceros
+# is only visible after a hash rebuild (or in a new terminal).
+say "  Activate in this shell $(dim '(or just open a new terminal):')"
 case "$user_shell" in
-  zsh)
-    say ""
-    say "    $(cmd 'rehash && compinit')"
-    ;;
-  bash)
-    say ""
-    say "    $(cmd 'hash -r && source ~/.bashrc')"
-    ;;
-  *)
-    say ""
-    say "    $(dim '(open a new terminal)')"
-    ;;
+  zsh)  say "      $(cmd 'rehash && compinit')" ;;
+  bash) say "      $(cmd 'hash -r && source ~/.bashrc')" ;;
+  *)    say "      $(dim '(open a new terminal)')" ;;
 esac
-
 say ""
-say "  Try it out:"
+say "  Get started:"
+say "      $(cmd 'monoceros init  myapp --with-languages=node --with-features=claude')  $(dim '# describe a dev container')"
+say "      $(cmd 'monoceros apply myapp')  $(dim '# build and start it')"
+say "      $(cmd 'monoceros shell myapp')  $(dim '# work inside it')"
 say ""
-say "    $(cmd 'monoceros init hello --with-languages=node --with-features=claude')"
-say "    $(dim "# optional: edit ~/.monoceros/monoceros-config.yml for global defaults")"
-say "    $(cmd 'monoceros apply hello')"
-say "    $(cmd 'monoceros shell hello')"
+say "  Help        $(cmd 'monoceros --help')"
+say "  Docs        $(cmd 'https://getmonoceros.build/docs')"
+say "  What's new  $(cmd 'https://getmonoceros.build/changelog')"
 say ""
