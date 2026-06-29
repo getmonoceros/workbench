@@ -96,12 +96,11 @@ NODE_MIN_MAJOR=20
 # Detect host OS once so prereq hints can show only the relevant
 # commands. uname -s is POSIX-standard:
 #   Darwin → macOS (Docker Desktop)
-#   Linux  → native Linux vs WSL, split because the install/start advice
-#            differs. Both get native Docker Engine guidance (get.docker.com,
-#            `service docker start`); WSL only adds a one-line "or enable
-#            Docker Desktop WSL integration" alternative. The managed-distro
-#            Windows installer owns the Docker Desktop path; install.sh is the
-#            bring-your-own-Docker route.
+#   Linux  → native Linux vs WSL, split because the Docker advice differs:
+#            native Linux gets Docker Engine guidance (get.docker.com,
+#            `service docker start`), WSL gets Docker Desktop + WSL
+#            integration (the supported Docker on Windows). The shim case is
+#            handled separately in the daemon-unreachable branch below.
 #   *      → unknown; fall back to generic doc links
 case "$(uname -s)" in
   Darwin) PLATFORM="macos" ;;
@@ -190,19 +189,19 @@ Then re-run this installer.
 EOF
       ;;
     wsl)
+      distro="${WSL_DISTRO_NAME:-this distro}"
       cat >&2 <<EOF
 
-Monoceros needs Docker. Install Docker Engine inside this WSL distro:
+Monoceros uses Docker. In a Windows PowerShell (not this WSL shell),
+install Docker Desktop per-user (no admin, no UAC prompt):
 
-  ${CYAN}sudo -v${RESET}
-  ${CYAN}curl -fsSL https://get.docker.com | sudo sh${RESET}
-  ${CYAN}sudo usermod -aG docker \$USER${RESET}
+  ${CYAN}winget install Docker.DockerDesktop --override "install --user --accept-license"${RESET}
 
-Then start it (WSL has no systemd unless you enabled it):
+Start Docker Desktop and wait for the dashboard to come up. Then turn on
+WSL integration for this distro and Apply & Restart:
 
-  ${CYAN}sudo service docker start${RESET}
+  Docker Desktop → Settings → Resources → WSL integration → turn on: ${BOLD}${distro}${RESET}
 
-Using Docker Desktop instead? Enable its WSL integration for this distro.
 Then re-run this installer.
 EOF
       ;;
