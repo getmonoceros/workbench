@@ -45,10 +45,27 @@ from**.
 ## Decision
 
 Authenticate repos with a **Personal Access Token per provider**, supplied
-through a new `monoceros-config.env` (user-local, gitignored, editable via
-the `~/.monoceros` symlink, so Windows users never open a WSL shell). No
-host-side `gh`/`glab`, no Homebrew/apt for these, no interactive login
-anywhere.
+through env files (user-local, gitignored, editable via the `~/.monoceros`
+symlink, so Windows users never open a WSL shell). No host-side
+`gh`/`glab`, no Homebrew/apt for these, no interactive login anywhere.
+
+**Two env layers, mirroring the existing yml layers**, so a token can be
+shared globally or scoped per container:
+
+| Layer         | yml (today)                           | env                          |
+| ------------- | ------------------------------------- | ---------------------------- |
+| global        | `monoceros-config.yml` (`defaults.*`) | `monoceros-config.env` (new) |
+| per-container | `<name>.yml`                          | `<name>.env` (exists)        |
+
+The per-container `container-configs/<name>.env` already exists and feeds
+`${VAR}` resolution for feature/service secrets and `git.user`; it becomes
+the container-scoped token store. A new global `monoceros-config.env` (next
+to `monoceros-config.yml`) is the shared default. Resolution precedence is
+the same the yml cascade already uses: **`<name>.env` overrides
+`monoceros-config.env`.** The 90% case (one account per provider) sets the
+token once globally; the multi-client case (same host, different tokens per
+container) overrides per container, with secret values staying in env files
+and never in the yml.
 
 The token is **broad on purpose** (GitLab `api`, GitHub classic `repo`),
 matching what users actually do. The setup hint tells the user to "create
@@ -97,9 +114,18 @@ tooling-free default for everyone else.
 
 ## Status of implementation
 
-Design only; not yet built. Open implementation details: the exact
-`monoceros-config.env` variable naming scheme (host-keyed, e.g.
-`MONOCEROS_GIT_TOKEN__github_com`), the precise per-provider username
-convention and scope names (verified against the live provider docs at
-build time, not from memory), and the exact apply step where the env is
-read and merged into `git-credentials` plus the container env.
+Design only; not yet built. Settled: the two-layer env model (global
+`monoceros-config.env` + per-container `<name>.env`, container wins).
+
+Open implementation details:
+
+- The exact host-keyed variable naming (e.g.
+  `MONOCEROS_GIT_TOKEN__github_com`, underscores for self-hosted hosts),
+  and how a per-container `<name>.env` selects a different token for the
+  same host.
+- The precise per-provider username convention and scope names (verified
+  against the live provider docs at build time, not from memory).
+- The exact apply step where both env layers are read, merged
+  (container over global), and written into `git-credentials` plus the
+  container env. Today apply reads only `<name>.env`; it must also read
+  `monoceros-config.env` underneath it.
