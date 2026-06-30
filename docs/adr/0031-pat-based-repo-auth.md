@@ -157,3 +157,41 @@ Follow-ups (out of #33):
   its `GH_ENTERPRISE_TOKEN` + `GH_HOST` is a feature-side follow-up.
 - User-facing docs on getmonoceros.build for `monoceros-config.env` + the
   PAT flow.
+
+## Revision: account-labeled tokens + repo-driven selection
+
+The host-keyed `MONOCEROS_GIT_TOKEN__<host>` scheme above is superseded. It
+can't hold two accounts for the same host (work + private github.com), and
+it duplicated the token outside the feature. Final model:
+
+- **Env convention `GIT_TOKEN__<PROVIDER>_<LABEL>`** (e.g.
+  `GIT_TOKEN__GITHUB_CONCISO`, `GIT_TOKEN__GITHUB_PICTOR`). The provider
+  segment groups tokens by provider; the free label distinguishes accounts.
+- **The token lives in the CLI feature's `apiToken`** (github-cli /
+  gitlab-cli), visible in the yml, referencing a global `${GIT_TOKEN__…}`
+  var. One value feeds both the in-container CLI and the git clone/push.
+  No separate token variable, no per-feature naming special case.
+- **apply is repo-driven.** It scans the repo entries, derives each repo's
+  provider → CLI feature, and resolves that feature's token: a per-container
+  `<name>.env` value or an already-set yml value wins; otherwise it reads
+  the global `GIT_TOKEN__<PROVIDER>_*` candidates: exactly one is used
+  automatically; several → apply prompts to pick; the chosen
+  `${GIT_TOKEN__…}` is persisted into the feature's `apiToken` in the yml so
+  re-apply never re-asks; none → the feature is added unauthenticated with a
+  set-a-token hint.
+- **git-credentials** reads the resolved feature `apiToken` per host
+  (`oauth2:<token>@<host>`); keychain fill stays the fallback.
+- **Featureless providers (Bitbucket, Gitea)** are a future branch off the
+  same repo scan: no CLI feature, the token goes straight to
+  git-credentials. The repo-driven structure is what makes adding them
+  clean. Not yet implemented.
+
+Multi-account is handled by the label plus per-container selection. Two
+accounts for the SAME host in the SAME container is intentionally not
+supported (git's credential store is host-keyed; gh's `GH_TOKEN` is one
+account) — use separate containers, which the per-container env covers.
+
+Status: design accepted; the host-keyed implementation committed under #33
+is being reworked to this model. Build order: GitHub + GitLab first
+(deterministic resolve + git-credentials + scheme swap), then the
+interactive picker with yml-persist, then Bitbucket/Gitea.
