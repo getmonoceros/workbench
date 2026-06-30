@@ -106,7 +106,6 @@ describe('runInit', () => {
       monocerosHome,
       logger: silentLogger,
     });
-    expect(result.documented).toBe(false);
     expect(result.configPath).toBe(
       path.join(monocerosHome, 'container-configs', 'sandbox.yml'),
     );
@@ -249,40 +248,29 @@ describe('runInit', () => {
     expect(await readFile(envPath, 'utf8')).toBe('PG_PASSWORD=keep-me\n');
   });
 
-  it('documented mode: no --with-* flag writes a default with every component commented out', async () => {
+  it('no --with-* flag writes a lean default: basics only, no catalog dump', async () => {
     const result = await runInit({
       name: 'sandbox',
       workbenchRoot: root,
       monocerosHome,
       logger: silentLogger,
     });
-    expect(result.documented).toBe(true);
     const text = await readFile(result.configPath, 'utf8');
+    expect(text).toContain('schemaVersion: 1');
     expect(text).toContain('name: sandbox');
-    // No active section — only commented examples.
+    expect(text).toMatch(/^runtimeVersion:/m);
+    // No commented catalog dump of unused categories.
+    expect(text).not.toContain('# languages:');
+    expect(text).not.toContain('# services:');
+    expect(text).not.toContain('# features:');
+    expect(text).not.toContain('# repos:');
+    // ...and no active blocks either (nothing was requested).
     expect(text).not.toMatch(/^languages:/m);
     expect(text).not.toMatch(/^services:/m);
     expect(text).not.toMatch(/^features:/m);
-    expect(text).toContain('# languages:');
-    expect(text).toContain('# services:');
-    expect(text).toContain('# features:');
-    // Repos section appears as a documented hint block, fully
-    // single-`#` commented. Optional fields show as plain `#` lines
-    // — NO nested `# # ...` and no trailing `# default:` chatter.
-    expect(text).toContain('# repos:');
-    expect(text).toMatch(/^#\s+path: <folder>\s*$/m);
-    expect(text).toMatch(/^#\s+provider: github\s*$/m);
-    expect(text).toMatch(/^#\s+git:\s*$/m);
-    // No two-`#` per line anywhere — builder must strip exactly one
-    // `#` per line to activate any commented block.
-    expect(text).not.toMatch(/^#[ \t]+#[ \t]/m);
-    expect(text).toMatch(/^#\s+- node:22\s*$/m);
-    expect(text).toContain(
-      '#   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
-    );
-    // Documented mode still validates as a SolutionConfig — every
-    // section is commented out so only schemaVersion + name remain
-    // active.
+    expect(text).not.toMatch(/^repos:/m);
+    // git.user only appears once a repo is configured.
+    expect(text).not.toMatch(/^git:/m);
     const parsed = parseConfig(text);
     expect(parsed.config.name).toBe('sandbox');
   });
@@ -355,7 +343,7 @@ describe('runInit', () => {
     expect(parsed.config.repos).toHaveLength(1);
   });
 
-  it('--with-repo: works in documented mode (no --with) too', async () => {
+  it('--with-repos alone writes a lean yml: active repos + git, no catalog dump', async () => {
     const result = await runInit({
       name: 'sandbox',
       withRepo: ['https://github.com/foo/bar.git'],
@@ -363,12 +351,15 @@ describe('runInit', () => {
       monocerosHome,
       logger: silentLogger,
     });
-    // Documented mode is reported by the documented flag.
-    expect(result.documented).toBe(true);
     const text = await readFile(result.configPath, 'utf8');
-    // The repos block is active even though the rest is commented.
     expect(text).toMatch(/^repos:/m);
     expect(text).toContain('- url: https://github.com/foo/bar.git');
+    // git identity block appears because a repo is configured.
+    expect(text).toMatch(/^git:/m);
+    // No commented catalog dump of the other categories.
+    expect(text).not.toContain('# languages:');
+    expect(text).not.toContain('# features:');
+    expect(text).not.toContain('# services:');
   });
 
   it('--with-ports: writes an active routing block, first entry default', async () => {
@@ -517,7 +508,6 @@ describe('runInit', () => {
       monocerosHome,
       logger: silentLogger,
     });
-    expect(result.documented).toBe(false);
     const text = await readFile(result.configPath, 'utf8');
     expect(text).toMatch(/^aptPackages:/m);
     expect(text).toContain('  - openssl');

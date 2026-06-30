@@ -46,7 +46,7 @@ export type ManifestLookup = (
 ) => FeatureManifestSummary | undefined;
 
 const SCHEMA_HEADER_ACTIVE =
-  '# Solution-config — describes what should be inside your dev-container.\n# Edit any section, then run `monoceros apply <name>` to (re-)build.';
+  '# Solution-config: what should be inside your dev-container.\n# Starts minimal; add languages, features, services, or repos with\n# `monoceros add-feature/add-service/add-repo <name>` (see\n# `monoceros list-components`), then `monoceros apply <name>`.';
 const SCHEMA_HEADER_DOCUMENTED =
   '# Solution-config — describes what should be inside your dev-container.\n# Every section is commented out by default; un-comment what you need\n# (strip one `#` per line of the block), then run `monoceros apply <name>`.';
 

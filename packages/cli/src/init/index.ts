@@ -19,7 +19,6 @@ import { loadComponentCatalog, mergeFeatureOptions } from './components.js';
 import type { Component } from './components.js';
 import {
   generateComposedYml,
-  generateDocumentedYml,
   type ComposedInit,
   type InitService,
   type LanguageRender,
@@ -39,20 +38,15 @@ import {
  * produce a fresh container-config yml at
  * `<MONOCEROS_HOME>/container-configs/<name>.yml`.
  *
- * Two modes:
- *
- *   - With any per-category flag (`--with-languages=node`,
- *     `--with-services=postgres`, `--with-features=github,claude`, …;
- *     each takes a comma-list): the listed components are merged and
- *     the result written as an active, immediately-applyable yml.
- *     Per-feature option hints (auth/credentials from the feature
- *     manifest) appear as commented lines next to the active options
- *     so the builder can see what's available without leaving the file.
- *
- *   - Without any `--with-*` flag: a documented-default yml is written. Every
- *     section is commented out, every catalog component appears as
- *     a suggestion with prose describing what it adds. Builder
- *     un-comments what they want, then `monoceros apply <name>`.
+ * Always lean: the yml carries `name` + `runtimeVersion` and only the
+ * sections the builder actually asked for. Per-category flags
+ * (`--with-languages=node`, `--with-services=postgres`,
+ * `--with-features=github,claude`, `--with-repos=…`; each a comma-list)
+ * add active, immediately-applyable blocks; a bare `monoceros init <name>`
+ * writes just the basics. No commented-out catalog dump:
+ * `monoceros list-components` + add-feature/add-service/add-repo are how
+ * you discover and add more. Per-feature option hints (auth/credentials)
+ * still appear as commented lines next to an active feature's options.
  *
  * Errors loudly if:
  *
@@ -68,8 +62,7 @@ export interface RunInitOptions {
   /**
    * Explicit per-category inputs (from `--with-languages`,
    * `--with-features`, `--with-services`, `--with-apt-packages`).
-   * When ALL of these are empty/undefined → documented mode (every
-   * catalog component commented out). When any is set → composed mode.
+   * Each adds an active block; all empty just yields the lean basics.
    *
    *   - `languages`: curated runtime names, optional `:version`
    *     (`java:17`). Validated against the language catalog.
@@ -111,8 +104,6 @@ export interface RunInitOptions {
 
 export interface RunInitResult {
   configPath: string;
-  /** True when the documented-default mode was used. */
-  documented: boolean;
 }
 
 export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
@@ -228,23 +219,17 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   // to render the routing/repos block (commented hints in documented
   // mode, active entries in composed mode), keeping the "all
   // available options visible" rule consistent across sections.
-  let text: string;
   const composed = resolveComposedInit(catalog, {
     languages: opts.languages ?? [],
     features: opts.features ?? [],
     services: opts.services ?? [],
     aptPackages: opts.aptPackages ?? [],
   });
-  const anyComposed =
-    composed.languages.length > 0 ||
-    composed.features.length > 0 ||
-    composed.services.length > 0 ||
-    composed.aptPackages.length > 0;
-  if (!anyComposed) {
-    text = generateDocumentedYml(opts.name, catalog, lookup, repos, ports);
-  } else {
-    text = generateComposedYml(opts.name, composed, lookup, repos, ports);
-  }
+  // Always lean: name + runtimeVersion, plus only the sections the
+  // builder actually asked for (--with-* entries, repos, ports). No
+  // commented-out catalog dump; `monoceros list-components` +
+  // add-feature/add-service/add-repo are how you discover and add more.
+  const text = generateComposedYml(opts.name, composed, lookup, repos, ports);
 
   await fs.mkdir(containerConfigsDir(home), { recursive: true });
   await ensureEnvGitignored(containerConfigsDir(home));
@@ -285,24 +270,16 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   }
   await ensureEnvVars(envPath, opts.name, seedVars);
 
-  const documented = !anyComposed;
   // Paths relative to MONOCEROS_HOME keep the line readable (the dev
   // .local home is deep under the project root).
   const ymlRel = path.relative(home, dest);
   const envRel = path.relative(home, envPath);
-  if (documented) {
-    logger.success(`Wrote documented default to ${ymlRel} and ${envRel}.`);
-    logger.info(
-      `Un-comment what you need, then \`monoceros apply ${opts.name}\`.`,
-    );
-  } else {
-    logger.success(`Composed into ${ymlRel} and ${envRel}.`);
-    logger.info(
-      `Edit the files if you need to tweak, then \`monoceros apply ${opts.name}\`.`,
-    );
-  }
+  logger.success(`Wrote ${ymlRel} and ${envRel}.`);
+  logger.info(
+    `Add components with \`monoceros add-feature/add-service/add-repo ${opts.name}\` (see \`monoceros list-components\`), then \`monoceros apply ${opts.name}\`.`,
+  );
 
-  return { configPath: dest, documented };
+  return { configPath: dest };
 }
 
 // ───── Composed-mode input resolution ─────────────────────────────
