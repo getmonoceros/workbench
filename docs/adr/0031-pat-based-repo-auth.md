@@ -90,6 +90,15 @@ Monoceros knows the provider from the repo URL and does all of:
    small binary, and matches how people work (and how in-container AI
    agents open PRs).
 
+   The auto-add happens **only when a PAT is configured for the host**.
+   Without a token the feature can't be authenticated, and a
+   present-but-dead CLI is worse than none (apply looks green while
+   `gh auth status` fails in the container). When a provider repo is
+   cloned via the keychain fallback instead (no PAT), no CLI feature is
+   added and apply **warns**, naming the env var to set: the gap is
+   visible rather than silent. The clone itself still succeeds via the
+   keychain; only gh/glab auth requires the PAT.
+
 Precedence: when a PAT is configured for a host (in either env layer), it
 is used directly and **no `git credential fill` is spawned** for that host
 (this is what keeps the host tooling-free). Hosts without a configured PAT

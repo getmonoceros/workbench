@@ -28,10 +28,11 @@ describe('autoAddRepoCliFeatures', () => {
     const opts = makeOpts([
       { url: 'https://github.com/acme/app.git', path: 'app' },
     ]);
-    const added = await autoAddRepoCliFeatures(opts, {
+    const result = await autoAddRepoCliFeatures(opts, {
       [gitTokenEnvVar('github.com')]: 'ghp_secret',
     });
-    expect(added).toContain('github');
+    expect(result.added).toContain('github');
+    expect(result.missingToken).toEqual([]);
     const key = featureKey(opts, 'github-cli');
     expect(key).toBeDefined();
     expect(opts.features![key!]).toMatchObject({ apiToken: 'ghp_secret' });
@@ -46,10 +47,10 @@ describe('autoAddRepoCliFeatures', () => {
         provider: 'gitlab',
       },
     ]);
-    const added = await autoAddRepoCliFeatures(opts, {
+    const result = await autoAddRepoCliFeatures(opts, {
       [gitTokenEnvVar('gitlab.acme.example.com')]: 'glpat_secret',
     });
-    expect(added).toContain('gitlab');
+    expect(result.added).toContain('gitlab');
     const key = featureKey(opts, 'gitlab-cli');
     expect(key).toBeDefined();
     expect(opts.features![key!]).toMatchObject({
@@ -69,14 +70,22 @@ describe('autoAddRepoCliFeatures', () => {
     expect(opts.features![key!]).not.toHaveProperty('host');
   });
 
-  it('adds the feature without apiToken when no PAT is configured (keychain user)', async () => {
+  it('does NOT add the feature when no PAT is configured; reports missingToken', async () => {
     const opts = makeOpts([
       { url: 'https://github.com/acme/app.git', path: 'app' },
     ]);
-    const added = await autoAddRepoCliFeatures(opts, {});
-    expect(added).toContain('github');
-    const key = featureKey(opts, 'github-cli');
-    expect(opts.features![key!]).not.toHaveProperty('apiToken');
+    const result = await autoAddRepoCliFeatures(opts, {});
+    // No unauthenticated CLI is added.
+    expect(result.added).toEqual([]);
+    expect(featureKey(opts, 'github-cli')).toBeUndefined();
+    // ...but the gap is reported so apply can warn the builder.
+    expect(result.missingToken).toEqual([
+      {
+        provider: 'github',
+        host: 'github.com',
+        envVar: gitTokenEnvVar('github.com'),
+      },
+    ]);
   });
 
   it('leaves a builder-declared feature untouched (explicit config wins)', async () => {
@@ -94,16 +103,17 @@ describe('autoAddRepoCliFeatures', () => {
       [{ url: 'https://github.com/acme/app.git', path: 'app' }],
       { [ref]: { apiToken: 'builder_token' } },
     );
-    const added = await autoAddRepoCliFeatures(opts, {
+    const result = await autoAddRepoCliFeatures(opts, {
       [gitTokenEnvVar('github.com')]: 'different_token',
     });
-    expect(added).toEqual([]);
+    expect(result.added).toEqual([]);
     expect(opts.features![ref]).toMatchObject({ apiToken: 'builder_token' });
   });
 
   it('is a no-op with no repos', async () => {
     const opts = makeOpts(undefined);
-    const added = await autoAddRepoCliFeatures(opts, {});
-    expect(added).toEqual([]);
+    const result = await autoAddRepoCliFeatures(opts, {});
+    expect(result.added).toEqual([]);
+    expect(result.missingToken).toEqual([]);
   });
 });
