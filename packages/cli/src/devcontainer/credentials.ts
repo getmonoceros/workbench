@@ -176,7 +176,8 @@ export function providerSetupHint(
     return {
       title: `${host} — GitHub`,
       body: [
-        'Create a token (classic) with the `repo` scope:',
+        'Create a token (classic) with the `repo` and `read:org` scopes',
+        '(the gh CLI needs read:org):',
         cyan(tokenUrl),
         '',
         'Add it to your env (no quotes), then re-run apply:',
