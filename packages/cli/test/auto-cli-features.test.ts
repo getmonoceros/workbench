@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { autoAddRepoCliFeatures } from '../src/apply/auto-cli-features.js';
-import { gitTokenEnvVar } from '../src/devcontainer/credentials.js';
+import {
+  autoAddRepoCliFeatures,
+  type TokenPrompt,
+} from '../src/apply/auto-cli-features.js';
 import type { CreateOptions } from '../src/create/types.js';
 
 function makeOpts(
@@ -23,67 +25,88 @@ function featureKey(
   return Object.keys(opts.features ?? {}).find((k) => k.includes(idFragment));
 }
 
+// Prompts: one that never picks (cancel / non-interactive), one that picks
+// a specific var.
+const noPick: TokenPrompt = async () => undefined;
+const pick =
+  (varName: string): TokenPrompt =>
+  async () =>
+    varName;
+
 describe('autoAddRepoCliFeatures', () => {
-  it('adds the github-cli feature with apiToken for a github.com repo', async () => {
+  it('uses the single GIT_TOKEN__GITHUB_* candidate for a github.com repo', async () => {
     const opts = makeOpts([
       { url: 'https://github.com/acme/app.git', path: 'app' },
     ]);
-    const added = await autoAddRepoCliFeatures(opts, {
-      [gitTokenEnvVar('github.com')]: 'ghp_secret',
-    });
-    expect(added).toMatchObject([
+    const res = await autoAddRepoCliFeatures(
+      opts,
+      { GIT_TOKEN__GITHUB_CONCISO: 'ghp_secret' },
+      noPick,
+    );
+    expect(res.added).toMatchObject([
       { name: 'github', provider: 'github', authenticated: true },
     ]);
-    const key = featureKey(opts, 'github-cli');
-    expect(key).toBeDefined();
-    expect(opts.features![key!]).toMatchObject({ apiToken: 'ghp_secret' });
-    expect(opts.features![key!]).not.toHaveProperty('host');
+    expect(res.hostTokens).toEqual({ 'github.com': 'ghp_secret' });
+    const key = featureKey(opts, 'github-cli')!;
+    expect(opts.features![key]).toMatchObject({ apiToken: 'ghp_secret' });
+    // Persisted as the ${VAR} reference, not the value.
+    expect(res.persist).toEqual([
+      { ref: key, options: { apiToken: '${GIT_TOKEN__GITHUB_CONCISO}' } },
+    ]);
   });
 
-  it('auto-authenticates GitHub Enterprise Cloud (*.ghe.com) via the token', async () => {
+  it('prompts when several candidates match, and uses the pick', async () => {
     const opts = makeOpts([
+      { url: 'https://github.com/acme/app.git', path: 'app' },
+    ]);
+    const res = await autoAddRepoCliFeatures(
+      opts,
       {
-        url: 'https://acme.ghe.com/team/app.git',
-        path: 'app',
-        provider: 'github',
+        GIT_TOKEN__GITHUB_CONCISO: 'ghp_work',
+        GIT_TOKEN__GITHUB_PICTOR: 'ghp_private',
       },
-    ]);
-    const added = await autoAddRepoCliFeatures(opts, {
-      [gitTokenEnvVar('acme.ghe.com')]: 'ghp_secret',
+      pick('GIT_TOKEN__GITHUB_PICTOR'),
+    );
+    expect(res.added[0]!.authenticated).toBe(true);
+    expect(res.hostTokens).toEqual({ 'github.com': 'ghp_private' });
+    expect(res.persist[0]!.options).toEqual({
+      apiToken: '${GIT_TOKEN__GITHUB_PICTOR}',
     });
-    expect(added).toMatchObject([
-      { name: 'github', host: 'acme.ghe.com', authenticated: true },
-    ]);
-    const key = featureKey(opts, 'github-cli');
-    expect(opts.features![key!]).toMatchObject({ apiToken: 'ghp_secret' });
   });
 
-  it('does NOT auto-authenticate self-hosted GitHub Enterprise Server, even with a token', async () => {
+  it('reports needs-pick when several candidates and none chosen', async () => {
     const opts = makeOpts([
-      {
-        url: 'https://github.acme-corp.io/team/app.git',
-        path: 'app',
-        provider: 'github',
-      },
+      { url: 'https://github.com/acme/app.git', path: 'app' },
     ]);
-    const added = await autoAddRepoCliFeatures(opts, {
-      [gitTokenEnvVar('github.acme-corp.io')]: 'ghp_secret',
-    });
-    // Feature is added but flagged unauthenticated: GH_TOKEN can't auth a
-    // self-hosted Enterprise Server (needs GH_ENTERPRISE_TOKEN, not wired).
-    expect(added).toMatchObject([
+    const res = await autoAddRepoCliFeatures(
+      opts,
       {
-        name: 'github',
-        host: 'github.acme-corp.io',
-        authenticated: false,
-        reason: 'enterprise-unsupported',
+        GIT_TOKEN__GITHUB_CONCISO: 'ghp_work',
+        GIT_TOKEN__GITHUB_PICTOR: 'ghp_private',
       },
+      noPick,
+    );
+    expect(res.added).toMatchObject([
+      { name: 'github', authenticated: false, reason: 'needs-pick' },
     ]);
-    const key = featureKey(opts, 'github-cli');
-    expect(opts.features![key!]).not.toHaveProperty('apiToken');
+    expect(res.hostTokens).toEqual({});
+    expect(res.persist).toEqual([]);
   });
 
-  it('adds gitlab-cli with apiToken + host for a self-hosted GitLab repo', async () => {
+  it('reports no-token when there is no candidate', async () => {
+    const opts = makeOpts([
+      { url: 'https://github.com/acme/app.git', path: 'app' },
+    ]);
+    const res = await autoAddRepoCliFeatures(opts, {}, noPick);
+    expect(res.added).toMatchObject([
+      { name: 'github', authenticated: false, reason: 'no-token' },
+    ]);
+    expect(res.hostTokens).toEqual({});
+    const key = featureKey(opts, 'github-cli')!;
+    expect(opts.features![key]).not.toHaveProperty('apiToken');
+  });
+
+  it('sets host + apiToken for a self-hosted GitLab repo', async () => {
     const opts = makeOpts([
       {
         url: 'https://gitlab.acme.example.com/team/app.git',
@@ -91,74 +114,109 @@ describe('autoAddRepoCliFeatures', () => {
         provider: 'gitlab',
       },
     ]);
-    const added = await autoAddRepoCliFeatures(opts, {
-      [gitTokenEnvVar('gitlab.acme.example.com')]: 'glpat_secret',
-    });
-    expect(added).toMatchObject([{ name: 'gitlab', authenticated: true }]);
-    const key = featureKey(opts, 'gitlab-cli');
-    expect(key).toBeDefined();
-    expect(opts.features![key!]).toMatchObject({
+    const res = await autoAddRepoCliFeatures(
+      opts,
+      { GIT_TOKEN__GITLAB_CONCISO: 'glpat_secret' },
+      noPick,
+    );
+    expect(res.added[0]!.authenticated).toBe(true);
+    const key = featureKey(opts, 'gitlab-cli')!;
+    expect(opts.features![key]).toMatchObject({
       apiToken: 'glpat_secret',
+      host: 'gitlab.acme.example.com',
+    });
+    expect(res.persist[0]!.options).toEqual({
+      apiToken: '${GIT_TOKEN__GITLAB_CONCISO}',
       host: 'gitlab.acme.example.com',
     });
   });
 
-  it('omits host for gitlab.com (SaaS default)', async () => {
+  it('omits host for gitlab.com', async () => {
     const opts = makeOpts([
       { url: 'https://gitlab.com/acme/app.git', path: 'app' },
     ]);
-    await autoAddRepoCliFeatures(opts, {
-      [gitTokenEnvVar('gitlab.com')]: 'glpat_secret',
-    });
-    const key = featureKey(opts, 'gitlab-cli');
-    expect(opts.features![key!]).not.toHaveProperty('host');
+    await autoAddRepoCliFeatures(
+      opts,
+      { GIT_TOKEN__GITLAB_CONCISO: 'glpat_secret' },
+      noPick,
+    );
+    const key = featureKey(opts, 'gitlab-cli')!;
+    expect(opts.features![key]).not.toHaveProperty('host');
   });
 
-  it('still adds the feature without a PAT, but flags it unauthenticated', async () => {
+  it('authenticates GitHub Enterprise Cloud (*.ghe.com)', async () => {
     const opts = makeOpts([
-      { url: 'https://github.com/acme/app.git', path: 'app' },
+      {
+        url: 'https://acme.ghe.com/team/app.git',
+        path: 'app',
+        provider: 'github',
+      },
     ]);
-    const added = await autoAddRepoCliFeatures(opts, {});
-    // Feature is added (always), but reported as not authenticated so the
-    // caller can tell the builder to run `gh auth login`.
-    expect(added).toMatchObject([
+    const res = await autoAddRepoCliFeatures(
+      opts,
+      { GIT_TOKEN__GITHUB_CONCISO: 'ghp_secret' },
+      noPick,
+    );
+    expect(res.added[0]!.authenticated).toBe(true);
+    expect(res.hostTokens).toEqual({ 'acme.ghe.com': 'ghp_secret' });
+  });
+
+  it('reports enterprise-unsupported for self-hosted GitHub Enterprise Server', async () => {
+    const opts = makeOpts([
+      {
+        url: 'https://github.acme-corp.io/team/app.git',
+        path: 'app',
+        provider: 'github',
+      },
+    ]);
+    const res = await autoAddRepoCliFeatures(
+      opts,
+      { GIT_TOKEN__GITHUB_CONCISO: 'ghp_secret' },
+      noPick,
+    );
+    expect(res.added).toMatchObject([
       {
         name: 'github',
         authenticated: false,
-        reason: 'no-token',
-        envVar: gitTokenEnvVar('github.com'),
+        reason: 'enterprise-unsupported',
       },
     ]);
-    const key = featureKey(opts, 'github-cli');
-    expect(key).toBeDefined();
-    expect(opts.features![key!]).not.toHaveProperty('apiToken');
+    // No auto-token for GHES: neither feature apiToken nor clone token.
+    expect(res.hostTokens).toEqual({});
+    const key = featureKey(opts, 'github-cli')!;
+    expect(opts.features![key]).not.toHaveProperty('apiToken');
   });
 
-  it('leaves a builder-declared feature untouched (explicit config wins)', async () => {
-    // First call learns the canonical ref and seeds it as if the
-    // builder had declared it with their own token.
+  it('leaves an already-declared feature untouched but feeds its token to the clone', async () => {
+    // Seed the canonical ref by resolving once.
     const seed = makeOpts([
       { url: 'https://github.com/acme/app.git', path: 'app' },
     ]);
-    await autoAddRepoCliFeatures(seed, {
-      [gitTokenEnvVar('github.com')]: 'builder_token',
-    });
+    await autoAddRepoCliFeatures(
+      seed,
+      { GIT_TOKEN__GITHUB_CONCISO: 'ghp_seed' },
+      noPick,
+    );
     const ref = featureKey(seed, 'github-cli')!;
 
+    // The builder already declared it (apiToken already resolved).
     const opts = makeOpts(
       [{ url: 'https://github.com/acme/app.git', path: 'app' }],
-      { [ref]: { apiToken: 'builder_token' } },
+      { [ref]: { apiToken: 'ghp_existing' } },
     );
-    const added = await autoAddRepoCliFeatures(opts, {
-      [gitTokenEnvVar('github.com')]: 'different_token',
-    });
-    expect(added).toEqual([]);
-    expect(opts.features![ref]).toMatchObject({ apiToken: 'builder_token' });
+    const res = await autoAddRepoCliFeatures(
+      opts,
+      { GIT_TOKEN__GITHUB_CONCISO: 'ghp_different' },
+      noPick,
+    );
+    expect(res.added).toEqual([]);
+    expect(res.persist).toEqual([]);
+    // ...but the clone still uses the declared token.
+    expect(res.hostTokens).toEqual({ 'github.com': 'ghp_existing' });
   });
 
   it('is a no-op with no repos', async () => {
-    const opts = makeOpts(undefined);
-    const added = await autoAddRepoCliFeatures(opts, {});
-    expect(added).toEqual([]);
+    const res = await autoAddRepoCliFeatures(makeOpts(undefined), {}, noPick);
+    expect(res).toEqual({ added: [], hostTokens: {}, persist: [] });
   });
 });

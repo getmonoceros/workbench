@@ -191,7 +191,10 @@ accounts for the SAME host in the SAME container is intentionally not
 supported (git's credential store is host-keyed; gh's `GH_TOKEN` is one
 account) — use separate containers, which the per-container env covers.
 
-Status: design accepted; the host-keyed implementation committed under #33
-is being reworked to this model. Build order: GitHub + GitLab first
-(deterministic resolve + git-credentials + scheme swap), then the
-interactive picker with yml-persist, then Bitbucket/Gitea.
+Status: implemented for GitHub + GitLab. `GIT_TOKEN__<PROVIDER>_<LABEL>`
+scan + repo-driven resolve (single → auto, several → interactive pick) +
+persist the chosen `${VAR}` into the yml feature `apiToken` +
+git-credentials reads the resolved value; the host-keyed scheme is gone.
+Self-hosted GitHub Enterprise Server is reported `enterprise-unsupported`
+(manual `gh auth login --hostname`). Bitbucket/Gitea (featureless) remain
+the future branch off the repo scan.

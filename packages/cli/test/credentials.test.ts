@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   _internals,
   collectGitCredentials,
-  gitTokenEnvVar,
+  gitTokensForProvider,
   resolveProvider,
 } from '../src/devcontainer/credentials.js';
 
@@ -140,14 +140,23 @@ describe('formatCredentialLine', () => {
   });
 });
 
-describe('gitTokenEnvVar', () => {
-  it('folds non-alphanumeric host chars to underscores', () => {
-    expect(gitTokenEnvVar('github.com')).toBe(
-      'MONOCEROS_GIT_TOKEN__github_com',
-    );
-    expect(gitTokenEnvVar('gitlab.example.de')).toBe(
-      'MONOCEROS_GIT_TOKEN__gitlab_example_de',
-    );
+describe('gitTokensForProvider', () => {
+  it('returns the non-empty candidates for a provider, sorted by label', () => {
+    const env = {
+      GIT_TOKEN__GITHUB_PICTOR: 'b',
+      GIT_TOKEN__GITHUB_CONCISO: 'a',
+      GIT_TOKEN__GITLAB_CONCISO: 'c',
+      GIT_TOKEN__GITHUB_EMPTY: '',
+      OTHER: 'x',
+    };
+    expect(gitTokensForProvider(env, 'github')).toEqual([
+      { varName: 'GIT_TOKEN__GITHUB_CONCISO', label: 'CONCISO' },
+      { varName: 'GIT_TOKEN__GITHUB_PICTOR', label: 'PICTOR' },
+    ]);
+    expect(gitTokensForProvider(env, 'gitlab')).toEqual([
+      { varName: 'GIT_TOKEN__GITLAB_CONCISO', label: 'CONCISO' },
+    ]);
+    expect(gitTokensForProvider(env, 'bitbucket')).toEqual([]);
   });
 });
 
@@ -252,7 +261,7 @@ describe('collectGitCredentials', () => {
       cwd,
       [{ host: 'github.com', provider: 'github' }],
       {
-        envVars: { [gitTokenEnvVar('github.com')]: 'ghp_secret' },
+        tokens: { 'github.com': 'ghp_secret' },
         spawn: async () => {
           spawned = true;
           return { stdout: '', exitCode: 0 };
@@ -278,7 +287,7 @@ describe('collectGitCredentials', () => {
         { host: 'gitlab.com', provider: 'gitlab' },
       ],
       {
-        envVars: { [gitTokenEnvVar('gitlab.com')]: 'glpat_secret' },
+        tokens: { 'gitlab.com': 'glpat_secret' },
         spawn: async (input) => {
           const host = /host=([^\n]+)/.exec(input)?.[1] ?? 'unknown';
           filled.push(host);
@@ -316,12 +325,12 @@ describe('formatMissingCredentialsError', () => {
     expect(msg).toContain('github.com');
     expect(msg).toContain('https://github.com/settings/tokens');
     expect(msg).toContain('`repo`');
-    expect(msg).toContain('MONOCEROS_GIT_TOKEN__github_com=<token>');
+    expect(msg).toContain('GIT_TOKEN__GITHUB_MYACCOUNT=<token>');
   });
 
-  it('uses the self-hosted token URL + host-keyed env var for GitHub Enterprise', async () => {
-    // Self-hosted GitHub Enterprise Server: the token URL is on that
-    // host and the env var folds the host into its name.
+  it('uses the self-hosted token URL for GitHub Enterprise', async () => {
+    // Self-hosted GitHub Enterprise Server: the token URL is on that host;
+    // the env var is provider-based, not host-based.
     const { formatMissingCredentialsError } =
       await import('../src/devcontainer/credentials.js');
     const msg = formatMissingCredentialsError([
@@ -333,7 +342,7 @@ describe('formatMissingCredentialsError', () => {
       },
     ]);
     expect(msg).toContain('https://github.deine-firma.de/settings/tokens');
-    expect(msg).toContain('MONOCEROS_GIT_TOKEN__github_deine_firma_de=<token>');
+    expect(msg).toContain('GIT_TOKEN__GITHUB_MYACCOUNT=<token>');
   });
 
   it('uses the github.com token URL for SaaS', async () => {
@@ -366,13 +375,13 @@ describe('formatMissingCredentialsError', () => {
       'https://gitlab.com/-/user_settings/personal_access_tokens',
     );
     expect(msg).toContain('`api`');
-    expect(msg).toContain('MONOCEROS_GIT_TOKEN__gitlab_com=<token>');
+    expect(msg).toContain('GIT_TOKEN__GITLAB_MYACCOUNT=<token>');
   });
 
-  it('uses the self-hosted token URL + host-keyed env var for GitLab', async () => {
+  it('uses the self-hosted token URL for GitLab', async () => {
     // Self-hosted host requires an explicit provider in the yml; the
     // pre-flight resolver passes that through and we render the right
-    // token URL + env var.
+    // token URL. The env var is provider-based, not host-based.
     const { formatMissingCredentialsError } =
       await import('../src/devcontainer/credentials.js');
     const msg = formatMissingCredentialsError([
@@ -386,7 +395,7 @@ describe('formatMissingCredentialsError', () => {
     expect(msg).toContain(
       'https://git.firma.de/-/user_settings/personal_access_tokens',
     );
-    expect(msg).toContain('MONOCEROS_GIT_TOKEN__git_firma_de=<token>');
+    expect(msg).toContain('GIT_TOKEN__GITLAB_MYACCOUNT=<token>');
   });
 
   it('renders the Bitbucket Cloud Atlassian-token flow for bitbucket.org', async () => {
@@ -470,10 +479,8 @@ describe('formatMissingCredentialsError', () => {
     ]);
     expect(msg).toContain('github.com');
     expect(msg).toContain('gitlab.acme.example.com');
-    expect(msg).toContain('MONOCEROS_GIT_TOKEN__github_com=<token>');
-    expect(msg).toContain(
-      'MONOCEROS_GIT_TOKEN__gitlab_acme_example_com=<token>',
-    );
+    expect(msg).toContain('GIT_TOKEN__GITHUB_MYACCOUNT=<token>');
+    expect(msg).toContain('GIT_TOKEN__GITLAB_MYACCOUNT=<token>');
   });
 });
 

@@ -180,8 +180,9 @@ export function providerSetupHint(
         '(the gh CLI needs read:org):',
         cyan(tokenUrl),
         '',
-        'Add it to your env (no quotes), then re-run apply:',
-        cyan(`${gitTokenEnvVar(host)}=<token>`),
+        'Add it to your env as GIT_TOKEN__GITHUB_<LABEL> (LABEL = any',
+        'account name you choose), then re-run apply (it picks it up):',
+        cyan('GIT_TOKEN__GITHUB_MYACCOUNT=<token>'),
         '',
         `All containers: ${dim('monoceros-config.env')}`,
         `This one only:  ${dim('container-configs/<name>.env')}`,
@@ -202,8 +203,9 @@ export function providerSetupHint(
         'Create a personal access token with the `api` scope:',
         cyan(tokenUrl),
         '',
-        'Add it to your env (no quotes), then re-run apply:',
-        cyan(`${gitTokenEnvVar(host)}=<token>`),
+        'Add it to your env as GIT_TOKEN__GITLAB_<LABEL> (LABEL = any',
+        'account name you choose), then re-run apply (it picks it up):',
+        cyan('GIT_TOKEN__GITLAB_MYACCOUNT=<token>'),
         '',
         `All containers: ${dim('monoceros-config.env')}`,
         `This one only:  ${dim('container-configs/<name>.env')}`,
@@ -305,16 +307,30 @@ function formatCredentialLine(
   return `https://${encUser}:${encPass}@${host}`;
 }
 
+export interface GitTokenChoice {
+  /** Full env var name, e.g. `GIT_TOKEN__GITHUB_CONCISO`. */
+  varName: string;
+  /** The free label after the provider, e.g. `CONCISO`. */
+  label: string;
+}
+
 /**
- * Env-var name carrying a Personal Access Token for `host` (ADR 0031):
- * `MONOCEROS_GIT_TOKEN__<host>`, with every non-alphanumeric char in the
- * host folded to `_` (github.com -> MONOCEROS_GIT_TOKEN__github_com,
- * gitlab.example.de -> MONOCEROS_GIT_TOKEN__gitlab_example_de). Read from
- * the merged env (global monoceros-config.env under per-container
- * <name>.env).
+ * Personal Access Tokens in the env, named `GIT_TOKEN__<PROVIDER>_<LABEL>`
+ * (ADR 0031): the provider segment selects which tokens belong to a host's
+ * provider, the free label distinguishes accounts (e.g. CONCISO vs PICTOR
+ * for two github.com accounts). Returns the non-empty candidates for one
+ * provider, sorted by label. apply uses these to resolve the token for a
+ * repo's provider CLI feature.
  */
-export function gitTokenEnvVar(host: string): string {
-  return `MONOCEROS_GIT_TOKEN__${host.replace(/[^A-Za-z0-9]/g, '_')}`;
+export function gitTokensForProvider(
+  envVars: Record<string, string>,
+  provider: string,
+): GitTokenChoice[] {
+  const prefix = `GIT_TOKEN__${provider.toUpperCase()}_`;
+  return Object.keys(envVars)
+    .filter((k) => k.startsWith(prefix) && (envVars[k] ?? '') !== '')
+    .map((k) => ({ varName: k, label: k.slice(prefix.length) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 export interface CollectCredentialsOptions {
@@ -328,13 +344,13 @@ export interface CollectCredentialsOptions {
    */
   approve?: CredentialsApprove;
   /**
-   * Merged env (global monoceros-config.env under per-container
-   * <name>.env). When it carries a PAT for a host (see `gitTokenEnvVar`),
-   * that token is used directly with no host `git credential fill` spawn
-   * and takes precedence over the keychain. Hosts without a configured
-   * PAT fall back to the keychain fill path (ADR 0031).
+   * Resolved token per host (host → PAT value), built by apply from the
+   * repo providers' CLI-feature `apiToken`. When a host has a token it is
+   * used directly (`oauth2:<token>`) with no `git credential fill` spawn
+   * and takes precedence over the keychain. Hosts without a token fall back
+   * to the keychain fill path (ADR 0031).
    */
-  envVars?: Record<string, string>;
+  tokens?: Record<string, string>;
   logger?: { info: (msg: string) => void; warn: (msg: string) => void };
 }
 
@@ -416,17 +432,16 @@ export async function collectGitCredentials(
       });
       continue;
     }
-    // PAT path (ADR 0031): if a token is configured for this host in the
-    // merged env, use it directly with username `oauth2`, which
-    // authenticates over HTTPS for GitHub (username ignored, token is the
-    // password) and GitLab (documented oauth2:<token> form). No
-    // `git credential fill` spawn: this is the tooling-free default and
-    // wins over the keychain when a token is present. Gated to those two
-    // providers, the only ones with a verified uniform oauth2 form;
-    // Bitbucket/Gitea keep the keychain path (their username differs).
+    // PAT path (ADR 0031): if apply resolved a token for this host (from
+    // the provider's CLI-feature apiToken), use it directly with username
+    // `oauth2`, which authenticates over HTTPS for GitHub (username
+    // ignored, token is the password) and GitLab (documented oauth2:<token>
+    // form). No `git credential fill` spawn: this wins over the keychain
+    // when a token is present. Bitbucket/Gitea keep the keychain path for
+    // now (their username differs).
     const patToken =
       provider === 'github' || provider === 'gitlab'
-        ? options.envVars?.[gitTokenEnvVar(host)]
+        ? options.tokens?.[host]
         : undefined;
     if (patToken) {
       lines.push(formatCredentialLine(host, 'oauth2', patToken));
@@ -434,7 +449,7 @@ export async function collectGitCredentials(
         host,
         provider,
         status: 'ok',
-        detail: 'from PAT (monoceros-config.env)',
+        detail: 'from PAT',
       });
       continue;
     }

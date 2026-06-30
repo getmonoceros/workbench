@@ -24,7 +24,11 @@ import {
   ensureGlobalEnvGitignored,
   resolveGitUserFields,
 } from '../config/env-file.js';
-import { autoAddRepoCliFeatures } from './auto-cli-features.js';
+import {
+  autoAddRepoCliFeatures,
+  realTokenPrompt,
+  type TokenPrompt,
+} from './auto-cli-features.js';
 import { REGEX, isValidEmail } from '../config/schema.js';
 import {
   buildStateFile,
@@ -107,7 +111,7 @@ import {
   type IdentitySpawn,
 } from '../devcontainer/identity.js';
 import { writeGlobalDefaultGitUser } from '../config/global.js';
-import { setContainerGitUserInDoc } from '../modify/yml.js';
+import { addFeatureToDoc, setContainerGitUserInDoc } from '../modify/yml.js';
 
 /**
  * `monoceros apply <name>` — read the yml at
@@ -174,6 +178,13 @@ export interface RunApplyOptions {
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
   identityScopePrompt?: IdentityScopePrompt;
+  /**
+   * Picker for choosing among multiple `GIT_TOKEN__<PROVIDER>_*` tokens
+   * for a repo's provider (ADR 0031). Tests inject a canned choice;
+   * production uses an interactive `consola` select that auto-skips when
+   * non-interactive.
+   */
+  tokenPrompt?: TokenPrompt;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
   /** Override `ssh-keygen` for the SSH attach point (ADR 0022). Tests stub this. */
@@ -423,39 +434,66 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   if (unknownProviderHosts.length > 0) {
     throw new Error(formatUnknownProviderError(unknownProviderHosts));
   }
+
+  // Repo-driven token handling (ADR 0031): derive each repo's provider CLI
+  // feature, resolve its token from GIT_TOKEN__<PROVIDER>_* (one → auto,
+  // several → pick), persist the chosen ${VAR} into the yml, and feed the
+  // resolved values to the in-container clone via `hostTokens`.
+  const cli = await autoAddRepoCliFeatures(
+    createOpts,
+    envVars,
+    opts.tokenPrompt ?? realTokenPrompt,
+  );
+  if (cli.persist.length > 0) {
+    try {
+      const parsed = parseConfig(await fs.readFile(ymlPath, 'utf8'), ymlPath);
+      let changed = false;
+      for (const p of cli.persist) {
+        if (addFeatureToDoc(parsed.doc, p.ref, p.options)) changed = true;
+      }
+      if (changed) {
+        await fs.writeFile(ymlPath, stringifyConfig(parsed.doc), 'utf8');
+      }
+    } catch (err) {
+      (logger.warn ?? logger.info)(
+        `Could not persist the CLI feature token to ${prettyPath(ymlPath)}: ${err instanceof Error ? err.message : String(err)}. It is active for this apply.`,
+      );
+    }
+  }
+  for (const f of cli.added) {
+    if (f.authenticated) {
+      logger.info(`Added the ${f.name} CLI feature (auth from your token).`);
+      continue;
+    }
+    const base = f.provider === 'gitlab' ? 'glab auth login' : 'gh auth login';
+    const isSaas = f.host === 'github.com' || f.host === 'gitlab.com';
+    const loginCmd = isSaas ? base : `${base} --hostname ${f.host}`;
+    const envHint = `GIT_TOKEN__${f.provider.toUpperCase()}_<LABEL>`;
+    let note: string;
+    if (f.reason === 'enterprise-unsupported') {
+      note = `Added the ${f.name} CLI feature, but ${f.host} is a self-hosted GitHub Enterprise Server: tokens can't auto-authenticate it. Inside the container run \`${loginCmd}\` and set up its git credentials there.`;
+    } else if (f.reason === 'needs-pick') {
+      note = `Added the ${f.name} CLI feature, but several ${f.provider} tokens are set and none was picked (non-interactive run?). Set its apiToken in the yml, or re-run apply interactively to choose.`;
+    } else {
+      note = `Added the ${f.name} CLI feature, but it is NOT logged in (no ${envHint} in your env). Add one to monoceros-config.env (or this container's .env), or run \`${loginCmd}\` inside the container.`;
+    }
+    (logger.warn ?? logger.info)(note);
+  }
+
+  // Pre-fetch HTTPS credentials for every unique host derived from the
+  // declared repos. The resolved tokens (above) win; hosts without one
+  // fall back to the keychain. If a host has neither, fail fast with a
+  // provider-specific setup hint instead of an opaque in-container
+  // "could not read Username".
   if (hostsToFetch.length > 0) {
     const credResult = await collectGitCredentials(targetDir, hostsToFetch, {
       ...(opts.credentialsSpawn ? { spawn: opts.credentialsSpawn } : {}),
-      envVars,
+      tokens: cli.hostTokens,
       logger: idLogger,
     });
     const missing = credResult.perHost.filter((p) => p.status !== 'ok');
     if (missing.length > 0) {
       throw new Error(formatMissingCredentialsError(missing));
-    }
-  }
-
-  // Auto-add the matching CLI feature (github-cli / gitlab-cli) for each
-  // repo provider (ADR 0031). With a PAT in the merged env the feature is
-  // authenticated from it (no interactive login); without one the feature
-  // is still added but not logged in, and we say so + how to fix it. A
-  // feature the builder already declared is left untouched.
-  const addedCliFeatures = await autoAddRepoCliFeatures(createOpts, envVars);
-  for (const f of addedCliFeatures) {
-    if (f.authenticated) {
-      logger.info(`Added the ${f.name} CLI feature (auth from your token).`);
-    } else {
-      const base =
-        f.provider === 'gitlab' ? 'glab auth login' : 'gh auth login';
-      // Self-hosted (own domain / GitHub Enterprise) needs --hostname;
-      // github.com / gitlab.com are the CLIs' defaults.
-      const isSaas = f.host === 'github.com' || f.host === 'gitlab.com';
-      const loginCmd = isSaas ? base : `${base} --hostname ${f.host}`;
-      const note =
-        f.reason === 'enterprise-unsupported'
-          ? `Added the ${f.name} CLI feature. Your token authenticates git for ${f.host}, but gh can't use it for a self-hosted GitHub Enterprise Server yet. Inside the container run \`${loginCmd}\` to log gh in.`
-          : `Added the ${f.name} CLI feature, but it is NOT logged in (no PAT for ${f.host}). Inside the container run \`${loginCmd}\`, or set ${f.envVar} in monoceros-config.env to log in automatically.`;
-      (logger.warn ?? logger.info)(note);
     }
   }
 
