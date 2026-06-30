@@ -168,6 +168,10 @@ Monoceros needs Docker. Install it before continuing:
   Docker Desktop  →  https://docs.docker.com/desktop/install/mac-install/
   or via Homebrew:   brew install --cask docker-desktop
 
+No Homebrew yet? Install it first:
+
+  ${CYAN}/bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"${RESET}
+
 Then re-run this installer.
 EOF
       ;;
