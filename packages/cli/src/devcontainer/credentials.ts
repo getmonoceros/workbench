@@ -146,51 +146,6 @@ function uniqueHttpsHosts(repos: readonly RepoEntry[]): HostWithProvider[] {
 }
 
 /**
- * Render a provider-specific install command, filtered to the host
- * OS. Returns the relevant line for the current platform — macOS gets
- * the brew command, Windows gets the winget command, Linux falls back
- * to a docs link unless the provider officially recommends a uniform
- * Linux command (then `linuxBrew` is set and used). Callers embed the
- * resulting single line into a setup-instructions block.
- */
-/**
- * Official Homebrew install one-liner (from https://brew.sh). Shown
- * as the first cyan line in any brew-based provider hint so users
- * who don't have Homebrew yet aren't stuck staring at `brew: command
- * not found`. Users who DO have Homebrew can skip the line — we say
- * so right below in dim text.
- */
-const BREW_INSTALL_COMMAND =
-  '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"';
-
-function installCommandForOS(opts: {
-  brew: string;
-  /**
-   * Linux install command when the provider's docs officially
-   * recommend a single uniform path (e.g. GitLab's glab CLI ships
-   * Homebrew as the supported Linux install method). When omitted,
-   * Linux gets a docs link instead because distro packaging is too
-   * heterogeneous to pick a winner. Windows users hit this branch
-   * too — Monoceros on Windows runs inside WSL, so the host IS Linux.
-   */
-  linuxBrew?: string;
-  linuxDocsUrl: string;
-}): string {
-  const withBrewBootstrap = (cmd: string): string =>
-    [
-      '',
-      cyan(BREW_INSTALL_COMMAND),
-      cyan(cmd),
-      '',
-      dim('(Skip the first line if you already have Homebrew.)'),
-    ].join('\n');
-  if (process.platform === 'darwin') return withBrewBootstrap(opts.brew);
-  // Linux + WSL (Windows runs Monoceros inside WSL as of 1.12).
-  if (opts.linuxBrew) return withBrewBootstrap(opts.linuxBrew);
-  return `See ${opts.linuxDocsUrl} for package instructions.`;
-}
-
-/**
  * Provider-specific setup hint per host. Used in the pre-flight
  * error message when `git credential fill` returns nothing for a
  * host. Shows only the install command for the current host OS —
@@ -210,64 +165,47 @@ export function providerSetupHint(
   body: string;
 } {
   if (provider === 'github') {
-    // `--hostname` is only needed for self-hosted GitHub Enterprise
-    // Server. For github.com (SaaS) gh defaults to that host, so we
-    // omit the flag. Both `gh auth login` and `gh auth setup-git`
-    // accept --hostname with identical semantics — verified against
-    // https://cli.github.com/manual/gh_auth_login and
-    // https://cli.github.com/manual/gh_auth_setup-git .
+    // PAT model (ADR 0031): no host CLI. The token goes in an env file;
+    // Monoceros writes it into the in-container git-credentials and the
+    // `oauth2` username authenticates over HTTPS (GitHub ignores the
+    // username and authenticates by the token).
     const isSaas = host.toLowerCase() === 'github.com';
-    const hostArg = isSaas ? '' : ` --hostname ${host}`;
-    // GitHub CLI publishes a Linuxbrew formula alongside the macOS
-    // one (https://github.com/cli/cli/blob/trunk/docs/install_linux.md
-    // lists Homebrew under "Linux & WSL"), so the same brew command
-    // works on macOS, Linux and WSL.
-    const install = installCommandForOS({
-      brew: 'brew install gh',
-      linuxBrew: 'brew install gh',
-      linuxDocsUrl: 'https://github.com/cli/cli#installation',
-    });
+    const tokenUrl = isSaas
+      ? 'https://github.com/settings/tokens'
+      : `https://${host}/settings/tokens`;
     return {
       title: `${host} — GitHub`,
       body: [
-        'Install the GitHub CLI:',
-        install,
+        'Create a token (classic) with the `repo` scope:',
+        cyan(tokenUrl),
         '',
-        'Then run once:',
-        cyan(`gh auth login${hostArg}`),
-        cyan(`gh auth setup-git${hostArg}`),
+        'Add it to your env (no quotes), then re-run apply:',
+        cyan(`${gitTokenEnvVar(host)}=<token>`),
         '',
-        '`gh auth login` walks through OAuth in your browser.',
-        '`gh auth setup-git` wires gh into git as a credential helper.',
+        `All containers: ${dim('monoceros-config.env')}`,
+        `This one only:  ${dim('container-configs/<name>.env')}`,
       ].join('\n'),
     };
   }
   if (provider === 'gitlab') {
-    // `--hostname` is only needed for self-hosted GitLab. For
-    // gitlab.com glab defaults to the SaaS host, so we omit the flag.
+    // PAT model (ADR 0031): no host CLI. The `api` scope covers git
+    // read+write over HTTPS plus the API (so glab in the container works
+    // from the same token); `oauth2:<token>` is GitLab's documented form.
     const isSaas = host.toLowerCase() === 'gitlab.com';
-    const hostArg = isSaas ? '' : ` --hostname ${host}`;
-    // GitLab's official install docs (https://gitlab.com/gitlab-org/
-    // cli/-/blob/main/docs/installation_options.md) state that
-    // Homebrew is "the officially supported installation method for
-    // Linux" — same brew command on macOS, Linux and WSL.
-    const install = installCommandForOS({
-      brew: 'brew install glab',
-      linuxBrew: 'brew install glab',
-      linuxDocsUrl: 'https://gitlab.com/gitlab-org/cli#installation',
-    });
+    const tokenUrl = isSaas
+      ? 'https://gitlab.com/-/user_settings/personal_access_tokens'
+      : `https://${host}/-/user_settings/personal_access_tokens`;
     return {
       title: `${host} — GitLab`,
       body: [
-        'Install the GitLab CLI (glab):',
-        install,
+        'Create a personal access token with the `api` scope:',
+        cyan(tokenUrl),
         '',
-        'Then run once:',
-        cyan(`glab auth login${hostArg}`),
+        'Add it to your env (no quotes), then re-run apply:',
+        cyan(`${gitTokenEnvVar(host)}=<token>`),
         '',
-        'Choose `HTTPS` when asked for git-protocol, then accept',
-        '"Authenticate Git with your GitLab credentials" — glab',
-        'configures itself as the git credential helper.',
+        `All containers: ${dim('monoceros-config.env')}`,
+        `This one only:  ${dim('container-configs/<name>.env')}`,
       ].join('\n'),
     };
   }
@@ -478,12 +416,17 @@ export async function collectGitCredentials(
       continue;
     }
     // PAT path (ADR 0031): if a token is configured for this host in the
-    // merged env, use it directly. Username `oauth2` authenticates over
-    // HTTPS for both GitHub (username ignored, token is the password) and
-    // GitLab (documented oauth2:<token> form). No `git credential fill`
-    // spawn — this is the tooling-free default and takes precedence over
-    // the keychain when a token is present.
-    const patToken = options.envVars?.[gitTokenEnvVar(host)];
+    // merged env, use it directly with username `oauth2`, which
+    // authenticates over HTTPS for GitHub (username ignored, token is the
+    // password) and GitLab (documented oauth2:<token> form). No
+    // `git credential fill` spawn: this is the tooling-free default and
+    // wins over the keychain when a token is present. Gated to those two
+    // providers, the only ones with a verified uniform oauth2 form;
+    // Bitbucket/Gitea keep the keychain path (their username differs).
+    const patToken =
+      provider === 'github' || provider === 'gitlab'
+        ? options.envVars?.[gitTokenEnvVar(host)]
+        : undefined;
     if (patToken) {
       lines.push(formatCredentialLine(host, 'oauth2', patToken));
       perHost.push({

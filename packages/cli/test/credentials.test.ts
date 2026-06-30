@@ -302,7 +302,7 @@ describe('collectGitCredentials', () => {
 });
 
 describe('formatMissingCredentialsError', () => {
-  it('lists GitHub-specific gh setup when github.com is missing', async () => {
+  it('lists the GitHub PAT setup when github.com is missing', async () => {
     const { formatMissingCredentialsError } =
       await import('../src/devcontainer/credentials.js');
     const msg = formatMissingCredentialsError([
@@ -314,14 +314,14 @@ describe('formatMissingCredentialsError', () => {
       },
     ]);
     expect(msg).toContain('github.com');
-    expect(msg).toContain('gh auth login');
-    expect(msg).toContain('gh auth setup-git');
+    expect(msg).toContain('https://github.com/settings/tokens');
+    expect(msg).toContain('`repo`');
+    expect(msg).toContain('MONOCEROS_GIT_TOKEN__github_com=<token>');
   });
 
-  it('passes --hostname to gh auth login + setup-git for self-hosted GitHub Enterprise', async () => {
-    // Self-hosted GitHub Enterprise Server needs --hostname on both
-    // gh subcommands. For github.com SaaS the flag is omitted (gh
-    // defaults to that host).
+  it('uses the self-hosted token URL + host-keyed env var for GitHub Enterprise', async () => {
+    // Self-hosted GitHub Enterprise Server: the token URL is on that
+    // host and the env var folds the host into its name.
     const { formatMissingCredentialsError } =
       await import('../src/devcontainer/credentials.js');
     const msg = formatMissingCredentialsError([
@@ -332,12 +332,11 @@ describe('formatMissingCredentialsError', () => {
         detail: '',
       },
     ]);
-    expect(msg).toContain('github.deine-firma.de');
-    expect(msg).toContain('gh auth login --hostname github.deine-firma.de');
-    expect(msg).toContain('gh auth setup-git --hostname github.deine-firma.de');
+    expect(msg).toContain('https://github.deine-firma.de/settings/tokens');
+    expect(msg).toContain('MONOCEROS_GIT_TOKEN__github_deine_firma_de=<token>');
   });
 
-  it('omits --hostname for github.com (SaaS default)', async () => {
+  it('uses the github.com token URL for SaaS', async () => {
     const { formatMissingCredentialsError } =
       await import('../src/devcontainer/credentials.js');
     const msg = formatMissingCredentialsError([
@@ -348,10 +347,10 @@ describe('formatMissingCredentialsError', () => {
         detail: '',
       },
     ]);
-    expect(msg).not.toContain('--hostname');
+    expect(msg).toContain('https://github.com/settings/tokens');
   });
 
-  it('lists glab CLI setup when gitlab.com is missing', async () => {
+  it('lists the GitLab PAT setup when gitlab.com is missing', async () => {
     const { formatMissingCredentialsError } =
       await import('../src/devcontainer/credentials.js');
     const msg = formatMissingCredentialsError([
@@ -363,15 +362,17 @@ describe('formatMissingCredentialsError', () => {
       },
     ]);
     expect(msg).toContain('gitlab.com');
-    expect(msg).toContain('glab auth login');
-    // For gitlab.com itself, no --hostname flag should appear.
-    expect(msg).not.toContain('--hostname gitlab.com');
+    expect(msg).toContain(
+      'https://gitlab.com/-/user_settings/personal_access_tokens',
+    );
+    expect(msg).toContain('`api`');
+    expect(msg).toContain('MONOCEROS_GIT_TOKEN__gitlab_com=<token>');
   });
 
-  it('passes --hostname to glab auth login for self-hosted GitLab', async () => {
+  it('uses the self-hosted token URL + host-keyed env var for GitLab', async () => {
     // Self-hosted host requires an explicit provider in the yml; the
     // pre-flight resolver passes that through and we render the right
-    // --hostname flag.
+    // token URL + env var.
     const { formatMissingCredentialsError } =
       await import('../src/devcontainer/credentials.js');
     const msg = formatMissingCredentialsError([
@@ -382,8 +383,10 @@ describe('formatMissingCredentialsError', () => {
         detail: '',
       },
     ]);
-    expect(msg).toContain('git.firma.de');
-    expect(msg).toContain('glab auth login --hostname git.firma.de');
+    expect(msg).toContain(
+      'https://git.firma.de/-/user_settings/personal_access_tokens',
+    );
+    expect(msg).toContain('MONOCEROS_GIT_TOKEN__git_firma_de=<token>');
   });
 
   it('renders the Bitbucket Cloud Atlassian-token flow for bitbucket.org', async () => {
@@ -467,8 +470,10 @@ describe('formatMissingCredentialsError', () => {
     ]);
     expect(msg).toContain('github.com');
     expect(msg).toContain('gitlab.acme.example.com');
-    expect(msg).toContain('gh auth login');
-    expect(msg).toContain('glab auth login --hostname gitlab.acme.example.com');
+    expect(msg).toContain('MONOCEROS_GIT_TOKEN__github_com=<token>');
+    expect(msg).toContain(
+      'MONOCEROS_GIT_TOKEN__gitlab_acme_example_com=<token>',
+    );
   });
 });
 
