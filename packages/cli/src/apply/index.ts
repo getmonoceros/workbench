@@ -425,6 +425,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   if (hostsToFetch.length > 0) {
     const credResult = await collectGitCredentials(targetDir, hostsToFetch, {
       ...(opts.credentialsSpawn ? { spawn: opts.credentialsSpawn } : {}),
+      envVars,
       logger: idLogger,
     });
     const missing = credResult.perHost.filter((p) => p.status !== 'ok');

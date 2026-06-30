@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   _internals,
   collectGitCredentials,
+  gitTokenEnvVar,
   resolveProvider,
 } from '../src/devcontainer/credentials.js';
 
@@ -139,6 +140,17 @@ describe('formatCredentialLine', () => {
   });
 });
 
+describe('gitTokenEnvVar', () => {
+  it('folds non-alphanumeric host chars to underscores', () => {
+    expect(gitTokenEnvVar('github.com')).toBe(
+      'MONOCEROS_GIT_TOKEN__github_com',
+    );
+    expect(gitTokenEnvVar('gitlab.example.de')).toBe(
+      'MONOCEROS_GIT_TOKEN__gitlab_example_de',
+    );
+  });
+});
+
 describe('collectGitCredentials', () => {
   let cwd: string;
 
@@ -232,6 +244,60 @@ describe('collectGitCredentials', () => {
     const stat = await fs.stat(path.join(cwd, '.monoceros', 'git-credentials'));
     // mode includes file type bits; mask to permission bits only.
     expect(stat.mode & 0o777).toBe(0o600);
+  });
+
+  it('uses a configured PAT and skips git credential fill (ADR 0031)', async () => {
+    let spawned = false;
+    const result = await collectGitCredentials(
+      cwd,
+      [{ host: 'github.com', provider: 'github' }],
+      {
+        envVars: { [gitTokenEnvVar('github.com')]: 'ghp_secret' },
+        spawn: async () => {
+          spawned = true;
+          return { stdout: '', exitCode: 0 };
+        },
+      },
+    );
+    expect(spawned).toBe(false);
+    expect(result.hostsWritten).toBe(1);
+    expect(result.perHost[0]!.status).toBe('ok');
+    const contents = await fs.readFile(
+      path.join(cwd, '.monoceros', 'git-credentials'),
+      'utf8',
+    );
+    expect(contents).toContain('https://oauth2:ghp_secret@github.com');
+  });
+
+  it('falls back to git credential fill for hosts without a configured PAT', async () => {
+    const filled: string[] = [];
+    const result = await collectGitCredentials(
+      cwd,
+      [
+        { host: 'github.com', provider: 'github' },
+        { host: 'gitlab.com', provider: 'gitlab' },
+      ],
+      {
+        envVars: { [gitTokenEnvVar('gitlab.com')]: 'glpat_secret' },
+        spawn: async (input) => {
+          const host = /host=([^\n]+)/.exec(input)?.[1] ?? 'unknown';
+          filled.push(host);
+          return {
+            stdout: `protocol=https\nhost=${host}\nusername=ci\npassword=tok-${host}\n`,
+            exitCode: 0,
+          };
+        },
+      },
+    );
+    expect(result.hostsWritten).toBe(2);
+    // Only github.com (no PAT) hit the keychain fill; gitlab.com used the PAT.
+    expect(filled).toEqual(['github.com']);
+    const contents = await fs.readFile(
+      path.join(cwd, '.monoceros', 'git-credentials'),
+      'utf8',
+    );
+    expect(contents).toContain('https://oauth2:glpat_secret@gitlab.com');
+    expect(contents).toContain('https://ci:tok-github.com@github.com');
   });
 });
 

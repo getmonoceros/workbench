@@ -86,9 +86,12 @@ Monoceros knows the provider from the repo URL and does all of:
    costs no extra scope, only a small binary, and matches how people work
    (and how in-container AI agents open PRs).
 
-The existing host `git credential fill` path (OS keychain / GCM) stays
-supported and takes precedence when present; the env-based PAT is the
-tooling-free default for everyone else.
+Precedence: when a PAT is configured for a host (in either env layer), it
+is used directly and **no `git credential fill` is spawned** for that host
+(this is what keeps the host tooling-free). Hosts without a configured PAT
+fall back to the existing `git credential fill` path (OS keychain / GCM),
+which stays fully supported. So the env PAT wins when set, and the keychain
+is the fallback, not the other way around.
 
 ## Consequences
 

@@ -366,6 +366,18 @@ function formatCredentialLine(
   return `https://${encUser}:${encPass}@${host}`;
 }
 
+/**
+ * Env-var name carrying a Personal Access Token for `host` (ADR 0031):
+ * `MONOCEROS_GIT_TOKEN__<host>`, with every non-alphanumeric char in the
+ * host folded to `_` (github.com -> MONOCEROS_GIT_TOKEN__github_com,
+ * gitlab.example.de -> MONOCEROS_GIT_TOKEN__gitlab_example_de). Read from
+ * the merged env (global monoceros-config.env under per-container
+ * <name>.env).
+ */
+export function gitTokenEnvVar(host: string): string {
+  return `MONOCEROS_GIT_TOKEN__${host.replace(/[^A-Za-z0-9]/g, '_')}`;
+}
+
 export interface CollectCredentialsOptions {
   spawn?: CredentialsSpawn;
   /**
@@ -376,6 +388,14 @@ export interface CollectCredentialsOptions {
    * records calls without spawning git.
    */
   approve?: CredentialsApprove;
+  /**
+   * Merged env (global monoceros-config.env under per-container
+   * <name>.env). When it carries a PAT for a host (see `gitTokenEnvVar`),
+   * that token is used directly with no host `git credential fill` spawn
+   * and takes precedence over the keychain. Hosts without a configured
+   * PAT fall back to the keychain fill path (ADR 0031).
+   */
+  envVars?: Record<string, string>;
   logger?: { info: (msg: string) => void; warn: (msg: string) => void };
 }
 
@@ -457,6 +477,24 @@ export async function collectGitCredentials(
       });
       continue;
     }
+    // PAT path (ADR 0031): if a token is configured for this host in the
+    // merged env, use it directly. Username `oauth2` authenticates over
+    // HTTPS for both GitHub (username ignored, token is the password) and
+    // GitLab (documented oauth2:<token> form). No `git credential fill`
+    // spawn — this is the tooling-free default and takes precedence over
+    // the keychain when a token is present.
+    const patToken = options.envVars?.[gitTokenEnvVar(host)];
+    if (patToken) {
+      lines.push(formatCredentialLine(host, 'oauth2', patToken));
+      perHost.push({
+        host,
+        provider,
+        status: 'ok',
+        detail: 'from PAT (monoceros-config.env)',
+      });
+      continue;
+    }
+
     logger.info(`Fetching credentials for ${host} from host git…`);
     const input = `protocol=https\nhost=${host}\n\n`;
     let result;
