@@ -436,13 +436,21 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   }
 
   // Auto-add the matching CLI feature (github-cli / gitlab-cli) for each
-  // repo provider, authenticated from the PAT in the merged env (ADR
-  // 0031). The features carry their own apiToken/host options, so this
-  // wires up gh/glab without an interactive login. A feature the builder
-  // already declared is left untouched.
+  // repo provider (ADR 0031). With a PAT in the merged env the feature is
+  // authenticated from it (no interactive login); without one the feature
+  // is still added but not logged in, and we say so + how to fix it. A
+  // feature the builder already declared is left untouched.
   const addedCliFeatures = await autoAddRepoCliFeatures(createOpts, envVars);
-  for (const name of addedCliFeatures) {
-    logger.info(`Added the ${name} CLI feature (auth from your token).`);
+  for (const f of addedCliFeatures) {
+    if (f.authenticated) {
+      logger.info(`Added the ${f.name} CLI feature (auth from your token).`);
+    } else {
+      const loginCmd =
+        f.provider === 'gitlab' ? 'glab auth login' : 'gh auth login';
+      (logger.warn ?? logger.info)(
+        `Added the ${f.name} CLI feature, but it is NOT logged in (no PAT for ${f.host}). Inside the container run \`${loginCmd}\`, or set ${f.envVar} in monoceros-config.env to log in automatically.`,
+      );
+    }
   }
 
   // NOTE: repos are cloned IN the container (post-create.sh), using the

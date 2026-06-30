@@ -31,7 +31,9 @@ describe('autoAddRepoCliFeatures', () => {
     const added = await autoAddRepoCliFeatures(opts, {
       [gitTokenEnvVar('github.com')]: 'ghp_secret',
     });
-    expect(added).toContain('github');
+    expect(added).toMatchObject([
+      { name: 'github', provider: 'github', authenticated: true },
+    ]);
     const key = featureKey(opts, 'github-cli');
     expect(key).toBeDefined();
     expect(opts.features![key!]).toMatchObject({ apiToken: 'ghp_secret' });
@@ -49,7 +51,7 @@ describe('autoAddRepoCliFeatures', () => {
     const added = await autoAddRepoCliFeatures(opts, {
       [gitTokenEnvVar('gitlab.acme.example.com')]: 'glpat_secret',
     });
-    expect(added).toContain('gitlab');
+    expect(added).toMatchObject([{ name: 'gitlab', authenticated: true }]);
     const key = featureKey(opts, 'gitlab-cli');
     expect(key).toBeDefined();
     expect(opts.features![key!]).toMatchObject({
@@ -69,13 +71,22 @@ describe('autoAddRepoCliFeatures', () => {
     expect(opts.features![key!]).not.toHaveProperty('host');
   });
 
-  it('adds the feature without apiToken when no PAT is configured (keychain user)', async () => {
+  it('still adds the feature without a PAT, but flags it unauthenticated', async () => {
     const opts = makeOpts([
       { url: 'https://github.com/acme/app.git', path: 'app' },
     ]);
     const added = await autoAddRepoCliFeatures(opts, {});
-    expect(added).toContain('github');
+    // Feature is added (always), but reported as not authenticated so the
+    // caller can tell the builder to run `gh auth login`.
+    expect(added).toMatchObject([
+      {
+        name: 'github',
+        authenticated: false,
+        envVar: gitTokenEnvVar('github.com'),
+      },
+    ]);
     const key = featureKey(opts, 'github-cli');
+    expect(key).toBeDefined();
     expect(opts.features![key!]).not.toHaveProperty('apiToken');
   });
 

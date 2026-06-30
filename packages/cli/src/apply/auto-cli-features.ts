@@ -5,35 +5,49 @@ import {
 import { loadComponentCatalog } from '../init/components.js';
 import type { CreateOptions, FeatureOptions } from '../create/types.js';
 
+export interface AddedCliFeature {
+  /** Feature display name (e.g. `github`, `gitlab`). */
+  name: string;
+  provider: 'github' | 'gitlab';
+  host: string;
+  /**
+   * True when a PAT was found for the host and set as the feature's
+   * `apiToken` (so gh/glab is logged in). False when the feature was
+   * added without a token: it is installed but NOT authenticated, and
+   * the caller surfaces a `<gh|glab> auth login` hint.
+   */
+  authenticated: boolean;
+  /** The env var that, if set, would authenticate this feature. */
+  envVar: string;
+}
+
 /**
  * Auto-add the matching git-provider CLI feature (github-cli / gitlab-cli)
- * for each declared repo provider, authenticated from the PAT in the
- * merged env (ADR 0031). The features already expose an `apiToken` option
- * (and gitlab a `host` option) that wires up `gh`/`glab` auth on the first
- * container start, so this is just "add the feature with its token set".
+ * for each declared repo provider (ADR 0031). The feature is ALWAYS added
+ * for a provider repo; when a PAT is configured for the host it is set as
+ * the feature's `apiToken` (gitlab also gets `host`), so gh/glab is logged
+ * in on first container start. When no PAT is set the feature is still
+ * added but unauthenticated; the returned `authenticated: false` lets the
+ * caller tell the builder to run `gh auth login` (or set the token).
  *
  * Mutates `createOpts.features`. A provider whose CLI feature the builder
- * already declared in the yml is left untouched (explicit config wins).
- * Returns the display names actually added, for logging.
+ * already declared in the yml is left untouched (explicit config wins) and
+ * is not reported. Returns one entry per feature actually added.
  *
- * Scope: GitHub + GitLab, the providers with a verified env-PAT path.
- * GitHub Enterprise auto-auth (GH_ENTERPRISE_TOKEN) is a feature-side
- * follow-up; the feature is still added and the token still set. Reached
- * only after the credential pre-flight, so by here every host already has
- * a credential (PAT or keychain); a host whose credential came from the
- * keychain just yields a feature with no token (first-run `auth login`).
+ * Scope: GitHub + GitLab. GitHub Enterprise auto-auth
+ * (`GH_ENTERPRISE_TOKEN`) is a feature-side follow-up.
  */
 export async function autoAddRepoCliFeatures(
   createOpts: CreateOptions,
   envVars: Record<string, string>,
-): Promise<string[]> {
+): Promise<AddedCliFeature[]> {
   const repos = createOpts.repos ?? [];
   if (repos.length === 0) return [];
 
   const hostProviders = uniqueHttpsHosts(repos);
   const catalog = await loadComponentCatalog();
   const features = (createOpts.features ??= {});
-  const added: string[] = [];
+  const added: AddedCliFeature[] = [];
 
   for (const provider of ['github', 'gitlab'] as const) {
     const hosts = hostProviders
@@ -48,8 +62,9 @@ export async function autoAddRepoCliFeatures(
     if (Object.prototype.hasOwnProperty.call(features, ref)) continue;
 
     const host = hosts[0]!;
+    const envVar = gitTokenEnvVar(host);
+    const token = envVars[envVar];
     const options: FeatureOptions = {};
-    const token = envVars[gitTokenEnvVar(host)];
     if (token) options.apiToken = token;
     // glab targets gitlab.com unless `host` is set; point it at a
     // self-managed host so every command uses it without --hostname.
@@ -57,7 +72,13 @@ export async function autoAddRepoCliFeatures(
       options.host = host;
     }
     features[ref] = options;
-    added.push(component!.name);
+    added.push({
+      name: component!.name,
+      provider,
+      host,
+      authenticated: !!token,
+      envVar,
+    });
   }
 
   return added;

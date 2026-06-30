@@ -90,6 +90,13 @@ Monoceros knows the provider from the repo URL and does all of:
    small binary, and matches how people work (and how in-container AI
    agents open PRs).
 
+   The feature is **always added** for a provider repo (consistent: present
+   or absent never depends on hidden state). When no PAT is configured for
+   the host (e.g. the clone used the keychain fallback), the feature is
+   added but **not authenticated**, and apply says so explicitly, naming
+   the env var to set and the `gh auth login` / `glab auth login` command
+   to log in manually. So an unauthenticated CLI is never silent.
+
 Precedence: when a PAT is configured for a host (in either env layer), it
 is used directly and **no `git credential fill` is spawned** for that host
 (this is what keeps the host tooling-free). Hosts without a configured PAT
@@ -114,8 +121,10 @@ is the fallback, not the other way around.
   OS-keychain-backed OAuth, which the tooling-free goal deliberately
   rejects.
 - gh/glab move from a host prerequisite to **container features**,
-  auto-added and auto-authenticated. Adding them is no longer the user's
-  manual chore.
+  auto-added per provider. With a PAT they are auto-authenticated; without
+  one they are added but not logged in, and apply surfaces that plus the
+  `gh auth login` hint (never a silent half-state). Adding them is no
+  longer the user's manual chore.
 - A container with repos from multiple providers gets each provider's
   feature and token wired independently.
 
