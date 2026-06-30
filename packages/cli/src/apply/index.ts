@@ -24,6 +24,7 @@ import {
   ensureGlobalEnvGitignored,
   resolveGitUserFields,
 } from '../config/env-file.js';
+import { autoAddRepoCliFeatures } from './auto-cli-features.js';
 import { REGEX, isValidEmail } from '../config/schema.js';
 import {
   buildStateFile,
@@ -432,6 +433,16 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     if (missing.length > 0) {
       throw new Error(formatMissingCredentialsError(missing));
     }
+  }
+
+  // Auto-add the matching CLI feature (github-cli / gitlab-cli) for each
+  // repo provider, authenticated from the PAT in the merged env (ADR
+  // 0031). The features carry their own apiToken/host options, so this
+  // wires up gh/glab without an interactive login. A feature the builder
+  // already declared is left untouched.
+  const addedCliFeatures = await autoAddRepoCliFeatures(createOpts, envVars);
+  for (const name of addedCliFeatures) {
+    logger.info(`Added the ${name} CLI feature (auth from your token).`);
   }
 
   // NOTE: repos are cloned IN the container (post-create.sh), using the

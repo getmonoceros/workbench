@@ -79,12 +79,16 @@ Monoceros knows the provider from the repo URL and does all of:
    in-container git then does clone, push, and pull. The user supplies only
    the token, never a username; Monoceros applies a fixed per-provider
    username convention.
-2. **Injects `GH_TOKEN` / `GITLAB_TOKEN` into the container env**, so the
-   gh/glab CLIs are auto-authenticated for branch / PR / MR work.
-3. **Auto-adds the matching CLI feature** (`github-cli` / `gitlab-cli`)
-   based on the repo provider. Because the token is already broad, this
-   costs no extra scope, only a small binary, and matches how people work
-   (and how in-container AI agents open PRs).
+2. **Auto-adds the matching CLI feature** (`github-cli` / `gitlab-cli`)
+   based on the repo provider, **with its `apiToken` option set from the
+   same PAT** (and gitlab's `host` for self-managed). Those features
+   already surface the token as `GH_TOKEN` / `GITLAB_TOKEN` (+ `GITLAB_HOST`)
+   and wire up gh/glab auth on first container start, so the CLIs are
+   authenticated for branch / PR / MR work with no interactive login. A
+   feature the builder already declared in the yml is left untouched.
+   Because the token is already broad, this costs no extra scope, only a
+   small binary, and matches how people work (and how in-container AI
+   agents open PRs).
 
 Precedence: when a PAT is configured for a host (in either env layer), it
 is used directly and **no `git credential fill` is spawned** for that host
@@ -117,18 +121,26 @@ is the fallback, not the other way around.
 
 ## Status of implementation
 
-Design only; not yet built. Settled: the two-layer env model (global
-`monoceros-config.env` + per-container `<name>.env`, container wins).
+Implemented for GitHub and GitLab (#33):
 
-Open implementation details:
+- Two-layer env: global `monoceros-config.env` merged under per-container
+  `<name>.env` (container wins), both gitignored.
+- Host-keyed token var `MONOCEROS_GIT_TOKEN__<host>` (non-alphanumeric host
+  chars folded to `_`). A per-container `<name>.env` can set a different
+  token for the same host.
+- Token written into `.monoceros/git-credentials` as
+  `https://oauth2:<token>@<host>` with no `git credential fill` spawn;
+  keychain fill remains the fallback for hosts without a configured PAT.
+  Username `oauth2` and scopes verified against the live provider docs
+  (GitHub `repo`, GitLab `api`).
+- CLI feature auto-added per provider with `apiToken` (and gitlab `host`)
+  from the env.
+- Pre-flight hint rewritten to the PAT setup (token URL + scope + env var).
 
-- The exact host-keyed variable naming (e.g.
-  `MONOCEROS_GIT_TOKEN__github_com`, underscores for self-hosted hosts),
-  and how a per-container `<name>.env` selects a different token for the
-  same host.
-- The precise per-provider username convention and scope names (verified
-  against the live provider docs at build time, not from memory).
-- The exact apply step where both env layers are read, merged
-  (container over global), and written into `git-credentials` plus the
-  container env. Today apply reads only `<name>.env`; it must also read
-  `monoceros-config.env` underneath it.
+Follow-ups (out of #33):
+
+- Bitbucket / Gitea on the env-PAT path (their HTTPS username differs, so
+  they keep the keychain / `git credential approve` flow for now).
+- GitHub Enterprise auto-auth (`GH_ENTERPRISE_TOKEN`) is feature-side.
+- User-facing docs on getmonoceros.build for `monoceros-config.env` + the
+  PAT flow.
