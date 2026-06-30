@@ -445,8 +445,12 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     if (f.authenticated) {
       logger.info(`Added the ${f.name} CLI feature (auth from your token).`);
     } else {
-      const loginCmd =
+      const base =
         f.provider === 'gitlab' ? 'glab auth login' : 'gh auth login';
+      // Self-hosted (own domain / GitHub Enterprise) needs --hostname;
+      // github.com / gitlab.com are the CLIs' defaults.
+      const isSaas = f.host === 'github.com' || f.host === 'gitlab.com';
+      const loginCmd = isSaas ? base : `${base} --hostname ${f.host}`;
       (logger.warn ?? logger.info)(
         `Added the ${f.name} CLI feature, but it is NOT logged in (no PAT for ${f.host}). Inside the container run \`${loginCmd}\`, or set ${f.envVar} in monoceros-config.env to log in automatically.`,
       );
