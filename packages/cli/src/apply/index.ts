@@ -440,14 +440,9 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // 0031). The features carry their own apiToken/host options, so this
   // wires up gh/glab without an interactive login. A feature the builder
   // already declared is left untouched.
-  const cliFeatures = await autoAddRepoCliFeatures(createOpts, envVars);
-  for (const name of cliFeatures.added) {
+  const addedCliFeatures = await autoAddRepoCliFeatures(createOpts, envVars);
+  for (const name of addedCliFeatures) {
     logger.info(`Added the ${name} CLI feature (auth from your token).`);
-  }
-  for (const m of cliFeatures.missingToken) {
-    (logger.warn ?? logger.info)(
-      `Cloned ${m.host} via host credentials (no PAT). The ${m.provider} CLI in the container is NOT authenticated. Set ${m.envVar} in monoceros-config.env (or this container's .env) for an authenticated ${m.provider} CLI.`,
-    );
   }
 
   // NOTE: repos are cloned IN the container (post-create.sh), using the
