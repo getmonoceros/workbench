@@ -40,6 +40,44 @@ describe('autoAddRepoCliFeatures', () => {
     expect(opts.features![key!]).not.toHaveProperty('host');
   });
 
+  it('auto-authenticates GitHub Enterprise Cloud (*.ghe.com) via the token', async () => {
+    const opts = makeOpts([
+      {
+        url: 'https://acme.ghe.com/team/app.git',
+        path: 'app',
+        provider: 'github',
+      },
+    ]);
+    const added = await autoAddRepoCliFeatures(opts, {
+      [gitTokenEnvVar('acme.ghe.com')]: 'ghp_secret',
+    });
+    expect(added).toMatchObject([
+      { name: 'github', host: 'acme.ghe.com', authenticated: true },
+    ]);
+    const key = featureKey(opts, 'github-cli');
+    expect(opts.features![key!]).toMatchObject({ apiToken: 'ghp_secret' });
+  });
+
+  it('does NOT auto-authenticate self-hosted GitHub Enterprise Server, even with a token', async () => {
+    const opts = makeOpts([
+      {
+        url: 'https://github.acme-corp.io/team/app.git',
+        path: 'app',
+        provider: 'github',
+      },
+    ]);
+    const added = await autoAddRepoCliFeatures(opts, {
+      [gitTokenEnvVar('github.acme-corp.io')]: 'ghp_secret',
+    });
+    // Feature is added but flagged unauthenticated: GH_TOKEN can't auth a
+    // self-hosted Enterprise Server (needs GH_ENTERPRISE_TOKEN, not wired).
+    expect(added).toMatchObject([
+      { name: 'github', host: 'github.acme-corp.io', authenticated: false },
+    ]);
+    const key = featureKey(opts, 'github-cli');
+    expect(opts.features![key!]).not.toHaveProperty('apiToken');
+  });
+
   it('adds gitlab-cli with apiToken + host for a self-hosted GitLab repo', async () => {
     const opts = makeOpts([
       {

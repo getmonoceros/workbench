@@ -150,6 +150,10 @@ Follow-ups (out of #33):
 
 - Bitbucket / Gitea on the env-PAT path (their HTTPS username differs, so
   they keep the keychain / `git credential approve` flow for now).
-- GitHub Enterprise auto-auth (`GH_ENTERPRISE_TOKEN`) is feature-side.
+- GitHub Enterprise: github.com and Enterprise Cloud (`*.ghe.com`)
+  auto-authenticate via `GH_TOKEN`. Self-hosted Enterprise Server is
+  detected and reported as **not** auto-authenticated (apply shows the
+  `gh auth login --hostname` hint instead of a false "logged in"); wiring
+  its `GH_ENTERPRISE_TOKEN` + `GH_HOST` is a feature-side follow-up.
 - User-facing docs on getmonoceros.build for `monoceros-config.env` + the
   PAT flow.

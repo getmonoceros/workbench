@@ -22,6 +22,17 @@ export interface AddedCliFeature {
 }
 
 /**
+ * Hosts where gh's `GH_TOKEN` authenticates: github.com and Enterprise
+ * Cloud (`*.ghe.com`). Self-hosted GitHub Enterprise Server needs a
+ * different env var (`GH_ENTERPRISE_TOKEN` + `GH_HOST`) that the github-cli
+ * feature does not wire yet, so a PAT cannot auto-authenticate it.
+ */
+function githubTokenWorks(host: string): boolean {
+  const h = host.toLowerCase();
+  return h === 'github.com' || h.endsWith('.ghe.com');
+}
+
+/**
  * Auto-add the matching git-provider CLI feature (github-cli / gitlab-cli)
  * for each declared repo provider (ADR 0031). The feature is ALWAYS added
  * for a provider repo; when a PAT is configured for the host it is set as
@@ -65,18 +76,35 @@ export async function autoAddRepoCliFeatures(
     const envVar = gitTokenEnvVar(host);
     const token = envVars[envVar];
     const options: FeatureOptions = {};
-    if (token) options.apiToken = token;
-    // glab targets gitlab.com unless `host` is set; point it at a
-    // self-managed host so every command uses it without --hostname.
-    if (provider === 'gitlab' && host.toLowerCase() !== 'gitlab.com') {
-      options.host = host;
+    let authenticated = false;
+
+    if (provider === 'gitlab') {
+      // glab targets gitlab.com unless `host` is set; point it at a
+      // self-managed host so every command (and a manual `glab auth
+      // login`) uses it without --hostname. A PAT authenticates any host.
+      if (host.toLowerCase() !== 'gitlab.com') options.host = host;
+      if (token) {
+        options.apiToken = token;
+        authenticated = true;
+      }
+    } else {
+      // github: GH_TOKEN authenticates github.com and *.ghe.com (Enterprise
+      // Cloud). Self-hosted Enterprise Server needs GH_ENTERPRISE_TOKEN +
+      // GH_HOST, which the feature does not wire yet, so a PAT can't
+      // auto-auth it: leave it unauthenticated so the caller shows the
+      // `gh auth login --hostname` hint instead of a false "logged in".
+      if (token && githubTokenWorks(host)) {
+        options.apiToken = token;
+        authenticated = true;
+      }
     }
+
     features[ref] = options;
     added.push({
       name: component!.name,
       provider,
       host,
-      authenticated: !!token,
+      authenticated,
       envVar,
     });
   }
