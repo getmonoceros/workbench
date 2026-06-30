@@ -72,7 +72,12 @@ describe('autoAddRepoCliFeatures', () => {
     // Feature is added but flagged unauthenticated: GH_TOKEN can't auth a
     // self-hosted Enterprise Server (needs GH_ENTERPRISE_TOKEN, not wired).
     expect(added).toMatchObject([
-      { name: 'github', host: 'github.acme-corp.io', authenticated: false },
+      {
+        name: 'github',
+        host: 'github.acme-corp.io',
+        authenticated: false,
+        reason: 'enterprise-unsupported',
+      },
     ]);
     const key = featureKey(opts, 'github-cli');
     expect(opts.features![key!]).not.toHaveProperty('apiToken');
@@ -120,6 +125,7 @@ describe('autoAddRepoCliFeatures', () => {
       {
         name: 'github',
         authenticated: false,
+        reason: 'no-token',
         envVar: gitTokenEnvVar('github.com'),
       },
     ]);

@@ -12,11 +12,19 @@ export interface AddedCliFeature {
   host: string;
   /**
    * True when a PAT was found for the host and set as the feature's
-   * `apiToken` (so gh/glab is logged in). False when the feature was
-   * added without a token: it is installed but NOT authenticated, and
-   * the caller surfaces a `<gh|glab> auth login` hint.
+   * `apiToken` (so gh/glab is logged in). False when the feature is
+   * installed but NOT authenticated; see `reason`.
    */
   authenticated: boolean;
+  /**
+   * Why it's not authenticated (only when `authenticated` is false):
+   *   - `no-token`: no PAT configured for the host.
+   *   - `enterprise-unsupported`: a token IS set and authenticates git,
+   *     but the host is a self-hosted GitHub Enterprise Server, which gh
+   *     can't authenticate from `GH_TOKEN` (needs `GH_ENTERPRISE_TOKEN`,
+   *     not wired yet).
+   */
+  reason?: 'no-token' | 'enterprise-unsupported';
   /** The env var that, if set, would authenticate this feature. */
   envVar: string;
 }
@@ -77,6 +85,7 @@ export async function autoAddRepoCliFeatures(
     const token = envVars[envVar];
     const options: FeatureOptions = {};
     let authenticated = false;
+    let reason: AddedCliFeature['reason'];
 
     if (provider === 'gitlab') {
       // glab targets gitlab.com unless `host` is set; point it at a
@@ -86,6 +95,8 @@ export async function autoAddRepoCliFeatures(
       if (token) {
         options.apiToken = token;
         authenticated = true;
+      } else {
+        reason = 'no-token';
       }
     } else {
       // github: GH_TOKEN authenticates github.com and *.ghe.com (Enterprise
@@ -96,6 +107,12 @@ export async function autoAddRepoCliFeatures(
       if (token && githubTokenWorks(host)) {
         options.apiToken = token;
         authenticated = true;
+      } else if (token) {
+        // A token IS set (and authenticates git), but the host is a
+        // self-hosted Enterprise Server that gh can't use it for.
+        reason = 'enterprise-unsupported';
+      } else {
+        reason = 'no-token';
       }
     }
 
@@ -105,6 +122,7 @@ export async function autoAddRepoCliFeatures(
       provider,
       host,
       authenticated,
+      ...(reason ? { reason } : {}),
       envVar,
     });
   }

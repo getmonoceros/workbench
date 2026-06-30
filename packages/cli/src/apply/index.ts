@@ -451,9 +451,11 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       // github.com / gitlab.com are the CLIs' defaults.
       const isSaas = f.host === 'github.com' || f.host === 'gitlab.com';
       const loginCmd = isSaas ? base : `${base} --hostname ${f.host}`;
-      (logger.warn ?? logger.info)(
-        `Added the ${f.name} CLI feature, but it is NOT logged in (no PAT for ${f.host}). Inside the container run \`${loginCmd}\`, or set ${f.envVar} in monoceros-config.env to log in automatically.`,
-      );
+      const note =
+        f.reason === 'enterprise-unsupported'
+          ? `Added the ${f.name} CLI feature. Your token authenticates git for ${f.host}, but gh can't use it for a self-hosted GitHub Enterprise Server yet. Inside the container run \`${loginCmd}\` to log gh in.`
+          : `Added the ${f.name} CLI feature, but it is NOT logged in (no PAT for ${f.host}). Inside the container run \`${loginCmd}\`, or set ${f.envVar} in monoceros-config.env to log in automatically.`;
+      (logger.warn ?? logger.info)(note);
     }
   }
 
