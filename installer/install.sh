@@ -256,11 +256,8 @@ EOF
     macos)
       cat >&2 <<EOF
 
-Start Docker Desktop:
-
-  open -a Docker
-
-Wait until the whale icon stops animating, then re-run this installer.
+Start Docker Desktop and wait for the dashboard to come up. Then re-run
+this installer.
 EOF
       ;;
     wsl)
