@@ -1,4 +1,3 @@
-import type { Component } from './components.js';
 import type { FeatureManifestSummary } from './manifest.js';
 import {
   buildFeatureHeaderLines,
@@ -9,7 +8,6 @@ import {
   DEFAULT_RUNTIME_VERSION,
   expandCuratedService,
   curatedServiceExampleVolumes,
-  LANGUAGE_CATALOG,
 } from '../create/catalog.js';
 import {
   exampleVolumesComment,
@@ -47,8 +45,6 @@ export type ManifestLookup = (
 
 const SCHEMA_HEADER_ACTIVE =
   '# Solution-config: what should be inside your dev-container.\n# Starts minimal; add languages, features, services, or repos with\n# `monoceros add-feature/add-service/add-repo <name>` (see\n# `monoceros list-components`), then `monoceros apply <name>`.';
-const SCHEMA_HEADER_DOCUMENTED =
-  '# Solution-config — describes what should be inside your dev-container.\n# Every section is commented out by default; un-comment what you need\n# (strip one `#` per line of the block), then run `monoceros apply <name>`.';
 
 // Soft target for wrapped comment lines. Keeps the rendered yml
 // readable in a standard editor without horizontal scrolling.
@@ -192,143 +188,6 @@ export function generateComposedYml(
   return ensureTrailingNewline(lines.join('\n'));
 }
 
-/**
- * Render the documented-default yml: every section commented out at
- * single-`#` depth, with a user-facing header above each section.
- */
-export function generateDocumentedYml(
-  name: string,
-  catalog: Map<string, Component>,
-  lookupManifest: ManifestLookup,
-  repoUrls: readonly string[] = [],
-  ports: readonly number[] = [],
-): string {
-  const byCategory = groupByCategory(catalog);
-  const lines: string[] = [];
-  pushHeader(lines, SCHEMA_HEADER_DOCUMENTED, name);
-  lines.push('');
-  lines.push('schemaVersion: 1');
-  lines.push(`name: ${name}`);
-  lines.push(
-    '# Pinned runtime base image, reused on every apply (never auto-bumped).',
-  );
-  lines.push(
-    '# `monoceros upgrade <name>` refreshes the tooling and moves this to the',
-  );
-  lines.push('# latest runtime when a newer one exists.');
-  lines.push(`runtimeVersion: ${DEFAULT_RUNTIME_VERSION}`);
-  lines.push('');
-
-  if (byCategory.language.length > 0) {
-    pushSectionHeader(lines, LANGUAGES_HEADER, /* commented */ true);
-    lines.push('# languages:');
-    for (const c of byCategory.language) {
-      for (const lang of c.file.contributes.languages ?? []) {
-        // Show the version inline (`name:<defaultVersion>`) so it's clear
-        // where to pin it, matching the composed-mode output.
-        const ver = LANGUAGE_CATALOG[lang]?.defaultVersion;
-        lines.push(`#   - ${ver ? `${lang}:${ver}` : lang}`);
-      }
-    }
-    lines.push('');
-  }
-  if (byCategory.service.length > 0) {
-    pushSectionHeader(lines, SERVICES_HEADER, /* commented */ true);
-    lines.push('# services:');
-    for (const c of byCategory.service) {
-      for (const svc of c.file.contributes.services ?? []) {
-        const body = renderServiceObjectBody(expandCuratedService(svc));
-        lines.push(`#   - ${body[0]}`);
-        for (const line of body.slice(1)) lines.push(`#     ${line}`);
-        const exComment = exampleVolumesComment(
-          curatedServiceExampleVolumes(svc),
-        );
-        if (exComment) {
-          for (const cl of exComment.split('\n')) lines.push(`#    ${cl}`);
-        }
-      }
-    }
-    lines.push('');
-  }
-  if (byCategory.feature.length > 0) {
-    pushSectionHeader(lines, FEATURES_HEADER_DOCUMENTED, /* commented */ true);
-    lines.push('# features:');
-
-    const renderedRefs = new Set<string>();
-    const topLevel = byCategory.feature.filter((c) => !c.name.includes('/'));
-    for (const c of topLevel) {
-      for (const f of c.file.contributes.features ?? []) {
-        if (renderedRefs.has(f.ref)) continue;
-        renderedRefs.add(f.ref);
-        lines.push('#');
-        renderFeatureBlock(
-          lines,
-          f,
-          lookupManifest(f.ref),
-          /* commented */ true,
-        );
-      }
-    }
-    for (const c of byCategory.feature) {
-      if (!c.name.includes('/')) continue;
-      for (const f of c.file.contributes.features ?? []) {
-        if (renderedRefs.has(f.ref)) continue;
-        renderedRefs.add(f.ref);
-        lines.push('#');
-        renderFeatureBlock(
-          lines,
-          f,
-          lookupManifest(f.ref),
-          /* commented */ true,
-        );
-      }
-    }
-    lines.push('');
-  }
-
-  if (repoUrls.length > 0) {
-    pushGitIdentityBlock(lines);
-    pushSectionHeader(lines, REPOS_HEADER, /* commented */ false);
-    lines.push('repos:');
-    for (const url of repoUrls) {
-      lines.push(`  - url: ${url}`);
-    }
-    lines.push('');
-  } else {
-    pushSectionHeader(lines, REPOS_HEADER, /* commented */ true);
-    lines.push('# repos:');
-    lines.push('#   - url: https://github.com/<org>/<repo>.git');
-    lines.push('#     path: <folder>');
-    lines.push('#     provider: github');
-    lines.push('#     git:');
-    lines.push('#       user:');
-    lines.push('#         name: Your Name');
-    lines.push('#         email: you@example.com');
-    lines.push('');
-  }
-
-  if (ports.length > 0) {
-    pushSectionHeader(lines, routingHeader(name), /* commented */ false);
-    lines.push('routing:');
-    lines.push('  ports:');
-    for (const port of ports) {
-      lines.push(`    - ${port}`);
-    }
-    lines.push('  # vscodeAutoForward: false');
-    lines.push('');
-  } else {
-    pushSectionHeader(lines, routingHeader(name), /* commented */ true);
-    lines.push('# routing:');
-    lines.push('#   ports:');
-    lines.push('#     - 3000');
-    lines.push('#     - 5173');
-    lines.push('#   vscodeAutoForward: false');
-    lines.push('');
-  }
-
-  return ensureTrailingNewline(lines.join('\n'));
-}
-
 // ───── Section header text ────────────────────────────────────────
 
 const LANGUAGES_HEADER =
@@ -367,9 +226,6 @@ function pushServiceEntry(out: string[], svc: InitService): void {
 
 const FEATURES_HEADER_ACTIVE =
   'A Monoceros dev-container is shaped by features — pluggable units that drop tooling (AI assistants, language CLIs, cloud SDKs, …) into the container and bring their own options. The features active for this container are listed below; adjust their options as needed. Shared credentials used across containers belong in monoceros-config.yml under `defaults.features.<ref>` rather than here. Full catalog: `monoceros list-components`.';
-
-const FEATURES_HEADER_DOCUMENTED =
-  'A Monoceros dev-container is shaped by features — pluggable units that drop tooling (AI assistants, language CLIs, cloud SDKs, …) into the container and bring their own options. Un-comment the blocks below for the features you want active. Shared credentials used across containers belong in monoceros-config.yml under `defaults.features.<ref>` rather than here. Full catalog: `monoceros list-components`.';
 
 const REPOS_HEADER =
   'Git repositories cloned into `projects/` on container start-up. HTTPS URLs only. The provider is auto-detected for github.com / gitlab.com / bitbucket.org; for any other host (self-hosted GitLab, Gitea, …) declare `provider:` explicitly. Add more later with `monoceros add-repo`.';
@@ -517,25 +373,6 @@ function renderScalarValue(value: string | number | boolean): string {
       : JSON.stringify(value);
   }
   return String(value);
-}
-
-function groupByCategory(catalog: Map<string, Component>): {
-  language: Component[];
-  service: Component[];
-  feature: Component[];
-} {
-  const out: ReturnType<typeof groupByCategory> = {
-    language: [],
-    service: [],
-    feature: [],
-  };
-  const sorted = [...catalog.values()].sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
-  for (const c of sorted) {
-    out[c.file.category].push(c);
-  }
-  return out;
 }
 
 function ensureTrailingNewline(s: string): string {
