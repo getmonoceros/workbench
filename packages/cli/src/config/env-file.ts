@@ -72,6 +72,29 @@ export async function ensureEnvGitignored(configsDir: string): Promise<void> {
   await fsp.appendFile(gitignorePath, `${prefix}${header}${pattern}\n`);
 }
 
+/**
+ * Ensure `<home>/.gitignore` excludes the global `monoceros-config.env`.
+ * Builders may version-control their MONOCEROS_HOME; the global env file
+ * carries shared secrets (repo PATs, ADR 0031) and must never ride along.
+ * Idempotent — mirrors `ensureEnvGitignored` for the per-container files.
+ */
+export async function ensureGlobalEnvGitignored(home: string): Promise<void> {
+  const gitignorePath = path.join(home, '.gitignore');
+  const pattern = 'monoceros-config.env';
+  let existing = '';
+  if (existsSync(gitignorePath)) {
+    existing = readFileSync(gitignorePath, 'utf8');
+    const lines = existing.split(/\r?\n/).map((l) => l.trim());
+    if (lines.includes(pattern)) return;
+  }
+  const prefix = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+  const header =
+    existing.length === 0
+      ? '# Global env file holds shared secrets behind ${VAR} references\n# (e.g. repo PATs). Never commit it.\n'
+      : '';
+  await fsp.appendFile(gitignorePath, `${prefix}${header}${pattern}\n`);
+}
+
 // `${VAR}` only — the explicit-brace form. A bare `$VAR` is left alone
 // so a literal env value that happens to contain `$` (a generated
 // password, a shell snippet in `command`) survives untouched.

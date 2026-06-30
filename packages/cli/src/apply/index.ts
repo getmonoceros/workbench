@@ -11,6 +11,7 @@ import {
   containerConfigsDir,
   containerDir,
   containerEnvPath,
+  globalEnvPath,
   monocerosHome as defaultMonocerosHome,
   prettyPath,
 } from '../config/paths.js';
@@ -20,6 +21,7 @@ import {
   interpolateFeatureOptions,
   formatMissingVarsError,
   ensureEnvGitignored,
+  ensureGlobalEnvGitignored,
   resolveGitUserFields,
 } from '../config/env-file.js';
 import { REGEX, isValidEmail } from '../config/schema.js';
@@ -249,13 +251,19 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // fail the apply, so they stay in control of the migration.
   warnOnDeprecatedFeatureRefs(parsed.config.features, globalConfig, logger);
 
-  // Read the per-container env file (container-configs/<name>.env) — the
-  // source for `${VAR}` references — BEFORE the transform, because
-  // feature options must be resolved before they're merged with the
-  // monoceros-config `defaults.features` cascade.
+  // Read the env layers that source `${VAR}` references, BEFORE the
+  // transform (feature options must resolve before merging with the
+  // monoceros-config `defaults.features` cascade). Two layers (ADR 0031):
+  // the global monoceros-config.env supplies shared values (e.g. repo
+  // PATs), the per-container <name>.env overrides it. Container wins on
+  // key collisions.
   const envPath = containerEnvPath(opts.name, home);
   await ensureEnvGitignored(containerConfigsDir(home));
-  const envVars = readEnvFile(envPath);
+  await ensureGlobalEnvGitignored(home);
+  const envVars = {
+    ...readEnvFile(globalEnvPath(home)),
+    ...readEnvFile(envPath),
+  };
 
   // Resolve `${VAR}` in FEATURE options first. A missing/empty value
   // becomes "" so the transform's merge skips it → the option falls
