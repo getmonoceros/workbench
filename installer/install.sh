@@ -166,7 +166,7 @@ if ! command -v docker >/dev/null 2>&1; then
 Monoceros needs Docker. Install it before continuing:
 
   Docker Desktop  →  https://docs.docker.com/desktop/install/mac-install/
-  or via Homebrew:   brew install --cask docker-desktop
+  or via Homebrew:   ${CYAN}brew install --cask docker-desktop${RESET}
 
 No Homebrew yet? Install it first:
 
