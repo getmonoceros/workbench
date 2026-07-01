@@ -219,9 +219,29 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   // to render the routing/repos block (commented hints in documented
   // mode, active entries in composed mode), keeping the "all
   // available options visible" rule consistent across sections.
+  // A repo implies its provider's CLI feature (github/gitlab): add it like
+  // any other feature so it lands in the yml and its credential
+  // placeholder gets seeded. Resolve each provider to its feature ref via
+  // the catalog and pass the ref (init accepts full refs). Deduped against
+  // explicit --with-features (by provider short name and by ref). Repos
+  // are validated canonical above, so the host lookup + URL parse are safe.
+  const explicitFeatures = opts.features ?? [];
+  const repoFeatures = [
+    ...new Set(
+      repos
+        .map((u) => KNOWN_PROVIDER_HOSTS[new URL(u).hostname.toLowerCase()])
+        .filter(
+          (p): p is 'github' | 'gitlab' => p === 'github' || p === 'gitlab',
+        )
+        .filter((p) => !explicitFeatures.includes(p))
+        .map((p) => catalog.get(p)?.file.contributes.features?.[0]?.ref)
+        .filter((ref): ref is string => !!ref),
+    ),
+  ].filter((ref) => !explicitFeatures.includes(ref));
+
   const composed = resolveComposedInit(catalog, {
     languages: opts.languages ?? [],
-    features: opts.features ?? [],
+    features: [...explicitFeatures, ...repoFeatures],
     services: opts.services ?? [],
     aptPackages: opts.aptPackages ?? [],
   });

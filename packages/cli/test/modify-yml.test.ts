@@ -715,6 +715,30 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toMatch(/^ {4}# path:\s*$/m);
   });
 
+  it('runAddRepo adds the provider CLI feature to the yml (github → github-cli)', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'demo',
+      url: 'https://github.com/foo/bar.git',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('features:');
+    expect(yml).toContain('github-cli');
+  });
+
+  it('runAddRepo adds gitlab-cli for a gitlab repo', async () => {
+    await writeYml('gl', 'schemaVersion: 1\nname: gl\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'gl',
+      url: 'https://gitlab.com/foo/bar.git',
+      monocerosHome: home,
+    });
+    expect(await ymlOf('gl')).toContain('gitlab-cli');
+  });
+
   it('runAddRepo scaffolds a container git.user placeholder + seeds .env for the first repo', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddRepo({

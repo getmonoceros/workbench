@@ -287,6 +287,9 @@ describe('runInit', () => {
     const text = await readFile(result.configPath, 'utf8');
     expect(text).toContain('repos:');
     expect(text).toContain('- url: https://github.com/foo/bar.git');
+    // (The repo's provider CLI feature is also added in production; the
+    // test-fixture catalog here has no github-cli, so add-repo's real
+    // catalog covers that assertion in modify-yml.test.ts.)
     // Optional per-entry fields surface as single-`#` commented hints
     // under each active repo URL — builder strips one `#` per line
     // to set a value. Discoverability from inside the file.

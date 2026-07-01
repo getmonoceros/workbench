@@ -481,6 +481,30 @@ export async function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
       `Added a container git.user with \${${GIT_IDENTITY_VAR.name}}/\${${GIT_IDENTITY_VAR.email}} placeholders and seeded ${input.name}.env — fill them or leave blank to use your global git identity.`,
     );
   }
+  // Add the provider's CLI feature to the yml (via the existing
+  // add-feature), so it's present because of the repo — github → github,
+  // gitlab → gitlab. Only when the provider has a CLI feature and it
+  // isn't already declared (idempotent, and never overrides a token the
+  // builder already set).
+  if (result.status === 'updated' && host) {
+    const home = input.monocerosHome ?? defaultMonocerosHome();
+    const prov = resolveProvider(host, entry.provider);
+    const featureShort =
+      prov === 'github' ? 'github' : prov === 'gitlab' ? 'gitlab' : undefined;
+    if (featureShort) {
+      const yml = await fs.readFile(
+        containerConfigPath(input.name, home),
+        'utf8',
+      );
+      const cfg = parseConfig(yml).config;
+      const ref = (await resolveFeatureRefOrShortname(featureShort)).ref;
+      const present = (cfg.features ?? []).some((f) => f.ref === ref);
+      if (!present) {
+        await runAddFeature({ ...input, ref: featureShort });
+      }
+    }
+  }
+
   // On-the-fly clone path: if the yml change took AND the container
   // is currently running, clone the repo directly into the
   // container so the builder doesn't have to `monoceros apply`
