@@ -11,7 +11,6 @@ import {
   containerConfigsDir,
   containerDir,
   containerEnvPath,
-  globalEnvPath,
   monocerosHome as defaultMonocerosHome,
   prettyPath,
 } from '../config/paths.js';
@@ -21,14 +20,8 @@ import {
   interpolateFeatureOptions,
   formatMissingVarsError,
   ensureEnvGitignored,
-  ensureGlobalEnvGitignored,
   resolveGitUserFields,
 } from '../config/env-file.js';
-import {
-  autoAddRepoCliFeatures,
-  realTokenPrompt,
-  type TokenPrompt,
-} from './auto-cli-features.js';
 import { REGEX, isValidEmail } from '../config/schema.js';
 import {
   buildStateFile,
@@ -111,7 +104,7 @@ import {
   type IdentitySpawn,
 } from '../devcontainer/identity.js';
 import { writeGlobalDefaultGitUser } from '../config/global.js';
-import { addFeatureToDoc, setContainerGitUserInDoc } from '../modify/yml.js';
+import { setContainerGitUserInDoc } from '../modify/yml.js';
 
 /**
  * `monoceros apply <name>` — read the yml at
@@ -178,13 +171,6 @@ export interface RunApplyOptions {
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
   identityScopePrompt?: IdentityScopePrompt;
-  /**
-   * Picker for choosing among multiple `GIT_TOKEN__<PROVIDER>_*` tokens
-   * for a repo's provider (ADR 0031). Tests inject a canned choice;
-   * production uses an interactive `consola` select that auto-skips when
-   * non-interactive.
-   */
-  tokenPrompt?: TokenPrompt;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
   /** Override `ssh-keygen` for the SSH attach point (ADR 0022). Tests stub this. */
@@ -263,19 +249,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // fail the apply, so they stay in control of the migration.
   warnOnDeprecatedFeatureRefs(parsed.config.features, globalConfig, logger);
 
-  // Read the env layers that source `${VAR}` references, BEFORE the
-  // transform (feature options must resolve before merging with the
-  // monoceros-config `defaults.features` cascade). Two layers (ADR 0031):
-  // the global monoceros-config.env supplies shared values (e.g. repo
-  // PATs), the per-container <name>.env overrides it. Container wins on
-  // key collisions.
+  // Read the per-container env file (container-configs/<name>.env) — the
+  // source for `${VAR}` references — BEFORE the transform, because
+  // feature options must be resolved before they're merged with the
+  // monoceros-config `defaults.features` cascade.
   const envPath = containerEnvPath(opts.name, home);
   await ensureEnvGitignored(containerConfigsDir(home));
-  await ensureGlobalEnvGitignored(home);
-  const envVars = {
-    ...readEnvFile(globalEnvPath(home)),
-    ...readEnvFile(envPath),
-  };
+  const envVars = readEnvFile(envPath);
 
   // Resolve `${VAR}` in FEATURE options first. A missing/empty value
   // becomes "" so the transform's merge skips it → the option falls
@@ -434,61 +414,9 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   if (unknownProviderHosts.length > 0) {
     throw new Error(formatUnknownProviderError(unknownProviderHosts));
   }
-
-  // Repo-driven token handling (ADR 0031): derive each repo's provider CLI
-  // feature, resolve its token from GIT_TOKEN__<PROVIDER>_* (one → auto,
-  // several → pick), persist the chosen ${VAR} into the yml, and feed the
-  // resolved values to the in-container clone via `hostTokens`.
-  const cli = await autoAddRepoCliFeatures(
-    createOpts,
-    envVars,
-    opts.tokenPrompt ?? realTokenPrompt,
-  );
-  if (cli.persist.length > 0) {
-    try {
-      const parsed = parseConfig(await fs.readFile(ymlPath, 'utf8'), ymlPath);
-      let changed = false;
-      for (const p of cli.persist) {
-        if (addFeatureToDoc(parsed.doc, p.ref, p.options)) changed = true;
-      }
-      if (changed) {
-        await fs.writeFile(ymlPath, stringifyConfig(parsed.doc), 'utf8');
-      }
-    } catch (err) {
-      (logger.warn ?? logger.info)(
-        `Could not persist the CLI feature token to ${prettyPath(ymlPath)}: ${err instanceof Error ? err.message : String(err)}. It is active for this apply.`,
-      );
-    }
-  }
-  for (const f of cli.added) {
-    if (f.authenticated) {
-      logger.info(`Added the ${f.name} CLI feature (auth from your token).`);
-      continue;
-    }
-    const base = f.provider === 'gitlab' ? 'glab auth login' : 'gh auth login';
-    const isSaas = f.host === 'github.com' || f.host === 'gitlab.com';
-    const loginCmd = isSaas ? base : `${base} --hostname ${f.host}`;
-    const envHint = `GIT_TOKEN__${f.provider.toUpperCase()}_<LABEL>`;
-    let note: string;
-    if (f.reason === 'enterprise-unsupported') {
-      note = `Added the ${f.name} CLI feature, but ${f.host} is a self-hosted GitHub Enterprise Server: tokens can't auto-authenticate it. Inside the container run \`${loginCmd}\` and set up its git credentials there.`;
-    } else if (f.reason === 'needs-pick') {
-      note = `Added the ${f.name} CLI feature, but several ${f.provider} tokens are set and none was picked (non-interactive run?). Set its apiToken in the yml, or re-run apply interactively to choose.`;
-    } else {
-      note = `Added the ${f.name} CLI feature, but it is NOT logged in (no ${envHint} in your env). Add one to monoceros-config.env (or this container's .env), or run \`${loginCmd}\` inside the container.`;
-    }
-    (logger.warn ?? logger.info)(note);
-  }
-
-  // Pre-fetch HTTPS credentials for every unique host derived from the
-  // declared repos. The resolved tokens (above) win; hosts without one
-  // fall back to the keychain. If a host has neither, fail fast with a
-  // provider-specific setup hint instead of an opaque in-container
-  // "could not read Username".
   if (hostsToFetch.length > 0) {
     const credResult = await collectGitCredentials(targetDir, hostsToFetch, {
       ...(opts.credentialsSpawn ? { spawn: opts.credentialsSpawn } : {}),
-      tokens: cli.hostTokens,
       logger: idLogger,
     });
     const missing = credResult.perHost.filter((p) => p.status !== 'ok');

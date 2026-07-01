@@ -209,15 +209,6 @@ export function monocerosConfigPath(home: string = monocerosHome()): string {
   return path.join(home, 'monoceros-config.yml');
 }
 
-/**
- * Global env file, beside `monoceros-config.yml` at the home root. Holds
- * values for `${VAR}` references shared across all containers (e.g. repo
- * PATs, ADR 0031). The per-container `<name>.env` overrides it. Gitignored.
- */
-export function globalEnvPath(home: string = monocerosHome()): string {
-  return path.join(home, 'monoceros-config.env');
-}
-
 // ─── User-facing path formatting ─────────────────────────────────
 
 /**
