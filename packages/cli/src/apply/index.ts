@@ -12,6 +12,7 @@ import {
   containerDir,
   containerEnvPath,
   monocerosHome as defaultMonocerosHome,
+  globalEnvPath,
   prettyPath,
 } from '../config/paths.js';
 import {
@@ -105,6 +106,7 @@ import {
 } from '../devcontainer/identity.js';
 import { writeGlobalDefaultGitUser } from '../config/global.js';
 import { setContainerGitUserInDoc } from '../modify/yml.js';
+import { type TokenPrompt, resolveRepoTokens } from './repo-token.js';
 
 /**
  * `monoceros apply <name>` — read the yml at
@@ -171,6 +173,8 @@ export interface RunApplyOptions {
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
   identityScopePrompt?: IdentityScopePrompt;
+  /** Override the repo-token pick (ADR 0031). Tests inject a canned answer. */
+  tokenPrompt?: TokenPrompt;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
   /** Override `ssh-keygen` for the SSH attach point (ADR 0022). Tests stub this. */
@@ -255,7 +259,30 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // monoceros-config `defaults.features` cascade.
   const envPath = containerEnvPath(opts.name, home);
   await ensureEnvGitignored(containerConfigsDir(home));
-  const envVars = readEnvFile(envPath);
+  // Merge the global env (shared `${VAR}` values — repo PATs, ADR 0031)
+  // UNDER the per-container env, so a container-level entry always wins.
+  const envVars = {
+    ...readEnvFile(globalEnvPath(home)),
+    ...readEnvFile(envPath),
+  };
+
+  // Repo-driven token binding (ADR 0031): for each declared repo whose
+  // provider CLI feature is in the yml but has an empty token, offer the
+  // builder's `GIT_TOKEN__<PROVIDER>_*` vars and rewrite the feature's
+  // placeholder to the chosen one — or abort if none is available / the
+  // builder cancels. Runs before option interpolation so the rewritten
+  // placeholder resolves in the same pass.
+  const tokenResolvedFeatures = await resolveRepoTokens(parsed.config, {
+    ymlPath,
+    home,
+    envVars,
+    catalog: await loadComponentCatalog(),
+    ...(opts.tokenPrompt ? { prompt: opts.tokenPrompt } : {}),
+    logger: {
+      info: logger.info,
+      ...(logger.warn ? { warn: logger.warn } : {}),
+    },
+  });
 
   // Resolve `${VAR}` in FEATURE options first. A missing/empty value
   // becomes "" so the transform's merge skips it → the option falls
@@ -263,7 +290,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // overrides. This lets credential placeholders (`apiKey: ${VAR}`) be
   // active in the yml with a blank `.env` seed.
   const resolvedFeatures = interpolateFeatureOptions(
-    parsed.config.features,
+    tokenResolvedFeatures,
     envVars,
   );
 

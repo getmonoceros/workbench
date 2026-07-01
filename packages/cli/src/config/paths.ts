@@ -209,6 +209,16 @@ export function monocerosConfigPath(home: string = monocerosHome()): string {
   return path.join(home, 'monoceros-config.yml');
 }
 
+/**
+ * Global env file beside `monoceros-config.yml`. Holds shared secrets
+ * referenced by `${VAR}` across containers (e.g. `GIT_TOKEN__<PROVIDER>_…`
+ * repo PATs, ADR 0031). Gitignored; merged under the per-container
+ * `<name>.env` at apply time.
+ */
+export function globalEnvPath(home: string = monocerosHome()): string {
+  return path.join(home, 'monoceros-config.env');
+}
+
 // ─── User-facing path formatting ─────────────────────────────────
 
 /**
