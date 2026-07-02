@@ -346,6 +346,48 @@ export async function ensureEnvVars(
 }
 
 /**
+ * Upsert a single `key=value` in `<name>.env`, REPLACING an existing
+ * (uncommented) line for `key` in place rather than skipping it as
+ * {@link ensureEnvVars} does. Used when apply records a builder's token
+ * pick as a reference (`GITHUB_API_TOKEN=${GIT_TOKEN__…}`, ADR 0031): the
+ * env is scaffolded with an empty `GITHUB_API_TOKEN=` placeholder, so the
+ * reference has to overwrite that line, not be dropped as "already present".
+ *
+ * Only overwrites when the current value is empty — a non-empty value is
+ * the builder's own and is never clobbered. Creates the file with the
+ * header stub if absent. Returns whether the file changed.
+ */
+export async function setEnvVarRef(
+  envPath: string,
+  name: string,
+  key: string,
+  value: string,
+): Promise<boolean> {
+  const exists = existsSync(envPath);
+  const content = exists ? readFileSync(envPath, 'utf8') : buildEnvStub(name);
+  const lines = content.split(/\r?\n/);
+  let replaced = false;
+  for (let i = 0; i < lines.length; i++) {
+    const m = ENV_LINE_RE.exec(lines[i]!);
+    if (m && m[1] === key) {
+      if (m[2]!.trim().length > 0) return false; // builder's own value — leave it
+      lines[i] = `${key}=${value}`;
+      replaced = true;
+      break;
+    }
+  }
+  let next = replaced ? lines.join('\n') : content;
+  if (!replaced) {
+    if (next.length > 0 && !next.endsWith('\n')) next += '\n';
+    next += `${key}=${value}\n`;
+  }
+  if (next === content) return false;
+  await fsp.mkdir(path.dirname(envPath), { recursive: true });
+  await fsp.writeFile(envPath, next);
+  return true;
+}
+
+/**
  * Format an actionable error for unresolved `${VAR}` references — names
  * the missing vars, where they're referenced, and the env file the
  * builder should define them in.

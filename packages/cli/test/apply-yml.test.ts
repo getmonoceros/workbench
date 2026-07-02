@@ -1631,6 +1631,77 @@ describe('runApply', () => {
     expect(envText).toContain('GITHUB_API_TOKEN=${GIT_TOKEN__GITHUB_KUNDE2}');
   });
 
+  // Real-world case: init/scaffold seeds an empty `GITHUB_API_TOKEN=`
+  // placeholder in <name>.env. The pick must OVERWRITE that line in
+  // place, not be dropped as "already present" (which left the file
+  // untouched and re-prompted on every apply).
+  it('overwrites an empty <P>_API_TOKEN placeholder with the pick reference', async () => {
+    await writeYml(
+      'featseed',
+      [
+        'schemaVersion: 1',
+        'name: featseed',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/github-cli:1',
+        '',
+      ].join('\n'),
+    );
+    const envFile = path.join(home, 'container-configs', 'featseed.env');
+    await writeFile(
+      envFile,
+      [
+        '# Secrets and values for ${VAR} references in featseed.yml.',
+        'GITHUB_API_TOKEN=',
+        'GIT_TOKEN__GITHUB_KUNDE1=ghp_k1',
+        'GIT_TOKEN__GITHUB_KUNDE2=ghp_k2',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'featseed',
+      monocerosHome: home,
+      env: {}, // read the seeded file, not the provider-wide stub
+      featureTokenPrompt: async () => 'GIT_TOKEN__GITHUB_KUNDE1',
+    });
+
+    const envText = await readFile(envFile, 'utf8');
+    expect(envText).toContain('GITHUB_API_TOKEN=${GIT_TOKEN__GITHUB_KUNDE1}');
+    // The empty placeholder was replaced in place, not duplicated.
+    expect(envText.match(/^GITHUB_API_TOKEN=/gm)).toHaveLength(1);
+  });
+
+  it('leaves an already-filled <P>_API_TOKEN untouched (no re-prompt path)', async () => {
+    // A non-empty GITHUB_API_TOKEN resolves directly (layer 1) — no
+    // ambiguity, no prompt, no rewrite.
+    await writeYml(
+      'featfilled',
+      [
+        'schemaVersion: 1',
+        'name: featfilled',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/github-cli:1',
+        '',
+      ].join('\n'),
+    );
+    const envFile = path.join(home, 'container-configs', 'featfilled.env');
+    await writeFile(envFile, 'GITHUB_API_TOKEN=ghp_direct\n');
+    let prompted = false;
+    await runApply({
+      ...baseRunOpts,
+      name: 'featfilled',
+      monocerosHome: home,
+      env: {},
+      featureTokenPrompt: async () => {
+        prompted = true;
+        return null;
+      },
+    });
+    expect(prompted).toBe(false);
+    const envText = await readFile(envFile, 'utf8');
+    expect(envText).toContain('GITHUB_API_TOKEN=ghp_direct');
+  });
+
   it('skipping an ambiguous feature token leaves it unauthenticated (non-fatal)', async () => {
     await writeYml(
       'featskip',

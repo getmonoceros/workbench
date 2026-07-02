@@ -22,7 +22,7 @@ import {
   interpolateFeatureOptions,
   formatMissingVarsError,
   ensureEnvGitignored,
-  ensureEnvVars,
+  setEnvVarRef,
   resolveGitUserFields,
 } from '../config/env-file.js';
 import { PROVIDER_LABEL, REGEX, isValidEmail } from '../config/schema.js';
@@ -352,11 +352,21 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     repoTokens.hostTokens.set(amb.host, token);
     const feature = repoTokens.features.find((f) => f.ref === amb.featureRef);
     if (feature) feature.options = { ...feature.options, apiToken: token };
+    // Remember the pick as a reference so the next apply resolves it by
+    // convention without re-asking. The env is scaffolded with an empty
+    // `<P>_API_TOKEN=` placeholder, so overwrite that line in place.
     const featureVar = `${amb.provider.toUpperCase()}_API_TOKEN`;
-    await ensureEnvVars(envPath, opts.name, { [featureVar]: `\${${chosen}}` });
+    const saved = await setEnvVarRef(
+      envPath,
+      opts.name,
+      featureVar,
+      `\${${chosen}}`,
+    );
     logger.info(
-      `CLI token: ${PROVIDER_LABEL[amb.provider]} → ${chosen} ` +
-        `(saved as ${featureVar} in ${prettyPath(envPath)})`,
+      `CLI token: ${PROVIDER_LABEL[amb.provider]} → ${chosen}` +
+        (saved
+          ? ` (saved as ${featureVar} in ${prettyPath(envPath)})`
+          : ` (${featureVar} already set in ${prettyPath(envPath)})`),
     );
   }
 
