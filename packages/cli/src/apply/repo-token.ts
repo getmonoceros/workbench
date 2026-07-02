@@ -251,13 +251,14 @@ export async function resolveContainerRepoTokens(
 }
 
 /**
- * One log line naming the env var a token was read from, prefixed by what
- * it authenticates: `Repo token` for a declared repo, `CLI token` for a
- * repo-less provider feature (just `gh`/`glab` login).
+ * One log line naming the env var a token was read from and what it
+ * authenticates — the CLI for a repo-less provider feature (`gh`/`glab`
+ * login), or the host for a declared repo (clone/push).
  */
 export function formatTokenUse(use: RepoTokenUse): string {
-  const prefix = use.source === 'feature' ? 'CLI token' : 'Repo token';
-  return `${prefix}: ${PROVIDER_LABEL[use.provider]} (${use.host}) → ${use.varName}`;
+  return use.source === 'feature'
+    ? `Using ${use.varName} for the ${PROVIDER_LABEL[use.provider]} CLI`
+    : `Using ${use.varName} for ${use.host}`;
 }
 
 /**

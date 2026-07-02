@@ -363,7 +363,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       `\${${chosen}}`,
     );
     logger.info(
-      `CLI token: ${PROVIDER_LABEL[amb.provider]} → ${chosen}` +
+      `Using ${chosen} for the ${PROVIDER_LABEL[amb.provider]} CLI` +
         (saved
           ? ` (saved as ${featureVar} in ${prettyPath(envPath)})`
           : ` (${featureVar} already set in ${prettyPath(envPath)})`),
