@@ -675,6 +675,26 @@ else
   warn "config template not found at $config_src — skipping"
 fi
 
+# Same treatment for the global secrets file: an all-commented
+# monoceros-config.env template so the builder can discover where repo
+# access tokens (PATs) go without hunting through docs. All-commented =
+# a no-op until edited; public repos need no token at all.
+env_src="$npm_global_root/@getmonoceros/workbench/templates/monoceros-config.sample.env"
+env_dst="$monoceros_home/monoceros-config.env"
+
+if [[ -f "$env_src" ]]; then
+  if [[ -f "$env_dst" ]]; then
+    ok "secrets $(dim '→') $(dim "$env_dst") $(dim '(already present, left alone)')"
+  else
+    cp "$env_src" "$env_dst"
+    ok "secrets $(dim '→') $(dim "$env_dst")"
+    say "  $(dim 'All entries are commented out — add repo tokens (PATs) here')"
+    say "  $(dim 'when you need private clone/push (public repos need none).')"
+  fi
+else
+  warn "secrets template not found at $env_src — skipping"
+fi
+
 # ── 5. Next steps ──────────────────────────────────────────────────
 section "Next steps"
 
