@@ -593,16 +593,19 @@ async function tryCloneInRunningContainer(
       home,
       await loadComponentCatalog(),
     );
-    if (!hostTokens.get(urlHost)) {
+    if (hostTokens.get(urlHost)) {
+      await collectGitCredentials(root, [{ host: urlHost, provider }], {
+        patByHost: hostTokens,
+        logger: { info: () => {}, warn: (m) => logger.warn(m) },
+      });
+    } else {
+      // No token — not fatal (public repos clone read-only). Proceed to
+      // the clone anyway; a private repo fails there with git's own auth
+      // error. Same warn-and-proceed policy as apply (ADR 0031).
       logger.warn(
-        `No access token set for ${urlHost}. The yml is updated; set one (see ${REPO_DOCS_URL}) and re-run \`monoceros apply ${input.name}\`, or rerun this add-repo.`,
+        `No access token set for ${urlHost} — cloning will fail if this repo is private. Set one (see ${REPO_DOCS_URL}) and re-run.`,
       );
-      return;
     }
-    await collectGitCredentials(root, [{ host: urlHost, provider }], {
-      patByHost: hostTokens,
-      logger: { info: () => {}, warn: (m) => logger.warn(m) },
-    });
   } catch (err) {
     logger.warn(
       `Could not resolve a token for ${urlHost}: ${err instanceof Error ? err.message : String(err)}. The yml is updated; run \`monoceros apply ${input.name}\` to clone.`,

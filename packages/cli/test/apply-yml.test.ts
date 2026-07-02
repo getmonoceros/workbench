@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { Writable } from 'node:stream';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runApply } from '../src/apply/index.js';
@@ -25,9 +26,8 @@ const stubDockerExec = async () => ({
 const stubIdentitySpawn = async () => ({ value: '', exitCode: 1 });
 const stubIdentityPrompt = async () => undefined;
 // Default: a provider-wide token for each provider (ADR 0031), so any
-// declared repo resolves. Apply aborts when a repo host has no token, so
-// tests that don't exercise that path inherit these. Tests that want the
-// no-token error pass an empty `env`.
+// declared repo resolves and no unauthenticated-repos warning fires.
+// Tests that exercise the missing-token warning pass an empty `env`.
 const stubEnv = {
   GIT_TOKEN__GITHUB: 'tok-github',
   GIT_TOKEN__GITLAB: 'tok-gitlab',
@@ -1326,7 +1326,10 @@ describe('runApply', () => {
     expect(postCreate).not.toContain('alice@bitbucket.org');
   });
 
-  it('pre-flight aborts apply with a PAT hint when a repo host has no token', async () => {
+  it('does NOT abort when a repo has no token — warns at the end instead', async () => {
+    // A missing token is non-fatal (public repos clone read-only). apply
+    // proceeds and prints a prominent unauthenticated-repos warning that
+    // names the consequences and the vars to set.
     await writeYml(
       'no-creds',
       [
@@ -1337,15 +1340,24 @@ describe('runApply', () => {
         '',
       ].join('\n'),
     );
-    await expect(
-      runApply({
-        ...baseRunOpts,
-        // No configured token for any host → apply aborts.
-        env: {},
-        name: 'no-creds',
-        monocerosHome: home,
-      }),
-    ).rejects.toThrow(/access token[\s\S]*github\.com/);
+    let out = '';
+    const progressOut = new Writable({
+      write(chunk, _enc, cb): void {
+        out += chunk.toString();
+        cb();
+      },
+    }) as unknown as NodeJS.WriteStream;
+    const result = await runApply({
+      ...baseRunOpts,
+      env: {}, // no token for any host
+      progressOut,
+      name: 'no-creds',
+      monocerosHome: home,
+    });
+    expect(result.containerExitCode).toBe(0);
+    expect(out).toContain('UNAUTHENTICATED');
+    expect(out).toContain('github.com');
+    expect(out).toContain('GITHUB_API_TOKEN');
   });
 
   it('pre-flight fails with "set provider:" error for non-canonical hosts without explicit provider', async () => {
@@ -1486,10 +1498,10 @@ describe('runApply', () => {
     expect(compose).not.toContain('idmap');
   });
 
-  it('credential pre-flight fails fast (before docker build) when no token is set', async () => {
-    // No token for the repo host → apply aborts before the container
-    // build. (Repos themselves are cloned in-container; we don't probe
-    // them host-side.)
+  it('shows the unauthenticated-repos warning on a FAILED apply too', async () => {
+    // A private repo with no token fails the in-container clone (post-create),
+    // so apply exits non-zero — exactly when the "set a token" warning is
+    // most useful. It must appear on the failure path as well.
     await writeYml(
       'no-creds',
       [
@@ -1500,20 +1512,25 @@ describe('runApply', () => {
         '',
       ].join('\n'),
     );
-    let devcontainerCalled = false;
-    await expect(
-      runApply({
-        ...baseRunOpts,
-        env: {},
-        devcontainerSpawn: async () => {
-          devcontainerCalled = true;
-          return 0;
-        },
-        name: 'no-creds',
-        monocerosHome: home,
-      }),
-    ).rejects.toThrow(/access token/);
-    expect(devcontainerCalled).toBe(false);
+    let out = '';
+    const progressOut = new Writable({
+      write(chunk, _enc, cb): void {
+        out += chunk.toString();
+        cb();
+      },
+    }) as unknown as NodeJS.WriteStream;
+    const result = await runApply({
+      ...baseRunOpts,
+      env: {},
+      // Simulate the in-container clone failing (private repo, no token).
+      devcontainerSpawn: async () => 1,
+      progressOut,
+      name: 'no-creds',
+      monocerosHome: home,
+    });
+    expect(result.containerExitCode).toBe(1);
+    expect(out).toContain('UNAUTHENTICATED');
+    expect(out).toContain('GITHUB_API_TOKEN');
   });
 
   it('pre-flight accepts non-canonical host when provider: is set explicitly', async () => {

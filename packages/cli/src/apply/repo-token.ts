@@ -167,38 +167,39 @@ export function formatTokenUse(use: RepoTokenUse): string {
 }
 
 /**
- * Builder-facing abort message when repos have no token. Names, per
- * provider, the two most useful ways to set one and which file each goes
- * in — the per-container feature var and the shared segment-keyed var.
+ * Prominent end-of-apply warning for repos left without a token. A
+ * missing token is non-fatal (public repos clone read-only), but gh/glab
+ * and any write/private operation won't work — so this states the
+ * consequences and names the vars + files to set, per provider.
  */
-export function formatMissingTokensError(
+export function formatUnauthenticatedRepos(
   missing: readonly MissingRepoToken[],
   containerName: string,
 ): string {
-  const bullet = (m: MissingRepoToken): string => {
-    const label = PROVIDER_LABEL[m.provider];
-    // tried order is [<PROVIDER>_API_TOKEN?, GIT_TOKEN__<P>_<SEG>, GIT_TOKEN__<P>].
-    const featureVar = m.tried.find((v) => !v.startsWith('GIT_TOKEN__'));
-    const sharedVar = m.tried.find((v) => v.startsWith('GIT_TOKEN__'));
-    if (featureVar) {
-      return (
-        `  • Your ${label} repositories (${m.host}): set ${featureVar} in ` +
-        `container-configs/${containerName}.env for this container, or ` +
-        `${sharedVar} in monoceros-config.env to share it across containers.`
-      );
-    }
-    return (
-      `  • Your ${label} repositories (${m.host}): set ${sharedVar} in ` +
-      `monoceros-config.env (shared) or container-configs/${containerName}.env.`
-    );
-  };
-  return (
-    `Apply aborted. None of your configured repositories has an access ` +
-    `token yet.\n` +
-    `Set a personal access token as an environment variable:\n\n` +
-    missing.map(bullet).join('\n') +
-    `\n\nCreate the token with the access you normally have on the site ` +
-    `(clone and push).\n` +
-    `See ${REPO_DOCS_URL} for how to set it up.`
+  const lines: string[] = [
+    '⚠  Some repositories have no access token and are left UNAUTHENTICATED:',
+  ];
+  for (const m of missing) {
+    lines.push(`     • ${PROVIDER_LABEL[m.provider]} (${m.host})`);
+  }
+  lines.push(
+    '',
+    '   Public repositories still clone (read-only). But:',
+    '     • gh / glab in the container are not logged in.',
+    '     • pushing, and cloning/pulling PRIVATE repositories, fails.',
+    '     • branches, PRs/MRs — anything that writes to the remote — fails.',
+    '',
+    '   Set a token, then re-apply:',
   );
+  for (const m of missing) {
+    // tried order: [<PROVIDER>_API_TOKEN, GIT_TOKEN__<P>_<SEG>, GIT_TOKEN__<P>].
+    const featureVar = m.tried.find((v) => !v.startsWith('GIT_TOKEN__'))!;
+    const sharedVar = m.tried.find((v) => v.startsWith('GIT_TOKEN__'))!;
+    lines.push(
+      `     • ${PROVIDER_LABEL[m.provider]}: ${featureVar} in container-configs/${containerName}.env,`,
+      `       or ${sharedVar} in monoceros-config.env`,
+    );
+  }
+  lines.push('', `   Details: ${REPO_DOCS_URL}`);
+  return lines.join('\n');
 }

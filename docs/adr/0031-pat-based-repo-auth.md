@@ -149,7 +149,16 @@ prompting, no yml mutation. What ships (#33):
   2. `GIT_TOKEN__<P>_<S>` — keyed by the first path segment (github owner /
      gitlab group / bitbucket workspace); uppercased, non-alnum → `_`.
   3. `GIT_TOKEN__<P>` — provider-wide catch-all.
-     A repo with no match aborts apply with a hint naming the tried vars.
+
+  A missing token is **non-fatal**: we can't tell a public repo (needs no
+  token) from a private one without a network probe, so apply proceeds and
+  lets the in-container clone be the arbiter — public clones read-only,
+  private fails with git's own error. Repos left without a token are
+  surfaced in a **prominent warning at the end of apply** (success and
+  failure paths), naming the consequences (gh/glab not logged in; push and
+  private clone/pull fail) and the vars to set. add-repo follows the same
+  policy: it still clones, warning if no token is set.
+
 - **One token, two consumers.** The resolved token is injected into the
   provider CLI feature (→ `GH_TOKEN` / `GITLAB_TOKEN` for `gh`/`glab`) AND
   written into `.monoceros/git-credentials` for the in-container `git

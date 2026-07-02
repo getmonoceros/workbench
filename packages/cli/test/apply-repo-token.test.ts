@@ -7,7 +7,7 @@ import { runAddRepo } from '../src/modify/index.js';
 import {
   resolveRepoTokens,
   resolveContainerRepoTokens,
-  formatMissingTokensError,
+  formatUnauthenticatedRepos,
   formatTokenUse,
 } from '../src/apply/repo-token.js';
 import { loadComponentCatalog } from '../src/init/components.js';
@@ -103,7 +103,8 @@ describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
       'GIT_TOKEN__GITHUB_CONCISO',
       'GIT_TOKEN__GITHUB',
     ]);
-    const msg = formatMissingTokensError(r.missing, 'demo');
+    const msg = formatUnauthenticatedRepos(r.missing, 'demo');
+    expect(msg).toContain('UNAUTHENTICATED');
     expect(msg).toContain('GITHUB_API_TOKEN');
     expect(msg).toContain('container-configs/demo.env');
     expect(msg).toContain('GIT_TOKEN__GITHUB_CONCISO');

@@ -4,8 +4,6 @@ import type { RepoEntry } from '../create/types.js';
 import {
   GIT_CREDENTIAL_USERNAME,
   KNOWN_PROVIDER_HOSTS,
-  PROVIDER_LABEL,
-  REPO_DOCS_URL,
   type RepoProvider,
 } from '../config/schema.js';
 import { cyan } from '../util/format.js';
@@ -182,31 +180,6 @@ export async function collectGitCredentials(
  * directly (apply uses it to build the pre-flight check input).
  */
 export { uniqueHttpsHosts };
-
-/**
- * Pre-flight error for repo hosts that reached the credential step with
- * no configured token (ADR 0031). GitHub/GitLab are normally resolved
- * (and, if empty, prompted or aborted) earlier in apply; a Bitbucket host
- * lands here when no `GIT_TOKEN__BITBUCKET_*` is set.
- */
-export function formatMissingCredentialsError(
-  missing: readonly HostCredentialStatus[],
-): string {
-  const blocks = missing.map((m) => {
-    const label = PROVIDER_LABEL[m.provider];
-    if (m.provider === 'bitbucket') {
-      // Bitbucket is keyed by workspace (ADR 0031): name the exact var
-      // pattern so the builder knows what to add.
-      return `  - ${label} (${m.host}): set GIT_TOKEN__BITBUCKET_<WORKSPACE> (workspace = first path segment of the repo URL) in your global env.`;
-    }
-    return `  - ${label} (${m.host}): no personal access token (PAT) is set.`;
-  });
-  return (
-    `Apply aborted. Some of your repositories have no access token set:\n` +
-    blocks.join('\n') +
-    `\n\nSee ${REPO_DOCS_URL} for how to set one up, then re-run apply.`
-  );
-}
 
 /**
  * Build the pre-flight error for repos whose host has no provider

@@ -1127,10 +1127,12 @@ describe('add-*/remove-* against the yml', () => {
     );
   });
 
-  it('runAddRepo on-the-fly: skips clone but keeps yml when no token is set', async () => {
+  it('runAddRepo on-the-fly: with no token, still clones (public) but warns', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
-    // No <name>.env → the provider token resolves empty → no clone.
-    let execCalls = 0;
+    // No <name>.env and no global token: a missing token is non-fatal
+    // (public repos clone read-only). The clone still runs; a warning
+    // says it'll fail if the repo is private.
+    let execCommand: string | undefined;
     const warns: string[] = [];
     await runAddRepo({
       ...baseOpts,
@@ -1147,17 +1149,16 @@ describe('add-*/remove-* against the yml', () => {
         stderr: '',
         exitCode: 0,
       }),
-      // No <name>.env and no global token → the token resolves to
-      // nothing, so the clone is skipped with a warn; the yml stays.
-      containerExec: async () => {
-        execCalls++;
+      containerExec: async (_id, argv) => {
+        if (argv[0] === 'bash' && argv[1] === '-c') execCommand = argv[2];
         return { exitCode: 0 };
       },
     });
-    // yml IS updated (we don't roll back); clone DID NOT run.
     const yml = await ymlOf('demo');
     expect(yml).toContain('- url: https://github.com/foo/bar.git');
-    expect(execCalls).toBe(0);
+    // Clone ran despite no token…
+    expect(execCommand).toContain("clone 'https://github.com/foo/bar.git'");
+    // …but the builder was warned.
     expect(warns.some((m) => /token/i.test(m))).toBe(true);
   });
 

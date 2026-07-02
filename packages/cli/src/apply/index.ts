@@ -81,7 +81,6 @@ import {
 import {
   collectGitCredentials,
   uniqueHttpsHosts,
-  formatMissingCredentialsError,
   formatUnknownProviderError,
 } from '../devcontainer/credentials.js';
 import {
@@ -106,7 +105,7 @@ import {
 import { writeGlobalDefaultGitUser } from '../config/global.js';
 import { setContainerGitUserInDoc } from '../modify/yml.js';
 import {
-  formatMissingTokensError,
+  formatUnauthenticatedRepos,
   formatTokenUse,
   resolveRepoTokens,
 } from './repo-token.js';
@@ -277,11 +276,14 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // GIT_TOKEN__<PROVIDER>), inject it into the provider CLI feature, and
   // collect the per-host tokens for the git-credentials writer. No
   // prompting, no yml mutation. A repo with no token aborts the apply.
+  // A missing token is NOT fatal: we can't tell a public repo (needs no
+  // token) from a private one without a network probe, so we let the
+  // in-container clone be the arbiter — public clones, private fails with
+  // git's own error. Repos left without a token are surfaced in a
+  // prominent warning at the END of apply (below), where it's actually
+  // seen, naming the consequences and how to set a token.
   const catalog = await loadComponentCatalog();
   const repoTokens = resolveRepoTokens(parsed.config, catalog, envVars);
-  if (repoTokens.missing.length > 0) {
-    throw new Error(formatMissingTokensError(repoTokens.missing, opts.name));
-  }
   for (const use of repoTokens.used) {
     logger.info(`Repo token: ${formatTokenUse(use)}`);
   }
@@ -445,17 +447,14 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   }
   if (hostsToFetch.length > 0) {
     // Write the resolved per-host tokens (ADR 0031) into the credentials
-    // file the in-container clone/push reads. Tokens were resolved above;
-    // a missing one already aborted the apply, so every host here has one.
-    const credResult = await collectGitCredentials(targetDir, hostsToFetch, {
-      ...(repoTokens.hostTokens.size > 0
-        ? { patByHost: repoTokens.hostTokens }
-        : {}),
-      logger: idLogger,
-    });
-    const missing = credResult.perHost.filter((p) => p.status !== 'ok');
-    if (missing.length > 0) {
-      throw new Error(formatMissingCredentialsError(missing));
+    // file the in-container clone/push reads. Hosts without a token get no
+    // line — not fatal (public repos clone read-only); the end-of-apply
+    // warning covers the consequences.
+    if (repoTokens.hostTokens.size > 0) {
+      await collectGitCredentials(targetDir, hostsToFetch, {
+        patByHost: repoTokens.hostTokens,
+        logger: idLogger,
+      });
     }
   }
 
@@ -854,6 +853,17 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       if (nudge) {
         progressOut.write(`\n  ${dim(nudge)}\n`);
       }
+    }
+
+    // Repos left without a token (ADR 0031): a prominent, consequence-
+    // spelling warning at the very end where it's actually seen — on both
+    // the success path (before Next steps) and the failure path (after the
+    // error tail, since a private-repo clone that failed for lack of a
+    // token is exactly when this matters most).
+    if (repoTokens.missing.length > 0) {
+      const warning = formatUnauthenticatedRepos(repoTokens.missing, opts.name);
+      progressOut.write(`\n${warning}\n`);
+      applyLog.stream.write(`\n${stripAnsi(warning)}\n`);
     }
 
     // Close the log before announcing its path — guarantees the file

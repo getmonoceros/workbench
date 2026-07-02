@@ -205,64 +205,6 @@ describe('collectGitCredentials', () => {
   });
 });
 
-describe('formatMissingCredentialsError', () => {
-  it('tells the builder to set a token, pointing at the docs (GitHub)', async () => {
-    const { formatMissingCredentialsError } =
-      await import('../src/devcontainer/credentials.js');
-    const msg = formatMissingCredentialsError([
-      {
-        host: 'github.com',
-        provider: 'github',
-        status: 'no-token',
-        detail: '',
-      },
-    ]);
-    expect(msg).toContain('GitHub');
-    expect(msg).toContain('github.com');
-    expect(msg).toContain('personal access token');
-    expect(msg).toContain('getmonoceros.build/docs/concepts/git-and-repos');
-    // No host-tooling instructions anymore.
-    expect(msg).not.toContain('gh auth login');
-  });
-
-  it('tells the builder to set a token for a Bitbucket host with none', async () => {
-    const { formatMissingCredentialsError } =
-      await import('../src/devcontainer/credentials.js');
-    const msg = formatMissingCredentialsError([
-      {
-        host: 'bitbucket.org',
-        provider: 'bitbucket',
-        status: 'no-token',
-        detail: '',
-      },
-    ]);
-    expect(msg).toContain('Bitbucket');
-    expect(msg).toContain('bitbucket.org');
-    expect(msg).toContain('GIT_TOKEN__BITBUCKET_<WORKSPACE>');
-  });
-
-  it('lists multiple failing hosts, one line each', async () => {
-    const { formatMissingCredentialsError } =
-      await import('../src/devcontainer/credentials.js');
-    const msg = formatMissingCredentialsError([
-      {
-        host: 'github.com',
-        provider: 'github',
-        status: 'no-token',
-        detail: '',
-      },
-      {
-        host: 'gitlab.acme.example.com',
-        provider: 'gitlab',
-        status: 'no-token',
-        detail: '',
-      },
-    ]);
-    expect(msg).toContain('github.com');
-    expect(msg).toContain('gitlab.acme.example.com');
-  });
-});
-
 describe('formatUnknownProviderError', () => {
   it('lists the host and tells the builder to set provider:', async () => {
     const { formatUnknownProviderError } =
