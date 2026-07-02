@@ -116,7 +116,7 @@ describe('validateConfig', () => {
     expect(cfg.repos[0]!.git?.user?.email).toBe('tk@conciso.de');
   });
 
-  it.each(['github', 'gitlab', 'bitbucket', 'gitea'])(
+  it.each(['github', 'gitlab', 'bitbucket'])(
     'accepts provider=%s on a repo entry',
     (provider) => {
       const cfg = validateConfig({
@@ -127,6 +127,18 @@ describe('validateConfig', () => {
       expect(cfg.repos[0]!.provider).toBe(provider);
     },
   );
+
+  it('rejects provider=gitea (Gitea is not a supported provider)', () => {
+    expect(() =>
+      validateConfig({
+        schemaVersion: 1,
+        name: 'demo',
+        repos: [
+          { url: 'https://git.firma.de/team/app.git', provider: 'gitea' },
+        ],
+      }),
+    ).toThrow();
+  });
 
   it('rejects an invalid provider value', () => {
     expect(() =>

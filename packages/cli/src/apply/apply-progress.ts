@@ -31,7 +31,11 @@ const TAIL_LINES = 15;
  * stripping, so any colour/style codes in upstream output do not
  * interfere with detection.
  */
-const PHASE_TRIGGERS: ReadonlyArray<{ pattern: RegExp; label: string }> = [
+const PHASE_TRIGGERS: ReadonlyArray<{
+  pattern: RegExp;
+  /** A fixed label, or one derived from the matched line's capture groups. */
+  label: string | ((m: RegExpMatchArray) => string);
+}> = [
   // Feature/layer build — distinct phase, often the longest single
   // step. Image mode runs `docker build`; compose mode runs
   // `docker compose … build <services>`. We match the build *subcommand*
@@ -47,6 +51,15 @@ const PHASE_TRIGGERS: ReadonlyArray<{ pattern: RegExp; label: string }> = [
   {
     pattern: /Start: Run: docker (?:run\b|compose\b.* up\b)/i,
     label: 'starting container…',
+  },
+  // post-create.sh sub-steps. Repo clones are the long, network-bound
+  // part; surface which repo is being cloned instead of an opaque
+  // "running postCreate…". The marker is the `→ Cloning <path> from …`
+  // line post-create.sh echoes (see create/scaffold.ts). A devcontainer
+  // timestamp prefix is fine — the pattern is unanchored.
+  {
+    pattern: /→ Cloning (\S+) from /,
+    label: (m) => `cloning ${m[1]}…`,
   },
   { pattern: /Running the postCreateCommand/i, label: 'running postCreate…' },
 ];
@@ -165,8 +178,11 @@ export function createApplyProgress(opts: ApplyProgressOptions): ApplyProgress {
         tail.push(line);
         if (tail.length > TAIL_LINES) tail.shift();
         for (const trig of PHASE_TRIGGERS) {
-          if (trig.pattern.test(line)) {
-            setPhase(trig.label);
+          const m = line.match(trig.pattern);
+          if (m) {
+            setPhase(
+              typeof trig.label === 'function' ? trig.label(m) : trig.label,
+            );
             break;
           }
         }

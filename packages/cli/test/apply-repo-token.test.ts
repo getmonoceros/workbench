@@ -2,12 +2,13 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runAddRepo } from '../src/modify/index.js';
 import {
   resolveRepoTokens,
-  type ResolveRepoTokensDeps,
-  type TokenPrompt,
+  resolveContainerRepoTokens,
+  formatMissingTokensError,
+  formatTokenUse,
 } from '../src/apply/repo-token.js';
 import { loadComponentCatalog } from '../src/init/components.js';
 import { parseConfig } from '../src/config/index.js';
@@ -23,7 +24,7 @@ const baseOpts = {
   containerLookupDocker: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
 };
 
-describe('resolveRepoTokens (apply-time repo token binding, ADR 0031)', () => {
+describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
   let home: string;
   let catalog: Awaited<ReturnType<typeof loadComponentCatalog>>;
 
@@ -50,121 +51,101 @@ describe('resolveRepoTokens (apply-time repo token binding, ADR 0031)', () => {
     return parseConfig(await readFile(ymlPath(name), 'utf8')).config;
   }
 
-  function deps(
-    extra: Partial<ResolveRepoTokensDeps> & {
-      envVars: Record<string, string>;
-    },
-    name = 'demo',
-  ): ResolveRepoTokensDeps {
-    return {
-      ymlPath: ymlPath(name),
-      home,
-      catalog,
-      logger: silentLogger,
-      ...extra,
-    };
-  }
+  const githubCliRef = (): string =>
+    catalog.get('github')!.file.contributes.features![0]!.ref;
 
-  it('binds the chosen GIT_TOKEN__ var when the feature token is empty', async () => {
-    await seedRepo('demo', 'https://github.com/foo/bar.git');
+  it('layer 1: <PROVIDER>_API_TOKEN wins and is injected into the feature', async () => {
+    await seedRepo('demo', 'https://github.com/conciso/app.git');
     const config = await configOf('demo');
-    const prompt = vi.fn<TokenPrompt>(async () => 'GIT_TOKEN__GITHUB_CONCISO');
-
-    const features = await resolveRepoTokens(
-      config,
-      deps({
-        envVars: {
-          GIT_TOKEN__GITHUB_CONCISO: 'ghp_x',
-          GIT_TOKEN__GITHUB_PICTOR: 'ghp_y',
-        },
-        prompt,
-      }),
-    );
-
-    // Both matching vars offered, sorted.
-    expect(prompt).toHaveBeenCalledOnce();
-    expect(prompt.mock.calls[0]![0].candidates).toEqual([
-      'GIT_TOKEN__GITHUB_CONCISO',
-      'GIT_TOKEN__GITHUB_PICTOR',
+    const r = resolveRepoTokens(config, catalog, {
+      GITHUB_API_TOKEN: 'ghp_1',
+      GIT_TOKEN__GITHUB_CONCISO: 'ghp_2',
+    });
+    expect(r.hostTokens.get('github.com')).toBe('ghp_1');
+    expect(r.used).toEqual([
+      { host: 'github.com', provider: 'github', varName: 'GITHUB_API_TOKEN' },
     ]);
-    // yml rewritten in place with the concrete var.
-    const yml = await readFile(ymlPath('demo'), 'utf8');
-    expect(yml).toContain('apiToken: ${GIT_TOKEN__GITHUB_CONCISO}');
-    // Returned features reflect the binding for the apply pass.
-    const feature = features.find((f) => f.ref.includes('github-cli'));
-    expect(feature?.options?.apiToken).toBe('${GIT_TOKEN__GITHUB_CONCISO}');
-  });
-
-  it('skips (no prompt) when the feature token already resolves non-empty', async () => {
-    await seedRepo('demo', 'https://github.com/foo/bar.git');
-    const config = await configOf('demo');
-    const prompt = vi.fn<TokenPrompt>();
-
-    await resolveRepoTokens(
-      config,
-      deps({ envVars: { GITHUB_CLI_API_TOKEN: 'ghp_filled' }, prompt }),
+    expect(formatTokenUse(r.used[0]!)).toBe(
+      'GitHub (github.com) → GITHUB_API_TOKEN',
     );
-
-    expect(prompt).not.toHaveBeenCalled();
-    const yml = await readFile(ymlPath('demo'), 'utf8');
-    expect(yml).toContain('apiToken: ${GITHUB_CLI_API_TOKEN}');
+    // Injected into the CLI feature so the container gh gets GH_TOKEN.
+    const feat = r.features.find((f) => f.ref === githubCliRef());
+    expect(feat?.options?.apiToken).toBe('ghp_1');
+    expect(r.missing).toEqual([]);
   });
 
-  it('aborts when the builder cancels the pick', async () => {
-    await seedRepo('demo', 'https://github.com/foo/bar.git');
+  it('layer 2: GIT_TOKEN__<PROVIDER>_<SEGMENT> keyed by first path segment', async () => {
+    await seedRepo('demo', 'https://github.com/conciso/app.git');
+    const config = await configOf('demo');
+    const r = resolveRepoTokens(config, catalog, {
+      GIT_TOKEN__GITHUB_CONCISO: 'ghp_2',
+    });
+    expect(r.hostTokens.get('github.com')).toBe('ghp_2');
+    expect(r.used[0]!.varName).toBe('GIT_TOKEN__GITHUB_CONCISO');
+  });
+
+  it('layer 3: GIT_TOKEN__<PROVIDER> provider-wide fallback', async () => {
+    await seedRepo('demo', 'https://github.com/conciso/app.git');
+    const config = await configOf('demo');
+    const r = resolveRepoTokens(config, catalog, {
+      GIT_TOKEN__GITHUB: 'ghp_3',
+    });
+    expect(r.used[0]!.varName).toBe('GIT_TOKEN__GITHUB');
+  });
+
+  it('reports missing with the tried vars when no token is set', async () => {
+    await seedRepo('demo', 'https://github.com/conciso/app.git');
+    const config = await configOf('demo');
+    const r = resolveRepoTokens(config, catalog, {});
+    expect(r.hostTokens.size).toBe(0);
+    expect(r.missing[0]!.tried).toEqual([
+      'GITHUB_API_TOKEN',
+      'GIT_TOKEN__GITHUB_CONCISO',
+      'GIT_TOKEN__GITHUB',
+    ]);
+    const msg = formatMissingTokensError(r.missing, 'demo');
+    expect(msg).toContain('GITHUB_API_TOKEN');
+    expect(msg).toContain('container-configs/demo.env');
+    expect(msg).toContain('GIT_TOKEN__GITHUB_CONCISO');
+    expect(msg).toContain('monoceros-config.env');
+  });
+
+  it('bitbucket uses the same cascade (BITBUCKET_API_TOKEN then workspace)', async () => {
+    await seedRepo('demo', 'https://bitbucket.org/conciso/app.git');
     const config = await configOf('demo');
 
-    await expect(
-      resolveRepoTokens(
-        config,
-        deps({
-          envVars: { GIT_TOKEN__GITHUB_CONCISO: 'ghp_x' },
-          prompt: async () => null,
-        }),
-      ),
-    ).rejects.toThrow(/aborted/i);
-    // yml untouched on abort.
-    const yml = await readFile(ymlPath('demo'), 'utf8');
-    expect(yml).toContain('apiToken: ${GITHUB_CLI_API_TOKEN}');
+    // Layer 2: workspace-keyed.
+    const byWorkspace = resolveRepoTokens(config, catalog, {
+      GIT_TOKEN__BITBUCKET_CONCISO: 'atatt',
+    });
+    expect(byWorkspace.hostTokens.get('bitbucket.org')).toBe('atatt');
+    expect(byWorkspace.used[0]!.varName).toBe('GIT_TOKEN__BITBUCKET_CONCISO');
+
+    // Layer 1: BITBUCKET_API_TOKEN — same per-container override the other
+    // providers have, so all three read the same way.
+    const byApiToken = resolveRepoTokens(config, catalog, {
+      BITBUCKET_API_TOKEN: 'atatt_1',
+      GIT_TOKEN__BITBUCKET_CONCISO: 'atatt_2',
+    });
+    expect(byApiToken.used[0]!.varName).toBe('BITBUCKET_API_TOKEN');
   });
 
-  it('aborts with an actionable hint when no GIT_TOKEN__ candidate exists', async () => {
-    await seedRepo('demo', 'https://github.com/foo/bar.git');
-    const config = await configOf('demo');
-    const prompt = vi.fn<TokenPrompt>();
-
-    await expect(
-      resolveRepoTokens(config, deps({ envVars: {}, prompt })),
-    ).rejects.toThrow(/GIT_TOKEN__GITHUB_/);
-    expect(prompt).not.toHaveBeenCalled();
-  });
-
-  it('binds gitlab tokens for a gitlab repo', async () => {
-    await seedRepo('gl', 'https://gitlab.com/foo/bar.git');
-    const config = await configOf('gl');
-    const prompt = vi.fn<TokenPrompt>(async () => 'GIT_TOKEN__GITLAB_WORK');
-
-    await resolveRepoTokens(
-      config,
-      deps({ envVars: { GIT_TOKEN__GITLAB_WORK: 'glpat_x' }, prompt }, 'gl'),
-    );
-
-    expect(prompt).toHaveBeenCalledOnce();
-    const yml = await readFile(ymlPath('gl'), 'utf8');
-    expect(yml).toContain('apiToken: ${GIT_TOKEN__GITLAB_WORK}');
-  });
-
-  it('is a no-op when there are no repos', async () => {
+  it('is empty when there are no repos', async () => {
     await writeFile(ymlPath('demo'), 'schemaVersion: 1\nname: demo\n');
     const config = await configOf('demo');
-    const prompt = vi.fn<TokenPrompt>();
+    const r = resolveRepoTokens(config, catalog, {});
+    expect(r.hostTokens.size).toBe(0);
+    expect(r.missing).toEqual([]);
+    expect(r.features).toEqual(config.features);
+  });
 
-    const features = await resolveRepoTokens(
-      config,
-      deps({ envVars: {}, prompt }),
+  it('resolveContainerRepoTokens reads yml + env by container name', async () => {
+    await seedRepo('demo', 'https://github.com/conciso/app.git');
+    await writeFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      'GITHUB_API_TOKEN=ghp_env\n',
     );
-
-    expect(prompt).not.toHaveBeenCalled();
-    expect(features).toEqual(config.features);
+    const r = await resolveContainerRepoTokens('demo', home, catalog);
+    expect(r.hostTokens.get('github.com')).toBe('ghp_env');
   });
 });

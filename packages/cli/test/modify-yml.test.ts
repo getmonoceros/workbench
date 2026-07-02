@@ -925,18 +925,17 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toContain('path: apps/bar-feature');
   });
 
-  it('runAddRepo persists provider=gitea for a Gitea host', async () => {
+  it('runAddRepo rejects provider=gitea (Gitea is not a supported provider)', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
-    await runAddRepo({
-      ...baseOpts,
-      name: 'demo',
-      url: 'https://gitea.deine-firma.de/team/app.git',
-      provider: 'gitea',
-      monocerosHome: home,
-    });
-    const yml = await ymlOf('demo');
-    expect(yml).toContain('- url: https://gitea.deine-firma.de/team/app.git');
-    expect(yml).toContain('provider: gitea');
+    await expect(
+      runAddRepo({
+        ...baseOpts,
+        name: 'demo',
+        url: 'https://gitea.deine-firma.de/team/app.git',
+        provider: 'gitea',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/provider/i);
   });
 
   it('runAddRepo persists provider field for self-hosted GitLab', async () => {
@@ -1056,6 +1055,12 @@ describe('add-*/remove-* against the yml', () => {
 
   it('runAddRepo on-the-fly: clones inside the container when one is running', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    // A configured token for the provider (ADR 0031) — the on-the-fly
+    // clone authenticates with it, no host git tooling.
+    await writeFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      'GITHUB_API_TOKEN=tok\n',
+    );
     let execCommand: string | undefined;
     await runAddRepo({
       ...baseOpts,
@@ -1067,13 +1072,6 @@ describe('add-*/remove-* against the yml', () => {
         stderr: '',
         exitCode: 0,
       }),
-      credentialsSpawn: async (input: string) => {
-        const host = /host=([^\n]+)/.exec(input)?.[1] ?? 'unknown';
-        return {
-          stdout: `protocol=https\nhost=${host}\nusername=ci\npassword=tok\n`,
-          exitCode: 0,
-        };
-      },
       containerExec: async (containerId, argv) => {
         // Capture the bash -c script body so we can assert what the
         // clone command looks like (paths, quoting, idempotency
@@ -1099,6 +1097,10 @@ describe('add-*/remove-* against the yml', () => {
 
   it('runAddRepo on-the-fly: applies per-repo git.user via `git config` after clone', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await writeFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      'GITHUB_API_TOKEN=tok\n',
+    );
     let execCommand: string | undefined;
     await runAddRepo({
       ...baseOpts,
@@ -1110,10 +1112,6 @@ describe('add-*/remove-* against the yml', () => {
       containerLookupDocker: async () => ({
         stdout: 'deadbeef0002\n',
         stderr: '',
-        exitCode: 0,
-      }),
-      credentialsSpawn: async () => ({
-        stdout: 'protocol=https\nhost=github.com\nusername=ci\npassword=tok\n',
         exitCode: 0,
       }),
       containerExec: async (_id, argv) => {
@@ -1129,8 +1127,9 @@ describe('add-*/remove-* against the yml', () => {
     );
   });
 
-  it('runAddRepo on-the-fly: skips clone but keeps yml when credentials are unavailable', async () => {
+  it('runAddRepo on-the-fly: skips clone but keeps yml when no token is set', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    // No <name>.env → the provider token resolves empty → no clone.
     let execCalls = 0;
     const warns: string[] = [];
     await runAddRepo({
@@ -1148,8 +1147,8 @@ describe('add-*/remove-* against the yml', () => {
         stderr: '',
         exitCode: 0,
       }),
-      // host git credential helper returns no matching entry → exit 1
-      credentialsSpawn: async () => ({ stdout: '', exitCode: 1 }),
+      // No <name>.env and no global token → the token resolves to
+      // nothing, so the clone is skipped with a warn; the yml stays.
       containerExec: async () => {
         execCalls++;
         return { exitCode: 0 };
@@ -1159,7 +1158,7 @@ describe('add-*/remove-* against the yml', () => {
     const yml = await ymlOf('demo');
     expect(yml).toContain('- url: https://github.com/foo/bar.git');
     expect(execCalls).toBe(0);
-    expect(warns.some((m) => /credentials/i.test(m))).toBe(true);
+    expect(warns.some((m) => /token/i.test(m))).toBe(true);
   });
 
   it('aborts cleanly when the user declines the prompt', async () => {

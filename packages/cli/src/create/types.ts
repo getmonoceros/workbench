@@ -37,7 +37,7 @@ export interface RepoEntry {
    * pre-flight rejects the apply with a clear error otherwise. For
    * canonical hosts this is auto-resolved and the field stays empty.
    */
-  provider?: 'github' | 'gitlab' | 'bitbucket' | 'gitea';
+  provider?: 'github' | 'gitlab' | 'bitbucket';
 }
 
 /** Git committer identity used at the container or per-repo level. */

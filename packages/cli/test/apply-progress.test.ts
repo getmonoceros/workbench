@@ -135,6 +135,20 @@ describe('createApplyProgress stream sink (phase detection + tail)', () => {
     expect(written()).toBe('> running postCreate…\n');
   });
 
+  it('surfaces the repo name while post-create.sh is cloning', () => {
+    const { stream, written } = makeFakeOut({ isTTY: false });
+    const progress = createApplyProgress({ out: stream, interactive: false });
+    progress.streamSink.write('Running the postCreateCommand ...\n');
+    // The `→ Cloning <path> from <url>…` marker post-create.sh echoes,
+    // with a devcontainer timestamp prefix.
+    progress.streamSink.write(
+      '[t] → Cloning enblit-confluence-addon from https://bitbucket.org/w/r.git…\n',
+    );
+    expect(written()).toBe(
+      '> running postCreate…\n> cloning enblit-confluence-addon…\n',
+    );
+  });
+
   it('handles split chunks across newlines without losing trigger lines', () => {
     const { stream, written } = makeFakeOut({ isTTY: false });
     const progress = createApplyProgress({ out: stream, interactive: false });

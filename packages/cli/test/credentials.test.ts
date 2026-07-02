@@ -9,8 +9,7 @@ import {
   resolveProvider,
 } from '../src/devcontainer/credentials.js';
 
-const { uniqueHttpsHosts, parseCredentialFillOutput, formatCredentialLine } =
-  _internals;
+const { uniqueHttpsHosts, formatCredentialLine } = _internals;
 
 describe('resolveProvider', () => {
   it('maps the canonical hosts to their fixed provider', () => {
@@ -103,27 +102,6 @@ describe('uniqueHttpsHosts', () => {
   });
 });
 
-describe('parseCredentialFillOutput', () => {
-  it('parses canonical git credential output', () => {
-    const out = [
-      'protocol=https',
-      'host=github.com',
-      'username=foo',
-      'password=ghp_xxxxxxxxxxxxxxxx',
-      '',
-    ].join('\n');
-    expect(parseCredentialFillOutput(out)).toEqual({
-      username: 'foo',
-      password: 'ghp_xxxxxxxxxxxxxxxx',
-    });
-  });
-
-  it('returns missing fields as undefined', () => {
-    const out = 'protocol=https\nhost=github.com\n';
-    expect(parseCredentialFillOutput(out)).toEqual({});
-  });
-});
-
 describe('formatCredentialLine', () => {
   it('emits an URL-shaped line with percent-encoded fields', () => {
     expect(formatCredentialLine('github.com', 'foo', 'ghp_xyz')).toBe(
@@ -151,8 +129,7 @@ describe('collectGitCredentials', () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
 
-  it('writes one line per HTTPS host using the host-side git', async () => {
-    const calls: string[] = [];
+  it('writes one oauth2:<token> line per host from the configured tokens', async () => {
     const result = await collectGitCredentials(
       cwd,
       [
@@ -160,61 +137,58 @@ describe('collectGitCredentials', () => {
         { host: 'gitlab.com', provider: 'gitlab' },
       ],
       {
-        spawn: async (input) => {
-          calls.push(input);
-          // Echo back a fake username/password tied to the host.
-          const host = /host=([^\n]+)/.exec(input)?.[1] ?? 'unknown';
-          return {
-            stdout: `protocol=https\nhost=${host}\nusername=ci\npassword=tok-${host}\n`,
-            exitCode: 0,
-          };
-        },
+        patByHost: new Map([
+          ['github.com', 'ghp_x'],
+          ['gitlab.com', 'glpat_y'],
+        ]),
       },
     );
 
     expect(result.hostsWritten).toBe(2);
     expect(result.hostsSkipped).toBe(0);
     expect(result.perHost.every((p) => p.status === 'ok')).toBe(true);
-    expect(calls).toEqual([
-      'protocol=https\nhost=github.com\n\n',
-      'protocol=https\nhost=gitlab.com\n\n',
-    ]);
 
     const contents = await fs.readFile(
       path.join(cwd, '.monoceros', 'git-credentials'),
       'utf8',
     );
-    expect(contents).toContain('https://ci:tok-github.com@github.com');
-    expect(contents).toContain('https://ci:tok-gitlab.com@gitlab.com');
+    expect(contents).toContain('https://oauth2:ghp_x@github.com');
+    expect(contents).toContain('https://oauth2:glpat_y@gitlab.com');
   });
 
-  it('records no-credentials status when host-git returns no username/password', async () => {
-    const result = await collectGitCredentials(
+  it('writes the Bitbucket static username for a bitbucket token', async () => {
+    await collectGitCredentials(
       cwd,
-      [{ host: 'github.com', provider: 'github' }],
-      {
-        spawn: async () => ({
-          stdout: 'protocol=https\nhost=github.com\n',
-          exitCode: 0,
-        }),
-      },
+      [{ host: 'bitbucket.org', provider: 'bitbucket' }],
+      { patByHost: new Map([['bitbucket.org', 'atatt_x']]) },
     );
-    expect(result.hostsWritten).toBe(0);
-    expect(result.hostsSkipped).toBe(1);
-    expect(result.perHost[0]!.status).toBe('no-credentials');
+    const contents = await fs.readFile(
+      path.join(cwd, '.monoceros', 'git-credentials'),
+      'utf8',
+    );
+    expect(contents).toContain(
+      'https://x-bitbucket-api-token-auth:atatt_x@bitbucket.org',
+    );
   });
 
-  it('records non-zero-exit status when host-git exits non-zero', async () => {
+  it('reports no-token for a host without a configured token', async () => {
     const result = await collectGitCredentials(
       cwd,
-      [{ host: 'github.com', provider: 'github' }],
-      {
-        spawn: async () => ({ stdout: '', exitCode: 1 }),
-      },
+      [
+        { host: 'github.com', provider: 'github' },
+        { host: 'gitlab.com', provider: 'gitlab' },
+      ],
+      { patByHost: new Map([['github.com', 'ghp_x']]) },
     );
-    expect(result.hostsWritten).toBe(0);
+
+    expect(result.hostsWritten).toBe(1);
     expect(result.hostsSkipped).toBe(1);
-    expect(result.perHost[0]!.status).toBe('non-zero-exit');
+    expect(result.perHost.find((p) => p.host === 'github.com')!.status).toBe(
+      'ok',
+    );
+    expect(result.perHost.find((p) => p.host === 'gitlab.com')!.status).toBe(
+      'no-token',
+    );
   });
 
   it('writes the file with 0o600 permissions', async () => {
@@ -222,11 +196,7 @@ describe('collectGitCredentials', () => {
       cwd,
       [{ host: 'github.com', provider: 'github' }],
       {
-        spawn: async () => ({
-          stdout:
-            'protocol=https\nhost=github.com\nusername=ci\npassword=tok\n',
-          exitCode: 0,
-        }),
+        patByHost: new Map([['github.com', 'ghp_x']]),
       },
     );
     const stat = await fs.stat(path.join(cwd, '.monoceros', 'git-credentials'));
@@ -236,173 +206,60 @@ describe('collectGitCredentials', () => {
 });
 
 describe('formatMissingCredentialsError', () => {
-  it('lists GitHub-specific gh setup when github.com is missing', async () => {
+  it('tells the builder to set a token, pointing at the docs (GitHub)', async () => {
     const { formatMissingCredentialsError } =
       await import('../src/devcontainer/credentials.js');
     const msg = formatMissingCredentialsError([
       {
         host: 'github.com',
         provider: 'github',
-        status: 'no-credentials',
+        status: 'no-token',
         detail: '',
       },
     ]);
+    expect(msg).toContain('GitHub');
     expect(msg).toContain('github.com');
-    expect(msg).toContain('gh auth login');
-    expect(msg).toContain('gh auth setup-git');
+    expect(msg).toContain('personal access token');
+    expect(msg).toContain('getmonoceros.build/docs/concepts/git-and-repos');
+    // No host-tooling instructions anymore.
+    expect(msg).not.toContain('gh auth login');
   });
 
-  it('passes --hostname to gh auth login + setup-git for self-hosted GitHub Enterprise', async () => {
-    // Self-hosted GitHub Enterprise Server needs --hostname on both
-    // gh subcommands. For github.com SaaS the flag is omitted (gh
-    // defaults to that host).
-    const { formatMissingCredentialsError } =
-      await import('../src/devcontainer/credentials.js');
-    const msg = formatMissingCredentialsError([
-      {
-        host: 'github.deine-firma.de',
-        provider: 'github',
-        status: 'no-credentials',
-        detail: '',
-      },
-    ]);
-    expect(msg).toContain('github.deine-firma.de');
-    expect(msg).toContain('gh auth login --hostname github.deine-firma.de');
-    expect(msg).toContain('gh auth setup-git --hostname github.deine-firma.de');
-  });
-
-  it('omits --hostname for github.com (SaaS default)', async () => {
-    const { formatMissingCredentialsError } =
-      await import('../src/devcontainer/credentials.js');
-    const msg = formatMissingCredentialsError([
-      {
-        host: 'github.com',
-        provider: 'github',
-        status: 'no-credentials',
-        detail: '',
-      },
-    ]);
-    expect(msg).not.toContain('--hostname');
-  });
-
-  it('lists glab CLI setup when gitlab.com is missing', async () => {
-    const { formatMissingCredentialsError } =
-      await import('../src/devcontainer/credentials.js');
-    const msg = formatMissingCredentialsError([
-      {
-        host: 'gitlab.com',
-        provider: 'gitlab',
-        status: 'no-credentials',
-        detail: '',
-      },
-    ]);
-    expect(msg).toContain('gitlab.com');
-    expect(msg).toContain('glab auth login');
-    // For gitlab.com itself, no --hostname flag should appear.
-    expect(msg).not.toContain('--hostname gitlab.com');
-  });
-
-  it('passes --hostname to glab auth login for self-hosted GitLab', async () => {
-    // Self-hosted host requires an explicit provider in the yml; the
-    // pre-flight resolver passes that through and we render the right
-    // --hostname flag.
-    const { formatMissingCredentialsError } =
-      await import('../src/devcontainer/credentials.js');
-    const msg = formatMissingCredentialsError([
-      {
-        host: 'git.firma.de',
-        provider: 'gitlab',
-        status: 'no-credentials',
-        detail: '',
-      },
-    ]);
-    expect(msg).toContain('git.firma.de');
-    expect(msg).toContain('glab auth login --hostname git.firma.de');
-  });
-
-  it('renders the Bitbucket Cloud Atlassian-token flow for bitbucket.org', async () => {
+  it('tells the builder to set a token for a Bitbucket host with none', async () => {
     const { formatMissingCredentialsError } =
       await import('../src/devcontainer/credentials.js');
     const msg = formatMissingCredentialsError([
       {
         host: 'bitbucket.org',
         provider: 'bitbucket',
-        status: 'no-credentials',
+        status: 'no-token',
         detail: '',
       },
     ]);
+    expect(msg).toContain('Bitbucket');
     expect(msg).toContain('bitbucket.org');
-    expect(msg).toContain('Bitbucket Cloud');
-    expect(msg).toContain('id.atlassian.com');
-    expect(msg).toContain('git credential approve');
+    expect(msg).toContain('GIT_TOKEN__BITBUCKET_<WORKSPACE>');
   });
 
-  it('renders a Gitea token-via-UI flow (always self-hosted, no canonical SaaS branch)', async () => {
-    // Gitea has no first-party credential-helper integration (`tea`
-    // doesn't auto-wire to git credential), so the hint guides the
-    // builder to the UI token flow + a direct `git credential
-    // approve` call. Forgejo (Gitea fork) shares this flow.
-    const { formatMissingCredentialsError } =
-      await import('../src/devcontainer/credentials.js');
-    const msg = formatMissingCredentialsError([
-      {
-        host: 'gitea.deine-firma.de',
-        provider: 'gitea',
-        status: 'no-credentials',
-        detail: '',
-      },
-    ]);
-    expect(msg).toContain('gitea.deine-firma.de');
-    expect(msg).toContain('Gitea');
-    expect(msg).toContain('Generate New Token');
-    expect(msg).toContain('read:repository');
-    expect(msg).toContain('git credential approve');
-    expect(msg).toContain('<your-gitea-username>');
-  });
-
-  it('renders the Bitbucket Data Center HTTP-access-token flow for self-hosted hosts', async () => {
-    // Same provider value (`bitbucket`) — host-dependent branch
-    // mirrors how github / gitlab handle SaaS vs self-hosted.
-    const { formatMissingCredentialsError } =
-      await import('../src/devcontainer/credentials.js');
-    const msg = formatMissingCredentialsError([
-      {
-        host: 'bitbucket.deine-firma.de',
-        provider: 'bitbucket',
-        status: 'no-credentials',
-        detail: '',
-      },
-    ]);
-    expect(msg).toContain('bitbucket.deine-firma.de');
-    expect(msg).toContain('Bitbucket Data Center');
-    expect(msg).toContain('HTTP access tokens');
-    // Cloud-specific Atlassian SaaS link must NOT appear on Data Center.
-    expect(msg).not.toContain('id.atlassian.com');
-    // Username placeholder differs: local Bitbucket username, not email.
-    expect(msg).toContain('<your-bitbucket-username>');
-  });
-
-  it('lists multiple failing hosts with per-host hints', async () => {
+  it('lists multiple failing hosts, one line each', async () => {
     const { formatMissingCredentialsError } =
       await import('../src/devcontainer/credentials.js');
     const msg = formatMissingCredentialsError([
       {
         host: 'github.com',
         provider: 'github',
-        status: 'no-credentials',
+        status: 'no-token',
         detail: '',
       },
       {
         host: 'gitlab.acme.example.com',
         provider: 'gitlab',
-        status: 'no-credentials',
+        status: 'no-token',
         detail: '',
       },
     ]);
     expect(msg).toContain('github.com');
     expect(msg).toContain('gitlab.acme.example.com');
-    expect(msg).toContain('gh auth login');
-    expect(msg).toContain('glab auth login --hostname gitlab.acme.example.com');
   });
 });
 

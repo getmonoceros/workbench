@@ -1,90 +1,21 @@
-import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { RepoEntry } from '../create/types.js';
-import { KNOWN_PROVIDER_HOSTS, type RepoProvider } from '../config/schema.js';
-import { cyan, dim } from '../util/format.js';
+import {
+  GIT_CREDENTIAL_USERNAME,
+  KNOWN_PROVIDER_HOSTS,
+  PROVIDER_LABEL,
+  REPO_DOCS_URL,
+  type RepoProvider,
+} from '../config/schema.js';
+import { cyan } from '../util/format.js';
 
-/**
- * Spawn signature for `git credential fill`: takes the credential-
- * protocol input on stdin, returns the helper's response on stdout
- * plus the process exit code. Injected by tests.
- */
-export type CredentialsSpawn = (
-  input: string,
-) => Promise<{ stdout: string; exitCode: number }>;
-
-const realGitCredentialFill: CredentialsSpawn = (input) => {
-  return new Promise((resolve, reject) => {
-    // GIT_TERMINAL_PROMPT=0 disables git's interactive
-    // username/password fallback. Without this, when no credential
-    // helper has an entry for the host, `git credential fill` would
-    // open /dev/tty and prompt the user — which hangs apply
-    // indefinitely because the parent process is running non-
-    // interactively. With the env var set, git returns whatever
-    // the helpers produced (possibly empty) and exits cleanly,
-    // letting our pre-flight detect "no credentials" reliably.
-    //
-    // We deliberately do NOT also set GIT_ASKPASS='' / SSH_ASKPASS=''.
-    // Empty string is interpreted differently across git versions, and
-    // — concretely observed on Windows + Git Credential Manager — it
-    // tickles a path where GCM's `store` silently no-ops after a
-    // successful OAuth flow. The credential helper IS the right tool
-    // for non-interactive credential resolution; the terminal-prompt
-    // gate above already takes care of the hang scenario this was
-    // meant to guard against.
-    const child = spawn('git', ['credential', 'fill'], {
-      stdio: ['pipe', 'pipe', 'inherit'],
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: '0',
-      },
-    });
-    let stdout = '';
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.on('error', reject);
-    child.on('exit', (code) => resolve({ stdout, exitCode: code ?? 0 }));
-    child.stdin.write(input);
-    child.stdin.end();
-  });
-};
-
-/**
- * Tell git's configured credential helpers to persist a credential.
- *
- * Why this exists: `git credential fill` returns credentials but never
- * tells the helper to save them — that step normally happens AFTER git
- * has used the credential successfully against a remote, when git
- * itself calls `git credential approve`. Our pre-flight uses `fill`
- * for a lookup-only check, so the helper's `store` is never reached
- * by the natural git flow, and the OAuth-acquired token GCM returned
- * gets thrown away. Next apply: browser dialog again.
- *
- * Calling `approve` explicitly after a successful `fill` closes the
- * loop: GCM (and gh's helper, and the Atlassian one) write the
- * credential to their persistent store on this call, so subsequent
- * applies (and the in-container clone) find it cached. Idempotent —
- * approve on an already-stored credential is a no-op.
- */
-export type CredentialsApprove = (input: string) => Promise<void>;
-
-const realGitCredentialApprove: CredentialsApprove = (input) => {
-  return new Promise((resolve, reject) => {
-    const child = spawn('git', ['credential', 'approve'], {
-      stdio: ['pipe', 'ignore', 'inherit'],
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: '0',
-      },
-    });
-    child.on('error', reject);
-    child.on('exit', () => resolve()); // best-effort, non-zero is non-fatal
-    child.stdin.write(input);
-    child.stdin.end();
-  });
-};
+// Repo authentication is PAT-only (ADR 0031): the token configured for a
+// provider is written into `.monoceros/git-credentials`, which the
+// in-container `git clone`/push reads via its `store` credential helper.
+// The host's own git credential helper (keychain / GCM / gh / glab) is
+// deliberately NOT consulted — the host needs no git tooling, and there
+// is a single, explicit source of truth for repo credentials.
 
 /**
  * Resolve a host's provider:
@@ -145,215 +76,6 @@ function uniqueHttpsHosts(repos: readonly RepoEntry[]): HostWithProvider[] {
   return [...byHost.values()];
 }
 
-/**
- * Render a provider-specific install command, filtered to the host
- * OS. Returns the relevant line for the current platform — macOS gets
- * the brew command, Windows gets the winget command, Linux falls back
- * to a docs link unless the provider officially recommends a uniform
- * Linux command (then `linuxBrew` is set and used). Callers embed the
- * resulting single line into a setup-instructions block.
- */
-/**
- * Official Homebrew install one-liner (from https://brew.sh). Shown
- * as the first cyan line in any brew-based provider hint so users
- * who don't have Homebrew yet aren't stuck staring at `brew: command
- * not found`. Users who DO have Homebrew can skip the line — we say
- * so right below in dim text.
- */
-const BREW_INSTALL_COMMAND =
-  '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"';
-
-function installCommandForOS(opts: {
-  brew: string;
-  /**
-   * Linux install command when the provider's docs officially
-   * recommend a single uniform path (e.g. GitLab's glab CLI ships
-   * Homebrew as the supported Linux install method). When omitted,
-   * Linux gets a docs link instead because distro packaging is too
-   * heterogeneous to pick a winner. Windows users hit this branch
-   * too — Monoceros on Windows runs inside WSL, so the host IS Linux.
-   */
-  linuxBrew?: string;
-  linuxDocsUrl: string;
-}): string {
-  const withBrewBootstrap = (cmd: string): string =>
-    [
-      '',
-      cyan(BREW_INSTALL_COMMAND),
-      cyan(cmd),
-      '',
-      dim('(Skip the first line if you already have Homebrew.)'),
-    ].join('\n');
-  if (process.platform === 'darwin') return withBrewBootstrap(opts.brew);
-  // Linux + WSL (Windows runs Monoceros inside WSL as of 1.12).
-  if (opts.linuxBrew) return withBrewBootstrap(opts.linuxBrew);
-  return `See ${opts.linuxDocsUrl} for package instructions.`;
-}
-
-/**
- * Provider-specific setup hint per host. Used in the pre-flight
- * error message when `git credential fill` returns nothing for a
- * host. Shows only the install command for the current host OS —
- * less visual noise, no "is this me?" guesswork for the builder.
- *
- * Provider is resolved upstream (canonical-host lookup or explicit
- * yml field). This function NEVER guesses from hostname patterns;
- * see `resolveProvider` for the rationale.
- */
-export function providerSetupHint(
-  host: string,
-  provider: RepoProvider,
-): {
-  /** Short title for the host, formatted as "host — Provider". */
-  title: string;
-  /** Multiline body, left-aligned, no leading indentation. */
-  body: string;
-} {
-  if (provider === 'github') {
-    // `--hostname` is only needed for self-hosted GitHub Enterprise
-    // Server. For github.com (SaaS) gh defaults to that host, so we
-    // omit the flag. Both `gh auth login` and `gh auth setup-git`
-    // accept --hostname with identical semantics — verified against
-    // https://cli.github.com/manual/gh_auth_login and
-    // https://cli.github.com/manual/gh_auth_setup-git .
-    const isSaas = host.toLowerCase() === 'github.com';
-    const hostArg = isSaas ? '' : ` --hostname ${host}`;
-    // GitHub CLI publishes a Linuxbrew formula alongside the macOS
-    // one (https://github.com/cli/cli/blob/trunk/docs/install_linux.md
-    // lists Homebrew under "Linux & WSL"), so the same brew command
-    // works on macOS, Linux and WSL.
-    const install = installCommandForOS({
-      brew: 'brew install gh',
-      linuxBrew: 'brew install gh',
-      linuxDocsUrl: 'https://github.com/cli/cli#installation',
-    });
-    return {
-      title: `${host} — GitHub`,
-      body: [
-        'Install the GitHub CLI:',
-        install,
-        '',
-        'Then run once:',
-        cyan(`gh auth login${hostArg}`),
-        cyan(`gh auth setup-git${hostArg}`),
-        '',
-        '`gh auth login` walks through OAuth in your browser.',
-        '`gh auth setup-git` wires gh into git as a credential helper.',
-      ].join('\n'),
-    };
-  }
-  if (provider === 'gitlab') {
-    // `--hostname` is only needed for self-hosted GitLab. For
-    // gitlab.com glab defaults to the SaaS host, so we omit the flag.
-    const isSaas = host.toLowerCase() === 'gitlab.com';
-    const hostArg = isSaas ? '' : ` --hostname ${host}`;
-    // GitLab's official install docs (https://gitlab.com/gitlab-org/
-    // cli/-/blob/main/docs/installation_options.md) state that
-    // Homebrew is "the officially supported installation method for
-    // Linux" — same brew command on macOS, Linux and WSL.
-    const install = installCommandForOS({
-      brew: 'brew install glab',
-      linuxBrew: 'brew install glab',
-      linuxDocsUrl: 'https://gitlab.com/gitlab-org/cli#installation',
-    });
-    return {
-      title: `${host} — GitLab`,
-      body: [
-        'Install the GitLab CLI (glab):',
-        install,
-        '',
-        'Then run once:',
-        cyan(`glab auth login${hostArg}`),
-        '',
-        'Choose `HTTPS` when asked for git-protocol, then accept',
-        '"Authenticate Git with your GitLab credentials" — glab',
-        'configures itself as the git credential helper.',
-      ].join('\n'),
-    };
-  }
-  if (provider === 'bitbucket') {
-    // Bitbucket has no first-party CLI for git-credentials (no
-    // `bb auth login` equivalent to gh/glab), so this is a manual
-    // one-time setup either way. The Cloud and Data-Center variants
-    // differ in where you get the token and what the username field
-    // expects — same pattern as the github / gitlab branches above
-    // (canonical SaaS host vs. self-hosted).
-    const isCloud = host.toLowerCase() === 'bitbucket.org';
-    if (isCloud) {
-      return {
-        title: `${host} — Bitbucket Cloud`,
-        body: [
-          'Bitbucket has no first-party CLI for git-credentials, so this',
-          'is a manual one-time setup. Generate an Atlassian API token at',
-          'https://id.atlassian.com/manage-profile/security/api-tokens',
-          '',
-          'Then store it via your OS credential helper:',
-          cyan(
-            `git credential approve <<< $'protocol=https\\nhost=${host}\\nusername=<your-atlassian-email>\\npassword=<token>\\n'`,
-          ),
-        ].join('\n'),
-      };
-    }
-    return {
-      title: `${host} — Bitbucket Data Center`,
-      body: [
-        'Bitbucket has no first-party CLI for git-credentials, so this',
-        'is a manual one-time setup. Generate a personal HTTP access',
-        `token in your Bitbucket UI: profile picture (top right on ${host})`,
-        '→ Manage account → HTTP access tokens → Create token. Give it',
-        'at least repo-read + repo-write scopes for the repos you need.',
-        '',
-        'Then store it via your OS credential helper:',
-        cyan(
-          `git credential approve <<< $'protocol=https\\nhost=${host}\\nusername=<your-bitbucket-username>\\npassword=<token>\\n'`,
-        ),
-      ].join('\n'),
-    };
-  }
-  // provider === 'gitea' — Gitea is always self-hosted (gitea.com is
-  // a demo / sandbox, not a SaaS), so there's no canonical-host
-  // branch. The `tea` CLI exists but logs into its own config and
-  // doesn't register as a git credential helper (verified against
-  // https://gitea.com/gitea/tea), so we point at the UI flow + a
-  // direct `git credential approve` — same pattern as Bitbucket
-  // Data Center. Forgejo (the Gitea fork) shares this flow exactly.
-  return {
-    title: `${host} — Gitea`,
-    body: [
-      'Gitea has no first-party CLI helper for git-credentials (the',
-      '`tea` CLI logs into its own config, not into your git credential',
-      'helper), so this is a manual one-time setup. Generate an access',
-      `token in your Gitea UI: profile picture (top right on ${host}) →`,
-      'Settings → Applications → "Generate New Token". Give it at',
-      'least the `read:repository` scope (add `write:repository` if you',
-      'need push from the container).',
-      '',
-      'Then store it via your OS credential helper:',
-      cyan(
-        `git credential approve <<< $'protocol=https\\nhost=${host}\\nusername=<your-gitea-username>\\npassword=<token>\\n'`,
-      ),
-    ].join('\n'),
-  };
-}
-
-interface ParsedCreds {
-  username?: string;
-  password?: string;
-}
-
-function parseCredentialFillOutput(output: string): ParsedCreds {
-  const result: ParsedCreds = {};
-  for (const line of output.split('\n')) {
-    const eqIdx = line.indexOf('=');
-    if (eqIdx <= 0) continue;
-    const key = line.slice(0, eqIdx);
-    const value = line.slice(eqIdx + 1);
-    if (key === 'username') result.username = value;
-    if (key === 'password') result.password = value;
-  }
-  return result;
-}
-
 function formatCredentialLine(
   host: string,
   username: string,
@@ -367,37 +89,30 @@ function formatCredentialLine(
 }
 
 export interface CollectCredentialsOptions {
-  spawn?: CredentialsSpawn;
   /**
-   * Approve callback — called once per host after a successful
-   * `fill`, with the full credential-protocol payload (incl. password).
-   * Tells the host's credential helper to persist the credential.
-   * Defaults to `git credential approve`. Tests inject a stub that
-   * records calls without spawning git.
+   * Configured personal access tokens per host (ADR 0031). Written with
+   * the provider's git username (`GIT_CREDENTIAL_USERNAME`) and the token
+   * as the password. A host with no entry gets no line and is reported
+   * `no-token` so the caller can fail with an actionable hint.
    */
-  approve?: CredentialsApprove;
+  patByHost?: ReadonlyMap<string, string>;
   logger?: { info: (msg: string) => void; warn: (msg: string) => void };
 }
 
 export interface HostCredentialStatus {
   host: string;
-  /**
-   * Resolved provider for this host — canonical lookup for the three
-   * known hosts, explicit yml hint for anything else. Carried into
-   * the failure message so `formatMissingCredentialsError` can render
-   * the right setup block without re-resolving.
-   */
+  /** Resolved provider for this host (carried into the failure message). */
   provider: RepoProvider;
-  /** 'ok' when username+password came back from `git credential fill`. */
-  status: 'ok' | 'no-credentials' | 'spawn-error' | 'non-zero-exit';
+  /** 'ok' when a configured token was written; 'no-token' otherwise. */
+  status: 'ok' | 'no-token';
   /** Diagnostic text — empty when status is 'ok'. */
   detail: string;
 }
 
 export interface CollectCredentialsResult {
-  /** Hosts for which credentials were successfully written. */
+  /** Hosts for which a token line was written. */
   hostsWritten: number;
-  /** Hosts for which `git credential fill` failed or returned no creds. */
+  /** Hosts with no configured token. */
   hostsSkipped: number;
   /** Per-host status (in input order). */
   perHost: HostCredentialStatus[];
@@ -406,25 +121,16 @@ export interface CollectCredentialsResult {
 }
 
 /**
- * For each unique HTTPS host across the dev-container's repos, ask the
- * host-side git for credentials and write them to
- * `<devContainerRoot>/.monoceros/git-credentials`. The container's
- * post-create.sh configures git to read from that file via `store`
- * credential helper.
- *
- * Host-side `git credential fill` consults whatever helper the host
- * has configured (osxkeychain on macOS, manager on Windows, libsecret
- * on Linux). If a helper has the cached credentials, returns silent.
- * If not, the helper prompts the builder via its native UI
- * (Keychain-popup, GCM-window, terminal-prompt). That's the intended
- * UX — Monoceros never prompts directly, the host's helper does.
+ * Write the configured provider tokens for the dev-container's repo
+ * hosts into `<devContainerRoot>/.monoceros/git-credentials`, which the
+ * in-container `git clone`/push reads via its `store` credential helper
+ * (ADR 0031). PAT-only: the host's own git credential helper is never
+ * consulted, so the host needs no git tooling.
  *
  * Always writes the file (possibly empty) so the bind-mount target
- * exists in the container. A host that returns no credentials simply
- * yields a credentials file with no matching entries, and the in-
- * container `git clone` falls back to whatever default git would do
- * (which is to prompt — and there we lose, but the diagnostic is
- * clear).
+ * exists in the container. A host with no configured token is reported
+ * `no-token` so the caller fails the apply with a "set a token" hint
+ * rather than starting a container that can't reach its private repos.
  */
 export async function collectGitCredentials(
   devContainerRoot: string,
@@ -434,80 +140,25 @@ export async function collectGitCredentials(
   const credsDir = path.join(devContainerRoot, '.monoceros');
   const credentialsPath = path.join(credsDir, 'git-credentials');
 
-  const spawnFn = options.spawn ?? realGitCredentialFill;
-  const approveFn = options.approve ?? realGitCredentialApprove;
-  const logger = options.logger ?? { info: () => {}, warn: () => {} };
-
-  // Callers must filter out 'unknown' providers before invoking this
-  // function — those should fail the apply pre-flight earlier with a
-  // "set provider:" error, never reach the credential helper. We
-  // narrow the type here for the renderer's sake.
   const lines: string[] = [];
   const perHost: HostCredentialStatus[] = [];
   for (const { host, provider } of hosts) {
-    if (provider === 'unknown') {
-      // Defensive: should not happen — pre-flight is supposed to
-      // bail before this. Record it anyway with no-credentials so
-      // the caller doesn't see a partial success.
+    // Callers reject 'unknown' providers before this (a "set provider:"
+    // pre-flight error). Treat any that slip through as no-token.
+    const known: RepoProvider = provider === 'unknown' ? 'github' : provider;
+    const pat = options.patByHost?.get(host);
+    if (pat) {
+      lines.push(
+        formatCredentialLine(host, GIT_CREDENTIAL_USERNAME[known], pat),
+      );
+      perHost.push({ host, provider: known, status: 'ok', detail: '' });
+    } else {
       perHost.push({
         host,
-        provider: 'github', // placeholder — never rendered because pre-flight already bailed
-        status: 'no-credentials',
-        detail: 'provider not declared (internal: should not reach here)',
+        provider: known,
+        status: 'no-token',
+        detail: 'no personal access token configured',
       });
-      continue;
-    }
-    logger.info(`Fetching credentials for ${host} from host git…`);
-    const input = `protocol=https\nhost=${host}\n\n`;
-    let result;
-    try {
-      result = await spawnFn(input);
-    } catch (err) {
-      // No logger.warn here — the caller (apply pre-flight) renders
-      // a consolidated, provider-specific error message per failing
-      // host. A separate WARN line per host would just add visual
-      // noise above the actionable error.
-      const detail = err instanceof Error ? err.message : String(err);
-      perHost.push({ host, provider, status: 'spawn-error', detail });
-      continue;
-    }
-    if (result.exitCode !== 0) {
-      perHost.push({
-        host,
-        provider,
-        status: 'non-zero-exit',
-        detail: `exit code ${result.exitCode}`,
-      });
-      continue;
-    }
-    const { username, password } = parseCredentialFillOutput(result.stdout);
-    if (!username || !password) {
-      perHost.push({
-        host,
-        provider,
-        status: 'no-credentials',
-        detail: 'host credential helper returned no username/password',
-      });
-      continue;
-    }
-    lines.push(formatCredentialLine(host, username, password));
-    perHost.push({ host, provider, status: 'ok', detail: '' });
-
-    // Tell the host credential helper to persist the credential we
-    // just received. `git credential fill` itself never triggers a
-    // helper `store` — git only does that automatically after using
-    // a credential successfully on a real remote operation. Without
-    // this explicit approve, an OAuth flow that GCM kicked off on
-    // first apply returns the token to us, but GCM never writes it
-    // to the Windows Credential Manager. Result: every subsequent
-    // apply pops a fresh browser auth dialog. Best-effort — non-zero
-    // from approve is non-fatal; we still wrote the in-container
-    // credentials file, which is what apply actually relies on.
-    const approveInput = `protocol=https\nhost=${host}\nusername=${username}\npassword=${password}\n\n`;
-    try {
-      await approveFn(approveInput);
-    } catch {
-      /* best-effort, don't block apply on credential-store hiccups */
     }
   }
 
@@ -515,9 +166,7 @@ export async function collectGitCredentials(
   await fs.writeFile(
     credentialsPath,
     lines.join('\n') + (lines.length > 0 ? '\n' : ''),
-    {
-      mode: 0o600,
-    },
+    { mode: 0o600 },
   );
 
   return {
@@ -535,48 +184,28 @@ export async function collectGitCredentials(
 export { uniqueHttpsHosts };
 
 /**
- * Build the multi-host pre-flight error message that gets thrown when
- * apply discovers missing credentials. Header inlines the provider
- * for single-host cases; body is left-aligned setup instructions.
- *
- * Format:
- *
- *   Missing Git credentials: <host> — <Provider>
- *
- *   <setup instructions, left-aligned, multi-line>
- *
- *   Then re-run `monoceros apply`.
- *
- * For multi-host failures, each block is separated by a blank line
- * and gets its own provider title.
+ * Pre-flight error for repo hosts that reached the credential step with
+ * no configured token (ADR 0031). GitHub/GitLab are normally resolved
+ * (and, if empty, prompted or aborted) earlier in apply; a Bitbucket host
+ * lands here when no `GIT_TOKEN__BITBUCKET_*` is set.
  */
 export function formatMissingCredentialsError(
   missing: readonly HostCredentialStatus[],
 ): string {
-  if (missing.length === 1) {
-    const m = missing[0]!;
-    const hint = providerSetupHint(m.host, m.provider);
-    return [
-      `Missing Git credentials: ${hint.title}`,
-      '',
-      hint.body,
-      '',
-      `Then re-run ${cyan('monoceros apply')}.`,
-    ].join('\n');
-  }
-  const lines: string[] = [
-    `Missing Git credentials for ${missing.length} hosts:`,
-    '',
-  ];
-  for (const m of missing) {
-    const hint = providerSetupHint(m.host, m.provider);
-    lines.push(hint.title);
-    lines.push('');
-    lines.push(hint.body);
-    lines.push('');
-  }
-  lines.push(`Then re-run ${cyan('monoceros apply')}.`);
-  return lines.join('\n');
+  const blocks = missing.map((m) => {
+    const label = PROVIDER_LABEL[m.provider];
+    if (m.provider === 'bitbucket') {
+      // Bitbucket is keyed by workspace (ADR 0031): name the exact var
+      // pattern so the builder knows what to add.
+      return `  - ${label} (${m.host}): set GIT_TOKEN__BITBUCKET_<WORKSPACE> (workspace = first path segment of the repo URL) in your global env.`;
+    }
+    return `  - ${label} (${m.host}): no personal access token (PAT) is set.`;
+  });
+  return (
+    `Apply aborted. Some of your repositories have no access token set:\n` +
+    blocks.join('\n') +
+    `\n\nSee ${REPO_DOCS_URL} for how to set one up, then re-run apply.`
+  );
 }
 
 /**
@@ -593,14 +222,15 @@ export function formatUnknownProviderError(hosts: readonly string[]): string {
       : `Unknown Git provider for ${sorted.length} hosts: ${sorted.join(', ')}.`,
     '',
     'Monoceros auto-detects only github.com / gitlab.com / bitbucket.org.',
-    'For any other host (self-hosted GitLab, Gitea, Bitbucket Server, …)',
-    'declare the provider explicitly in the yml. Edit the repo entry:',
+    'For any other host (self-hosted GitLab, GitHub Enterprise, Bitbucket',
+    'Data Center) declare the provider explicitly in the yml. Edit the',
+    'repo entry:',
     '',
     cyan('  repos:'),
     cyan(`    - url: https://${sorted[0]!}/…`),
-    cyan('      provider: gitlab   # or: github, bitbucket, gitea'),
+    cyan('      provider: gitlab   # or: github, bitbucket'),
     '',
-    `Or re-add with ${cyan('monoceros add-repo <name> <url> --provider=<github|gitlab|bitbucket|gitea>')}.`,
+    `Or re-add with ${cyan('monoceros add-repo <name> <url> --provider=<github|gitlab|bitbucket>')}.`,
   ];
   return lines.join('\n');
 }
@@ -608,6 +238,5 @@ export function formatUnknownProviderError(hosts: readonly string[]): string {
 // Exported for tests.
 export const _internals = {
   uniqueHttpsHosts,
-  parseCredentialFillOutput,
   formatCredentialLine,
 };

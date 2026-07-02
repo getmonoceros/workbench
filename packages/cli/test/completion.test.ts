@@ -480,7 +480,6 @@ describe('resolveCompletions', () => {
       '--provider=github',
       '--provider=gitlab',
       '--provider=bitbucket',
-      '--provider=gitea',
     ]);
   });
 

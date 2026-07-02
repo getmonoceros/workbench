@@ -79,7 +79,6 @@ import {
   upgradeNudge,
 } from '../config/machine-state.js';
 import {
-  type CredentialsSpawn,
   collectGitCredentials,
   uniqueHttpsHosts,
   formatMissingCredentialsError,
@@ -106,7 +105,11 @@ import {
 } from '../devcontainer/identity.js';
 import { writeGlobalDefaultGitUser } from '../config/global.js';
 import { setContainerGitUserInDoc } from '../modify/yml.js';
-import { type TokenPrompt, resolveRepoTokens } from './repo-token.js';
+import {
+  formatMissingTokensError,
+  formatTokenUse,
+  resolveRepoTokens,
+} from './repo-token.js';
 
 /**
  * `monoceros apply <name>` — read the yml at
@@ -168,13 +171,15 @@ export interface RunApplyOptions {
   };
   dockerExec?: DockerExec;
   devcontainerSpawn?: DevcontainerSpawn;
-  credentialsSpawn?: CredentialsSpawn;
   dockerInfoSpawn?: DockerInfoSpawn;
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
   identityScopePrompt?: IdentityScopePrompt;
-  /** Override the repo-token pick (ADR 0031). Tests inject a canned answer. */
-  tokenPrompt?: TokenPrompt;
+  /**
+   * Override the merged env used for repo-token resolution (ADR 0031).
+   * Test seam: production reads `monoceros-config.env` + `<name>.env`.
+   */
+  env?: Record<string, string>;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
   /** Override `ssh-keygen` for the SSH attach point (ADR 0022). Tests stub this. */
@@ -264,25 +269,22 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   const envVars = {
     ...readEnvFile(globalEnvPath(home)),
     ...readEnvFile(envPath),
+    ...(opts.env ?? {}),
   };
 
-  // Repo-driven token binding (ADR 0031): for each declared repo whose
-  // provider CLI feature is in the yml but has an empty token, offer the
-  // builder's `GIT_TOKEN__<PROVIDER>_*` vars and rewrite the feature's
-  // placeholder to the chosen one — or abort if none is available / the
-  // builder cancels. Runs before option interpolation so the rewritten
-  // placeholder resolves in the same pass.
-  const tokenResolvedFeatures = await resolveRepoTokens(parsed.config, {
-    ymlPath,
-    home,
-    envVars,
-    catalog: await loadComponentCatalog(),
-    ...(opts.tokenPrompt ? { prompt: opts.tokenPrompt } : {}),
-    logger: {
-      info: logger.info,
-      ...(logger.warn ? { warn: logger.warn } : {}),
-    },
-  });
+  // Repo token resolution (ADR 0031): resolve each declared repo's access
+  // token by convention (feature var → GIT_TOKEN__<PROVIDER>_<SEGMENT> →
+  // GIT_TOKEN__<PROVIDER>), inject it into the provider CLI feature, and
+  // collect the per-host tokens for the git-credentials writer. No
+  // prompting, no yml mutation. A repo with no token aborts the apply.
+  const catalog = await loadComponentCatalog();
+  const repoTokens = resolveRepoTokens(parsed.config, catalog, envVars);
+  if (repoTokens.missing.length > 0) {
+    throw new Error(formatMissingTokensError(repoTokens.missing, opts.name));
+  }
+  for (const use of repoTokens.used) {
+    logger.info(`Repo token: ${formatTokenUse(use)}`);
+  }
 
   // Resolve `${VAR}` in FEATURE options first. A missing/empty value
   // becomes "" so the transform's merge skips it → the option falls
@@ -290,7 +292,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // overrides. This lets credential placeholders (`apiKey: ${VAR}`) be
   // active in the yml with a blank `.env` seed.
   const resolvedFeatures = interpolateFeatureOptions(
-    tokenResolvedFeatures,
+    repoTokens.features,
     envVars,
   );
 
@@ -442,8 +444,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     throw new Error(formatUnknownProviderError(unknownProviderHosts));
   }
   if (hostsToFetch.length > 0) {
+    // Write the resolved per-host tokens (ADR 0031) into the credentials
+    // file the in-container clone/push reads. Tokens were resolved above;
+    // a missing one already aborted the apply, so every host here has one.
     const credResult = await collectGitCredentials(targetDir, hostsToFetch, {
-      ...(opts.credentialsSpawn ? { spawn: opts.credentialsSpawn } : {}),
+      ...(repoTokens.hostTokens.size > 0
+        ? { patByHost: repoTokens.hostTokens }
+        : {}),
       logger: idLogger,
     });
     const missing = credResult.perHost.filter((p) => p.status !== 'ok');

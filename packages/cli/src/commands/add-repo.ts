@@ -40,7 +40,7 @@ export const addRepoCommand = defineCommand({
     provider: {
       type: 'string',
       description:
-        'Git provider for credential-helper guidance: github | gitlab | bitbucket | gitea. Required when the URL host is not github.com, gitlab.com, or bitbucket.org — Monoceros uses this to suggest the right auth (gh / glab / a provider token) on missing credentials.',
+        'Git provider: github | gitlab | bitbucket. Required when the URL host is not github.com, gitlab.com, or bitbucket.org, so Monoceros knows which provider token to use for cloning.',
     },
     yes: {
       type: 'boolean',

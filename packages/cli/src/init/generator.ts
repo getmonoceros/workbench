@@ -228,7 +228,7 @@ const FEATURES_HEADER_ACTIVE =
   'A Monoceros dev-container is shaped by features — pluggable units that drop tooling (AI assistants, language CLIs, cloud SDKs, …) into the container and bring their own options. The features active for this container are listed below; adjust their options as needed. Shared credentials used across containers belong in monoceros-config.yml under `defaults.features.<ref>` rather than here. Full catalog: `monoceros list-components`.';
 
 const REPOS_HEADER =
-  'Git repositories cloned into `projects/` on container start-up. HTTPS URLs only. The provider is auto-detected for github.com / gitlab.com / bitbucket.org; for any other host (self-hosted GitLab, Gitea, …) declare `provider:` explicitly. Add more later with `monoceros add-repo`.';
+  'Git repositories cloned into `projects/` on container start-up. HTTPS URLs only. The provider is auto-detected for github.com / gitlab.com / bitbucket.org; for any other host (self-hosted GitLab, GitHub Enterprise, …) declare `provider:` explicitly. Add more later with `monoceros add-repo`.';
 
 const GIT_IDENTITY_HEADER =
   'Git committer identity for commits made inside the container. The ${VAR} values resolve from <name>.env at apply time — fill them there, or leave them blank to fall back to your global git config (or a one-time prompt). Override per repo under repos[].git.user.';

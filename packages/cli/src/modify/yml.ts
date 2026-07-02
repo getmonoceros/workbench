@@ -612,33 +612,6 @@ export function addFeatureToDoc(
 }
 
 /**
- * Set an existing feature's `apiToken` option in place. A targeted
- * setter in the family of setContainerGitUserInDoc / setDefaultPortInDoc
- * — NOT a feature add. Used by apply to swap the standard placeholder
- * for a concrete `${GIT_TOKEN__<PROVIDER>_<LABEL>}` chosen by the
- * builder (ADR 0031). No-op (false) when the feature isn't present or
- * the value already matches.
- */
-export function setFeatureApiTokenInDoc(
-  doc: Document,
-  ref: string,
-  value: string,
-): boolean {
-  const features = doc.get('features', true);
-  if (!isSeq(features)) return false;
-  for (const item of features.items) {
-    if (!isMap(item) || item.get('ref') !== ref) continue;
-    const existing = item.get('options', true);
-    const options: YAMLMap = isMap(existing) ? existing : new YAMLMap();
-    if (!isMap(existing)) item.set('options', options);
-    if (options.get('apiToken') === value) return false;
-    options.set('apiToken', value);
-    return true;
-  }
-  return false;
-}
-
-/**
  * Add (or no-op) a repo entry to the `repos:` sequence.
  *
  * Idempotency: if an existing entry has the same URL AND the same

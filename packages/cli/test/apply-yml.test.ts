@@ -24,18 +24,14 @@ const stubDockerExec = async () => ({
 });
 const stubIdentitySpawn = async () => ({ value: '', exitCode: 1 });
 const stubIdentityPrompt = async () => undefined;
-// Default stub: every host has credentials. Apply's pre-flight check
-// (added with M5-Task-11) fails fast if a host returns no creds, so
-// tests that don't specifically exercise the missing-credentials path
-// inherit "always-ok" credentials. Tests that want to verify the
-// pre-flight error supply their own credentialsSpawn that returns
-// an empty stdout / non-zero exit.
-const stubCredentialsSpawn = async (input: string) => {
-  const host = /host=([^\n]+)/.exec(input)?.[1] ?? 'unknown';
-  return {
-    stdout: `protocol=https\nhost=${host}\nusername=ci\npassword=tok-${host}\n`,
-    exitCode: 0,
-  };
+// Default: a provider-wide token for each provider (ADR 0031), so any
+// declared repo resolves. Apply aborts when a repo host has no token, so
+// tests that don't exercise that path inherit these. Tests that want the
+// no-token error pass an empty `env`.
+const stubEnv = {
+  GIT_TOKEN__GITHUB: 'tok-github',
+  GIT_TOKEN__GITLAB: 'tok-gitlab',
+  GIT_TOKEN__BITBUCKET: 'tok-bitbucket',
 };
 // Default stub for the docker-mode probe: rootful daemon (no idmap
 // in the generated devcontainer.json). Tests that exercise the
@@ -53,7 +49,7 @@ const baseRunOpts = {
   dockerExec: stubDockerExec,
   identitySpawn: stubIdentitySpawn,
   identityPrompt: stubIdentityPrompt,
-  credentialsSpawn: stubCredentialsSpawn,
+  env: stubEnv,
   dockerInfoSpawn: stubDockerInfoSpawn,
 };
 
@@ -1293,7 +1289,44 @@ describe('runApply', () => {
     expect(postCreate).not.toMatch(/git -C ".*" config user\./);
   });
 
-  it('pre-flight fails apply with provider-specific hints when host has no credentials', async () => {
+  it('post-create.sh clones with the userinfo stripped from the repo URL', async () => {
+    // Bitbucket copy-paste URLs embed the account name
+    // (`https://alice@bitbucket.org/…`); git would then look up a
+    // credential for `alice` and miss our host-keyed token entry. The
+    // clone must run against the userinfo-free URL (ADR 0031).
+    await writeYml(
+      'embedded-user',
+      [
+        'schemaVersion: 1',
+        'name: embedded-user',
+        'repos:',
+        '  - url: https://alice@bitbucket.org/team/app.git',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      env: { GIT_TOKEN__BITBUCKET: 'atatt_x' },
+      name: 'embedded-user',
+      monocerosHome: home,
+    });
+    const postCreate = await readFile(
+      path.join(
+        home,
+        'container',
+        'embedded-user',
+        '.devcontainer',
+        'post-create.sh',
+      ),
+      'utf8',
+    );
+    expect(postCreate).toContain(
+      'git clone "https://bitbucket.org/team/app.git"',
+    );
+    expect(postCreate).not.toContain('alice@bitbucket.org');
+  });
+
+  it('pre-flight aborts apply with a PAT hint when a repo host has no token', async () => {
     await writeYml(
       'no-creds',
       [
@@ -1307,15 +1340,12 @@ describe('runApply', () => {
     await expect(
       runApply({
         ...baseRunOpts,
-        // Override the always-ok stub: return empty stdout, exit 0
-        // (mirrors how `git credential fill` on a host without a
-        // configured helper actually behaves — no error code, just
-        // missing username/password fields in the output).
-        credentialsSpawn: async () => ({ stdout: '', exitCode: 0 }),
+        // No configured token for any host → apply aborts.
+        env: {},
         name: 'no-creds',
         monocerosHome: home,
       }),
-    ).rejects.toThrow(/Missing Git credentials:.*github\.com/s);
+    ).rejects.toThrow(/access token[\s\S]*github\.com/);
   });
 
   it('pre-flight fails with "set provider:" error for non-canonical hosts without explicit provider', async () => {
@@ -1456,11 +1486,10 @@ describe('runApply', () => {
     expect(compose).not.toContain('idmap');
   });
 
-  it('credential pre-flight fails fast (before docker build) when no creds are found', async () => {
-    // Credentials for the repo host can't be resolved → apply aborts
-    // before the container build, with provider-specific setup hints.
-    // (Repos themselves are cloned in-container; we don't probe them
-    // host-side anymore.)
+  it('credential pre-flight fails fast (before docker build) when no token is set', async () => {
+    // No token for the repo host → apply aborts before the container
+    // build. (Repos themselves are cloned in-container; we don't probe
+    // them host-side.)
     await writeYml(
       'no-creds',
       [
@@ -1475,7 +1504,7 @@ describe('runApply', () => {
     await expect(
       runApply({
         ...baseRunOpts,
-        credentialsSpawn: async () => ({ stdout: '', exitCode: 0 }),
+        env: {},
         devcontainerSpawn: async () => {
           devcontainerCalled = true;
           return 0;
@@ -1483,7 +1512,7 @@ describe('runApply', () => {
         name: 'no-creds',
         monocerosHome: home,
       }),
-    ).rejects.toThrow(/Missing Git credentials/);
+    ).rejects.toThrow(/access token/);
     expect(devcontainerCalled).toBe(false);
   });
 

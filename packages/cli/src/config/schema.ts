@@ -58,26 +58,41 @@ export const REGEX = {
 };
 
 /**
- * The providers Monoceros knows how to render setup hints for.
+ * The Git providers Monoceros supports for repos.
  *
  * Canonical SaaS hostnames (`github.com` / `gitlab.com` /
- * `bitbucket.org`) auto-detect to their provider. Everything else
- * — self-hosted GitLab, GitHub Enterprise, Bitbucket Data Center,
- * Gitea / Forgejo — must declare `provider:` explicitly. Gitea has
- * no canonical SaaS host (gitea.com is a demo, not a SaaS), so any
- * `provider: gitea` entry is by definition self-hosted.
+ * `bitbucket.org`) auto-detect to their provider. A self-hosted host
+ * (GitHub Enterprise, self-hosted GitLab, Bitbucket Data Center) must
+ * declare `provider:` explicitly.
  *
- * Forgejo (the community fork of Gitea) shares Gitea's API, UI, and
- * auth flow — we bundle it under `provider: gitea` rather than
- * carrying a separate enum value.
+ * Token-based repo auth is implemented for GitHub and GitLab; Bitbucket
+ * is a declared provider but its token path is not built yet (ADR 0031).
  */
-export const PROVIDER_VALUES = [
-  'github',
-  'gitlab',
-  'bitbucket',
-  'gitea',
-] as const;
+export const PROVIDER_VALUES = ['github', 'gitlab', 'bitbucket'] as const;
 export type RepoProvider = (typeof PROVIDER_VALUES)[number];
+
+/** Human-readable provider names for builder-facing messages. */
+export const PROVIDER_LABEL: Record<RepoProvider, string> = {
+  github: 'GitHub',
+  gitlab: 'GitLab',
+  bitbucket: 'Bitbucket',
+};
+
+/**
+ * The HTTPS git username paired with a provider token in
+ * `.monoceros/git-credentials` (ADR 0031). GitHub/GitLab accept `oauth2`
+ * with the token as the password; Bitbucket Cloud requires the static
+ * literal `x-bitbucket-api-token-auth` for API-token git access.
+ */
+export const GIT_CREDENTIAL_USERNAME: Record<RepoProvider, string> = {
+  github: 'oauth2',
+  gitlab: 'oauth2',
+  bitbucket: 'x-bitbucket-api-token-auth',
+};
+
+/** Docs page explaining how to set up a repo access token (ADR 0031). */
+export const REPO_DOCS_URL =
+  'https://getmonoceros.build/docs/concepts/git-and-repos/';
 
 /**
  * Hostnames whose provider is implicit — no `provider:` field needed

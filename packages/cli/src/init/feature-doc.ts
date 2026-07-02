@@ -125,21 +125,39 @@ export function wrapToComment(text: string, width: number): string[] {
 export const FEATURE_HEADER_WIDTH = 76 - 2; // COMMENT_WIDTH - "# " prefix
 
 /**
+ * The repo-provider CLI features expose their access token under the
+ * PROVIDER name, not the feature id (ADR 0031). The token is the repo
+ * credential, resolved by the `GIT_TOKEN__<PROVIDER>_…` convention, so
+ * `GITHUB_API_TOKEN` reads better than the id-derived `GITHUB_CLI_API_TOKEN`
+ * and lines up with the convention the builder already uses. This is the
+ * one deliberate exception to the generic rule below.
+ */
+const PROVIDER_TOKEN_VAR: Record<string, string> = {
+  'github-cli': 'GITHUB_API_TOKEN',
+  'gitlab-cli': 'GITLAB_API_TOKEN',
+};
+
+/**
  * Derive the `<name>.env` variable name for a feature option, used as
  * the `${VAR}` placeholder in the yml and the seeded key in the env
  * file. Generic rule `<FEATURE_ID>_<OPTION>`, applied uniformly:
  *   atlassian:1   + apiToken      → ATLASSIAN_API_TOKEN
  *   claude-code:1 + apiKey        → CLAUDE_CODE_API_KEY
- *   github-cli:1  + bitbucketToken→ GITHUB_CLI_BITBUCKET_TOKEN
+ *
+ * The one exception is the repo-provider CLI features' `apiToken`
+ * (github-cli / gitlab-cli → GITHUB_API_TOKEN / GITLAB_API_TOKEN); see
+ * `PROVIDER_TOKEN_VAR`.
  *
  * It is a monoceros-side placeholder key — NOT the env var the tool
  * itself reads (the value is passed as the feature's option), so a
- * predictable derived name is honest and avoids per-feature special
- * cases.
+ * predictable derived name is honest.
  */
 export function featureOptionVarName(ref: string, optionKey: string): string {
   const leaf = ref.split('/').pop() ?? ref;
   const id = leaf.split('@')[0]!.split(':')[0]!;
+  if (optionKey === 'apiToken' && PROVIDER_TOKEN_VAR[id]) {
+    return PROVIDER_TOKEN_VAR[id]!;
+  }
   const idSnake = id.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
   const optSnake = optionKey
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')

@@ -1,165 +1,204 @@
 import { promises as fs } from 'node:fs';
-import { consola } from 'consola';
-import type { RepoProvider, SolutionConfig } from '../config/schema.js';
-import { parseConfig, stringifyConfig } from '../config/io.js';
-import { interpolate } from '../config/env-file.js';
-import { globalEnvPath, prettyPath } from '../config/paths.js';
+import {
+  PROVIDER_LABEL,
+  REPO_DOCS_URL,
+  type RepoProvider,
+  type SolutionConfig,
+} from '../config/schema.js';
+import { parseConfig } from '../config/io.js';
+import { readEnvFile } from '../config/env-file.js';
+import {
+  containerConfigPath,
+  containerEnvPath,
+  globalEnvPath,
+} from '../config/paths.js';
 import { resolveProvider } from '../devcontainer/credentials.js';
 import type { Component } from './../init/components.js';
-import { setFeatureApiTokenInDoc } from '../modify/yml.js';
 
 /**
- * Repo-driven token binding at apply time (ADR 0031).
+ * Repo access-token resolution (ADR 0031). Pure convention, no prompting
+ * and no yml mutation. Per declared repo, the token is resolved from the
+ * merged env by this cascade (provider `P`, first URL path segment `S`):
  *
- * The provider CLI feature (github-cli / gitlab-cli) was added to the
- * yml by add-repo / init when the repo was declared. Its `apiToken`
- * option carries the standard placeholder (`${GITHUB_CLI_API_TOKEN}`).
- * When that placeholder resolves EMPTY against the env, apply offers the
- * builder's `GIT_TOKEN__<PROVIDER>_<LABEL>` vars from the (merged) env as
- * a pick list and rewrites the feature's placeholder to the chosen var —
- * so a shared PAT in `monoceros-config.env` binds to the container
- * without the builder editing the yml by hand.
+ *   1. `<P>_API_TOKEN`            — the feature placeholder; the builder's
+ *                                   explicit per-container/global override.
+ *                                   Only for providers with a CLI feature.
+ *   2. `GIT_TOKEN__<P>_<S>`       — keyed by the first path segment
+ *                                   (github owner / gitlab group / bitbucket
+ *                                   workspace), uppercased, non-alnum → `_`.
+ *   3. `GIT_TOKEN__<P>`           — provider-wide catch-all.
  *
- * Aborts the apply (throws) when the token is empty and there is no
- * candidate var, or when the builder cancels the pick.
+ * The resolved token is injected into the provider CLI feature (so the
+ * in-container `gh`/`glab` is authenticated) and returned per host for the
+ * git-credentials writer (so the clone/push authenticates). A repo with no
+ * resolvable token lands in `missing` so apply can abort with a clear hint.
+ * Which var supplied each token is reported in `used` for logging.
  */
 
-/**
- * Interactive pick of which env var to bind to a provider's CLI feature.
- * Returns the chosen VAR name, or null when the builder cancels.
- * Injectable so tests drive it without a TTY.
- */
-export type TokenPrompt = (ctx: {
-  provider: RepoProvider;
-  candidates: string[];
-}) => Promise<string | null>;
-
-// Sentinel value for the "abort" entry in the select list. Never collides
-// with a candidate — those are all `GIT_TOKEN__<PROVIDER>_…` names.
-const CANCEL = 'cancel';
-
-const realTokenPrompt: TokenPrompt = async ({ provider, candidates }) => {
-  const choice = await consola.prompt(
-    `The ${provider} CLI feature has no token set. Pick which token to use for this container:`,
-    {
-      type: 'select',
-      options: [
-        ...candidates.map((v) => ({ label: v, value: v })),
-        { label: 'Cancel — abort apply', value: CANCEL },
-      ],
-    },
-  );
-  if (typeof choice !== 'string' || choice === CANCEL) return null;
-  return choice;
+type Feature = {
+  ref: string;
+  options?: Record<string, string | number | boolean>;
 };
 
-export interface ResolveRepoTokensDeps {
-  /** Absolute path to the source yml — rewritten in place on a pick. */
-  ymlPath: string;
-  /** User-data home — locates the global env for the abort hint. */
-  home: string;
-  /** Merged env (global under per-container) the apply resolves against. */
-  envVars: Record<string, string>;
-  /** Loaded component catalog — maps a provider to its CLI feature ref. */
-  catalog: Map<string, Component>;
-  /** Override the interactive pick. Tests inject a canned answer. */
-  prompt?: TokenPrompt;
-  logger: { info: (msg: string) => void; warn?: (msg: string) => void };
+export interface RepoTokenUse {
+  host: string;
+  provider: RepoProvider;
+  /** The env var the token was read from. */
+  varName: string;
+}
+
+export interface MissingRepoToken {
+  host: string;
+  provider: RepoProvider;
+  /** Env vars that were checked, in cascade order — named in the error. */
+  tried: string[];
+}
+
+export interface RepoTokenResult {
+  /** Features with the resolved token injected into the provider CLI feature. */
+  features: SolutionConfig['features'];
+  /** host → token, for the git-credentials writer. */
+  hostTokens: Map<string, string>;
+  /** Which env var supplied each repo's token (for logging). */
+  used: RepoTokenUse[];
+  /** Repos whose token couldn't be resolved. */
+  missing: MissingRepoToken[];
+}
+
+/** The `<S>` segment for `GIT_TOKEN__<P>_<S>` — the URL's first path part. */
+function workspaceSegment(url: string): string | undefined {
+  let ws: string | undefined;
+  try {
+    ws = new URL(url).pathname.split('/').filter(Boolean)[0];
+  } catch {
+    return undefined;
+  }
+  return ws ? ws.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase() : undefined;
 }
 
 /**
- * For each declared repo whose provider has a CLI feature present in the
- * yml, ensure the feature's `apiToken` resolves to a non-empty value —
- * picking (and persisting) a `GIT_TOKEN__<PROVIDER>_*` binding when it
- * doesn't. Returns the (possibly rewritten) features for the caller to
- * feed into option interpolation; the yml on disk is updated in place
- * when a binding was chosen.
+ * The env vars to try for a repo, in cascade order — the same three
+ * shapes for every provider:
+ *   `<P>_API_TOKEN` → `GIT_TOKEN__<P>_<SEGMENT>` → `GIT_TOKEN__<P>`.
+ * For github/gitlab the first also happens to be the feature placeholder
+ * (see PROVIDER_TOKEN_VAR); for bitbucket it's just the per-container
+ * override. Uniform so every provider reads and errors the same way.
  */
-export async function resolveRepoTokens(
-  config: SolutionConfig,
-  deps: ResolveRepoTokensDeps,
-): Promise<SolutionConfig['features']> {
-  const repos = config.repos ?? [];
-  if (repos.length === 0) return config.features;
+function tokenVarCandidates(provider: RepoProvider, url: string): string[] {
+  const p = provider.toUpperCase();
+  const vars: string[] = [`${p}_API_TOKEN`];
+  const segment = workspaceSegment(url);
+  if (segment) vars.push(`GIT_TOKEN__${p}_${segment}`);
+  vars.push(`GIT_TOKEN__${p}`);
+  return vars;
+}
 
-  // Distinct providers needed by the declared repos that (a) resolve to
-  // a known provider, (b) have a CLI feature in the catalog, and (c) that
-  // feature is actually present in this yml. Featureless providers
-  // (bitbucket / gitea) and local paths fall through untouched.
-  const needed = new Map<RepoProvider, string>(); // provider → feature ref
-  for (const repo of repos) {
+export function resolveRepoTokens(
+  config: SolutionConfig,
+  catalog: Map<string, Component>,
+  envVars: Record<string, string>,
+): RepoTokenResult {
+  const features: Feature[] = config.features.map((f) => ({
+    ...f,
+    ...(f.options ? { options: { ...f.options } } : {}),
+  }));
+  const hostTokens = new Map<string, string>();
+  const used: RepoTokenUse[] = [];
+  const missing: MissingRepoToken[] = [];
+
+  for (const repo of config.repos ?? []) {
+    if (!repo.url.startsWith('https://')) continue; // only HTTPS is cloned
     let host: string;
     try {
       host = new URL(repo.url).hostname;
     } catch {
-      continue; // not a URL (local path) — no provider token to bind
+      continue;
     }
     const provider = resolveProvider(host, repo.provider);
+    // Unknown providers are rejected by the separate "set provider:"
+    // pre-flight; skip them here so they don't show as missing tokens.
     if (provider === 'unknown') continue;
-    const ref = deps.catalog.get(provider)?.file.contributes.features?.[0]?.ref;
-    if (!ref) continue;
-    if (!config.features.some((f) => f.ref === ref)) continue;
-    needed.set(provider, ref);
-  }
-  if (needed.size === 0) return config.features;
 
-  const prompt = deps.prompt ?? realTokenPrompt;
-  let changed = false;
-  // Re-read as a Document so a chosen binding can be written back in place
-  // without losing the yml's comments / layout.
-  const text = await fs.readFile(deps.ymlPath, 'utf8');
-  const parsed = parseConfig(text, deps.ymlPath);
-
-  for (const [provider, ref] of needed) {
-    const feature = config.features.find((f) => f.ref === ref)!;
-    const raw = feature.options?.apiToken;
-    const resolved =
-      typeof raw === 'string' ? interpolate(raw, deps.envVars) : undefined;
-    const tokenSet =
-      resolved !== undefined &&
-      resolved.missing.length === 0 &&
-      resolved.value.trim().length > 0;
-    if (tokenSet) continue;
-
-    const prefix = `GIT_TOKEN__${provider.toUpperCase()}_`;
-    const candidates = Object.keys(deps.envVars)
-      .filter((k) => k.startsWith(prefix) && deps.envVars[k]!.trim().length > 0)
-      .sort();
-    if (candidates.length === 0) {
-      throw new Error(formatNoTokenError(provider, prefix, deps.home));
+    const ref = catalog.get(provider)?.file.contributes.features?.[0]?.ref;
+    const tried = tokenVarCandidates(provider, repo.url);
+    const hit = tried.find((v) => (envVars[v] ?? '').trim().length > 0);
+    if (!hit) {
+      missing.push({ host, provider, tried });
+      continue;
     }
-
-    const chosen = await prompt({ provider, candidates });
-    if (chosen === null) {
-      throw new Error(
-        `Apply aborted: no token selected for ${provider}. Set the feature's ` +
-          `apiToken in the yml, or pick a ${prefix}… var next time.`,
-      );
-    }
-    if (setFeatureApiTokenInDoc(parsed.doc, ref, `\${${chosen}}`)) {
-      changed = true;
-      deps.logger.info(
-        `Bound the ${provider} CLI token to \${${chosen}} in ${prettyPath(deps.ymlPath)}.`,
-      );
+    const token = envVars[hit]!.trim();
+    hostTokens.set(host, token);
+    used.push({ host, provider, varName: hit });
+    // Inject into the provider CLI feature so the in-container gh/glab is
+    // authenticated — even when the token came from a GIT_TOKEN__ var
+    // rather than the feature's own placeholder.
+    if (ref) {
+      const feature = features.find((f) => f.ref === ref);
+      if (feature) feature.options = { ...feature.options, apiToken: token };
     }
   }
 
-  if (!changed) return config.features;
-  const out = stringifyConfig(parsed.doc);
-  await fs.writeFile(deps.ymlPath, out, 'utf8');
-  return parseConfig(out, deps.ymlPath).config.features;
+  return {
+    features: features as SolutionConfig['features'],
+    hostTokens,
+    used,
+    missing,
+  };
 }
 
-function formatNoTokenError(
-  provider: RepoProvider,
-  prefix: string,
+/** Resolve repo tokens for a container by name (reads yml + merged env). */
+export async function resolveContainerRepoTokens(
+  name: string,
   home: string,
+  catalog: Map<string, Component>,
+): Promise<RepoTokenResult> {
+  const ymlPath = containerConfigPath(name, home);
+  const { config } = parseConfig(await fs.readFile(ymlPath, 'utf8'), ymlPath);
+  const envVars = {
+    ...readEnvFile(globalEnvPath(home)),
+    ...readEnvFile(containerEnvPath(name, home)),
+  };
+  return resolveRepoTokens(config, catalog, envVars);
+}
+
+/** One log line naming the env var a repo's token was read from. */
+export function formatTokenUse(use: RepoTokenUse): string {
+  return `${PROVIDER_LABEL[use.provider]} (${use.host}) → ${use.varName}`;
+}
+
+/**
+ * Builder-facing abort message when repos have no token. Names, per
+ * provider, the two most useful ways to set one and which file each goes
+ * in — the per-container feature var and the shared segment-keyed var.
+ */
+export function formatMissingTokensError(
+  missing: readonly MissingRepoToken[],
+  containerName: string,
 ): string {
+  const bullet = (m: MissingRepoToken): string => {
+    const label = PROVIDER_LABEL[m.provider];
+    // tried order is [<PROVIDER>_API_TOKEN?, GIT_TOKEN__<P>_<SEG>, GIT_TOKEN__<P>].
+    const featureVar = m.tried.find((v) => !v.startsWith('GIT_TOKEN__'));
+    const sharedVar = m.tried.find((v) => v.startsWith('GIT_TOKEN__'));
+    if (featureVar) {
+      return (
+        `  • Your ${label} repositories (${m.host}): set ${featureVar} in ` +
+        `container-configs/${containerName}.env for this container, or ` +
+        `${sharedVar} in monoceros-config.env to share it across containers.`
+      );
+    }
+    return (
+      `  • Your ${label} repositories (${m.host}): set ${sharedVar} in ` +
+      `monoceros-config.env (shared) or container-configs/${containerName}.env.`
+    );
+  };
   return (
-    `Apply aborted: a ${provider} repo is declared but the ${provider} CLI ` +
-    `feature has no token, and no ${prefix}… entry exists in your global env.\n\n` +
-    `Add one to ${prettyPath(globalEnvPath(home))}, e.g.\n` +
-    `  ${prefix}MYACCOUNT=<personal-access-token>\n\n` +
-    `then re-run apply. (Or set the feature's apiToken in the yml directly.)`
+    `Apply aborted. None of your configured repositories has an access ` +
+    `token yet.\n` +
+    `Set a personal access token as an environment variable:\n\n` +
+    missing.map(bullet).join('\n') +
+    `\n\nCreate the token with the access you normally have on the site ` +
+    `(clone and push).\n` +
+    `See ${REPO_DOCS_URL} for how to set it up.`
   );
 }

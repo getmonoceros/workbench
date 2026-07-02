@@ -130,42 +130,57 @@ is the fallback, not the other way around.
 
 ## Status of implementation
 
-The host-keyed `MONOCEROS_GIT_TOKEN__<host>` scheme first drafted here was
-built, then rolled back; the shipped design is the account-labeled,
-repo-driven model in the Revision below. What actually ships (#33):
+Two earlier drafts (host-keyed `MONOCEROS_GIT_TOKEN__<host>`, then an
+interactive pick that rewrote the yml) were built and discarded. The
+shipped design is **pure convention** — resolved from the env, no
+prompting, no yml mutation. What ships (#33):
 
 - **Two-layer env**: global `monoceros-config.env` merged under the
   per-container `<name>.env` (container wins), both gitignored.
 - **add-repo / init --with-repos** add the provider's CLI feature
   (github-cli / gitlab-cli) to the yml via the existing `add-feature`,
-  whenever a feature exists for the provider. No token check on this path —
-  the feature carries the standard `apiToken: ${…_API_TOKEN}` placeholder.
-- **apply is repo-driven**: it scans the repo entries, maps each repo's
-  provider to its CLI feature, and — when that feature is in the yml with
-  an empty `apiToken` — offers the `GIT_TOKEN__<PROVIDER>_*` vars from the
-  merged env as a pick list (with a cancel entry) and rewrites the
-  feature's `apiToken` to the chosen `${GIT_TOKEN__…}`, persisted in the
-  yml so re-apply never re-asks. A filled `apiToken` (the standard
-  `${…_API_TOKEN}` var or an already-chosen `${GIT_TOKEN__…}`) is left
-  alone. No candidate, or the builder cancels → apply aborts with an
-  actionable error.
-- The chosen token is consumed by the CLI feature (→ `GH_TOKEN` /
-  `GITLAB_TOKEN`).
+  whenever a feature exists for the provider.
+- **apply resolves each repo's token by convention**, keyed off the URL —
+  no prompting, no yml rewrite. Per repo (provider `P`, first URL path
+  segment `S`) the cascade is:
+  1. `<P>_API_TOKEN` — the builder's explicit per-container/global override
+     (`GITHUB_API_TOKEN`, `GITLAB_API_TOKEN`, `BITBUCKET_API_TOKEN`), for
+     every provider. For github/gitlab it doubles as the feature placeholder.
+  2. `GIT_TOKEN__<P>_<S>` — keyed by the first path segment (github owner /
+     gitlab group / bitbucket workspace); uppercased, non-alnum → `_`.
+  3. `GIT_TOKEN__<P>` — provider-wide catch-all.
+     A repo with no match aborts apply with a hint naming the tried vars.
+- **One token, two consumers.** The resolved token is injected into the
+  provider CLI feature (→ `GH_TOKEN` / `GITLAB_TOKEN` for `gh`/`glab`) AND
+  written into `.monoceros/git-credentials` for the in-container `git
+clone`/push. GitHub/GitLab use `oauth2:<token>`; Bitbucket uses the
+  static `x-bitbucket-api-token-auth:<token>` (per Atlassian's docs).
+- **The host keychain path is gone.** No `git credential fill`/`approve`,
+  no "install gh/glab" hints — the host needs no git tooling, and the
+  token is the single source of truth. An embedded userinfo in a clone URL
+  (`https://user@host/…`) is stripped so git matches the token by host.
+- **apply reports which env var supplied each token**, on screen and in
+  the apply log (`GitHub (github.com) → GIT_TOKEN__GITHUB_CONCISO`).
+- **add-repo uses the same resolution** (`resolveContainerRepoTokens`):
+  when a container is running it resolves the token, writes git-credentials
+  and clones in the container.
+- **The feature token var drops the `_CLI` id leak**: `GITHUB_API_TOKEN` /
+  `GITLAB_API_TOKEN` (was `GITHUB_CLI_API_TOKEN`). Other credentialed
+  features (claude-code, atlassian) keep the generic `<FEATURE_ID>_<OPTION>`
+  derivation.
 
 Follow-ups (out of #33):
 
-- **git clone/push credential store**: feed the same resolved `apiToken`
-  into `.monoceros/git-credentials` so an in-container `git clone/push`
-  authenticates off the same value. Today the token authenticates the CLI
-  feature only; clone-auth still climbs the existing credential flow.
-- Bitbucket / Gitea (featureless): the token goes straight to
-  git-credentials off the same repo scan — the future branch the
-  repo-driven structure was built to make clean.
+- **Gitea**: removed as a provider for now.
 - GitHub Enterprise: github.com and Enterprise Cloud (`*.ghe.com`)
   authenticate via `GH_TOKEN`. Self-hosted Enterprise Server needs its
   `GH_ENTERPRISE_TOKEN` + `GH_HOST` — a feature-side follow-up.
 - User-facing docs on getmonoceros.build for `monoceros-config.env` + the
-  PAT flow.
+  token cascade (the `concepts/git-and-repos` page gets a rewrite).
+
+(The "Revision" notes below are the design history that led here — the
+selection/persistence they describe was superseded by the convention
+cascade above.)
 
 ## Revision: account-labeled tokens + repo-driven selection
 
@@ -190,25 +205,31 @@ it duplicated the token outside the feature. Final model:
   re-asks. No candidate, or the builder cancels → apply aborts with an
   actionable error (rather than starting a container that can't reach its
   private repos).
-- **git-credentials** for the in-container `git clone/push` is a follow-up:
-  the resolved `apiToken` authenticates the CLI feature today; feeding the
-  same value into `.monoceros/git-credentials` (`oauth2:<token>@<host>`,
-  keychain fill as fallback) comes next.
-- **Featureless providers (Bitbucket, Gitea)** are a future branch off the
-  same repo scan: no CLI feature, the token goes straight to
-  git-credentials. The repo-driven structure is what makes adding them
-  clean. Not yet implemented.
+- **git-credentials**: the resolved `apiToken` is written into
+  `.monoceros/git-credentials` as `https://oauth2:<token>@<host>`, so the
+  in-container `git clone`/push authenticates off the same token. The host
+  keychain path is gone — a configured token always wins and the host's
+  git helper is never consulted. `add-repo` uses the same handling.
+- **Featureless providers (Bitbucket)** run off the same repo scan: no CLI
+  feature, the token comes from `GIT_TOKEN__BITBUCKET_<WORKSPACE>` (workspace
+  = first URL path segment) and is written to git-credentials with the
+  `x-bitbucket-api-token-auth` username. Multiple workspaces resolve
+  independently by URL. Gitea was dropped as a provider.
 
 Multi-account is handled by the label plus per-container selection. Two
 accounts for the SAME host in the SAME container is intentionally not
 supported (git's credential store is host-keyed; gh's `GH_TOKEN` is one
 account) — use separate containers, which the per-container env covers.
 
-Status: implemented for GitHub + GitLab. add-repo / init add the provider
-CLI feature via the existing `add-feature`; apply scans repos →
-`GIT_TOKEN__<PROVIDER>_*` pick list (with cancel) → persists the chosen
-`${VAR}` into the yml feature `apiToken`, or aborts on no-candidate /
-cancel. The host-keyed scheme is gone. Not yet wired: feeding the resolved
-token into `.monoceros/git-credentials` for in-container clone/push,
-Bitbucket/Gitea (featureless), and self-hosted GitHub Enterprise Server
-(`GH_ENTERPRISE_TOKEN` + `GH_HOST`).
+Status: implemented for GitHub + GitLab, end to end. add-repo / init add
+the provider CLI feature via the existing `add-feature`; apply scans repos
+→ `GIT_TOKEN__<PROVIDER>_*` pick list (with cancel) → persists the chosen
+`${VAR}` into the yml feature `apiToken` → writes it to
+`.monoceros/git-credentials` as `oauth2:<token>` so the in-container clone
+authenticates, or aborts on no-candidate / cancel. A configured token
+always wins; the host keychain / `git credential fill` path is removed
+entirely. `add-repo` clones in a running container off the same token.
+Bitbucket Cloud works via `GIT_TOKEN__BITBUCKET_<WORKSPACE>` +
+`x-bitbucket-api-token-auth`, keyed by workspace so multiple workspaces
+resolve independently. Not yet done: self-hosted GitHub Enterprise Server
+(`GH_ENTERPRISE_TOKEN` + `GH_HOST`). Gitea was dropped as a provider.

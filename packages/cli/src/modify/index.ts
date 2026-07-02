@@ -22,8 +22,9 @@ import { loadFeatureManifestSummary } from '../init/manifest.js';
 import {
   collectGitCredentials,
   resolveProvider,
-  type CredentialsSpawn,
 } from '../devcontainer/credentials.js';
+import { resolveContainerRepoTokens } from '../apply/repo-token.js';
+import { REPO_DOCS_URL } from '../config/schema.js';
 import {
   findRunningContainerByLocalFolder,
   realContainerExec,
@@ -68,7 +69,11 @@ import {
   exampleVolumesComment,
   customServiceHint,
 } from '../init/service-doc.js';
-import { deriveRepoName, normalizeOptions } from '../create/scaffold.js';
+import {
+  cloneUrl,
+  deriveRepoName,
+  normalizeOptions,
+} from '../create/scaffold.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
 import { writeBriefing } from '../briefing/index.js';
 import type { FeatureOptions, RepoEntry } from '../create/types.js';
@@ -173,7 +178,6 @@ export interface AddRepoInput extends ModifyOptions {
    */
   containerLookupDocker?: DockerLookupExec;
   containerExec?: ContainerExec;
-  credentialsSpawn?: CredentialsSpawn;
 }
 
 export interface RemoveLanguageInput extends ModifyOptions {
@@ -563,11 +567,10 @@ async function tryCloneInRunningContainer(
     return;
   }
 
-  // Credential fetch for the URL's host. Same mechanism apply uses
-  // (host-side `git credential fill`), writing into the bind-mounted
-  // `.monoceros/git-credentials` file so the in-container clone can
-  // pick it up via the credential.helper that post-create already
-  // wired.
+  // Resolve the provider token (ADR 0031) and write it into the
+  // bind-mounted `.monoceros/git-credentials` so the in-container clone
+  // below authenticates with it — the same token path apply uses, no
+  // host git tooling involved.
   let urlHost: string;
   try {
     urlHost = new URL(entry.url).hostname;
@@ -585,25 +588,24 @@ async function tryCloneInRunningContainer(
     return;
   }
   try {
-    const credsResult = await collectGitCredentials(
-      root,
-      [{ host: urlHost, provider }],
-      {
-        ...(input.credentialsSpawn ? { spawn: input.credentialsSpawn } : {}),
-        logger: { info: () => {}, warn: (m) => logger.warn(m) },
-      },
+    const { hostTokens } = await resolveContainerRepoTokens(
+      input.name,
+      home,
+      await loadComponentCatalog(),
     );
-    const status = credsResult.perHost.find((h) => h.host === urlHost);
-    if (!status || status.status !== 'ok') {
-      const detail = status?.detail ? `: ${status.detail}` : '';
+    if (!hostTokens.get(urlHost)) {
       logger.warn(
-        `No HTTPS credentials available for ${urlHost}${detail}. The yml is updated; set up credentials (e.g. \`gh auth login\`) and re-run \`monoceros apply ${input.name}\` or rerun this add-repo.`,
+        `No access token set for ${urlHost}. The yml is updated; set one (see ${REPO_DOCS_URL}) and re-run \`monoceros apply ${input.name}\`, or rerun this add-repo.`,
       );
       return;
     }
+    await collectGitCredentials(root, [{ host: urlHost, provider }], {
+      patByHost: hostTokens,
+      logger: { info: () => {}, warn: (m) => logger.warn(m) },
+    });
   } catch (err) {
     logger.warn(
-      `Credential fetch for ${urlHost} failed: ${err instanceof Error ? err.message : String(err)}. The yml is updated.`,
+      `Could not resolve a token for ${urlHost}: ${err instanceof Error ? err.message : String(err)}. The yml is updated; run \`monoceros apply ${input.name}\` to clone.`,
     );
     return;
   }
@@ -637,7 +639,7 @@ async function tryCloneInRunningContainer(
     `  exit 0`,
     `fi`,
     `mkdir -p ${shquote(parentRel)}`,
-    `git -c ${shquote(`credential.helper=${credentialHelper}`)} clone ${shquote(entry.url)} ${shquote(targetRel)}`,
+    `git -c ${shquote(`credential.helper=${credentialHelper}`)} clone ${shquote(cloneUrl(entry.url))} ${shquote(targetRel)}`,
   ];
   if (entry.gitUser) {
     script.push(

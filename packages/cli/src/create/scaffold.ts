@@ -79,6 +79,30 @@ export function deriveRepoName(url: string): string {
   return tail.replace(/\.git$/, '');
 }
 
+/**
+ * Strip any embedded userinfo (`user@` / `user:pass@`) from an HTTPS
+ * clone URL. Bitbucket's copy-paste clone URLs embed the account name
+ * (`https://alice@bitbucket.org/…`); git then looks up a credential for
+ * THAT username and ignores our host-keyed git-credentials entry, which
+ * carries the provider's token-auth username (ADR 0031). Cloning against
+ * the userinfo-free URL lets the credential helper match on host and
+ * supply the right token. Non-HTTPS / unparseable URLs pass through
+ * untouched (we only clone HTTPS).
+ */
+export function cloneUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.username || u.password) {
+      u.username = '';
+      u.password = '';
+      return u.toString();
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
 export function validateOptions(opts: CreateOptions): void {
   if (!opts.name || !/^[a-zA-Z0-9._-]+$/.test(opts.name)) {
     throw new Error(
@@ -1747,10 +1771,11 @@ export function buildPostCreateScript(opts: CreateOptions): string {
       if (parent) {
         lines.push(`mkdir -p "projects/${parent}"`);
       }
+      const url = cloneUrl(repo.url);
       lines.push(
         `if [ ! -d "projects/${repo.path}" ]; then`,
-        `  echo "→ Cloning ${repo.path} from ${repo.url}…"`,
-        `  git clone "${repo.url}" "projects/${repo.path}"`,
+        `  echo "→ Cloning ${repo.path} from ${url}…"`,
+        `  git clone "${url}" "projects/${repo.path}"`,
         `else`,
         `  echo "→ projects/${repo.path} already exists, skipping clone"`,
         `fi`,
