@@ -96,6 +96,25 @@ export function interpolate(
   return { value: out, missing };
 }
 
+/**
+ * Expand `${VAR}` references *within* the merged env's own values, so a
+ * per-container `<name>.env` can point into the global `monoceros-config.env`
+ * pool without duplicating the secret (ADR 0031) — e.g.
+ * `GITHUB_API_TOKEN=${GIT_TOKEN__GITHUB_KUNDE1}`. Single pass: a value
+ * referencing another env key resolves; an unknown reference is left as
+ * the literal `${VAR}` (same rule as `interpolate`). Not recursive —
+ * one level of indirection is all this needs.
+ */
+export function expandEnvRefs(
+  env: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    out[key] = interpolate(value, env).value;
+  }
+  return out;
+}
+
 export interface MissingVar {
   /** Dotted path to the field, e.g. `services.postgres.env.POSTGRES_PASSWORD`
    * or `features.ghcr.io/…:1.apiKey`. */

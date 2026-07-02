@@ -1589,4 +1589,78 @@ describe('runApply', () => {
     expect(mounts.some((m) => m.includes('/ssh-agent'))).toBe(false);
     expect(devcontainer.containerEnv?.SSH_AUTH_SOCK).toBeUndefined();
   });
+
+  // ADR 0031: a provider CLI feature with no repo but several org tokens
+  // is ambiguous — apply prompts, then remembers the pick as a
+  // <name>.env reference so the next apply resolves it without asking.
+  it('prompts for an ambiguous feature token and persists the pick to <name>.env', async () => {
+    await writeYml(
+      'featonly',
+      [
+        'schemaVersion: 1',
+        'name: featonly',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/github-cli:1',
+        '',
+      ].join('\n'),
+    );
+    const asked: string[] = [];
+    await runApply({
+      ...baseRunOpts,
+      name: 'featonly',
+      monocerosHome: home,
+      // No provider-wide token here, only two org-keyed candidates.
+      env: {
+        GIT_TOKEN__GITHUB_KUNDE1: 'ghp_k1',
+        GIT_TOKEN__GITHUB_KUNDE2: 'ghp_k2',
+      },
+      featureTokenPrompt: async (ctx) => {
+        asked.push(...ctx.candidates);
+        return 'GIT_TOKEN__GITHUB_KUNDE2';
+      },
+    });
+
+    expect(asked).toEqual([
+      'GIT_TOKEN__GITHUB_KUNDE1',
+      'GIT_TOKEN__GITHUB_KUNDE2',
+    ]);
+    const envText = await readFile(
+      path.join(home, 'container-configs', 'featonly.env'),
+      'utf8',
+    );
+    expect(envText).toContain('GITHUB_API_TOKEN=${GIT_TOKEN__GITHUB_KUNDE2}');
+  });
+
+  it('skipping an ambiguous feature token leaves it unauthenticated (non-fatal)', async () => {
+    await writeYml(
+      'featskip',
+      [
+        'schemaVersion: 1',
+        'name: featskip',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/github-cli:1',
+        '',
+      ].join('\n'),
+    );
+    // No throw despite no token; the pick returns null (skip).
+    await runApply({
+      ...baseRunOpts,
+      name: 'featskip',
+      monocerosHome: home,
+      env: {
+        GIT_TOKEN__GITHUB_KUNDE1: 'ghp_k1',
+        GIT_TOKEN__GITHUB_KUNDE2: 'ghp_k2',
+      },
+      featureTokenPrompt: async () => null,
+    });
+    // Nothing persisted when skipped.
+    const envPath = path.join(home, 'container-configs', 'featskip.env');
+    let envText = '';
+    try {
+      envText = await readFile(envPath, 'utf8');
+    } catch {
+      /* file may not exist — also fine */
+    }
+    expect(envText).not.toContain('GITHUB_API_TOKEN=');
+  });
 });

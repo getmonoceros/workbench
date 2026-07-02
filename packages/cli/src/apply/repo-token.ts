@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import {
   PROVIDER_LABEL,
+  PROVIDER_VALUES,
   REPO_DOCS_URL,
   type RepoProvider,
   type SolutionConfig,
@@ -55,6 +56,30 @@ export interface MissingRepoToken {
   tried: string[];
 }
 
+/**
+ * A provider CLI feature with NO repo to key a token off, where the env
+ * offers several `GIT_TOKEN__<PROVIDER>_*` candidates — genuinely
+ * ambiguous, so the builder must pick (apply prompts, then remembers the
+ * choice as a `<name>.env` reference). ADR 0031.
+ */
+export interface AmbiguousFeatureToken {
+  provider: RepoProvider;
+  featureRef: string;
+  /** Canonical host the token authenticates (github.com / gitlab.com). */
+  host: string;
+  /** The `GIT_TOKEN__<PROVIDER>_*` vars to choose among. */
+  candidates: string[];
+}
+
+/**
+ * Interactive pick for an {@link AmbiguousFeatureToken} — returns the
+ * chosen `GIT_TOKEN__<PROVIDER>_*` var, or null to leave the feature
+ * unauthenticated. Injectable so tests drive it without a TTY.
+ */
+export type FeatureTokenPrompt = (
+  ctx: AmbiguousFeatureToken,
+) => Promise<string | null>;
+
 export interface RepoTokenResult {
   /** Features with the resolved token injected into the provider CLI feature. */
   features: SolutionConfig['features'];
@@ -64,7 +89,16 @@ export interface RepoTokenResult {
   used: RepoTokenUse[];
   /** Repos whose token couldn't be resolved. */
   missing: MissingRepoToken[];
+  /** Repo-less provider features needing an interactive pick (apply resolves). */
+  ambiguous: AmbiguousFeatureToken[];
 }
+
+/** The host a provider's token authenticates when there's no repo URL. */
+const CANONICAL_HOST: Record<RepoProvider, string> = {
+  github: 'github.com',
+  gitlab: 'gitlab.com',
+  bitbucket: 'bitbucket.org',
+};
 
 /** The `<S>` segment for `GIT_TOKEN__<P>_<S>` — the URL's first path part. */
 function workspaceSegment(url: string): string | undefined {
@@ -106,6 +140,16 @@ export function resolveRepoTokens(
   const hostTokens = new Map<string, string>();
   const used: RepoTokenUse[] = [];
   const missing: MissingRepoToken[] = [];
+  const ambiguous: AmbiguousFeatureToken[] = [];
+  const providersWithRepo = new Set<RepoProvider>();
+
+  // Inject a resolved token into a provider's CLI feature so the
+  // in-container gh/glab is authenticated (no-op for featureless providers).
+  const injectFeatureToken = (ref: string | undefined, token: string): void => {
+    if (!ref) return;
+    const feature = features.find((f) => f.ref === ref);
+    if (feature) feature.options = { ...feature.options, apiToken: token };
+  };
 
   for (const repo of config.repos ?? []) {
     if (!repo.url.startsWith('https://')) continue; // only HTTPS is cloned
@@ -119,6 +163,7 @@ export function resolveRepoTokens(
     // Unknown providers are rejected by the separate "set provider:"
     // pre-flight; skip them here so they don't show as missing tokens.
     if (provider === 'unknown') continue;
+    providersWithRepo.add(provider);
 
     const ref = catalog.get(provider)?.file.contributes.features?.[0]?.ref;
     const tried = tokenVarCandidates(provider, repo.url);
@@ -130,12 +175,48 @@ export function resolveRepoTokens(
     const token = envVars[hit]!.trim();
     hostTokens.set(host, token);
     used.push({ host, provider, varName: hit });
-    // Inject into the provider CLI feature so the in-container gh/glab is
-    // authenticated — even when the token came from a GIT_TOKEN__ var
-    // rather than the feature's own placeholder.
-    if (ref) {
-      const feature = features.find((f) => f.ref === ref);
-      if (feature) feature.options = { ...feature.options, apiToken: token };
+    injectFeatureToken(ref, token);
+  }
+
+  // Provider CLI features present WITHOUT a repo (ADR 0031): no URL to
+  // key an org off, so the cascade drops the segment layer —
+  // `<P>_API_TOKEN` → `GIT_TOKEN__<P>`. Exactly one org-keyed token is
+  // used automatically; several are genuinely ambiguous (the builder
+  // picks at apply). The resolved token authenticates the feature AND
+  // seeds git-credentials for the provider's canonical host.
+  for (const provider of PROVIDER_VALUES) {
+    if (providersWithRepo.has(provider)) continue;
+    const ref = catalog.get(provider)?.file.contributes.features?.[0]?.ref;
+    if (!ref || !config.features.some((f) => f.ref === ref)) continue;
+
+    const p = provider.toUpperCase();
+    const host = CANONICAL_HOST[provider];
+    const direct = [`${p}_API_TOKEN`, `GIT_TOKEN__${p}`].find(
+      (v) => (envVars[v] ?? '').trim().length > 0,
+    );
+    if (direct) {
+      const token = envVars[direct]!.trim();
+      hostTokens.set(host, token);
+      used.push({ host, provider, varName: direct });
+      injectFeatureToken(ref, token);
+      continue;
+    }
+    const orgVars = Object.keys(envVars)
+      .filter((k) => k.startsWith(`GIT_TOKEN__${p}_`) && envVars[k]!.trim())
+      .sort();
+    if (orgVars.length === 1) {
+      const token = envVars[orgVars[0]!]!.trim();
+      hostTokens.set(host, token);
+      used.push({ host, provider, varName: orgVars[0]! });
+      injectFeatureToken(ref, token);
+    } else if (orgVars.length > 1) {
+      ambiguous.push({ provider, featureRef: ref, host, candidates: orgVars });
+    } else {
+      missing.push({
+        host,
+        provider,
+        tried: [`${p}_API_TOKEN`, `GIT_TOKEN__${p}`],
+      });
     }
   }
 
@@ -144,6 +225,7 @@ export function resolveRepoTokens(
     hostTokens,
     used,
     missing,
+    ambiguous,
   };
 }
 

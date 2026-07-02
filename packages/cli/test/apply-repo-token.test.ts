@@ -140,6 +140,93 @@ describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
     expect(r.features).toEqual(config.features);
   });
 
+  async function seedFeatureOnly(name: string, ref: string): Promise<void> {
+    await writeFile(
+      ymlPath(name),
+      `schemaVersion: 1\nname: ${name}\nfeatures:\n  - ref: ${ref}\n`,
+    );
+  }
+
+  describe('provider CLI feature without a repo (ADR 0031)', () => {
+    it('auto-uses the sole GIT_TOKEN__<PROVIDER>_<ORG> token', async () => {
+      await seedFeatureOnly('demo', githubCliRef());
+      const config = await configOf('demo');
+      const r = resolveRepoTokens(config, catalog, {
+        GIT_TOKEN__GITHUB_KUNDE1: 'ghp_org',
+      });
+      expect(r.ambiguous).toEqual([]);
+      expect(r.missing).toEqual([]);
+      expect(r.hostTokens.get('github.com')).toBe('ghp_org');
+      expect(r.used[0]!.varName).toBe('GIT_TOKEN__GITHUB_KUNDE1');
+      const feat = r.features.find((f) => f.ref === githubCliRef());
+      expect(feat?.options?.apiToken).toBe('ghp_org');
+    });
+
+    it('GITHUB_API_TOKEN / GIT_TOKEN__GITHUB take precedence over org tokens', async () => {
+      await seedFeatureOnly('demo', githubCliRef());
+      const config = await configOf('demo');
+      const direct = resolveRepoTokens(config, catalog, {
+        GITHUB_API_TOKEN: 'ghp_direct',
+        GIT_TOKEN__GITHUB_KUNDE1: 'ghp_org',
+      });
+      expect(direct.ambiguous).toEqual([]);
+      expect(direct.used[0]!.varName).toBe('GITHUB_API_TOKEN');
+      expect(direct.hostTokens.get('github.com')).toBe('ghp_direct');
+
+      const wide = resolveRepoTokens(config, catalog, {
+        GIT_TOKEN__GITHUB: 'ghp_wide',
+        GIT_TOKEN__GITHUB_KUNDE1: 'ghp_org',
+      });
+      expect(wide.used[0]!.varName).toBe('GIT_TOKEN__GITHUB');
+    });
+
+    it('multiple org tokens are ambiguous (builder must pick)', async () => {
+      await seedFeatureOnly('demo', githubCliRef());
+      const config = await configOf('demo');
+      const r = resolveRepoTokens(config, catalog, {
+        GIT_TOKEN__GITHUB_KUNDE1: 'ghp_1',
+        GIT_TOKEN__GITHUB_KUNDE2: 'ghp_2',
+      });
+      expect(r.used).toEqual([]);
+      expect(r.missing).toEqual([]);
+      expect(r.hostTokens.size).toBe(0);
+      expect(r.ambiguous).toEqual([
+        {
+          provider: 'github',
+          featureRef: githubCliRef(),
+          host: 'github.com',
+          candidates: ['GIT_TOKEN__GITHUB_KUNDE1', 'GIT_TOKEN__GITHUB_KUNDE2'],
+        },
+      ]);
+    });
+
+    it('no token at all is reported as missing (non-fatal)', async () => {
+      await seedFeatureOnly('demo', githubCliRef());
+      const config = await configOf('demo');
+      const r = resolveRepoTokens(config, catalog, {});
+      expect(r.ambiguous).toEqual([]);
+      expect(r.missing[0]!.tried).toEqual([
+        'GITHUB_API_TOKEN',
+        'GIT_TOKEN__GITHUB',
+      ]);
+    });
+
+    it('a repo for the provider suppresses the feature-only pass', async () => {
+      // github repo present → resolved by the repo cascade, so the
+      // feature-only loop must not also emit ambiguous/missing for github.
+      await seedRepo('demo', 'https://github.com/conciso/app.git');
+      const config = await configOf('demo');
+      const r = resolveRepoTokens(config, catalog, {
+        GITHUB_API_TOKEN: 'ghp_repo',
+        GIT_TOKEN__GITHUB_KUNDE1: 'ghp_org',
+        GIT_TOKEN__GITHUB_KUNDE2: 'ghp_org2',
+      });
+      expect(r.ambiguous).toEqual([]);
+      expect(r.used).toHaveLength(1);
+      expect(r.used[0]!.varName).toBe('GITHUB_API_TOKEN');
+    });
+  });
+
   it('resolveContainerRepoTokens reads yml + env by container name', async () => {
     await seedRepo('demo', 'https://github.com/conciso/app.git');
     await writeFile(

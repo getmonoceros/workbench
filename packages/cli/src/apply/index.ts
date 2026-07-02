@@ -17,13 +17,15 @@ import {
 } from '../config/paths.js';
 import {
   readEnvFile,
+  expandEnvRefs,
   interpolateServices,
   interpolateFeatureOptions,
   formatMissingVarsError,
   ensureEnvGitignored,
+  ensureEnvVars,
   resolveGitUserFields,
 } from '../config/env-file.js';
-import { REGEX, isValidEmail } from '../config/schema.js';
+import { PROVIDER_LABEL, REGEX, isValidEmail } from '../config/schema.js';
 import {
   buildStateFile,
   readStateFile,
@@ -105,6 +107,7 @@ import {
 import { writeGlobalDefaultGitUser } from '../config/global.js';
 import { setContainerGitUserInDoc } from '../modify/yml.js';
 import {
+  type FeatureTokenPrompt,
   formatUnauthenticatedRepos,
   formatTokenUse,
   resolveRepoTokens,
@@ -179,6 +182,12 @@ export interface RunApplyOptions {
    * Test seam: production reads `monoceros-config.env` + `<name>.env`.
    */
   env?: Record<string, string>;
+  /**
+   * Interactive pick for a provider CLI feature that has no repo but
+   * several `GIT_TOKEN__<PROVIDER>_*` candidates (ADR 0031). Defaults to a
+   * consola select; tests inject a deterministic pick.
+   */
+  featureTokenPrompt?: FeatureTokenPrompt;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
   /** Override `ssh-keygen` for the SSH attach point (ADR 0022). Tests stub this. */
@@ -195,6 +204,35 @@ export interface RunApplyResult {
   /** Exit code of the trailing `devcontainer up` step. */
   containerExitCode: number;
 }
+
+/** Sentinel for "leave the feature unauthenticated" in the select. */
+const SKIP_FEATURE_TOKEN = '__skip__';
+
+/**
+ * Default {@link FeatureTokenPrompt}: a consola select over the org-keyed
+ * candidates plus a "skip" option. Returns the chosen var, or null to
+ * leave the feature unauthenticated (ADR 0031).
+ */
+const defaultFeatureTokenPrompt: FeatureTokenPrompt = async ({
+  provider,
+  host,
+  candidates,
+}) => {
+  const choice = await consola.prompt(
+    `The ${PROVIDER_LABEL[provider]} CLI feature has no repo to pick a token from. ` +
+      `Which token should authenticate ${host}?`,
+    {
+      type: 'select',
+      options: [
+        ...candidates.map((v) => ({ label: v, value: v })),
+        { label: 'Skip — leave unauthenticated', value: SKIP_FEATURE_TOKEN },
+      ],
+    },
+  );
+  return typeof choice === 'string' && choice !== SKIP_FEATURE_TOKEN
+    ? choice
+    : null;
+};
 
 export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   const home = opts.monocerosHome ?? defaultMonocerosHome();
@@ -265,11 +303,15 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   await ensureEnvGitignored(containerConfigsDir(home));
   // Merge the global env (shared `${VAR}` values — repo PATs, ADR 0031)
   // UNDER the per-container env, so a container-level entry always wins.
-  const envVars = {
+  // `<name>.env` may reference the global pool (e.g.
+  // `GITHUB_API_TOKEN=${GIT_TOKEN__GITHUB_KUNDE1}`, ADR 0031) — expand
+  // those refs against the merged env so the container designates which
+  // global token it uses without duplicating the secret.
+  const envVars = expandEnvRefs({
     ...readEnvFile(globalEnvPath(home)),
     ...readEnvFile(envPath),
     ...(opts.env ?? {}),
-  };
+  });
 
   // Repo token resolution (ADR 0031): resolve each declared repo's access
   // token by convention (feature var → GIT_TOKEN__<PROVIDER>_<SEGMENT> →
@@ -284,6 +326,40 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // seen, naming the consequences and how to set a token.
   const catalog = await loadComponentCatalog();
   const repoTokens = resolveRepoTokens(parsed.config, catalog, envVars);
+
+  // A provider CLI feature with no repo but several org tokens is
+  // genuinely ambiguous (ADR 0031): only the builder knows which org this
+  // container is for. Prompt once, inject the pick into the feature and
+  // the git-credentials host map, then remember it as a `<name>.env`
+  // reference (`<P>_API_TOKEN=${GIT_TOKEN__<P>_<ORG>}`) so the next apply
+  // resolves it by convention without asking again.
+  const featureTokenPrompt =
+    opts.featureTokenPrompt ?? defaultFeatureTokenPrompt;
+  for (const amb of repoTokens.ambiguous) {
+    const chosen = await featureTokenPrompt(amb);
+    if (!chosen) {
+      // Skipped: surface it in the end-of-apply warning with the same
+      // var hints as any other unauthenticated provider.
+      const p = amb.provider.toUpperCase();
+      repoTokens.missing.push({
+        host: amb.host,
+        provider: amb.provider,
+        tried: [`${p}_API_TOKEN`, `GIT_TOKEN__${p}`],
+      });
+      continue;
+    }
+    const token = (envVars[chosen] ?? '').trim();
+    repoTokens.hostTokens.set(amb.host, token);
+    const feature = repoTokens.features.find((f) => f.ref === amb.featureRef);
+    if (feature) feature.options = { ...feature.options, apiToken: token };
+    const featureVar = `${amb.provider.toUpperCase()}_API_TOKEN`;
+    await ensureEnvVars(envPath, opts.name, { [featureVar]: `\${${chosen}}` });
+    logger.info(
+      `Repo token: ${PROVIDER_LABEL[amb.provider]} → ${chosen} ` +
+        `(saved as ${featureVar} in ${prettyPath(envPath)})`,
+    );
+  }
+
   for (const use of repoTokens.used) {
     logger.info(`Repo token: ${formatTokenUse(use)}`);
   }

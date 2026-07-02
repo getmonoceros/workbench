@@ -177,6 +177,19 @@ clone`/push. GitHub/GitLab use `oauth2:<token>`; Bitbucket uses the
   `GITLAB_API_TOKEN` (was `GITHUB_CLI_API_TOKEN`). Other credentialed
   features (claude-code, atlassian) keep the generic `<FEATURE_ID>_<OPTION>`
   derivation.
+- **Provider CLI feature without a repo.** A container can carry the
+  github/gitlab CLI feature with no repo declared — there's no URL to key an
+  org off, so the segment layer drops and the cascade is `<P>_API_TOKEN` →
+  `GIT_TOKEN__<P>`. If neither is set, the org-keyed pool decides: exactly
+  one `GIT_TOKEN__<P>_*` is used automatically; several are genuinely
+  ambiguous (only the builder knows which org this container is for), so
+  apply offers a **one-time pick** over those candidates (plus a skip). The
+  chosen var is remembered as a `<name>.env` reference
+  (`GITHUB_API_TOKEN=${GIT_TOKEN__GITHUB_KUNDE1}`) — not the secret itself —
+  so the next apply resolves it by convention (layer 1) without re-asking.
+  Skipping is non-fatal and surfaces in the same end-of-apply warning.
+  `<name>.env` referencing the global pool works because merged env values
+  are `${VAR}`-expanded before resolution.
 
 Follow-ups (out of #33):
 
