@@ -22,6 +22,7 @@ const ANSI_UNDERLINE = `${ESC}4m`;
 const ANSI_CYAN = `${ESC}36m`;
 const ANSI_GREEN = `${ESC}32m`;
 const ANSI_YELLOW = `${ESC}33m`;
+const ANSI_RED = `${ESC}31m`;
 const ANSI_GREY = `${ESC}90m`;
 const ANSI_RESET = `${ESC}0m`;
 
@@ -52,6 +53,8 @@ export interface Palette {
   green: (s: string) => string;
   /** Yellow — a warning marker (`⚠`) that must catch the eye. */
   yellow: (s: string) => string;
+  /** Red — a failure marker (`✘`). */
+  red: (s: string) => string;
   dim: (s: string) => string;
   /**
    * Section marker — bold + underlined with a `▸` chevron prefix.
@@ -72,6 +75,7 @@ function makePalette(isTty: boolean): Palette {
     cyan: (s) => wrap(s, ANSI_CYAN),
     green: (s) => wrap(s, ANSI_GREEN),
     yellow: (s) => wrap(s, ANSI_YELLOW),
+    red: (s) => wrap(s, ANSI_RED),
     dim: (s) => wrap(s, ANSI_GREY),
     sectionLine: (label) => wrap(`▸ ${label}`, ANSI_BOLD, ANSI_UNDERLINE),
   };
@@ -96,5 +100,6 @@ export const underline = stderrPalette.underline;
 export const cyan = stderrPalette.cyan;
 export const green = stderrPalette.green;
 export const yellow = stderrPalette.yellow;
+export const red = stderrPalette.red;
 export const dim = stderrPalette.dim;
 export const sectionLine = stderrPalette.sectionLine;

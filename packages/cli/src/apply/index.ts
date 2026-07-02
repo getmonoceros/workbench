@@ -53,7 +53,7 @@ import {
   validateOptions,
   writeScaffold,
 } from '../create/scaffold.js';
-import { cyan, dim, sectionLine, stripAnsi } from '../util/format.js';
+import { cyan, dim, red, sectionLine, stripAnsi } from '../util/format.js';
 import { migrateDeprecatedFeatureRef } from '../util/ref.js';
 import { createApplyLog, teeApplyLogger } from './apply-log.js';
 import {
@@ -749,7 +749,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         progress.succeed();
       } else {
         const { tailLines } = progress.fail();
-        progressOut.write(`\n✘ apply failed (exit ${exitCode})\n\n`);
+        progressOut.write(`\n${red(`✘ apply failed (exit ${exitCode})`)}\n\n`);
         for (const line of tailLines) {
           progressOut.write(`  ${line}\n`);
         }

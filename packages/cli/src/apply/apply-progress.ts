@@ -25,6 +25,22 @@ const FRAME_INTERVAL_MS = 80;
 const TAIL_LINES = 15;
 
 /**
+ * Lines we drop from the on-screen failure tail — pure `@devcontainers/cli`
+ * / Node internals that are never user-actionable and would otherwise
+ * crowd the real error (e.g. a git "could not read Username") out of the
+ * {@link TAIL_LINES}-line window. The full stream still goes to the log
+ * file, so nothing is lost for deep debugging.
+ */
+function isNoiseTailLine(line: string): boolean {
+  const t = line.trim();
+  return (
+    /^at\s/.test(t) || // JS stack frame
+    t.startsWith('{"outcome":') || // devcontainer-cli result blob
+    /^Error: Command failed: \/bin\/sh -c/.test(t) // Node child rethrow header
+  );
+}
+
+/**
  * Stream triggers that advance the spinner label. Order matters — the
  * first match per line wins, so put more specific patterns first.
  * Each pattern is matched against single output lines after ANSI
@@ -175,16 +191,24 @@ export function createApplyProgress(opts: ApplyProgressOptions): ApplyProgress {
         const line = lineBuf.slice(0, nl);
         lineBuf = lineBuf.slice(nl + 1);
         if (line.length === 0) continue;
-        tail.push(line);
-        if (tail.length > TAIL_LINES) tail.shift();
+        // A stream-driven phase change resets the tail, so a failure shows
+        // only the FAILING phase's output (e.g. the post-create clone
+        // error) — not the whole container build/run transcript that ran
+        // before it. The triggering line is kept as the first tail line.
         for (const trig of PHASE_TRIGGERS) {
           const m = line.match(trig.pattern);
           if (m) {
-            setPhase(
-              typeof trig.label === 'function' ? trig.label(m) : trig.label,
-            );
+            const label =
+              typeof trig.label === 'function' ? trig.label(m) : trig.label;
+            if (label !== phase) tail.length = 0;
+            setPhase(label);
             break;
           }
+        }
+        // Keep the tail focused on the actual error — drop cli/Node noise.
+        if (!isNoiseTailLine(line)) {
+          tail.push(line);
+          if (tail.length > TAIL_LINES) tail.shift();
         }
       }
       cb();

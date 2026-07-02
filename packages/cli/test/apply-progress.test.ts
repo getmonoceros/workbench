@@ -169,6 +169,58 @@ describe('createApplyProgress stream sink (phase detection + tail)', () => {
     expect(tailLines[14]).toBe('line-19');
   });
 
+  it('drops devcontainer-cli/Node noise from the tail (keeps the real error)', () => {
+    const { stream } = makeFakeOut({ isTTY: false });
+    const progress = createApplyProgress({ out: stream, interactive: false });
+    progress.streamSink.write(
+      [
+        "[t] fatal: could not read Username for 'https://gitlab.com'",
+        '[t] postCreateCommand from devcontainer.json failed with exit code 128.',
+        'Error: Command failed: /bin/sh -c .devcontainer/post-create.sh',
+        '    at E (/x/devContainersSpecCLI.js:233:157)',
+        '    at process.processTicksAndRejections (node:internal/x)',
+        '{"outcome":"error","message":"…","containerId":"abc"}',
+        '',
+      ].join('\n'),
+    );
+    const { tailLines } = progress.fail();
+    // The two meaningful lines survive; stack frames, the rethrow header,
+    // and the JSON blob are filtered out.
+    expect(tailLines).toEqual([
+      "[t] fatal: could not read Username for 'https://gitlab.com'",
+      '[t] postCreateCommand from devcontainer.json failed with exit code 128.',
+    ]);
+  });
+
+  it('scopes the failure tail to the failing phase (drops the build/run transcript)', () => {
+    const { stream } = makeFakeOut({ isTTY: false });
+    const progress = createApplyProgress({ out: stream, interactive: false });
+    progress.streamSink.write(
+      [
+        '#16 naming to docker.io/library/vsc-… done',
+        '[t] Start: Run: docker run --sig-proxy=false -a STDOUT --mount … -c echo Container started',
+        '[t] Container started',
+        '[t] [monoceros-ssh] sshd up on 127.0.0.1:22',
+        '[t] Running the postCreateCommand from devcontainer.json...',
+        '[t] → projects/other already exists, skipping clone',
+        '[t] → Cloning sample from https://gitlab.com/thorque/sample.git…',
+        "[t] Cloning into 'projects/sample'...",
+        "[t] fatal: could not read Username for 'https://gitlab.com'",
+        '[t] postCreateCommand from devcontainer.json failed with exit code 128.',
+        '',
+      ].join('\n'),
+    );
+    const { tailLines } = progress.fail();
+    // Only the failing phase (the `→ Cloning` trigger onward) survives —
+    // the docker run / container-start transcript is gone.
+    expect(tailLines).toEqual([
+      '[t] → Cloning sample from https://gitlab.com/thorque/sample.git…',
+      "[t] Cloning into 'projects/sample'...",
+      "[t] fatal: could not read Username for 'https://gitlab.com'",
+      '[t] postCreateCommand from devcontainer.json failed with exit code 128.',
+    ]);
+  });
+
   it('strips ANSI escape codes before matching triggers and buffering tail', () => {
     const { stream, written } = makeFakeOut({ isTTY: false });
     const progress = createApplyProgress({ out: stream, interactive: false });
