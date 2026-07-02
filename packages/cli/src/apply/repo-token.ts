@@ -13,6 +13,7 @@ import {
   globalEnvPath,
 } from '../config/paths.js';
 import { resolveProvider } from '../devcontainer/credentials.js';
+import { bold, cyan, yellow } from '../util/format.js';
 import type { Component } from './../init/components.js';
 
 /**
@@ -176,30 +177,35 @@ export function formatUnauthenticatedRepos(
   missing: readonly MissingRepoToken[],
   containerName: string,
 ): string {
+  // Own heading + colour so it stands out from the grey status output —
+  // yellow/bold heading, cyan var names (the "you set this" colour). In a
+  // non-TTY (piped / log file) the palette no-ops to plain text.
   const lines: string[] = [
-    '⚠  Some repositories have no access token and are left UNAUTHENTICATED:',
+    bold(yellow('⚠  Repo access — action needed')),
+    '',
+    yellow('   Some repositories are UNAUTHENTICATED:'),
   ];
   for (const m of missing) {
     lines.push(`     • ${PROVIDER_LABEL[m.provider]} (${m.host})`);
   }
   lines.push(
     '',
-    '   Public repositories still clone (read-only). But:',
+    bold('   Public repositories still clone (read-only). But:'),
     '     • gh / glab in the container are not logged in.',
     '     • pushing, and cloning/pulling PRIVATE repositories, fails.',
     '     • branches, PRs/MRs — anything that writes to the remote — fails.',
     '',
-    '   Set a token, then re-apply:',
+    bold('   Set a token, then re-apply:'),
   );
   for (const m of missing) {
     // tried order: [<PROVIDER>_API_TOKEN, GIT_TOKEN__<P>_<SEG>, GIT_TOKEN__<P>].
     const featureVar = m.tried.find((v) => !v.startsWith('GIT_TOKEN__'))!;
     const sharedVar = m.tried.find((v) => v.startsWith('GIT_TOKEN__'))!;
     lines.push(
-      `     • ${PROVIDER_LABEL[m.provider]}: ${featureVar} in container-configs/${containerName}.env,`,
-      `       or ${sharedVar} in monoceros-config.env`,
+      `     • ${PROVIDER_LABEL[m.provider]}: ${cyan(featureVar)} in container-configs/${containerName}.env,`,
+      `       or ${cyan(sharedVar)} in monoceros-config.env`,
     );
   }
-  lines.push('', `   Details: ${REPO_DOCS_URL}`);
+  lines.push('', `   Details: ${cyan(REPO_DOCS_URL)}`);
   return lines.join('\n');
 }
