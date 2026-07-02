@@ -2,7 +2,7 @@ import { promises as fs, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   runAddAptPackages,
   runAddFeature,
@@ -1162,19 +1162,31 @@ describe('add-*/remove-* against the yml', () => {
     expect(warns.some((m) => /token/i.test(m))).toBe(true);
   });
 
-  it('aborts cleanly when the user declines the prompt', async () => {
+  it('runAddRepo on-the-fly: private clone fails with no token → prominent block', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
-    const result = await runAddLanguage({
-      ...baseOpts,
-      yes: false,
-      confirm: async () => false,
-      name: 'demo',
-      language: 'python',
-      monocerosHome: home,
-    });
-    expect(result.status).toBe('aborted');
-    const yml = await ymlOf('demo');
-    expect(yml).not.toContain('python');
+    const errWrite = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation(() => true);
+    try {
+      await runAddRepo({
+        ...baseOpts,
+        name: 'demo',
+        url: 'https://github.com/foo/bar.git',
+        monocerosHome: home,
+        containerLookupDocker: async () => ({
+          stdout: 'deadbeef0004\n',
+          stderr: '',
+          exitCode: 0,
+        }),
+        // No token + clone fails (private repo) → apply-level warning block.
+        containerExec: async () => ({ exitCode: 128 }),
+      });
+      const out = errWrite.mock.calls.map((c) => String(c[0])).join('');
+      expect(out).toContain('UNAUTHENTICATED');
+      expect(out).toContain('GITHUB_API_TOKEN');
+    } finally {
+      errWrite.mockRestore();
+    }
   });
 
   it('errors when the named config does not exist', async () => {

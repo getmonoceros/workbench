@@ -1,6 +1,5 @@
 import { promises as fs } from 'node:fs';
 import { consola } from 'consola';
-import { createPatch } from 'diff';
 import path from 'node:path';
 import type { Document } from 'yaml';
 import { parseConfig, readConfig, stringifyConfig } from '../config/io.js';
@@ -23,7 +22,11 @@ import {
   collectGitCredentials,
   resolveProvider,
 } from '../devcontainer/credentials.js';
-import { resolveContainerRepoTokens } from '../apply/repo-token.js';
+import {
+  resolveContainerRepoTokens,
+  formatUnauthenticatedRepos,
+  type MissingRepoToken,
+} from '../apply/repo-token.js';
 import { REPO_DOCS_URL } from '../config/schema.js';
 import {
   findRunningContainerByLocalFolder,
@@ -587,24 +590,23 @@ async function tryCloneInRunningContainer(
     );
     return;
   }
+  // Resolve the repo token (ADR 0031). A missing token is NOT fatal:
+  // public repos clone read-only. We proceed to the clone and let its
+  // outcome drive the messaging — the consequences/how-to-fix are shown
+  // afterwards (same warn-and-proceed policy as apply).
+  let noToken: MissingRepoToken | undefined;
   try {
-    const { hostTokens } = await resolveContainerRepoTokens(
+    const { hostTokens, missing } = await resolveContainerRepoTokens(
       input.name,
       home,
       await loadComponentCatalog(),
     );
-    if (hostTokens.get(urlHost)) {
+    noToken = missing.find((m) => m.host === urlHost);
+    if (!noToken) {
       await collectGitCredentials(root, [{ host: urlHost, provider }], {
         patByHost: hostTokens,
         logger: { info: () => {}, warn: (m) => logger.warn(m) },
       });
-    } else {
-      // No token — not fatal (public repos clone read-only). Proceed to
-      // the clone anyway; a private repo fails there with git's own auth
-      // error. Same warn-and-proceed policy as apply (ADR 0031).
-      logger.warn(
-        `No access token set for ${urlHost} — cloning will fail if this repo is private. Set one (see ${REPO_DOCS_URL}) and re-run.`,
-      );
     }
   } catch (err) {
     logger.warn(
@@ -661,14 +663,29 @@ async function tryCloneInRunningContainer(
     return;
   }
   if (exit.exitCode !== 0) {
-    logger.warn(
-      `In-container clone for ${entry.url} exited ${exit.exitCode}. The yml is updated; \`monoceros apply ${input.name}\` retries.`,
-    );
+    if (noToken) {
+      // Almost always the "private repo, no token" case — show the same
+      // prominent, consequence-spelling block apply uses, not a bare warn.
+      process.stderr.write(
+        `\n${formatUnauthenticatedRepos([noToken], input.name)}\n`,
+      );
+    } else {
+      logger.warn(
+        `In-container clone for ${entry.url} exited ${exit.exitCode}. The yml is updated; \`monoceros apply ${input.name}\` retries.`,
+      );
+    }
     return;
   }
   logger.info(
     `Cloned ${entry.url} into /workspaces/${containerName}/${targetRel} inside the running container.`,
   );
+  if (noToken) {
+    // Public repo cloned fine, but no token means gh/glab aren't logged
+    // in and push/private-pull won't work. Light heads-up, not alarming.
+    logger.warn(
+      `No token set for ${urlHost}: the clone worked (public), but gh/glab aren't logged in and pushing needs a token. See ${REPO_DOCS_URL}.`,
+    );
+  }
   void path; // path import is reserved for future relative-path work
 }
 
@@ -1033,18 +1050,9 @@ async function mutate(
   const newText = stringifyConfig(parsed.doc);
   parseConfig(newText, ymlPath);
 
-  const out = opts.output ?? ((line) => process.stdout.write(line + '\n'));
-  out(createPatch(ymlPath, oldText, newText, 'before', 'after'));
-
-  if (!opts.yes) {
-    const confirm = opts.confirm ?? defaultConfirm;
-    const ok = await confirm('Apply these changes to the yml?');
-    if (!ok) {
-      logger.warn('Aborted by user. The yml was not modified.');
-      return { status: 'aborted' };
-    }
-  }
-
+  // Write straight through. The yml is a comment-preserving edit the
+  // builder reviews on the next `apply` (and in git if they version it);
+  // a raw unified-diff prompt here was noise nobody could act on.
   await fs.writeFile(ymlPath, newText, 'utf8');
   logger.success(`Updated ${ymlPath}.`);
   logger.info(
@@ -1060,14 +1068,6 @@ function defaultLogger(): ModifyLogger {
     warn: (m) => consola.warn(m),
   };
 }
-
-const defaultConfirm: ConfirmFn = async (message) => {
-  const result = await consola.prompt(message, {
-    type: 'confirm',
-    initial: false,
-  });
-  return result === true;
-};
 
 /**
  * State-driven sync between the yml's `ports:` and Traefik's
