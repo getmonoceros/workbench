@@ -47,6 +47,12 @@ export interface RepoTokenUse {
   provider: RepoProvider;
   /** The env var the token was read from. */
   varName: string;
+  /**
+   * What the token authenticates: a declared `repo` (clone/push), or a
+   * provider CLI `feature` with no repo (just `gh`/`glab` login). Drives
+   * the log wording so a repo-less container never reads "Repo token".
+   */
+  source: 'repo' | 'feature';
 }
 
 export interface MissingRepoToken {
@@ -174,7 +180,7 @@ export function resolveRepoTokens(
     }
     const token = envVars[hit]!.trim();
     hostTokens.set(host, token);
-    used.push({ host, provider, varName: hit });
+    used.push({ host, provider, varName: hit, source: 'repo' });
     injectFeatureToken(ref, token);
   }
 
@@ -197,7 +203,7 @@ export function resolveRepoTokens(
     if (direct) {
       const token = envVars[direct]!.trim();
       hostTokens.set(host, token);
-      used.push({ host, provider, varName: direct });
+      used.push({ host, provider, varName: direct, source: 'feature' });
       injectFeatureToken(ref, token);
       continue;
     }
@@ -207,7 +213,7 @@ export function resolveRepoTokens(
     if (orgVars.length === 1) {
       const token = envVars[orgVars[0]!]!.trim();
       hostTokens.set(host, token);
-      used.push({ host, provider, varName: orgVars[0]! });
+      used.push({ host, provider, varName: orgVars[0]!, source: 'feature' });
       injectFeatureToken(ref, token);
     } else if (orgVars.length > 1) {
       ambiguous.push({ provider, featureRef: ref, host, candidates: orgVars });
@@ -244,9 +250,14 @@ export async function resolveContainerRepoTokens(
   return resolveRepoTokens(config, catalog, envVars);
 }
 
-/** One log line naming the env var a repo's token was read from. */
+/**
+ * One log line naming the env var a token was read from, prefixed by what
+ * it authenticates: `Repo token` for a declared repo, `CLI token` for a
+ * repo-less provider feature (just `gh`/`glab` login).
+ */
 export function formatTokenUse(use: RepoTokenUse): string {
-  return `${PROVIDER_LABEL[use.provider]} (${use.host}) → ${use.varName}`;
+  const prefix = use.source === 'feature' ? 'CLI token' : 'Repo token';
+  return `${prefix}: ${PROVIDER_LABEL[use.provider]} (${use.host}) → ${use.varName}`;
 }
 
 /**

@@ -63,10 +63,15 @@ describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
     });
     expect(r.hostTokens.get('github.com')).toBe('ghp_1');
     expect(r.used).toEqual([
-      { host: 'github.com', provider: 'github', varName: 'GITHUB_API_TOKEN' },
+      {
+        host: 'github.com',
+        provider: 'github',
+        varName: 'GITHUB_API_TOKEN',
+        source: 'repo',
+      },
     ]);
     expect(formatTokenUse(r.used[0]!)).toBe(
-      'GitHub (github.com) → GITHUB_API_TOKEN',
+      'Repo token: GitHub (github.com) → GITHUB_API_TOKEN',
     );
     // Injected into the CLI feature so the container gh gets GH_TOKEN.
     const feat = r.features.find((f) => f.ref === githubCliRef());
@@ -158,6 +163,11 @@ describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
       expect(r.missing).toEqual([]);
       expect(r.hostTokens.get('github.com')).toBe('ghp_org');
       expect(r.used[0]!.varName).toBe('GIT_TOKEN__GITHUB_KUNDE1');
+      // source 'feature' → logged as "CLI token", not "Repo token".
+      expect(r.used[0]!.source).toBe('feature');
+      expect(formatTokenUse(r.used[0]!)).toBe(
+        'CLI token: GitHub (github.com) → GIT_TOKEN__GITHUB_KUNDE1',
+      );
       const feat = r.features.find((f) => f.ref === githubCliRef());
       expect(feat?.options?.apiToken).toBe('ghp_org');
     });

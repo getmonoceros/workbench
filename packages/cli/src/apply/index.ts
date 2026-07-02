@@ -355,13 +355,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     const featureVar = `${amb.provider.toUpperCase()}_API_TOKEN`;
     await ensureEnvVars(envPath, opts.name, { [featureVar]: `\${${chosen}}` });
     logger.info(
-      `Repo token: ${PROVIDER_LABEL[amb.provider]} → ${chosen} ` +
+      `CLI token: ${PROVIDER_LABEL[amb.provider]} → ${chosen} ` +
         `(saved as ${featureVar} in ${prettyPath(envPath)})`,
     );
   }
 
   for (const use of repoTokens.used) {
-    logger.info(`Repo token: ${formatTokenUse(use)}`);
+    logger.info(formatTokenUse(use));
   }
 
   // Resolve `${VAR}` in FEATURE options first. A missing/empty value
