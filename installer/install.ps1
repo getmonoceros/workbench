@@ -301,7 +301,7 @@ node -v >/dev/null 2>&1 && echo NODE-OK || echo NODE-NOT-READY
 '@
       if ($sys -match 'NODE-NOT-READY') { throw 'Node could not be installed in the distro.' }
       $r = In-Distro @'
-curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.sh | bash
 BIN="$HOME/.local/bin/monoceros"
 TPLDIR="$HOME/.local/lib/node_modules/@getmonoceros/workbench/templates"
 mkdir -p "$HOME/.monoceros"
