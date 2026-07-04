@@ -668,7 +668,7 @@ if [[ -f "$config_src" ]]; then
   else
     cp "$config_src" "$config_dst"
     ok "config $(dim '→') $(dim "$config_dst")"
-    say "  $(dim "All entries are commented out — uncomment what you need")"
+    say "  $(dim "All entries are commented out - uncomment what you need")"
     say "  $(dim "(git identity, feature API keys, etc).")"
   fi
 else
@@ -688,7 +688,7 @@ if [[ -f "$env_src" ]]; then
   else
     cp "$env_src" "$env_dst"
     ok "secrets $(dim '→') $(dim "$env_dst")"
-    say "  $(dim 'All entries are commented out — add repo tokens (PATs) here')"
+    say "  $(dim 'All entries are commented out - add repo tokens (PATs) here')"
     say "  $(dim 'when you need private clone/push (public repos need none).')"
   fi
 else
@@ -717,10 +717,15 @@ case "$user_shell" in
   *)    say "      $(dim '(open a new terminal)')" ;;
 esac
 say ""
-say "  Get started:"
-say "      $(cmd 'monoceros init  myapp --with-languages=node --with-features=claude')  $(dim '# describe a dev container')"
-say "      $(cmd 'monoceros apply myapp')  $(dim '# build and start it')"
-say "      $(cmd 'monoceros shell myapp')  $(dim '# work inside it')"
+say "  Get started $(dim '(describe a container, build it, then work inside):')"
+say "      $(cmd 'monoceros init  myapp --with-languages=node --with-features=claude')"
+say "      $(cmd 'monoceros apply myapp')"
+say "      $(cmd 'monoceros shell myapp')"
+say ""
+say "  Working with Git repositories? Add your access tokens to:"
+say "      $(cmd "$monoceros_home/monoceros-config.env")"
+say "  $(dim 'Then gh, glab and clone/push are authenticated.')"
+say "  $(dim 'Details: https://getmonoceros.build/docs/concepts/git-and-repos/')"
 say ""
 say "  Help        $(cmd 'monoceros --help')"
 say "  Docs        $(cmd 'https://getmonoceros.build/docs')"

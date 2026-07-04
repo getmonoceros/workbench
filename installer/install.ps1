@@ -361,10 +361,17 @@ if [ -f "$TPLDIR/monoceros-config.sample.env" ] && [ ! -f "$HOME/.monoceros/mono
   Write-Host '   Your container configs live here:' -ForegroundColor Gray
   Write-Host "       $LinkPath\container-configs" -ForegroundColor Cyan
   Write-Host ''
-  Write-Host '   Get started in a new unprivileged terminal:' -ForegroundColor Gray
-  Write-Host '       monoceros init  myapp --with-languages=node --with-features=claude' -ForegroundColor Cyan -NoNewline; Write-Host '   # describe a dev container' -ForegroundColor DarkGray
-  Write-Host '       monoceros apply myapp' -ForegroundColor Cyan -NoNewline; Write-Host '    # build and start it' -ForegroundColor DarkGray
-  Write-Host '       monoceros shell myapp' -ForegroundColor Cyan -NoNewline; Write-Host '    # work inside it' -ForegroundColor DarkGray
+  Write-Host '   Open a new, unprivileged terminal to use monoceros.' -ForegroundColor Gray
+  Write-Host ''
+  Write-Host '   Get started ' -ForegroundColor Gray -NoNewline; Write-Host '(describe a container, build it, then work inside):' -ForegroundColor DarkGray
+  Write-Host '       monoceros init  myapp --with-languages=node --with-features=claude' -ForegroundColor Cyan
+  Write-Host '       monoceros apply myapp' -ForegroundColor Cyan
+  Write-Host '       monoceros shell myapp' -ForegroundColor Cyan
+  Write-Host ''
+  Write-Host '   Working with Git repositories? Add your access tokens to:' -ForegroundColor Gray
+  Write-Host "       $LinkPath\monoceros-config.env" -ForegroundColor Cyan
+  Write-Host '   Then gh, glab and clone/push are authenticated.' -ForegroundColor DarkGray
+  Write-Host '   Details: https://getmonoceros.build/docs/concepts/git-and-repos/' -ForegroundColor DarkGray
   Write-Host ''
   Write-Host '   Help        ' -ForegroundColor Gray -NoNewline; Write-Host 'monoceros --help' -ForegroundColor Cyan
   Write-Host '   Docs        ' -ForegroundColor Gray -NoNewline; Write-Host 'https://getmonoceros.build/docs' -ForegroundColor Cyan
