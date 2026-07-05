@@ -15,7 +15,7 @@
 
 if [ -z "${BASH_VERSION:-}" ]; then
   echo "This uninstaller requires bash. Re-run with:" >&2
-  echo "    curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/uninstall.sh | bash" >&2
+  echo "    curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/uninstall.sh | bash" >&2
   exit 1
 fi
 set -euo pipefail
