@@ -18,12 +18,13 @@ const PACKAGE = '@getmonoceros/workbench';
 /** npm registry endpoint for the `latest` dist-tag manifest. */
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE}/latest`;
 /**
- * The ONE install/update command, all platforms (on Windows it runs inside
- * WSL — there is no `.ps1`). Matches README. npm is an implementation
- * detail INSIDE the script and is never surfaced as an alternative.
+ * The update command shown in the notice. The CLI always runs in a Linux
+ * context (WSL on Windows), so re-running the sh installer updates it on
+ * every platform. npm is an implementation detail INSIDE the script and is
+ * never surfaced as an alternative.
  */
 const INSTALL_COMMAND =
-  'curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash';
+  'curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.sh | bash';
 /** Check at most this often. */
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** Set to any non-empty value to silence the check entirely. */
