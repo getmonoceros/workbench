@@ -40,19 +40,31 @@ options:
     description: "Optional Bitbucket app password; only needed for twg's Bitbucket commands."
     surface: env
 feature:
-  version: 1.2.0
+  version: 1.2.1
   persistentHomePaths: [.config/acli, .rovodev, .config/twg, .agents]
   vscodeExtensions: [Atlassian.atlascode]
-  # Forge is keychain-free in a container: instead of `forge login` (which
-  # needs libsecret), Atlassian's documented path is the FORGE_EMAIL /
-  # FORGE_API_TOKEN env vars, read at command time. We hand them to the
-  # workspace runtime env from the shared account options, gated on the
-  # `forge` toggle. Sibling of a service's connectionEnv (ADR 0021).
+  # Forge and twg are both keychain-free in a container: instead of a
+  # `login` step (which needs libsecret, or a TTY for twg's OAuth),
+  # Atlassian's documented path is env vars read at command time. We hand
+  # them to the workspace runtime env from the shared account options,
+  # each gated on its own toggle. Sibling of a service's connectionEnv
+  # (ADR 0021).
+  #   - Forge reads FORGE_EMAIL / FORGE_API_TOKEN.
+  #   - twg reads TWG_USER / TWG_SITE / TWG_TOKEN (+ optional
+  #     TWG_BBC_TOKEN for Bitbucket). Recent twg makes `twg login`
+  #     OAuth-only and it aborts without a TTY, so these env vars are the
+  #     only non-interactive auth path; there is no login hook.
   workspaceEnv:
     - whenOption: forge
       vars:
         FORGE_EMAIL: '${email}'
         FORGE_API_TOKEN: '${apiToken}'
+    - whenOption: twg
+      vars:
+        TWG_USER: '${email}'
+        TWG_SITE: '${instance}'
+        TWG_TOKEN: '${apiToken}'
+        TWG_BBC_TOKEN: '${bitbucketToken}'
 briefing:
   - whenOption: rovodev
     text: 'Atlassian Rovo Dev — invoke via `acli rovodev`. Pre-authenticated against the Atlassian account configured in the feature options (shared with twg).'
