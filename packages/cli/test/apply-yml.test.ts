@@ -1115,6 +1115,66 @@ describe('runApply', () => {
     );
   });
 
+  it('does NOT prompt for a container identity when every repo carries its own git.user', async () => {
+    // Regression: a repo whose git.user resolves to literal values gets
+    // its committer identity per-clone via post-create.sh. It must not
+    // drive the container-wide identity prompt — no host identity, no
+    // container git.user, no defaults, yet apply used to prompt anyway
+    // because the mere presence of a repo triggered collection.
+    await writeYml(
+      'self-identified',
+      [
+        'schemaVersion: 1',
+        'name: self-identified',
+        'repos:',
+        '  - url: https://github.com/work/api.git',
+        '    git:',
+        '      user:',
+        '        name: Thorsten (work)',
+        '        email: tk@conciso.de',
+        '',
+      ].join('\n'),
+    );
+    const promptedKeys: string[] = [];
+    await runApply({
+      ...baseRunOpts,
+      name: 'self-identified',
+      monocerosHome: home,
+      identityPrompt: async (key: string) => {
+        promptedKeys.push(key);
+        return undefined;
+      },
+    });
+    expect(promptedKeys).toEqual([]);
+  });
+
+  it('still prompts for a container identity when a repo lacks its own git.user', async () => {
+    // Guard against over-skipping: a repo with no git.user still needs
+    // the container-wide fallback identity, so the prompt must fire when
+    // the cascade has nothing else (no host identity in the stub).
+    await writeYml(
+      'needs-identity',
+      [
+        'schemaVersion: 1',
+        'name: needs-identity',
+        'repos:',
+        '  - url: https://github.com/work/api.git',
+        '',
+      ].join('\n'),
+    );
+    const promptedKeys: string[] = [];
+    await runApply({
+      ...baseRunOpts,
+      name: 'needs-identity',
+      monocerosHome: home,
+      identityPrompt: async (key: string) => {
+        promptedKeys.push(key);
+        return undefined;
+      },
+    });
+    expect(promptedKeys.length).toBeGreaterThan(0);
+  });
+
   it('resolves ${VAR} in per-repo git.user from <name>.env', async () => {
     await writeYml(
       'repo-env-id',

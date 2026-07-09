@@ -477,14 +477,29 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // and might just want a sandbox container. They can `monoceros
   // add-repo` later, at which point the next apply re-evaluates and
   // collects identity then.
-  const hasRepos = (createOpts.repos ?? []).length > 0;
+  //
+  // A repo that already carries its own fully-resolved `git.user`
+  // (still set after the resolve loop above) gets its committer
+  // identity per-clone via the post-create script, independent of
+  // this cascade. So it doesn't drive the container-identity prompt:
+  // only a repo WITHOUT its own identity needs the container-wide
+  // fallback. If every repo self-identifies, prompting for a
+  // container identity is the same pure friction as the no-repos
+  // case.
+  const reposNeedingContainerIdentity = (createOpts.repos ?? []).some(
+    (repo) => !repo.gitUser,
+  );
   const hasContainerGitUser = parsed.config.git?.user !== undefined;
   const hasDefaultGitUser = globalConfig?.defaults?.git?.user !== undefined;
   const idLogger = {
     info: logger.info,
     warn: logger.warn ?? logger.info,
   };
-  if (hasRepos || hasContainerGitUser || hasDefaultGitUser) {
+  if (
+    reposNeedingContainerIdentity ||
+    hasContainerGitUser ||
+    hasDefaultGitUser
+  ) {
     const identity = await collectGitIdentity(targetDir, {
       ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
       ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),
