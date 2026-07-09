@@ -1148,6 +1148,61 @@ describe('runApply', () => {
     expect(promptedKeys).toEqual([]);
   });
 
+  it('does NOT prompt when the container git.user placeholders resolve to blank and every repo self-identifies', async () => {
+    // Regression: `init` always emits `git.user: ${GIT_USER_NAME}/…`, so
+    // the block textually exists on nearly every yml. With the env vars
+    // present-but-blank it resolves to nothing (no containerGitOverride).
+    // The mere presence of the block must not force the prompt — the one
+    // repo carries its own identity, so there's nothing left to collect.
+    await writeYml(
+      'blank-container-id',
+      [
+        'schemaVersion: 1',
+        'name: blank-container-id',
+        'git:',
+        '  user:',
+        '    name: ${GIT_USER_NAME}',
+        '    email: ${GIT_USER_EMAIL}',
+        'repos:',
+        '  - url: https://github.com/work/api.git',
+        '    git:',
+        '      user:',
+        '        name: Thorsten Kamann',
+        '        email: tk@conciso.de',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      path.join(home, 'container-configs', 'blank-container-id.env'),
+      'GIT_USER_NAME=\nGIT_USER_EMAIL=\n',
+    );
+    const promptedKeys: string[] = [];
+    await runApply({
+      ...baseRunOpts,
+      name: 'blank-container-id',
+      monocerosHome: home,
+      identityPrompt: async (key: string) => {
+        promptedKeys.push(key);
+        return undefined;
+      },
+    });
+    expect(promptedKeys).toEqual([]);
+    // The repo still gets its own identity baked in per-clone.
+    const postCreate = await readFile(
+      path.join(
+        home,
+        'container',
+        'blank-container-id',
+        '.devcontainer',
+        'post-create.sh',
+      ),
+      'utf8',
+    );
+    expect(postCreate).toContain(
+      'git -C "projects/api" config user.name "Thorsten Kamann"',
+    );
+  });
+
   it('still prompts for a container identity when a repo lacks its own git.user', async () => {
     // Guard against over-skipping: a repo with no git.user still needs
     // the container-wide fallback identity, so the prompt must fire when

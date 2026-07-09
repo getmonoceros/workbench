@@ -471,7 +471,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // defaults → host global → persisted .monoceros/gitconfig → prompt.
   //
   // Skip identity collection entirely when there's no obvious reason
-  // to need one: no repos to clone, no explicit yml.git.user, no
+  // to need one: no repos to clone, no resolved yml.git.user, no
   // defaults.git.user. Without those, asking the builder for a
   // committer identity is pure friction — they didn't ask for git
   // and might just want a sandbox container. They can `monoceros
@@ -486,10 +486,18 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // fallback. If every repo self-identifies, prompting for a
   // container identity is the same pure friction as the no-repos
   // case.
+  //
+  // The container `git.user` driver keys off whether it RESOLVED to a
+  // value (`containerGitOverride`), not whether the block textually
+  // exists. `init` always emits `git.user: ${GIT_USER_NAME}/…`, so mere
+  // presence is meaningless — with the env vars blank the block resolves
+  // to nothing and is effectively absent. It must not force a prompt on
+  // its own; only a genuinely resolved value (or a repo needing the
+  // fallback) does.
   const reposNeedingContainerIdentity = (createOpts.repos ?? []).some(
     (repo) => !repo.gitUser,
   );
-  const hasContainerGitUser = parsed.config.git?.user !== undefined;
+  const hasResolvedContainerGitUser = containerGitOverride !== undefined;
   const hasDefaultGitUser = globalConfig?.defaults?.git?.user !== undefined;
   const idLogger = {
     info: logger.info,
@@ -497,7 +505,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   };
   if (
     reposNeedingContainerIdentity ||
-    hasContainerGitUser ||
+    hasResolvedContainerGitUser ||
     hasDefaultGitUser
   ) {
     const identity = await collectGitIdentity(targetDir, {
