@@ -487,18 +487,22 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // container identity is the same pure friction as the no-repos
   // case.
   //
-  // The container `git.user` driver keys off whether it RESOLVED to a
-  // value (`containerGitOverride`), not whether the block textually
-  // exists. `init` always emits `git.user: ${GIT_USER_NAME}/…`, so mere
-  // presence is meaningless — with the env vars blank the block resolves
-  // to nothing and is effectively absent. It must not force a prompt on
-  // its own; only a genuinely resolved value (or a repo needing the
-  // fallback) does.
+  // The container `git.user` and monoceros-config `defaults.git.user`
+  // drivers key off whether they RESOLVED to a value, not whether the
+  // block textually exists. `init` always emits `git.user:
+  // ${GIT_USER_NAME}/…` and the global-config generator always emits a
+  // `defaults.git.user: { name: '', email: '' }` block, so mere presence
+  // is meaningless — a block that resolves to nothing (blank env, empty
+  // strings → undefined per GitUserSchema) is effectively absent. It must
+  // not force a prompt on its own; only a genuinely resolved value (or a
+  // repo needing the fallback) does.
   const reposNeedingContainerIdentity = (createOpts.repos ?? []).some(
     (repo) => !repo.gitUser,
   );
   const hasResolvedContainerGitUser = containerGitOverride !== undefined;
-  const hasDefaultGitUser = globalConfig?.defaults?.git?.user !== undefined;
+  const defaultGitUser = globalConfig?.defaults?.git?.user;
+  const hasDefaultGitUser =
+    defaultGitUser?.name !== undefined || defaultGitUser?.email !== undefined;
   const idLogger = {
     info: logger.info,
     warn: logger.warn ?? logger.info,

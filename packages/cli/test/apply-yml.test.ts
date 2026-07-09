@@ -1203,6 +1203,60 @@ describe('runApply', () => {
     );
   });
 
+  it('does NOT prompt when monoceros-config defaults.git.user is a blank block and every repo self-identifies', async () => {
+    // Regression: the global-config generator always emits
+    // `defaults.git.user: { name: '', email: '' }`. GitUserSchema maps
+    // the empty strings to undefined per field, but the block itself
+    // stays present — so the "does a default identity exist?" gate keyed
+    // off mere presence fired even though it resolves to nothing,
+    // forcing the prompt despite the repo carrying its own identity.
+    await writeFile(
+      path.join(home, 'monoceros-config.yml'),
+      [
+        'schemaVersion: 1',
+        'defaults:',
+        '  git:',
+        '    user:',
+        "      name: ''",
+        "      email: ''",
+        '',
+      ].join('\n'),
+    );
+    await writeYml(
+      'blank-defaults-id',
+      [
+        'schemaVersion: 1',
+        'name: blank-defaults-id',
+        'git:',
+        '  user:',
+        '    name: ${GIT_USER_NAME}',
+        '    email: ${GIT_USER_EMAIL}',
+        'repos:',
+        '  - url: https://github.com/work/api.git',
+        '    git:',
+        '      user:',
+        '        name: Thorsten Kamann',
+        '        email: tk@conciso.de',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      path.join(home, 'container-configs', 'blank-defaults-id.env'),
+      'GIT_USER_NAME=\nGIT_USER_EMAIL=\n',
+    );
+    const promptedKeys: string[] = [];
+    await runApply({
+      ...baseRunOpts,
+      name: 'blank-defaults-id',
+      monocerosHome: home,
+      identityPrompt: async (key: string) => {
+        promptedKeys.push(key);
+        return undefined;
+      },
+    });
+    expect(promptedKeys).toEqual([]);
+  });
+
   it('still prompts for a container identity when a repo lacks its own git.user', async () => {
     // Guard against over-skipping: a repo with no git.user still needs
     // the container-wide fallback identity, so the prompt must fire when
