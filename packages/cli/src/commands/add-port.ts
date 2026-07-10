@@ -8,7 +8,7 @@ export const addPortCommand = defineCommand({
     name: 'add-port',
     group: 'edit',
     description:
-      'Add one or more ports to the container config so they become reachable from the host via Traefik (`<container>.localhost` / `<container>-<port>.localhost`). Pass port numbers after `--` (e.g. `monoceros add-port sandbox -- 3000 5173 6006`). Idempotent. Persisted in the yml so later `monoceros apply` runs restore the routes. Pass `--default` together with a single port to make it the bare `<container>.localhost` route — the port is inserted at position 0 (or moved there if it already exists).',
+      'Add one or more ports to the container config so they become reachable from the host via Traefik (`<container>.localhost` / `<container>-<port>.localhost`). Pass port numbers as arguments (e.g. `monoceros add-port sandbox 3000 5173 6006`). Idempotent. Persisted in the yml so later `monoceros apply` runs restore the routes. Pass `--default` together with a single port to make it the bare `<container>.localhost` route — the port is inserted at position 0 (or moved there if it already exists).',
   },
   args: {
     name: {
@@ -16,6 +16,12 @@ export const addPortCommand = defineCommand({
       description:
         'Container name (yml in $MONOCEROS_HOME/container-configs/).',
       required: true,
+    },
+    ports: {
+      type: 'positional',
+      description:
+        'One or more port numbers to expose (e.g. `3000 5173`). At least one is required.',
+      required: false,
     },
     yes: {
       type: 'boolean',
@@ -31,10 +37,13 @@ export const addPortCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const tokens = [...getInnerArgs()];
+    // Ports are positional (`add-port acme 3000 5173`); the `--` form
+    // (`add-port acme -- 3000`) still works as a fallback. `args._` carries
+    // every positional including the container name, so drop the first.
+    const tokens = [...args._.slice(1).map(String), ...getInnerArgs()];
     if (tokens.length === 0) {
       consola.error(
-        'No ports given. Usage: `monoceros add-port <containername> [--yes] [--default] -- <port> [<port> …]`.',
+        'No ports given. Usage: `monoceros add-port <containername> [--default] [--yes] <port> [<port> …]`.',
       );
       process.exit(1);
     }

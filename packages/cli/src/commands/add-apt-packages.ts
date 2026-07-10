@@ -8,7 +8,7 @@ export const addAptPackagesCommand = defineCommand({
     name: 'add-apt-packages',
     group: 'edit',
     description:
-      'Add Debian/Ubuntu apt packages to the container config. Pass package names after `--` (e.g. `monoceros add-apt-packages sandbox -- make openssh-client jq`). Idempotent. No curated whitelist — invalid names surface as apt errors at container build time.',
+      'Add Debian/Ubuntu apt packages to the container config. Pass package names as arguments (e.g. `monoceros add-apt-packages sandbox make openssh-client jq`). Idempotent. No curated whitelist — invalid names surface as apt errors at container build time.',
   },
   args: {
     name: {
@@ -16,6 +16,12 @@ export const addAptPackagesCommand = defineCommand({
       description:
         'Container name (yml in $MONOCEROS_HOME/container-configs/).',
       required: true,
+    },
+    packages: {
+      type: 'positional',
+      description:
+        'One or more Debian/Ubuntu apt package names (e.g. `make jq`). At least one is required.',
+      required: false,
     },
     yes: {
       type: 'boolean',
@@ -25,10 +31,13 @@ export const addAptPackagesCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const packages = [...getInnerArgs()];
+    // Packages are positional (`add-apt-packages acme make jq`); the `--` form
+    // still works as a fallback. `args._` carries every positional including
+    // the container name, so drop the first.
+    const packages = [...args._.slice(1).map(String), ...getInnerArgs()];
     if (packages.length === 0) {
       consola.error(
-        'No package names given. Usage: `monoceros add-apt-packages <containername> [--yes] -- <pkg> [<pkg> …]`.',
+        'No package names given. Usage: `monoceros add-apt-packages <containername> [--yes] <pkg> [<pkg> …]`.',
       );
       process.exit(1);
     }
