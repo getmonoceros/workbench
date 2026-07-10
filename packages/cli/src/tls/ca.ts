@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import forge from 'node-forge';
 import { monocerosHome as defaultMonocerosHome } from '../config/paths.js';
@@ -66,6 +67,20 @@ function randomSerial(): string {
   return '00' + forge.util.bytesToHex(forge.random.getBytesSync(16));
 }
 
+/**
+ * The CA's common name carries the host's name so several machines' CAs are
+ * distinguishable in a device's trust store (each machine has its own CA - the
+ * private key never leaves it). Baked in only when the CA is first created;
+ * existing CAs keep their name and stay trusted.
+ */
+function caCommonName(): string {
+  const host = os
+    .hostname()
+    .replace(/\.local$/, '')
+    .trim();
+  return host ? `Monoceros Local CA (${host})` : 'Monoceros Local CA';
+}
+
 interface LoadedCa {
   cert: forge.pki.Certificate;
   key: forge.pki.rsa.PrivateKey;
@@ -110,7 +125,7 @@ async function loadOrCreateCa(monocerosHome?: string): Promise<LoadedCa> {
   cert.validity.notAfter = new Date(
     cert.validity.notBefore.getTime() + CA_DAYS * 24 * 60 * 60 * 1000,
   );
-  const attrs = [{ name: 'commonName', value: 'Monoceros Local CA' }];
+  const attrs = [{ name: 'commonName', value: caCommonName() }];
   cert.setSubject(attrs);
   cert.setIssuer(attrs);
   cert.setExtensions([

@@ -23,7 +23,11 @@ describe('ensureCa', () => {
     const certPem = await readFile(first.certPath, 'utf8');
     const cert = forge.pki.certificateFromPem(certPem);
     expect(cert.getExtension('basicConstraints')).toMatchObject({ cA: true });
-    expect(cert.subject.getField('CN').value).toBe('Monoceros Local CA');
+    // CN carries the host name so machines' CAs are distinguishable in a
+    // device's trust store.
+    expect(cert.subject.getField('CN').value).toMatch(
+      /^Monoceros Local CA( \(.+\))?$/,
+    );
 
     // The private key is written with owner-only permissions.
     const mode = (await stat(path.join(home, 'ca', 'rootCA-key.pem'))).mode;

@@ -170,6 +170,38 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('xdg-open http://demo.localhost');
   });
 
+  it('always briefs the launch config, with an add-port step when no ports exist', () => {
+    const noPorts = generateAgentsMd({
+      containerName: 'demo',
+      languages: ['node'],
+      services: [],
+      features: [],
+      repos: [],
+      ports: [],
+    });
+    // Emitted even with zero ports: otherwise a port-less workbench leaves the
+    // agent with no hint the launch-config mechanism exists at all.
+    expect(noPorts).toContain('## Running a long-running server');
+    expect(noPorts).toContain('projects/<app>/.monoceros/launch.json');
+    // It resolves the chicken-and-egg: have the user add a port first.
+    expect(noPorts).toContain('This container exposes **no ports yet**');
+    expect(noPorts).toContain('monoceros add-port demo <port>');
+    // The example carries a placeholder port, not an invented real one.
+    expect(noPorts).toContain('"port": <port>');
+
+    const withPorts = generateAgentsMd({
+      containerName: 'demo',
+      languages: ['node'],
+      services: [],
+      features: [],
+      repos: [],
+      ports: [5173],
+    });
+    expect(withPorts).toContain('## Running a long-running server');
+    expect(withPorts).toContain('"port": 5173');
+    expect(withPorts).not.toContain('This container exposes **no ports yet**');
+  });
+
   it('keeps .localhost URLs suffix-free at the default host port 80', () => {
     const md = generateAgentsMd({
       containerName: 'demo',
