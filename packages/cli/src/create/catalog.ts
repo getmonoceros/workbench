@@ -9,6 +9,7 @@ import type { ServiceHealthcheck, ServiceObject } from '../config/schema.js';
 import type { ResolvedService } from './types.js';
 import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import type { CatalogComponent } from '../catalog/load.js';
+import type { BriefingLine } from '../catalog/descriptor.js';
 
 // Monoceros runtime image — thin layer on top of Microsoft's
 // typescript-node base (see images/runtime/Dockerfile). The default
@@ -430,6 +431,12 @@ export interface ServiceEntry {
    * resolved here by name via `serviceDefersStart`. See ADR 0025.
    */
   deferStart?: boolean;
+  /**
+   * Agent-facing guidance lines from the descriptor's `briefing:`, rendered
+   * under the service in the generated AGENTS.md (see briefing/agents-md.ts).
+   * The single source for what the in-container agent is told about a service.
+   */
+  briefing?: readonly BriefingLine[];
 }
 
 // The `monoceros` user/password/db below are deliberate dev-only
@@ -481,6 +488,9 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
           ...(svc.command ? { command: svc.command } : {}),
           ...(svc.exampleVolumes ? { exampleVolumes: svc.exampleVolumes } : {}),
           ...(svc.deferStart ? { deferStart: true } : {}),
+          ...(c.descriptor.briefing && c.descriptor.briefing.length > 0
+            ? { briefing: c.descriptor.briefing }
+            : {}),
         };
         return [key, entry];
       }),
@@ -523,6 +533,16 @@ export function serviceDefersStart(name: string): boolean {
  */
 export function curatedServiceExampleVolumes(name: string): readonly string[] {
   return SERVICE_CATALOG[name]?.exampleVolumes ?? [];
+}
+
+/**
+ * Agent-facing briefing lines for a curated service, from its descriptor's
+ * `briefing:` field. Rendered under the service in AGENTS.md. Empty for
+ * services (or non-curated names) without one. Service briefing lines are
+ * unconditional - `whenOption` gating is a feature-only concern.
+ */
+export function curatedServiceBriefing(name: string): readonly string[] {
+  return (SERVICE_CATALOG[name]?.briefing ?? []).map((line) => line.text);
 }
 
 /**

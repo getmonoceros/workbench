@@ -4,7 +4,11 @@ import type {
   ResolvedService,
   FeatureOptions,
 } from '../create/types.js';
-import { isCuratedService, serviceConnectionEnv } from '../create/catalog.js';
+import {
+  isCuratedService,
+  serviceConnectionEnv,
+  curatedServiceBriefing,
+} from '../create/catalog.js';
 import type { FeatureManifestSummary } from '../init/manifest.js';
 
 /**
@@ -131,6 +135,13 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     lines.push('');
     for (const svc of input.services) {
       lines.push(formatServiceLine(svc));
+      // Per-service guidance comes straight from the descriptor's `briefing:`
+      // (the single source), rendered as indented lines under the service.
+      for (const brief of curatedServiceBriefing(svc.name)) {
+        for (const sub of brief.split('\n')) {
+          lines.push(sub ? `  ${sub}` : '');
+        }
+      }
     }
     lines.push('');
 

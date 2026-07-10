@@ -121,6 +121,44 @@ describe('AGENTS.md generator', () => {
     expect(md).not.toContain('black box');
   });
 
+  it("renders a curated service's descriptor briefing lines under the service", () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: [],
+      services: [
+        {
+          name: 'keycloak',
+          image: 'quay.io/keycloak/keycloak:26.6',
+          port: 8080,
+          env: {},
+          volumes: [],
+        },
+      ],
+      features: [],
+      repos: [],
+      ports: [],
+    });
+    // The per-service guidance is sourced from the descriptor's `briefing:`,
+    // not hardcoded here - assert the realm-import guidance reaches the agent.
+    expect(md).toContain('--import-realm');
+    expect(md).toContain(
+      'projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro',
+    );
+    // A service with no descriptor briefing (redis) adds no extra lines.
+    const redis = generateAgentsMd({
+      containerName: 'demo',
+      languages: [],
+      services: [
+        { name: 'redis', image: 'redis:8', port: 6379, env: {}, volumes: [] },
+      ],
+      features: [],
+      repos: [],
+      ports: [],
+    });
+    expect(redis).toContain('**redis** — reachable at `redis:6379`');
+    expect(redis).not.toContain('--import-realm');
+  });
+
   it('renders one bullet per feature line (single line per feature is the simple case)', () => {
     const md = generateAgentsMd({
       containerName: 'demo',
