@@ -76,7 +76,9 @@ describe('expandCuratedService / isCuratedService', () => {
     expect(serviceDefersStart('keycloak')).toBe(true);
     const svc = expandCuratedService('keycloak');
     expect(svc.image).toBe('quay.io/keycloak/keycloak:26.6');
-    expect(svc.command).toBe('start-dev --import-realm');
+    expect(svc.command).toBe(
+      'start-dev --import-realm --proxy-headers=xforwarded',
+    );
     expect(svc.env).toEqual({
       KC_BOOTSTRAP_ADMIN_USERNAME: '${KC_BOOTSTRAP_ADMIN_USERNAME}',
       KC_BOOTSTRAP_ADMIN_PASSWORD: '${KC_BOOTSTRAP_ADMIN_PASSWORD}',

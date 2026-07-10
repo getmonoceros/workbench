@@ -43,7 +43,9 @@ describe('deferred service start (ADR 0025)', () => {
       services: [resolveService(expandCuratedService('keycloak'))],
     });
     expect(yaml).toContain('keycloak:');
-    expect(yaml).toContain('command: "start-dev --import-realm"');
+    expect(yaml).toContain(
+      'command: "start-dev --import-realm --proxy-headers=xforwarded"',
+    );
     // Deferred services carry the compose profile so `devcontainer up`'s
     // profile-less `up` skips them in the first wave (ADR 0025).
     expect(yaml).toMatch(

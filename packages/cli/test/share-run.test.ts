@@ -5,6 +5,7 @@ import path from 'node:path';
 import { runShare } from '../src/share/run.js';
 import type { DockerSpawn, DockerSpawnHandle } from '../src/tunnel/run.js';
 import type { ResolvedTarget } from '../src/tunnel/resolve.js';
+import { CADDY_IMAGE } from '../src/share/caddy.js';
 
 let home: string;
 
@@ -30,6 +31,12 @@ const resolveStub = async (): Promise<ResolvedTarget> => ({
 
 const preflightStub = async (): Promise<void> => {};
 const hostStub = () => ({ ip: '192.168.1.10', mdnsName: 'host.local' });
+const tlsStub = async () => ({
+  caCertPath: '/home/ca/rootCA.pem',
+  certDir: '/home/certs',
+  certFile: 'leaf.pem',
+  keyFile: 'leaf-key.pem',
+});
 
 /** Records spawned argv; each handle stays open until killed (then exits 130). */
 function recordingSpawn() {
@@ -84,6 +91,7 @@ describe('runShare', () => {
       resolve: resolveStub,
       preflight: preflightStub,
       hostAddresses: hostStub,
+      provisionTls: tlsStub,
       installSignalHandler: (h) => {
         handler = h;
         return () => {};
@@ -91,18 +99,31 @@ describe('runShare', () => {
       logger: { info: (m) => lines.push(m), warn: () => {} },
     });
 
-    await waitFor(() => rec.calls.length >= 2);
+    await waitFor(() => rec.calls.length >= 1);
 
-    // one socat sidecar per ported target (5173, 3001) — not the port-less worker
-    expect(rec.calls).toHaveLength(2);
-    const flat = rec.calls.map((a) => a.join(' '));
-    expect(flat.some((a) => a.includes('-p 0.0.0.0:5173:5173'))).toBe(true);
-    expect(flat.some((a) => a.includes('-p 0.0.0.0:3001:3001'))).toBe(true);
-    expect(flat.every((a) => a.includes('--network=net'))).toBe(true);
-    // banner mentions the host + both ports
+    // a single Caddy terminator publishes every ported target (5173, 3001),
+    // not the port-less worker
+    expect(rec.calls).toHaveLength(1);
+    const argv = rec.calls[0];
+    if (!argv) throw new Error('no docker call recorded');
+    const flat = argv.join(' ');
+    expect(flat).toContain('-p 0.0.0.0:5173:5173');
+    expect(flat).toContain('-p 0.0.0.0:3001:3001');
+    expect(flat).toContain('--network=net');
+    // mounts the provisioned cert dir + the generated Caddyfile, runs Caddy
+    expect(flat).toContain('-v /home/certs:/certs:ro');
+    expect(
+      argv.some((a) => a.endsWith('.Caddyfile:/etc/caddy/Caddyfile:ro')),
+    ).toBe(true);
+    expect(argv).toContain(CADDY_IMAGE);
+    // primary lines use the mDNS name for each ported target, now over https
     const banner = lines.join('\n');
-    expect(banner).toContain('192.168.1.10:5173');
-    expect(banner).toContain('192.168.1.10:3001');
+    expect(banner).toContain('https://host.local:5173');
+    expect(banner).toContain('https://host.local:3001');
+    // the raw IP appears as the also-reachable fallback line
+    expect(banner).toContain('also reachable as https://192.168.1.10');
+    // the CA-trust hint points at the provisioned root cert
+    expect(banner).toContain('/home/ca/rootCA.pem');
 
     // Ctrl+C tears every forward down and the command returns clean
     handler?.();

@@ -1,6 +1,6 @@
 {
   "name": "@getmonoceros/workbench",
-  "version": "1.37.14",
+  "version": "1.38.0",
   "description": "Monoceros workbench CLI — local, reproducible dev containers with first-class AI coding tooling.",
   "keywords": [
     "devcontainer",
@@ -49,11 +49,13 @@
     "citty": "^0.2.2",
     "consola": "^3.4.2",
     "diff": "^9.0.0",
+    "node-forge": "1.4.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/node-forge": "1.3.14",
     "tsup": "^8.5.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

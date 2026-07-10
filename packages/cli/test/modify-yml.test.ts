@@ -181,7 +181,9 @@ describe('add-*/remove-* against the yml', () => {
     expect(result.status).toBe('updated');
     const yml = await ymlOf('demo');
     expect(yml).toContain('- name: keycloak');
-    expect(yml).toContain('command: start-dev --import-realm');
+    expect(yml).toContain(
+      'command: start-dev --import-realm --proxy-headers=xforwarded',
+    );
     // The example volumes ride as a COMMENTED scaffold — the `volumes:` key
     // is commented too, because an active but empty `volumes:` parses to
     // null and apply rejects it.

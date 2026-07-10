@@ -9,7 +9,14 @@ service:
   # Dev mode + realm import. The Keycloak image has no auto-start default,
   # so a command is mandatory. `--import-realm` reads every *.json from
   # /opt/keycloak/data/import at startup (a no-op if the dir is empty).
-  command: start-dev --import-realm
+  # `--proxy-headers=xforwarded` makes Keycloak derive the issuer host and
+  # scheme from X-Forwarded-Host / X-Forwarded-Proto, so the realm stamps a
+  # matching issuer whether it is reached over http via the Traefik proxy
+  # (`plantlove.localhost`) or over https via `monoceros share` on a phone.
+  # Without it Keycloak uses the raw connection scheme (always http behind a
+  # TLS-terminating proxy) and the OIDC token exchange fails on the https
+  # client. See ADR 0033.
+  command: start-dev --import-realm --proxy-headers=xforwarded
   # Starts in a host-side second wave AFTER the repo clone (ADR 0025), so a
   # mounted realm.json / theme from the project is present at boot. No
   # dataMount: the dev H2 database is ephemeral and re-seeds from the

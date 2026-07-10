@@ -7,7 +7,7 @@ export const shareCommand = defineCommand({
     name: 'share',
     group: 'discovery',
     description:
-      "Expose an app's ports to the local network (phone, tablet, other devices) so any device can open it - reached via the host's LAN IP (or `.local` name). Every target in the app's launch.json that declares a port is shared. Foreground: Ctrl+C stops sharing. See ADR 0030.",
+      "Expose an app's ports to the local network (phone, tablet, other devices) over HTTPS so any device can open it - reached via the host's LAN IP (or `.local` name). TLS is served with a machine-local CA; trust the printed rootCA.pem once per device for warning-free HTTPS (and a working PWA secure context). Every target in the app's launch.json that declares a port is shared. Foreground: Ctrl+C stops sharing. See ADR 0030 and 0033.",
   },
   args: {
     name: {
