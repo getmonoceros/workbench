@@ -54,6 +54,12 @@ export function renderCaddyfile(
     '{',
     '\tauto_https off',
     '\tadmin off',
+    // `share` is a foreground user command, not a server; Caddy's default
+    // info-level JSON (maxprocs, GOMEMLIMIT, "server running", autosave, …)
+    // is pure noise there. Keep only genuine errors.
+    '\tlog {',
+    '\t\tlevel ERROR',
+    '\t}',
     '\tservers {',
     '\t\tprotocols h1 h2',
     '\t}',

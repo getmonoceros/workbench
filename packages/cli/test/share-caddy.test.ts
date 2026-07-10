@@ -19,6 +19,9 @@ describe('renderCaddyfile', () => {
     expect(cf).toContain('admin off');
     // HTTP/3 disabled: iOS/WebKit replays token POSTs over h3 and breaks
     expect(cf).toContain('protocols h1 h2');
+    // Caddy silenced to errors only - no info-level JSON noise in a foreground
+    // user command.
+    expect(cf).toContain('level ERROR');
     expect(cf).toContain(':5173 {');
     expect(cf).toContain(':8080 {');
     expect(cf).toContain('tls /certs/leaf.pem /certs/leaf-key.pem');

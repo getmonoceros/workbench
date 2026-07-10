@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "cliVersion": "1.38.6",
+  "cliVersion": "1.38.7",
   "languages": [
     {
       "name": "dotnet",

@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { consola } from 'consola';
 import { readLaunchConfig } from '../config/launch-config.js';
 import {
@@ -20,9 +20,11 @@ import { provisionShareTls, type ProvisionShareTls } from '../tls/ca.js';
 import {
   buildCaddyDockerArgs,
   renderCaddyfile,
+  CADDY_IMAGE,
   type CaddySite,
 } from './caddy.js';
 import { monocerosHome as defaultMonocerosHome } from '../config/paths.js';
+import { isWsl, resolveWindowsProfile } from '../devcontainer/ssh-attach.js';
 import { cyan, dim } from '../util/format.js';
 
 /**
@@ -52,6 +54,8 @@ export interface RunShareOptions {
   hostAddresses?: () => HostAddresses;
   /** Injected in tests; defaults to the real CA-backed TLS provisioning. */
   provisionTls?: ProvisionShareTls;
+  /** Injected in tests; defaults to a quiet `docker pull` of the terminator image. */
+  ensureImage?: (image: string) => Promise<void>;
   logger?: ShareLogger;
 }
 
@@ -100,6 +104,59 @@ function mdnsHostName(): string {
   }
   const hn = os.hostname();
   return hn.endsWith('.local') ? hn : `${hn}.local`;
+}
+
+/**
+ * Pull the terminator image once, quietly, before the banner - so `docker run`
+ * doesn't dump layer-by-layer progress into a user-facing foreground command.
+ * A single line explains the one-time first-run delay; nothing on cache hit.
+ */
+async function defaultEnsureImage(
+  image: string,
+  log: ShareLogger,
+): Promise<void> {
+  const present = await new Promise<boolean>((resolve) => {
+    const c = spawn('docker', ['image', 'inspect', image], { stdio: 'ignore' });
+    c.on('error', () => resolve(false));
+    c.on('exit', (code) => resolve(code === 0));
+  });
+  if (present) return;
+  log.info(dim(`Pulling ${image} (first run, one-time)…`));
+  await new Promise<void>((resolve, reject) => {
+    const c = spawn('docker', ['pull', '-q', image], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let err = '';
+    c.stderr?.on('data', (d: Buffer) => (err += d.toString()));
+    c.on('error', reject);
+    c.on('exit', (code) =>
+      code === 0
+        ? resolve()
+        : reject(
+            new Error(
+              `docker pull ${image} failed: ${err.trim() || `exit ${code}`}`,
+            ),
+          ),
+    );
+  });
+}
+
+/**
+ * The CA path to print for the "trust me once" hint. On Windows the CLI runs
+ * inside WSL; printing the WSL-internal path (`/home/<user>/.monoceros/...`)
+ * would force the user into the distro. The onboarding symlinks
+ * `%USERPROFILE%\.monoceros` to that home, so present the Windows path instead.
+ * Falls back to the raw path off WSL or if the Windows home can't be resolved.
+ */
+async function caTrustDisplayPath(
+  caCertPath: string,
+  home: string,
+): Promise<string> {
+  if (!isWsl()) return caCertPath;
+  const prof = await resolveWindowsProfile();
+  if (!prof) return caCertPath;
+  const rel = path.relative(home, caCertPath).split(path.sep).join('\\');
+  return `${prof.homeWin}\\.monoceros\\${rel}`;
 }
 
 export async function runShare(opts: RunShareOptions): Promise<number> {
@@ -179,6 +236,12 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
     renderCaddyfile(sites, tls.certFile, tls.keyFile),
   );
 
+  // Pull the terminator image before the banner so a first-run `docker pull`
+  // doesn't stream layer progress after we've already said "Sharing …".
+  const ensureImage =
+    opts.ensureImage ?? ((image: string) => defaultEnsureImage(image, log));
+  await ensureImage(CADDY_IMAGE);
+
   const dockerSpawn = opts.dockerSpawn ?? defaultDockerSpawn;
   const handles: DockerSpawnHandle[] = [
     dockerSpawn(
@@ -206,9 +269,10 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
       ),
     );
   }
+  const caPath = await caTrustDisplayPath(tls.caCertPath, home);
   log.info(
     dim(
-      `  First device? Trust the local CA once so HTTPS is warning-free: ${tls.caCertPath}`,
+      `  First device? Trust the local CA once so HTTPS is warning-free: ${caPath}`,
     ),
   );
 

@@ -92,6 +92,7 @@ describe('runShare', () => {
       preflight: preflightStub,
       hostAddresses: hostStub,
       provisionTls: tlsStub,
+      ensureImage: async () => {},
       installSignalHandler: (h) => {
         handler = h;
         return () => {};
