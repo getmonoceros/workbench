@@ -8,7 +8,7 @@ export const removePortCommand = defineCommand({
     name: 'remove-port',
     group: 'edit',
     description:
-      'Remove one or more ports from the container config. Pass port numbers after `--` (e.g. `monoceros remove-port sandbox -- 3000 5173`). Idempotent — ports not present are skipped silently.',
+      'Remove one or more ports from the container config. Pass port numbers as arguments (e.g. `monoceros remove-port sandbox 3000 5173`). Idempotent — ports not present are skipped silently.',
   },
   args: {
     name: {
@@ -16,6 +16,12 @@ export const removePortCommand = defineCommand({
       description:
         'Container name (yml in $MONOCEROS_HOME/container-configs/).',
       required: true,
+    },
+    ports: {
+      type: 'positional',
+      description:
+        'One or more port numbers to remove (e.g. `3000 5173`). At least one is required.',
+      required: false,
     },
     yes: {
       type: 'boolean',
@@ -25,10 +31,13 @@ export const removePortCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const tokens = [...getInnerArgs()];
+    // Ports are positional (`remove-port acme 3000`); the `--` form still works
+    // as a fallback. `args._` carries every positional including the container
+    // name, so drop the first.
+    const tokens = [...args._.slice(1).map(String), ...getInnerArgs()];
     if (tokens.length === 0) {
       consola.error(
-        'No ports given. Usage: `monoceros remove-port <containername> [--yes] -- <port> [<port> …]`.',
+        'No ports given. Usage: `monoceros remove-port <containername> [--yes] <port> [<port> …]`.',
       );
       process.exit(1);
     }
