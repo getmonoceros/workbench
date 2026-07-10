@@ -25,6 +25,7 @@ import {
 } from './caddy.js';
 import { monocerosHome as defaultMonocerosHome } from '../config/paths.js';
 import { isWsl, resolveWindowsProfile } from '../devcontainer/ssh-attach.js';
+import { wslLanTarget } from '../devcontainer/wsl-networking.js';
 import { cyan, dim } from '../util/format.js';
 
 /**
@@ -200,7 +201,18 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
   // Issue a leaf cert covering every name/address a device might use, so socat
   // can terminate TLS - HTTP over a LAN IP / `.local` name is an insecure
   // context and kills PKCE + Service Workers (ADR 0033).
-  const { ip, mdnsName } = (opts.hostAddresses ?? realHostAddresses)();
+  const { ip: rawIp, mdnsName } = (opts.hostAddresses ?? realHostAddresses)();
+  // On Windows the CLI runs in WSL; `rawIp` is then the WSL-NAT address
+  // (172.x), which no other device can reach. Advertise the real Windows LAN
+  // IP instead, and remember whether the port is actually reachable there
+  // (mirrored networking) or not (NAT) so we can guide the user.
+  let ip = rawIp;
+  let wslNatUnreachable = false;
+  if (isWsl()) {
+    const t = await wslLanTarget();
+    if (t.lanIp) ip = t.lanIp;
+    wslNatUnreachable = t.lanIp !== null && !t.mirrored;
+  }
   const sans = [mdnsName, ip, 'localhost', '127.0.0.1'].filter(
     (s): s is string => typeof s === 'string' && s.length > 0,
   );
@@ -266,6 +278,18 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
       `  First device? Trust the local CA once so HTTPS is warning-free: ${caPath}`,
     ),
   );
+
+  if (wslNatUnreachable) {
+    const warn = log.warn ?? log.info;
+    warn(
+      'WSL is in NAT mode, so the URL above is not reachable from other devices yet.',
+    );
+    warn('Enable mirrored networking once, then re-run this command:');
+    warn('  1. add to %USERPROFILE%\\.wslconfig:');
+    warn('       [wsl2]');
+    warn('       networkingMode=mirrored');
+    warn('  2. run  wsl --shutdown  in PowerShell (closes your WSL sessions)');
+  }
 
   const dockerSpawn = opts.dockerSpawn ?? defaultDockerSpawn;
   const handles: DockerSpawnHandle[] = [
