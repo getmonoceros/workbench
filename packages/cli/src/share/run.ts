@@ -242,20 +242,12 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
     opts.ensureImage ?? ((image: string) => defaultEnsureImage(image, log));
   await ensureImage(CADDY_IMAGE);
 
-  const dockerSpawn = opts.dockerSpawn ?? defaultDockerSpawn;
-  const handles: DockerSpawnHandle[] = [
-    dockerSpawn(
-      buildCaddyDockerArgs({
-        localAddress: SHARE_ADDRESS,
-        ports,
-        network: base.network,
-        certDir: tls.certDir,
-        caddyfilePath,
-      }),
-    ),
-  ];
-
+  // Print the whole banner first - including the awaited Windows path - so it
+  // all renders while stdout is still a clean TTY. Starting the terminator's
+  // interactive `docker run` mid-banner would let it grab the TTY and split
+  // the output formatting (consola's fancy vs basic reporter).
   const host = mdnsName ?? ip ?? '<host-ip>';
+  const caPath = await caTrustDisplayPath(tls.caCertPath, home);
   log.info(
     `Sharing ${opts.name}/${opts.app} on the local network (Ctrl+C to stop):`,
   );
@@ -269,12 +261,24 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
       ),
     );
   }
-  const caPath = await caTrustDisplayPath(tls.caCertPath, home);
   log.info(
     dim(
       `  First device? Trust the local CA once so HTTPS is warning-free: ${caPath}`,
     ),
   );
+
+  const dockerSpawn = opts.dockerSpawn ?? defaultDockerSpawn;
+  const handles: DockerSpawnHandle[] = [
+    dockerSpawn(
+      buildCaddyDockerArgs({
+        localAddress: SHARE_ADDRESS,
+        ports,
+        network: base.network,
+        certDir: tls.certDir,
+        caddyfilePath,
+      }),
+    ),
+  ];
 
   const installSignalHandler =
     opts.installSignalHandler ?? installSigintDefault;
