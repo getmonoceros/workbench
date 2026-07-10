@@ -13,6 +13,8 @@ import {
   writeDescriptor,
   nodeLanguageDescriptor,
 } from './helpers/fake-workbench.js';
+import { main } from '../src/main.js';
+import { generateCommandsMd } from '../src/briefing/commands-md.js';
 
 /**
  * Builder-facing output (generated yml, compose files, dynamic
@@ -123,6 +125,15 @@ describe('no internal docs/ADR refs in builder-facing output', () => {
       'host-port-held (EACCES)',
       formatHostPortHeldError(80, 'EACCES', 'permission denied'),
     );
+  });
+
+  it('command help / generated commands.md have no internal doc refs', () => {
+    // Covers every command's `meta.description` and per-arg `description`,
+    // which flow into `monoceros <cmd> --help` and the in-container
+    // `.monoceros/commands.md` the agent reads. This is the guard that
+    // catches an `... See ADR 0030.` sentence in a command description.
+    const md = generateCommandsMd(main.subCommands as Record<string, unknown>);
+    expectNoInternalDocRefs('generated commands.md', md);
   });
 
   it('schema validation error for SSH-style repo URLs has no internal doc refs', () => {

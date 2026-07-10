@@ -7,7 +7,7 @@ export const tunnelCommand = defineCommand({
     name: 'tunnel',
     group: 'discovery',
     description:
-      'Open a TCP tunnel from the host to a service or port inside the container. Foreground process — Ctrl+C closes the tunnel. Pass a service name (e.g. `postgres`, `mysql`, `redis`) from the container yml or a bare in-container port number. See ADR 0009.',
+      'Open a TCP tunnel from the host to a service or port inside the container. Foreground process — Ctrl+C closes the tunnel. Pass a service name (e.g. `postgres`, `mysql`, `redis`) from the container yml or a bare in-container port number.',
   },
   args: {
     name: {
