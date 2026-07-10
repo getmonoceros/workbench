@@ -80,11 +80,19 @@ function validate(parsed: unknown, where: string): LaunchConfig {
     throw new Error(`${where}: expected a JSON object`);
   }
   const obj = parsed as Record<string, unknown>;
-  if (!Array.isArray(obj.configurations)) {
-    throw new Error(`${where}: missing "configurations" array`);
+  // Canonical key is `targets` (matches `--target` and every "target" mention);
+  // `configurations` is accepted as a back-compat alias. Both parsers (this one
+  // and the in-container monoceros-ctl) accept either.
+  const rawList = Array.isArray(obj.targets)
+    ? obj.targets
+    : Array.isArray(obj.configurations)
+      ? obj.configurations
+      : null;
+  if (!rawList) {
+    throw new Error(`${where}: missing "targets" array`);
   }
   const seen = new Set<string>();
-  const configurations: LaunchTarget[] = obj.configurations.map((raw, i) => {
+  const configurations: LaunchTarget[] = rawList.map((raw, i) => {
     if (typeof raw !== 'object' || raw === null) {
       throw new Error(`${where}: configuration #${i} is not an object`);
     }

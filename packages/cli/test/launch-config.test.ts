@@ -66,6 +66,23 @@ describe('readLaunchConfig', () => {
     });
   });
 
+  it('accepts the canonical "targets" key (alias of "configurations")', async () => {
+    await writeLaunch('acme', 'web', {
+      version: 1,
+      targets: [{ name: 'web', command: 'npm run dev', port: 3000 }],
+    });
+    const cfg = await readLaunchConfig('acme', 'web', home);
+    expect(cfg?.configurations).toHaveLength(1);
+    expect(cfg?.configurations[0]).toMatchObject({ name: 'web', port: 3000 });
+  });
+
+  it('errors naming "targets" when neither key is present', async () => {
+    await writeLaunch('acme', 'web', { version: 1 });
+    await expect(readLaunchConfig('acme', 'web', home)).rejects.toThrow(
+      /missing "targets" array/,
+    );
+  });
+
   it('rejects duplicate target names', async () => {
     await writeLaunch('acme', 'web', {
       configurations: [

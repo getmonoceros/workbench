@@ -357,7 +357,7 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   lines.push('');
   lines.push('```json');
   lines.push('{');
-  lines.push('  "configurations": [');
+  lines.push('  "targets": [');
   lines.push(
     `    { "name": "web", "command": "<the project's start command>", "port": ${examplePort}, "default": true }`,
   );

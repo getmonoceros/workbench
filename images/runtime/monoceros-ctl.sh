@@ -85,8 +85,8 @@ resolve_target() {
   local app="$1" want="$2" file
   file="$(require_launch "$app")"
   if [ -n "$want" ]; then
-    jq -e --arg n "$want" '.configurations[] | select(.name == $n)' "$file" >/dev/null \
-      || die "no target '$want' in $app (have: $(jq -r '[.configurations[].name] | join(", ")' "$file"))"
+    jq -e --arg n "$want" '(.targets // .configurations)[] | select(.name == $n)' "$file" >/dev/null \
+      || die "no target '$want' in $app (have: $(jq -r '[(.targets // .configurations)[].name] | join(", ")' "$file"))"
     printf '%s\n' "$want"
     return
   fi
@@ -94,16 +94,16 @@ resolve_target() {
   # or a sole target, is fine; a multi-target default set is not (callers that
   # act on one target, e.g. logs/stop-of-one, must pick).
   local count ndefault
-  count=$(jq '.configurations | length' "$file")
-  ndefault=$(jq '[.configurations[] | select(.default == true)] | length' "$file")
+  count=$(jq '(.targets // .configurations) | length' "$file")
+  ndefault=$(jq '[(.targets // .configurations)[] | select(.default == true)] | length' "$file")
   if [ "$ndefault" = "1" ]; then
-    jq -r 'first(.configurations[] | select(.default == true) | .name)' "$file"
+    jq -r 'first((.targets // .configurations)[] | select(.default == true) | .name)' "$file"
   elif [ "$ndefault" = "0" ] && [ "$count" = "1" ]; then
-    jq -r '.configurations[0].name' "$file"
+    jq -r '(.targets // .configurations)[0].name' "$file"
   elif [ "$ndefault" -gt 1 ]; then
-    die "$app has multiple default targets - pass --target ($(jq -r '[.configurations[] | select(.default == true) | .name] | join(", ")' "$file"))"
+    die "$app has multiple default targets - pass --target ($(jq -r '[(.targets // .configurations)[] | select(.default == true) | .name] | join(", ")' "$file"))"
   else
-    die "$app has $count targets and no default - pass --target ($(jq -r '[.configurations[].name] | join(", ")' "$file"))"
+    die "$app has $count targets and no default - pass --target ($(jq -r '[(.targets // .configurations)[].name] | join(", ")' "$file"))"
   fi
 }
 
@@ -112,17 +112,17 @@ resolve_target() {
 default_targets() {
   local app="$1" file marked
   file="$(require_launch "$app")"
-  marked="$(jq -r '.configurations[] | select(.default == true) | .name' "$file")"
+  marked="$(jq -r '(.targets // .configurations)[] | select(.default == true) | .name' "$file")"
   if [ -n "$marked" ]; then
     printf '%s\n' "$marked"
-  elif [ "$(jq '.configurations | length' "$file")" = "1" ]; then
-    jq -r '.configurations[0].name' "$file"
+  elif [ "$(jq '(.targets // .configurations) | length' "$file")" = "1" ]; then
+    jq -r '(.targets // .configurations)[0].name' "$file"
   fi
 }
 
 field() { # field <app> <target> <jq-path>
   local file; file="$(launch_json "$1")"
-  jq -r --arg n "$2" ".configurations[] | select(.name == \$n) | $3 // empty" "$file"
+  jq -r --arg n "$2" "(.targets // .configurations)[] | select(.name == \$n) | $3 // empty" "$file"
 }
 
 pid_alive() { # pid_alive <pidfile>
@@ -148,7 +148,7 @@ cmd_start() {
     [ -n "$t" ] && set+=("$t")
   done < <(default_targets "$app")
   if [ "${#set[@]}" -eq 0 ]; then
-    die "$app has multiple targets and no default - pass --target ($(jq -r '[.configurations[].name] | join(", ")' "$(require_launch "$app")"))"
+    die "$app has multiple targets and no default - pass --target ($(jq -r '[(.targets // .configurations)[].name] | join(", ")' "$(require_launch "$app")"))"
   fi
   for t in "${set[@]}"; do
     if ! start_one "$app" "$t"; then
@@ -188,7 +188,7 @@ start_one() {
   while IFS= read -r kv; do
     [ -n "$kv" ] && envargs+=("$kv")
   done < <(jq -r --arg n "$target" \
-    '.configurations[] | select(.name == $n) | (.env // {}) | to_entries[] | "\(.key)=\(.value)"' \
+    '(.targets // .configurations)[] | select(.name == $n) | (.env // {}) | to_entries[] | "\(.key)=\(.value)"' \
     "$(launch_json "$app")")
 
   mkdir -p "$(run_dir "$app")" "$(log_dir "$app")"
@@ -268,7 +268,7 @@ cmd_stop() {
     [ -n "$t" ] && set+=("$t")
   done < <(default_targets "$app")
   if [ "${#set[@]}" -eq 0 ]; then
-    die "$app has multiple targets and no default - pass --target ($(jq -r '[.configurations[].name] | join(", ")' "$(require_launch "$app")"))"
+    die "$app has multiple targets and no default - pass --target ($(jq -r '[(.targets // .configurations)[].name] | join(", ")' "$(require_launch "$app")"))"
   fi
   for t in "${set[@]}"; do
     stop_one "$app" "$t"
@@ -324,7 +324,7 @@ cmd_list() {
     [ "$json" != "1" ] && hdr "$app"
     while IFS= read -r t; do
       pidf="$(run_dir "$app")/$t.pid"
-      isdefault="$(jq -r --arg n "$t" '.configurations[] | select(.name == $n) | .default // false' "$file")"
+      isdefault="$(jq -r --arg n "$t" '(.targets // .configurations)[] | select(.name == $n) | .default // false' "$file")"
       if [ "$json" = "1" ]; then list_one_json "$file" "$app" "$t" "$pidf" "$isdefault"; continue; fi
       if pid_alive "$pidf"; then
         marker="${C_GREEN}✓${C_RESET}"
@@ -335,7 +335,7 @@ cmd_list() {
       fi
       [ "$isdefault" = "true" ] && detail="$detail    ${C_GREY}(default)${C_RESET}"
       target_line "$marker" "$t" "$detail"
-    done < <(jq -r '.configurations[].name' "$file")
+    done < <(jq -r '(.targets // .configurations)[].name' "$file")
   done
 }
 
@@ -347,7 +347,7 @@ list_one_json() { # <launch.json> <app> <target> <pidfile> <isdefault>
   local file="$1" app="$2" t="$3" pidf="$4" isdefault="$5"
   local running pid port
   if pid_alive "$pidf"; then running=true; pid="$(cat "$pidf")"; else running=false; pid=null; fi
-  port="$(jq -r --arg n "$t" '.configurations[] | select(.name == $n) | .port // empty' "$file")"
+  port="$(jq -r --arg n "$t" '(.targets // .configurations)[] | select(.name == $n) | .port // empty' "$file")"
   [ -n "$port" ] || port=null
   [ "$isdefault" = "true" ] || isdefault=false
   jq -cn --arg app "$app" --arg target "$t" \
@@ -385,7 +385,7 @@ cmd_reconcile() {
     app="$(dirname "$rel")"
     file="$(launch_json "$app")"
     if [ ! -f "$file" ] || ! jq -e --arg n "$target" \
-        '.configurations[] | select(.name == $n)' "$file" >/dev/null 2>&1; then
+        '(.targets // .configurations)[] | select(.name == $n)' "$file" >/dev/null 2>&1; then
       rm -f "$pidf"                      # orphan: config or target gone - reap
       continue
     fi
