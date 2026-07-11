@@ -52,5 +52,13 @@ usageNotes:
 briefing:
   - text: 'Identity & access management, reached in-container as host `keycloak`. Admin console + API at `$KEYCLOAK_URL` (admin `$KEYCLOAK_USER` / `$KEYCLOAK_PASSWORD`).'
   - text: 'Keycloak auto-imports realms at startup (`--import-realm`) from `/opt/keycloak/data/import`, and its database is ephemeral - it re-seeds from those files on every apply. So keep the realm as a file in the repo at `projects/<app>/keycloak/realm.json`; do NOT configure it by hand in the admin UI, that is lost on the next apply.'
-  - text: 'You can create/edit that realm.json, but the bind-mount that feeds it to Keycloak lives in the container yml on the host, which you cannot edit from inside. Tell the user to add this volume to the keycloak service and re-apply: `projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro`, then run `monoceros apply <name>` on the host.'
+  - text: |-
+      You can create/edit that realm.json, but the bind-mount that feeds it to Keycloak lives in the container yml on the host, which you cannot edit from inside. Give the user this exact block to add under the `keycloak` service in the container yml, with `<app>` replaced by the real project name in BOTH places (the source path and the import target filename):
+
+      ```yaml
+      volumes:
+        - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro
+      ```
+
+      Mount the single realm.json to a distinctly-named `*.json` target under the import dir. Do NOT mount the whole `keycloak/` directory onto `/opt/keycloak/data/import`, and do NOT prefix the source with `./`. Then have the user run `monoceros apply <name>` on the host.
   - text: "In the realm, define a public client (e.g. `<app>-web`) with your app's redirect URIs, and have the frontend reach Keycloak same-origin under `/realms/<realm>` so the issuer follows the request host (works on `.localhost` and over `monoceros share`)."

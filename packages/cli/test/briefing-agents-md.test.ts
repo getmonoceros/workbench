@@ -141,6 +141,10 @@ describe('AGENTS.md generator', () => {
     // The per-service guidance is sourced from the descriptor's `briefing:`,
     // not hardcoded here - assert the realm-import guidance reaches the agent.
     expect(md).toContain('--import-realm');
+    // The realm volume is handed to the agent as a copy-ready fenced YAML
+    // block (single .json file → distinct target), not inline prose - so the
+    // agent relays it verbatim instead of reshaping it into a directory mount.
+    expect(md).toContain('```yaml');
     expect(md).toContain(
       'projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro',
     );
