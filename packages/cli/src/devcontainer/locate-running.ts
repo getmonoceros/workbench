@@ -82,10 +82,19 @@ export type ContainerExec = (
 
 export const realContainerExec: ContainerExec = (containerId, argv) => {
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', ['exec', containerId, ...argv], {
-      // Inherit stdio so live git output reaches the user.
-      stdio: ['ignore', 'inherit', 'inherit'],
-    });
+    // `docker exec` runs as the image's USER (root), bypassing both the
+    // entrypoint's gosu drop and the devcontainer `remoteUser`. Force `node`
+    // so monoceros-ctl - and the app servers it spawns - run as the same
+    // non-root user as interactive shells, keeping pid files, logs and the
+    // processes themselves owned by `node`, not root.
+    const child = spawn(
+      'docker',
+      ['exec', '-u', 'node', containerId, ...argv],
+      {
+        // Inherit stdio so live git output reaches the user.
+        stdio: ['ignore', 'inherit', 'inherit'],
+      },
+    );
     child.on('error', reject);
     child.on('exit', (code) => resolve({ exitCode: code ?? 0 }));
   });
