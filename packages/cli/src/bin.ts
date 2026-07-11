@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { runMain } from 'citty';
+import { consola } from 'consola';
 import { bootstrapDockerGroup } from './devcontainer/docker-group-bootstrap.js';
 import { maybeRenderHelp } from './help.js';
 import { consumeInnerArgsFromProcessArgv } from './inner-args.js';
@@ -19,6 +20,14 @@ import { CLI_VERSION } from './version.js';
 // their work in the re-exec'd process, not in the about-to-die
 // parent.
 bootstrapDockerGroup();
+
+// Turn off consola's per-line timestamp. Its fancy reporter right-aligns the
+// time when the message fits the terminal, but silently falls back to a
+// `[time]` prefix on lines too long to fit — so a single command can mix both
+// formats and the leading icons stop lining up (worst on long lines like the
+// env-seeding hint). The time is noise for a CLI; dropping it makes every line
+// render as `icon message`, aligned regardless of length.
+consola.options.formatOptions.date = false;
 
 // Pull everything after `--` out of argv before citty starts parsing.
 // Otherwise citty's eager --help/--version handling shadows the inner
