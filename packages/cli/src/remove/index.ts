@@ -242,17 +242,30 @@ export async function runRemove(
         throw err;
       }
       // Linux + rootful Docker quirk: bind-mounted service data
-      // dirs (postgres, mysql, …) end up owned by the container
-      // process's UID — root for the official postgres image. The
-      // unprivileged monoceros process can't unlink them.
+      // dirs (postgres, mysql, …) and container-generated secrets
+      // (the 0600 SSH host keys, the root-owned keycloak import dir)
+      // end up owned by the container process's UID — root for the
+      // official images. The unprivileged monoceros process can't
+      // unlink them.
       //
-      // Fall back to docker as the cleanup actor: alpine runs as
-      // root, mounts the target dir, deletes everything inside.
-      // After that the host-side rm clears the now-empty parent.
+      // Fall back to docker as the cleanup actor: alpine runs as root
+      // and deletes the tree. We mount the PARENT directory and
+      // `rm -rf` the named child (rather than emptying the dir in
+      // place), because:
+      //   - `rm -rf` clears everything in one authoritative pass —
+      //     hidden entries (`.monoceros/`) and root-owned files alike;
+      //   - the previous `busybox find -mindepth 1 -delete` aborted on
+      //     the first root-owned entry it hit (exit 1, nothing removed,
+      //     empty stderr) on WSL2 / Docker Desktop bind mounts, leaving
+      //     the whole tree behind. `rm -rf` as root does not.
+      // The name is validated against REGEX.solutionName above, so it
+      // cannot smuggle a path traversal into the mounted parent.
       //
-      // macOS / Docker Desktop / rootless Docker never hit this
-      // branch — the happy fs.rm above succeeds because files are
-      // user-owned through the VM / userns layer.
+      // macOS / Docker Desktop / rootless Docker on the host's own FS
+      // rarely reach this branch — the happy fs.rm above succeeds
+      // because files are user-owned through the VM / userns layer.
+      const parentDir = path.dirname(containerPath);
+      const childName = path.basename(containerPath);
       logger.info(
         `[remove] host-side rm hit ${code} on ${prettyPath(containerPath)}; using a throw-away alpine container to clean root-owned files…`,
       );
@@ -260,29 +273,25 @@ export async function runRemove(
         'run',
         '--rm',
         '-v',
-        `${containerPath}:/target`,
+        `${parentDir}:/parent`,
         'alpine:3.21',
-        'find',
-        '/target',
-        '-mindepth',
-        '1',
-        '-delete',
+        'rm',
+        '-rf',
+        `/parent/${childName}`,
       ]);
-      // busybox `find -delete` can report a NON-ZERO exit even after it has
-      // emptied the tree (it warns during depth-first directory traversal),
-      // so its exit code is NOT authoritative — trusting it left the
-      // already-emptied container dir behind and reported a spurious
-      // failure. The real verdict is whether the host-side rm now succeeds:
-      // if alpine cleared the root-owned files, the parent is empty and
-      // user-owned so this removes it; if something genuinely survived, this
-      // throws and we surface it (with alpine's stderr for diagnosis).
+      // `rm -rf` never fails on files it successfully removed, so its
+      // exit code is meaningful — but the real verdict is whether the
+      // host can confirm the directory is gone. After a clean alpine rm
+      // the path no longer exists and this no-ops (force ignores
+      // ENOENT); if something genuinely survived, this throws and we
+      // surface it (with alpine's stderr) for manual cleanup.
       try {
         await fs.rm(containerPath, { recursive: true, force: true });
       } catch (err2) {
         const code2 = (err2 as NodeJS.ErrnoException).code;
         throw new Error(
           `docker-based cleanup of ${containerPath} did not fully clear it ` +
-            `(alpine find exit ${exit}${stderr.trim() ? `: ${stderr.trim()}` : ''}; ` +
+            `(alpine rm exit ${exit}${stderr.trim() ? `: ${stderr.trim()}` : ''}; ` +
             `host rm: ${code2}). Inspect with \`sudo ls -la ${containerPath}\` and clean manually.`,
         );
       }
