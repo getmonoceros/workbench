@@ -408,6 +408,63 @@ describe('runContainerCycle — bind-source retry (VirtioFS file-sync race)', ()
   });
 });
 
+describe('runContainerCycle — compose cleanup catches the fixed container_name', () => {
+  let tmp: string;
+  let root: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), 'monoceros-cleanup-'));
+    root = path.join(tmp, 'acme');
+    await fs.mkdir(path.join(root, '.devcontainer'), { recursive: true });
+    await fs.writeFile(
+      path.join(root, '.devcontainer', 'compose.yaml'),
+      'services:\n  workspace:\n    container_name: monoceros-acme\n',
+    );
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('sweeps a stale container matched only by its fixed name', async () => {
+    // Regression for the image-mode → compose-mode switch: the leftover
+    // image-mode container carries neither the compose project label nor
+    // the `<project>-` prefix, so ONLY the fixed-name filter finds it.
+    const filters: string[] = [];
+    const removed: string[][] = [];
+    let gone = false;
+    const exec = async (args: readonly string[]) => {
+      if (args[0] === 'ps') {
+        const filter = args[args.indexOf('--filter') + 1] ?? '';
+        filters.push(filter);
+        // After `rm` the re-query must come back empty so the cycle
+        // proceeds to the up instead of tripping the "reappeared" guard.
+        const hit =
+          !gone && filter === 'name=^monoceros-acme$' ? 'deadbeef' : '';
+        return { exitCode: 0, stdout: hit, stderr: '' };
+      }
+      if (args[0] === 'rm') {
+        removed.push(args.slice(2) as string[]);
+        gone = true;
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    };
+
+    const code = await runContainerCycle(root, {
+      hasCompose: true,
+      bindRetryDelayMs: 0,
+      logger: { info: () => {} },
+      dockerExec: exec,
+      devcontainerSpawn: async () => 0,
+    });
+
+    expect(code).toBe(0);
+    expect(filters).toContain('name=^monoceros-acme$');
+    expect(removed).toContainEqual(['deadbeef']);
+  });
+});
+
 describe('image-mode lifecycle (no compose.yaml)', () => {
   let tmp: string;
   let bare: string;

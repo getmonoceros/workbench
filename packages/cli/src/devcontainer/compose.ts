@@ -583,10 +583,21 @@ export async function runContainerCycle(
     logger.info(
       `Force-removing existing ${projectName} containers (volumes preserved)…`,
     );
-    // Two-step removal so a container with stale/missing labels still
+    // Removal filters so a container with stale/missing labels still
     // gets caught:
     //   - by docker-compose project label
     //   - by container-name prefix `<project>-*`
+    //   - by the fixed `container_name: monoceros-<name>` the scaffold
+    //     pins. This last one is the mode-independent identity: image
+    //     mode creates the workspace via `docker run --name=monoceros-<name>`
+    //     (no compose project label), compose mode via `container_name:
+    //     monoceros-<name>` (which docker does NOT prefix with the
+    //     project). So when a container is re-applied AFTER its first
+    //     service is added — flipping image-mode → compose-mode — the old
+    //     image-mode container carries neither the project label nor the
+    //     `<project>-` prefix, survives the first two filters, and then
+    //     collides with the new one on the unique fixed name. Anchored so
+    //     `monoceros-acme` doesn't also sweep `monoceros-acme2`.
     // After removal we re-query: if anything remains, VS Code's Remote
     // Containers extension is the likely culprit (auto-recreates on
     // container loss); we abort with a clear hint rather than letting
@@ -594,6 +605,7 @@ export async function runContainerCycle(
     const filters = [
       `label=com.docker.compose.project=${projectName}`,
       `name=^${projectName}-`,
+      `name=^monoceros-${path.basename(root)}$`,
     ];
     const { exitCode: rmExit } = await cleanupDockerObjects({
       projectName,
