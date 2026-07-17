@@ -91,6 +91,7 @@ import {
   formatRootlessNotSupportedError,
 } from '../devcontainer/docker-mode.js';
 import { type DevcontainerSpawn } from '../devcontainer/cli.js';
+import { waitForDockerDaemon } from '../devcontainer/daemon-ready.js';
 import {
   ensureProxy,
   defaultDockerExec,
@@ -595,6 +596,27 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   //   - Plumb the mode through to scaffold for any future mode-
   //     dependent code paths (parameter is currently unused after
   //     the idmap revert — kept so the wiring is in place).
+  // Absorb the Docker Desktop / WSL2 cold-start race before the first
+  // docker call that matters: on a fresh Windows/WSL apply the daemon
+  // can be up enough to answer `docker info` yet still fail the very
+  // next `docker network create` / `docker ps` with an empty-stderr
+  // `exit 1`, which is what sinks the proxy-network create and
+  // devcontainer-cli's own `docker ps`. A bounded readiness wait smooths
+  // that; a genuinely-down daemon still exhausts the budget and the real
+  // error surfaces at the docker step below — same as before.
+  const daemonReady = await waitForDockerDaemon({
+    exec: opts.dockerExec ?? defaultDockerExec,
+    onWait: () =>
+      (logger.warn ?? logger.info)(
+        'Waiting for the Docker daemon to become ready…',
+      ),
+  });
+  if (!daemonReady) {
+    (logger.warn ?? logger.info)(
+      'Docker daemon still not responding — continuing; the next docker step will report the error.',
+    );
+  }
+
   const dockerMode = await detectDockerMode({
     ...(opts.dockerInfoSpawn ? { spawn: opts.dockerInfoSpawn } : {}),
   });

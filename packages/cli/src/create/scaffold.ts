@@ -1772,10 +1772,22 @@ export function buildPostCreateScript(opts: CreateOptions): string {
         lines.push(`mkdir -p "projects/${parent}"`);
       }
       const url = cloneUrl(repo.url);
+      // A clone that fails (a private repo with no token yet, a
+      // transient network blip) must NOT abort post-create under
+      // `set -e`: everything before this point (feature logins, pnpm
+      // install, install URLs) already ran, and the CLI's own
+      // repo-access notice promises the container comes up so the
+      // builder can set a token and re-apply. So we soft-fail the
+      // clone, warn, and remove any partial checkout git left behind
+      // so the `[ ! -d ]` guard retries cleanly on the next apply.
       lines.push(
         `if [ ! -d "projects/${repo.path}" ]; then`,
         `  echo "→ Cloning ${repo.path} from ${url}…"`,
-        `  git clone "${url}" "projects/${repo.path}"`,
+        `  if ! git clone "${url}" "projects/${repo.path}"; then`,
+        `    echo "⚠ Could not clone ${repo.path} from ${url} — skipping." >&2`,
+        `    echo "  If it is private, set a token and re-apply (see the repo-access notice)." >&2`,
+        `    rm -rf "projects/${repo.path}"`,
+        `  fi`,
         `else`,
         `  echo "→ projects/${repo.path} already exists, skipping clone"`,
         `fi`,
@@ -1786,13 +1798,16 @@ export function buildPostCreateScript(opts: CreateOptions): string {
       // value each run, no duplicate accumulation. Falls outside the
       // `if [ ! -d ... ]` clone-guard so an explicit yml update of
       // gitUser also takes effect on re-apply against an existing
-      // clone.
+      // clone — but guarded on the clone actually being present, so a
+      // soft-failed clone above doesn't make `git -C` abort post-create.
       if (repo.gitUser) {
         const safeName = repo.gitUser.name.replace(/"/g, '\\"');
         const safeEmail = repo.gitUser.email.replace(/"/g, '\\"');
         lines.push(
-          `git -C "projects/${repo.path}" config user.name "${safeName}"`,
-          `git -C "projects/${repo.path}" config user.email "${safeEmail}"`,
+          `if [ -d "projects/${repo.path}/.git" ]; then`,
+          `  git -C "projects/${repo.path}" config user.name "${safeName}"`,
+          `  git -C "projects/${repo.path}" config user.email "${safeEmail}"`,
+          `fi`,
         );
       }
     }
