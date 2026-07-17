@@ -46,27 +46,32 @@ out of the catalog by design - see
 
 - **Docker** - reachable as a daemon (Docker Desktop on macOS/Windows,
   Docker Engine on Linux)
-- **Node ≥ 20** with `npm`
-- **`curl`** - only to invoke the install script (preinstalled on macOS;
-  `sudo apt install curl` on Ubuntu)
+- **Node ≥ 20** with `npm` - on macOS and Linux. On Windows, Node comes
+  with Monoceros's managed WSL distro, so you don't install it yourself.
+- **`curl`** (macOS/Linux) - only to invoke the install script
+  (preinstalled on macOS; `sudo apt install curl` on Ubuntu)
 
-Docker + Node are checked by the install script, with platform-specific
-guidance if one is missing. Full setup for macOS, Linux, and Windows
-(WSL 2 + Docker Desktop) is on the
+The install script checks your prerequisites and prints platform-specific
+guidance if something is missing. Full setup for macOS, Linux, and Windows
+is on the
 [requirements page](https://getmonoceros.build/docs/start/requirements/).
 
 ## Get started
 
-Install (checks Docker + Node, installs `monoceros` globally, sets up
-shell completion for bash/zsh):
+On **macOS and Linux** (checks Docker + Node, installs `monoceros`
+globally, sets up shell completion for bash/zsh):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.sh | bash
 ```
 
-On Windows, Monoceros runs via WSL - do the
-[one-time WSL setup](https://getmonoceros.build/docs/start/requirements/)
-first, then the Linux path above applies inside your distro.
+On **Windows**, in PowerShell (creates the managed `monoceros` WSL distro,
+enables Docker Desktop's WSL integration, adds the `monoceros` command -
+you never configure WSL by hand):
+
+```powershell
+irm https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.ps1 | iex
+```
 
 Your first container:
 

@@ -18,12 +18,12 @@ this up front and print platform-specific guidance.
 
 ```sh
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.sh | bash
 ```
 
 ```powershell
 # Windows (PowerShell)
-iwr -useb https://raw.githubusercontent.com/getmonoceros/workbench/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.ps1 | iex
 ```
 
 The script checks Docker + Node, installs the package globally via

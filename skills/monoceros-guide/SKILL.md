@@ -181,7 +181,7 @@ install command on its own line, and link the full guide. Anyone who already has
 Monoceros skips this.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.sh | bash
 ```
 
 Full install guide, including Windows (which runs via WSL):

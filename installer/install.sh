@@ -30,7 +30,7 @@
 # message before hitting the pipefail line.
 if [ -z "${BASH_VERSION:-}" ]; then
   echo "✗ This installer requires bash. Re-run with:" >&2
-  echo "    curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash" >&2
+  echo "    curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.sh | bash" >&2
   exit 1
 fi
 
@@ -82,7 +82,7 @@ if [ -z "${MONOCEROS_DOCKER_GROUP_REEXEC:-}" ] \
   # consumed stdin, so we can't replay it) and exec under sg.
   __mono_self=$(mktemp -t monoceros-install.XXXXXX.sh)
   trap 'rm -f "$__mono_self"' EXIT
-  if curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh > "$__mono_self" 2>/dev/null; then
+  if curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.sh > "$__mono_self" 2>/dev/null; then
     export MONOCEROS_DOCKER_GROUP_REEXEC=1
     exec sg docker -c "bash $__mono_self"
   fi

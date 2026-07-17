@@ -60,7 +60,7 @@ if something is missing, and otherwise runs
 view:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.sh | bash
 ```
 
 (or the PowerShell equivalent). If a prerequisite is missing, install
