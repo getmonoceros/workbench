@@ -392,6 +392,13 @@ export interface StartOptions {
   progressSink?: NodeJS.WritableStream;
   /** Forwarded to {@link DevcontainerSpawnOptions.silent}. */
   silent?: boolean;
+  /**
+   * Forwarded to {@link DevcontainerSpawnOptions.quiet}: buffer the
+   * `devcontainer up` output and flush it to stderr only on a non-zero
+   * exit. Used by `monoceros start`, which wants a clean status line on
+   * success but must NOT swallow the error when the `up` fails.
+   */
+  quiet?: boolean;
 }
 
 // `monoceros start` delegates to `devcontainer up` rather than to
@@ -425,12 +432,13 @@ export async function runStart(opts: StartOptions): Promise<number> {
 }
 
 function buildSpawnOptions(
-  opts: Pick<StartOptions, 'logSink' | 'progressSink' | 'silent'>,
+  opts: Pick<StartOptions, 'logSink' | 'progressSink' | 'silent' | 'quiet'>,
 ): DevcontainerSpawnOptionsForwarded | undefined {
   const out: DevcontainerSpawnOptionsForwarded = {};
   if (opts.logSink) out.logSink = opts.logSink;
   if (opts.progressSink) out.progressSink = opts.progressSink;
   if (opts.silent) out.silent = true;
+  if (opts.quiet) out.quiet = true;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -438,6 +446,7 @@ interface DevcontainerSpawnOptionsForwarded {
   logSink?: NodeJS.WritableStream;
   progressSink?: NodeJS.WritableStream;
   silent?: boolean;
+  quiet?: boolean;
 }
 
 export interface RunContainerCycleOptions {

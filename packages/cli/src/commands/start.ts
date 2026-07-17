@@ -121,12 +121,14 @@ async function bringContainerUp(
       await preflightHostPort(hostPort);
       await ensureProxy({ hostPort });
     }
-    // Capture the raw `devcontainer up` banner/JSON (silent) and drop the
+    // Buffer the raw `devcontainer up` banner/JSON (quiet) and drop the
     // "Bringing devcontainer up…" line (no-op logger); on success we print a
-    // clean status line instead. A failure still surfaces the captured output.
+    // clean status line instead. `quiet` (not `silent`) is deliberate: on a
+    // non-zero exit it flushes the buffered output to stderr, so a failed
+    // start shows the actual devcontainer error instead of exiting mute.
     const exitCode = await runStart({
       root: containerDir(args.name),
-      silent: true,
+      quiet: true,
       logger: { info: () => {} },
     });
     // Re-establish the host-side browser bridge for this freshly-started
@@ -157,6 +159,12 @@ async function bringContainerUp(
     }
     if (exitCode === 0) {
       consola.success(`Container '${args.name}' is up.`);
+    } else {
+      // `quiet` mode already flushed the devcontainer output to stderr; add a
+      // one-line verdict so the non-zero exit is never a silent mystery.
+      consola.error(
+        `Container '${args.name}' failed to start (devcontainer up exited ${exitCode}).`,
+      );
     }
     // `--open` is a convenience on top of a successful start. A failure
     // here (editor not found, etc.) must not mask the start result, so

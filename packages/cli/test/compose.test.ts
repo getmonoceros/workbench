@@ -108,6 +108,20 @@ describe('compose actions', () => {
     ]);
   });
 
+  it('runStart forwards quiet to the spawn options (so a failed `start` is not mute)', async () => {
+    let seenOptions: unknown;
+    await runStart({
+      root: solution,
+      quiet: true,
+      logger: { info: () => {} },
+      spawn: async (_args, _cwd, options) => {
+        seenOptions = options;
+        return 0;
+      },
+    });
+    expect(seenOptions).toMatchObject({ quiet: true });
+  });
+
   it('runStart adds --build-no-cache when noCache is set', async () => {
     const calls: string[][] = [];
     await runStart({
