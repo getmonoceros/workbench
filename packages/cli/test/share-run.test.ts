@@ -117,18 +117,68 @@ describe('runShare', () => {
       argv.some((a) => a.endsWith('.Caddyfile:/etc/caddy/Caddyfile:ro')),
     ).toBe(true);
     expect(argv).toContain(CADDY_IMAGE);
-    // primary lines use the mDNS name for each ported target, now over https
+    // each ported target lists both addresses as equal https lines: the IP
+    // and the mDNS name (neither demoted to a fallback)
     const banner = lines.join('\n');
     expect(banner).toContain('https://host.local:5173');
     expect(banner).toContain('https://host.local:3001');
-    // the raw IP appears as the also-reachable fallback line
-    expect(banner).toContain('also reachable as https://192.168.1.10');
+    expect(banner).toContain('https://192.168.1.10:5173');
+    expect(banner).toContain('https://192.168.1.10:3001');
     // the CA-trust hint points at the provisioned root cert
     expect(banner).toContain('/home/ca/rootCA.pem');
 
     // Ctrl+C tears every forward down and the command returns clean
     handler?.();
     for (const h of rec.handles) expect(h.kill).toHaveBeenCalledWith('SIGTERM');
+    await expect(p).resolves.toBe(0);
+  });
+
+  it('on WSL leads with the Windows LAN IP and covers it in the cert', async () => {
+    await writeLaunch('web', {
+      version: 1,
+      configurations: [{ name: 'dev', command: 'x', port: 5173 }],
+    });
+    const rec = recordingSpawn();
+    let handler: (() => void) | undefined;
+    const lines: string[] = [];
+    let capturedSans: string[] = [];
+
+    const p = runShare({
+      name: 'acme',
+      app: 'web',
+      monocerosHome: home,
+      dockerSpawn: rec.spawn,
+      resolve: resolveStub,
+      preflight: preflightStub,
+      // the enumerated IP is the dead WSL-NAT address
+      hostAddresses: () => ({ ip: '172.25.23.154', mdnsName: 'host.local' }),
+      resolveWindowsLanIp: async () => '192.168.178.46',
+      provisionTls: async ({ sans }) => {
+        capturedSans = sans;
+        return tlsStub();
+      },
+      ensureImage: async () => {},
+      installSignalHandler: (h) => {
+        handler = h;
+        return () => {};
+      },
+      logger: { info: (m) => lines.push(m), warn: () => {} },
+    });
+
+    await waitFor(() => rec.calls.length >= 1);
+
+    const banner = lines.join('\n');
+    // the reachable Windows LAN IP is offered as an equal line; the dead
+    // WSL-NAT IP never shows
+    expect(banner).toContain('https://192.168.178.46:5173');
+    expect(banner).not.toContain('172.25.23.154');
+    // `.local` is offered as an equal line alongside the IP
+    expect(banner).toContain('https://host.local:5173');
+    // the leaf cert covers the reachable IP, not the dead WSL-NAT one
+    expect(capturedSans).toContain('192.168.178.46');
+    expect(capturedSans).not.toContain('172.25.23.154');
+
+    handler?.();
     await expect(p).resolves.toBe(0);
   });
 

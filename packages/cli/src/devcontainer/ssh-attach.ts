@@ -309,6 +309,32 @@ export async function resolveWindowsProfile(): Promise<WindowsProfile | null> {
   }
 }
 
+/**
+ * The Windows host's LAN IPv4, resolved from inside WSL. `share` runs in the
+ * distro, where `os.networkInterfaces()` only sees the WSL-NAT address
+ * (`172.x`) - unreachable from other devices on the LAN. The address a phone or
+ * tablet can actually reach is the Windows host's own LAN IP, so ask Windows
+ * for the IPv4 of the interface that carries the default gateway and is up (the
+ * physical Wi-Fi/Ethernet adapter, not the WSL/Hyper-V vEthernet ones, which
+ * have no gateway). Returns null off WSL, when PowerShell fails, or when the
+ * output is not a plain IPv4.
+ */
+export async function resolveWindowsLanIp(): Promise<string | null> {
+  if (!isWsl()) return null;
+  try {
+    const r = await runCapture('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      '(Get-NetIPConfiguration | ? { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } | Select-Object -First 1 -ExpandProperty IPv4Address).IPAddress',
+    ]);
+    if (r.exitCode !== 0) return null;
+    const ip = r.stdout.replace(/\r/g, '').trim();
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(ip) ? ip : null;
+  } catch {
+    return null;
+  }
+}
+
 async function realLockWindowsKey(
   winKeyPath: string,
   user: string,

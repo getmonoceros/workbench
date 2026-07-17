@@ -24,7 +24,11 @@ import {
   type CaddySite,
 } from './caddy.js';
 import { monocerosHome as defaultMonocerosHome } from '../config/paths.js';
-import { isWsl, resolveWindowsProfile } from '../devcontainer/ssh-attach.js';
+import {
+  isWsl,
+  resolveWindowsLanIp,
+  resolveWindowsProfile,
+} from '../devcontainer/ssh-attach.js';
 import { cyan, dim } from '../util/format.js';
 
 /**
@@ -52,6 +56,11 @@ export interface RunShareOptions {
   preflight?: typeof preflightLocalPort;
   installSignalHandler?: (handler: () => void) => () => void;
   hostAddresses?: () => HostAddresses;
+  /**
+   * Injected in tests; resolves the Windows host's LAN IP when running in WSL,
+   * null elsewhere. Defaults to the real PowerShell-backed lookup.
+   */
+  resolveWindowsLanIp?: () => Promise<string | null>;
   /** Injected in tests; defaults to the real CA-backed TLS provisioning. */
   provisionTls?: ProvisionShareTls;
   /** Injected in tests; defaults to a quiet `docker pull` of the terminator image. */
@@ -200,7 +209,15 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
   // Issue a leaf cert covering every name/address a device might use, so socat
   // can terminate TLS - HTTP over a LAN IP / `.local` name is an insecure
   // context and kills PKCE + Service Workers (ADR 0033).
-  const { ip, mdnsName } = (opts.hostAddresses ?? realHostAddresses)();
+  const { ip: localIp, mdnsName } = (opts.hostAddresses ?? realHostAddresses)();
+  // On WSL the enumerated IPv4 is the WSL-NAT address (172.x), unreachable from
+  // the LAN. The address other devices can actually reach is the Windows host's
+  // own LAN IP, so prefer it - both in the cert SANs and as the advertised
+  // address. `.local` stays a best-effort extra (Windows advertises mDNS
+  // inconsistently, so it must not be the only anchor). Off WSL this is null
+  // and the enumerated IP stands.
+  const winLanIp = await (opts.resolveWindowsLanIp ?? resolveWindowsLanIp)();
+  const ip = winLanIp ?? localIp;
   const sans = [mdnsName, ip, 'localhost', '127.0.0.1'].filter(
     (s): s is string => typeof s === 'string' && s.length > 0,
   );
@@ -246,20 +263,22 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
   // all renders while stdout is still a clean TTY. Starting the terminator's
   // interactive `docker run` mid-banner would let it grab the TTY and split
   // the output formatting (consola's fancy vs basic reporter).
-  const host = mdnsName ?? ip ?? '<host-ip>';
+  //
+  // Per target, list every address a device can use as an equal line - the
+  // reachable IP and, when present, the `.local` name. Neither is "primary":
+  // some devices resolve mDNS, others need the IP, so both are offered plainly.
+  const addresses = [ip, mdnsName].filter(
+    (a): a is string => typeof a === 'string' && a.length > 0,
+  );
+  if (addresses.length === 0) addresses.push('<host-ip>');
   const caPath = await caTrustDisplayPath(tls.caCertPath, home);
   log.info(
     `Sharing ${opts.name}/${opts.app} on the local network (Ctrl+C to stop):`,
   );
   for (const t of ported) {
-    log.info(`  ${cyan(t.name)}  https://${host}:${t.port}`);
-  }
-  if (mdnsName && ip) {
-    log.info(
-      dim(
-        `  also reachable as https://${ip}:<port> if .local does not resolve`,
-      ),
-    );
+    for (const addr of addresses) {
+      log.info(`  ${cyan(t.name)}  https://${addr}:${t.port}`);
+    }
   }
   log.info(
     dim(
