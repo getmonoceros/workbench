@@ -275,7 +275,7 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
   if (addresses.length === 0) addresses.push('<host-ip>');
   const caPath = await caTrustDisplayPath(tls.caCertPath, home);
   const banner: string[] = [
-    `Sharing ${opts.name}/${opts.app} on the local network (Ctrl+C to stop):`,
+    `Sharing ${opts.name}/${opts.app} on the local network:`,
   ];
   for (const t of ported) {
     banner.push('', `    ${cyan(t.name)}`);
@@ -287,6 +287,8 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
     '',
     dim('    Trust the local CA once (first device) for warning-free HTTPS:'),
     dim(`      ${caPath}`),
+    '',
+    'Press Ctrl+C to stop sharing.',
   );
   log.info(banner.join('\n'));
 
