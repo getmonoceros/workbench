@@ -264,27 +264,31 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
   // interactive `docker run` mid-banner would let it grab the TTY and split
   // the output formatting (consola's fancy vs basic reporter).
   //
-  // Per target, list every address a device can use as an equal line - the
-  // reachable IP and, when present, the `.local` name. Neither is "primary":
-  // some devices resolve mDNS, others need the IP, so both are offered plainly.
+  // Per target, list every address a device can use - the reachable IP and,
+  // when present, the `.local` name. Neither is "primary": some devices
+  // resolve mDNS, others need the IP, so both are offered plainly. Group them
+  // under the target name and emit the whole banner as one log call, so the
+  // reporter prints a single leading glyph instead of one per line.
   const addresses = [ip, mdnsName].filter(
     (a): a is string => typeof a === 'string' && a.length > 0,
   );
   if (addresses.length === 0) addresses.push('<host-ip>');
   const caPath = await caTrustDisplayPath(tls.caCertPath, home);
-  log.info(
+  const banner: string[] = [
     `Sharing ${opts.name}/${opts.app} on the local network (Ctrl+C to stop):`,
-  );
+  ];
   for (const t of ported) {
+    banner.push('', `    ${cyan(t.name)}`);
     for (const addr of addresses) {
-      log.info(`  ${cyan(t.name)}  https://${addr}:${t.port}`);
+      banner.push(`      https://${addr}:${t.port}`);
     }
   }
-  log.info(
-    dim(
-      `  First device? Trust the local CA once so HTTPS is warning-free: ${caPath}`,
-    ),
+  banner.push(
+    '',
+    dim('    Trust the local CA once (first device) for warning-free HTTPS:'),
+    dim(`      ${caPath}`),
   );
+  log.info(banner.join('\n'));
 
   const dockerSpawn = opts.dockerSpawn ?? defaultDockerSpawn;
   const handles: DockerSpawnHandle[] = [
