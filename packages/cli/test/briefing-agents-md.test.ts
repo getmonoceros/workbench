@@ -163,6 +163,68 @@ describe('AGENTS.md generator', () => {
     expect(redis).not.toContain('--import-realm');
   });
 
+  it('renders configured workspace binds under a service, grouped by project, with real paths', () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: [],
+      services: [
+        {
+          name: 'keycloak',
+          image: 'quay.io/keycloak/keycloak:26.6',
+          port: 8080,
+          env: {},
+          volumes: [
+            'projects/plantlove/keycloak/realm.json:/opt/keycloak/data/import/plantlove.json:ro',
+            'projects/plantlove/keycloak/theme:/opt/keycloak/themes/plantlove',
+            'projects/shop/keycloak/realm.json:/opt/keycloak/data/import/shop.json:ro',
+            // A named volume (not a workspace bind) must not appear.
+            'data:/opt/keycloak/data',
+          ],
+        },
+      ],
+      features: [],
+      repos: [],
+      ports: [],
+    });
+    expect(md).toContain(
+      'Workspace mounts (edit these on the host, then re-apply):',
+    );
+    // Split by project: each project heads its own group.
+    expect(md).toContain('- plantlove:');
+    expect(md).toContain('- shop:');
+    // Real paths, with the container target and the read-only marker.
+    expect(md).toContain(
+      '- `projects/plantlove/keycloak/realm.json` → `/opt/keycloak/data/import/plantlove.json` (read-only)',
+    );
+    expect(md).toContain(
+      '- `projects/plantlove/keycloak/theme` → `/opt/keycloak/themes/plantlove`',
+    );
+    // The read-write theme mount carries no read-only marker.
+    expect(md).not.toContain('/opt/keycloak/themes/plantlove` (read-only)');
+    // Named volumes are host-managed and filtered out.
+    expect(md).not.toContain('`data`');
+  });
+
+  it('omits the workspace-mounts block when a service has no project binds', () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: [],
+      services: [
+        {
+          name: 'postgres',
+          image: 'postgres:18',
+          port: 5432,
+          env: {},
+          volumes: ['data:/var/lib/postgresql/data'],
+        },
+      ],
+      features: [],
+      repos: [],
+      ports: [],
+    });
+    expect(md).not.toContain('Workspace mounts');
+  });
+
   it('renders one bullet per feature line (single line per feature is the simple case)', () => {
     const md = generateAgentsMd({
       containerName: 'demo',
@@ -242,6 +304,43 @@ describe('AGENTS.md generator', () => {
     expect(withPorts).toContain('## Running a long-running server');
     expect(withPorts).toContain('"port": 5173');
     expect(withPorts).not.toContain('This container exposes **no ports yet**');
+  });
+
+  it('shows a multi-server default set and tells the agent to keep later servers in it', () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: ['node'],
+      services: [],
+      features: [],
+      repos: [],
+      ports: [3000, 5173],
+    });
+    // The example is a TWO-target default set (api + web), both default, so
+    // the multi-default case reads as the norm, not the exception.
+    expect(md).toContain(
+      '{ "name": "api", "command": "<the API\'s start command>", "port": 3000, "default": true },',
+    );
+    expect(md).toContain(
+      '{ "name": "web", "command": "<the web start command>", "port": 5173, "default": true }',
+    );
+    // A second exposed port fills the web target; with only one port the
+    // web target falls back to the placeholder.
+    const onePort = generateAgentsMd({
+      containerName: 'demo',
+      languages: ['node'],
+      services: [],
+      features: [],
+      repos: [],
+      ports: [3000],
+    });
+    expect(onePort).toContain('"name": "web"');
+    expect(onePort).toContain('"port": <port>, "default": true');
+    // The incremental case: a server added later must be re-evaluated for
+    // the default set, not left out because one default already exists.
+    expect(md).toContain('When you add a server in a later session');
+    expect(md).toContain(
+      'does not mean later servers should\nstay non-default',
+    );
   });
 
   it('keeps .localhost URLs suffix-free at the default host port 80', () => {

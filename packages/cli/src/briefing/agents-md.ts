@@ -142,6 +142,12 @@ export function generateAgentsMd(input: AgentsMdInput): string {
           lines.push(sub ? `  ${sub}` : '');
         }
       }
+      // Surface the workspace files actually mounted into this service (a
+      // realm export, a theme) with their real paths, so the agent edits
+      // them where they live instead of guessing from the `<app>` template.
+      for (const mountLine of formatServiceMounts(svc)) {
+        lines.push(mountLine);
+      }
     }
     lines.push('');
 
@@ -333,6 +339,7 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   // no hint at all, so the agent had nothing to find.
   const examplePort =
     input.ports.length > 0 ? String(input.ports[0]) : '<port>';
+  const secondPort = input.ports.length > 1 ? String(input.ports[1]) : '<port>';
 
   lines.push('## Running a long-running server');
   lines.push('');
@@ -370,7 +377,10 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   lines.push('{');
   lines.push('  "targets": [');
   lines.push(
-    `    { "name": "web", "command": "<the project's start command>", "port": ${examplePort}, "default": true }`,
+    `    { "name": "api", "command": "<the API's start command>", "port": ${examplePort}, "default": true },`,
+  );
+  lines.push(
+    `    { "name": "web", "command": "<the web start command>", "port": ${secondPort}, "default": true }`,
   );
   lines.push('  ]');
   lines.push('}');
@@ -407,6 +417,17 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     "server's `port` to listen before starting the next - so order an entry",
     'before anything that depends on it. If one fails to come up, the rest are',
     'not started. Pass `--target <name>` to start or stop a single one.',
+  );
+  lines.push('');
+  lines.push(
+    'When you add a server in a later session, revisit the existing',
+    '`launch.json` instead of assuming its current `default` set is complete.',
+    'If the new server belongs to the app that should come up together (a',
+    'backend the frontend calls, a worker the app relies on), give it',
+    '`"default": true` too and place its entry before whatever depends on it.',
+    'A single pre-existing default entry does not mean later servers should',
+    'stay non-default - most servers that make up the running app belong in',
+    'the default set.',
   );
   lines.push('');
   lines.push(
@@ -462,6 +483,70 @@ function formatServiceLine(svc: ResolvedService): string {
     return `- **${svc.name}** — reachable at \`${reach}\``;
   }
   return `- **${svc.name}** (custom image \`${svc.image}\`) — reachable at \`${reach}\``;
+}
+
+/**
+ * Render the workspace bind-mounts a service actually has configured,
+ * grouped by the project they come from. Only host-relative sources
+ * under `projects/` are shown — those are the files the agent can edit
+ * from inside the container (a Keycloak realm export, a theme). Named
+ * volumes (`data:…`) and IDE-state volumes are host-managed and not the
+ * agent's concern, so they drop out via `projectOf`. Returns indented
+ * lines that nest under the service bullet, or an empty array when the
+ * service has no workspace binds.
+ */
+function formatServiceMounts(svc: ResolvedService): string[] {
+  const byProject = new Map<string, string[]>();
+  for (const spec of svc.volumes) {
+    const mount = parseBindMount(spec);
+    if (!mount) continue;
+    const project = projectOf(mount.source);
+    if (!project) continue;
+    const readOnly = mount.mode === 'ro' ? ' (read-only)' : '';
+    const bucket = byProject.get(project) ?? [];
+    bucket.push(`    - \`${mount.source}\` → \`${mount.target}\`${readOnly}`);
+    byProject.set(project, bucket);
+  }
+  if (byProject.size === 0) return [];
+  const out = ['  Workspace mounts (edit these on the host, then re-apply):'];
+  for (const [project, entries] of byProject) {
+    out.push(`  - ${project}:`);
+    out.push(...entries);
+  }
+  return out;
+}
+
+/**
+ * Parse a compose-style bind spec `source:target[:mode]` into its parts.
+ * The source is a workspace-relative POSIX path (no colon); the target
+ * is an absolute container path; an optional trailing token without a
+ * slash is the access mode (`ro`/`rw`/…). Named volumes like `data:/x`
+ * still parse here — `projectOf` is what filters them out.
+ */
+function parseBindMount(
+  spec: string,
+): { source: string; target: string; mode?: string } | null {
+  const parts = spec.split(':');
+  if (parts.length < 2) return null;
+  const source = parts[0]!;
+  let mode: string | undefined;
+  const last = parts[parts.length - 1]!;
+  if (parts.length >= 3 && !last.includes('/')) {
+    mode = parts.pop();
+  }
+  return { source, target: parts.slice(1).join(':'), mode };
+}
+
+/**
+ * The project a workspace-relative bind source belongs to:
+ * `projects/<project>/…` → `<project>`. Returns null for sources not
+ * rooted under `projects/` (named volumes, absolute host paths), so only
+ * workspace files the agent can edit are surfaced.
+ */
+function projectOf(source: string): string | null {
+  const segments = source.split('/');
+  if (segments[0] !== 'projects' || segments.length < 2) return null;
+  return segments[1] ?? null;
 }
 
 /**
