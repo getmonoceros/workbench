@@ -18,6 +18,7 @@ import {
 import {
   readEnvFile,
   expandEnvRefs,
+  mergeEnvLayers,
   interpolateServices,
   interpolateFeatureOptions,
   formatMissingVarsError,
@@ -308,11 +309,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // `GITHUB_API_TOKEN=${GIT_TOKEN__GITHUB_KUNDE1}`, ADR 0031) — expand
   // those refs against the merged env so the container designates which
   // global token it uses without duplicating the secret.
-  const envVars = expandEnvRefs({
-    ...readEnvFile(globalEnvPath(home)),
-    ...readEnvFile(envPath),
-    ...(opts.env ?? {}),
-  });
+  const envVars = expandEnvRefs(
+    mergeEnvLayers(
+      readEnvFile(globalEnvPath(home)),
+      readEnvFile(envPath),
+      opts.env ?? {},
+    ),
+  );
 
   // Repo token resolution (ADR 0031): resolve each declared repo's access
   // token by convention (feature var → GIT_TOKEN__<PROVIDER>_<SEGMENT> →

@@ -115,6 +115,33 @@ export function expandEnvRefs(
   return out;
 }
 
+/**
+ * Layer env sources low-to-high precedence into one map, with the rule
+ * that an empty/whitespace value NEVER masks a non-empty value from a
+ * lower layer. This is the fix for the blank-placeholder trap: `init`
+ * seeds `<name>.env` with an empty `GITHUB_API_TOKEN=` placeholder, so a
+ * naive `{ ...global, ...container }` spread lets that blank shadow a real
+ * `GITHUB_API_TOKEN=…` in `monoceros-config.env` — the global value would
+ * be silently ignored. Here a blank higher layer falls through to the
+ * lower one; a non-empty higher value still wins. A key that is blank in
+ * every layer stays present (as `''`), matching how the callers treat
+ * "unset" (feature options → inherit default, git identity → cascade).
+ */
+export function mergeEnvLayers(
+  ...layers: Array<Record<string, string>>
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const layer of layers) {
+    for (const [key, value] of Object.entries(layer)) {
+      const incomingEmpty = value.trim() === '';
+      const haveNonEmpty = out[key] !== undefined && out[key]!.trim() !== '';
+      if (incomingEmpty && haveNonEmpty) continue;
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 export interface MissingVar {
   /** Dotted path to the field, e.g. `services.postgres.env.POSTGRES_PASSWORD`
    * or `features.ghcr.io/…:1.apiKey`. */

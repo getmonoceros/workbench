@@ -7,7 +7,7 @@ import {
   type SolutionConfig,
 } from '../config/schema.js';
 import { parseConfig } from '../config/io.js';
-import { readEnvFile } from '../config/env-file.js';
+import { readEnvFile, mergeEnvLayers } from '../config/env-file.js';
 import {
   containerConfigPath,
   containerEnvPath,
@@ -243,10 +243,10 @@ export async function resolveContainerRepoTokens(
 ): Promise<RepoTokenResult> {
   const ymlPath = containerConfigPath(name, home);
   const { config } = parseConfig(await fs.readFile(ymlPath, 'utf8'), ymlPath);
-  const envVars = {
-    ...readEnvFile(globalEnvPath(home)),
-    ...readEnvFile(containerEnvPath(name, home)),
-  };
+  const envVars = mergeEnvLayers(
+    readEnvFile(globalEnvPath(home)),
+    readEnvFile(containerEnvPath(name, home)),
+  );
   return resolveRepoTokens(config, catalog, envVars);
 }
 

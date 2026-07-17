@@ -23,6 +23,7 @@ import {
   interpolateFeatureOptions,
   hasVarPlaceholder,
   resolveGitUserFields,
+  mergeEnvLayers,
 } from '../src/config/env-file.js';
 import { validateConfig } from '../src/config/schema.js';
 import { solutionConfigToCreateOptions } from '../src/config/transform.js';
@@ -322,6 +323,41 @@ describe('env-file parsing + interpolation', () => {
     );
     expect(out[0]!.options!.apiKey).toBe('');
     expect(out[1]!.options!.apiToken).toBe('');
+  });
+});
+
+describe('mergeEnvLayers', () => {
+  it('a non-empty higher layer wins over a lower one', () => {
+    expect(
+      mergeEnvLayers(
+        { GITHUB_API_TOKEN: 'global' },
+        { GITHUB_API_TOKEN: 'local' },
+      ),
+    ).toEqual({ GITHUB_API_TOKEN: 'local' });
+  });
+
+  it('a blank higher layer falls through to a non-empty lower one', () => {
+    // The bug: `init` seeds `<name>.env` with `GITHUB_API_TOKEN=`, which
+    // must NOT mask the value in monoceros-config.env.
+    expect(
+      mergeEnvLayers({ GITHUB_API_TOKEN: 'global' }, { GITHUB_API_TOKEN: '' }),
+    ).toEqual({ GITHUB_API_TOKEN: 'global' });
+    expect(
+      mergeEnvLayers(
+        { GITHUB_API_TOKEN: 'global' },
+        { GITHUB_API_TOKEN: '   ' },
+      ),
+    ).toEqual({ GITHUB_API_TOKEN: 'global' });
+  });
+
+  it('a key blank in every layer stays present as ""', () => {
+    expect(mergeEnvLayers({ X: '' }, { X: '' })).toEqual({ X: '' });
+  });
+
+  it('later non-empty layers still override earlier ones (opts.env seam)', () => {
+    expect(
+      mergeEnvLayers({ X: 'global' }, { X: '' }, { X: 'override' }),
+    ).toEqual({ X: 'override' });
   });
 });
 
