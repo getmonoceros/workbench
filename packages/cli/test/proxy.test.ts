@@ -193,22 +193,50 @@ describe('maybeStopProxy', () => {
     expect(docker.calls[0]!.slice(0, 2)).toEqual(['network', 'inspect']);
   });
 
-  it('no-ops when other containers are still in the network', async () => {
-    const docker = fakeDocker(() =>
-      ok(`${PROXY_CONTAINER_NAME}\nsandbox\nother\n`),
-    );
+  it('no-ops when other containers still reference the network', async () => {
+    const docker = fakeDocker((args, call) => {
+      if (call === 0) return ok(); // inspect: network exists
+      return ok(`${PROXY_CONTAINER_NAME}\nsandbox\nother\n`); // ps -a
+    });
     await maybeStopProxy({
       docker: docker.exec,
       monocerosHome: home,
       logger: silentLogger,
     });
-    // only the inspect call; no rm, no network rm
-    expect(docker.calls).toHaveLength(1);
+    // inspect + ps -a; no rm, no network rm
+    expect(docker.calls).toHaveLength(2);
+    expect(docker.calls[1]!.slice(0, 4)).toEqual([
+      'ps',
+      '-a',
+      '--filter',
+      `network=${PROXY_NETWORK_NAME}`,
+    ]);
+  });
+
+  it('no-ops when a merely-stopped port-container still references the network', async () => {
+    // Regression: a stopped container is absent from `network inspect`'s
+    // running-only `.Containers` map but present in `ps -a` by config. It
+    // must keep the proxy alive so `start` re-attaches to the same network.
+    const docker = fakeDocker((args, call) => {
+      if (call === 0) return ok(); // inspect: network exists
+      return ok(`${PROXY_CONTAINER_NAME}\nmonoceros-acme\n`); // ps -a: acme (stopped)
+    });
+    await maybeStopProxy({
+      docker: docker.exec,
+      monocerosHome: home,
+      logger: silentLogger,
+    });
+    expect(docker.calls).toHaveLength(2);
+    expect(docker.calls.some((c) => c[0] === 'rm')).toBe(false);
+    expect(docker.calls.some((c) => c[0] === 'network' && c[1] === 'rm')).toBe(
+      false,
+    );
   });
 
   it('drops the singleton and the network when only the proxy is left', async () => {
     const docker = fakeDocker((args, call) => {
-      if (call === 0) return ok(`${PROXY_CONTAINER_NAME}\n`); // only self
+      if (call === 0) return ok(); // inspect: network exists
+      if (call === 1) return ok(`${PROXY_CONTAINER_NAME}\n`); // ps -a: only self
       return ok();
     });
     await maybeStopProxy({
@@ -218,14 +246,16 @@ describe('maybeStopProxy', () => {
     });
     expect(docker.calls.map((c) => c.slice(0, 3))).toEqual([
       ['network', 'inspect', PROXY_NETWORK_NAME],
+      ['ps', '-a', '--filter'],
       ['rm', '-f', PROXY_CONTAINER_NAME],
       ['network', 'rm', PROXY_NETWORK_NAME],
     ]);
   });
 
-  it('drops the singleton and the network when the network is empty', async () => {
+  it('drops the singleton and the network when nothing references it', async () => {
     const docker = fakeDocker((args, call) => {
-      if (call === 0) return ok('\n'); // no containers attached at all
+      if (call === 0) return ok(); // inspect: network exists
+      if (call === 1) return ok('\n'); // ps -a: no containers attached
       return ok();
     });
     await maybeStopProxy({
@@ -233,15 +263,16 @@ describe('maybeStopProxy', () => {
       monocerosHome: home,
       logger: silentLogger,
     });
-    expect(docker.calls).toHaveLength(3);
+    expect(docker.calls).toHaveLength(4);
   });
 
   it('logs a warn (no throw) when network rm fails', async () => {
     const logs: string[] = [];
     const docker = fakeDocker((args, call) => {
-      if (call === 0) return ok(`${PROXY_CONTAINER_NAME}\n`);
-      if (call === 1) return ok();
-      if (call === 2) return fail('error: network has active endpoints');
+      if (call === 0) return ok(); // inspect
+      if (call === 1) return ok(`${PROXY_CONTAINER_NAME}\n`); // ps -a: only self
+      if (call === 2) return ok(); // rm -f proxy
+      if (call === 3) return fail('error: network has active endpoints');
       return ok();
     });
     await maybeStopProxy({

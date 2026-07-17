@@ -16,10 +16,12 @@ import { monocerosHome as defaultMonocerosHome } from '../config/paths.js';
  *     named `monoceros-proxy` is up. Called from `apply`/`start` when
  *     the container's yml declares at least one port.
  *
- *   - `maybeStopProxy()` — counts the non-proxy containers attached to
- *     the `monoceros-proxy` network. Zero ⇒ stop the singleton and
- *     drop the network. Anything else ⇒ no-op. Called from
- *     `stop`/`remove`.
+ *   - `maybeStopProxy()` — counts the non-proxy containers that still
+ *     reference the `monoceros-proxy` network (running OR stopped, by
+ *     container config). Zero ⇒ stop the singleton and drop the network.
+ *     Anything else ⇒ no-op, so a merely-stopped port-container keeps the
+ *     proxy (and its network id) alive to re-attach to on `start`. Called
+ *     from `stop`/`remove`.
  *
  * Test extension point: every docker invocation runs through the
  * `DockerExec` shape, which `ensureProxy`/`maybeStopProxy` accept as
@@ -224,25 +226,38 @@ export async function maybeStopProxy(opts: ProxyOptions = {}): Promise<void> {
   const docker = opts.docker ?? realDocker;
   const logger = opts.logger;
 
-  // Names of every container attached to the network. The Go-template
-  // is one name per line. Empty stdout (or just newlines) means no
-  // container at all is in the network.
-  const inspect = await docker([
-    'network',
-    'inspect',
-    PROXY_NETWORK_NAME,
-    '--format',
-    '{{range $k, $v := .Containers}}{{$v.Name}}\n{{end}}',
-  ]);
+  // Existence guard: `inspect` exits non-zero when the network is gone or
+  // the daemon is unreachable — nothing to clean up.
+  const inspect = await docker(['network', 'inspect', PROXY_NETWORK_NAME]);
   if (inspect.exitCode !== 0) {
-    // Network is gone or daemon unreachable — nothing to clean up.
     return;
   }
-  const others = inspect.stdout
+
+  // Count dependents by container CONFIG, not the network's live
+  // `.Containers` map. `docker network inspect` only lists RUNNING
+  // containers, so a container that was merely stopped (`monoceros stop`)
+  // has already dropped out of it — yet it still pins this network by id in
+  // its own config. If we tore the network down now, the next `ensureProxy`
+  // (on `monoceros start`) would recreate it with a NEW id, and the stopped
+  // container could no longer attach: `docker start` then fails with
+  // `network <old-id> not found`. So keep the proxy alive while ANY
+  // dependent still EXISTS (running or stopped); it is dropped only when the
+  // last one is removed (`remove` deletes the container before calling us).
+  // `docker ps -a --filter network=` matches by config and includes stopped
+  // containers — the running-only inspect above cannot.
+  const attached = await docker([
+    'ps',
+    '-a',
+    '--filter',
+    `network=${PROXY_NETWORK_NAME}`,
+    '--format',
+    '{{.Names}}',
+  ]);
+  const others = attached.stdout
     .split('\n')
     .map((n) => n.trim())
     .filter((n) => n.length > 0 && n !== PROXY_CONTAINER_NAME);
-  if (others.length > 0) return; // other consumers still depend on it
+  if (others.length > 0) return; // a dependent still exists (running or stopped)
 
   // Stop+rm the singleton. `rm -f` does both even if it's still up,
   // and shrugs at a missing container, which makes the call resilient
