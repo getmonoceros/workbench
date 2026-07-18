@@ -298,14 +298,18 @@ Register-ArgumentCompleter -Native -CommandName @('monoceros', 'monoceros.cmd', 
 
   # Tokens already complete on the line. When the current word is
   # non-empty it is the last command element — drop it from "prev".
+  # NOTE: each list is wrapped in @(...) around the whole if-expression.
+  # \`$x = if (...) { @(one-element) }\` enumerates the output and collapses
+  # a single-element array back to a scalar, so \`$tokens[0]\` would index
+  # into a string ('apply'[0] -> 'a'). The outer @(...) forces an array.
   $elements = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text })
   if ($current -ne '' -and $elements.Count -gt 0 -and $elements[-1] -eq $current) {
-    $prev = if ($elements.Count -gt 1) { @($elements[0..($elements.Count - 2)]) } else { @() }
+    $prev = @(if ($elements.Count -gt 1) { $elements[0..($elements.Count - 2)] } else { @() })
   } else {
-    $prev = $elements
+    $prev = @($elements)
   }
   # Strip the program name (prev[0]).
-  $tokens = if ($prev.Count -gt 1) { @($prev[1..($prev.Count - 1)]) } else { @() }
+  $tokens = @(if ($prev.Count -gt 1) { $prev[1..($prev.Count - 1)] } else { @() })
 
   # No subcommand yet → complete the subcommand list.
   if ($tokens.Count -eq 0) {
@@ -316,7 +320,7 @@ Register-ArgumentCompleter -Native -CommandName @('monoceros', 'monoceros.cmd', 
   $spec = $model.specs.PSObject.Properties[$command]
   if (-not $spec) { return }
   $spec = $spec.Value
-  $argTokens = if ($tokens.Count -gt 1) { @($tokens[1..($tokens.Count - 1)]) } else { @() }
+  $argTokens = @(if ($tokens.Count -gt 1) { $tokens[1..($tokens.Count - 1)] } else { @() })
 
   # Everything after \`--\` is the inner command — not ours to complete.
   if ($argTokens -contains '--') { return }

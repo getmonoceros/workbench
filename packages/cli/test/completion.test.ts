@@ -63,6 +63,20 @@ describe('renderCompletionScript', () => {
     expect(pwsh).not.toContain('__complete');
   });
 
+  it('pwsh token lists are array-wrapped (regression: if-expr unwraps single-element arrays)', async () => {
+    const pwsh = await renderCompletionScript('pwsh');
+    // `$x = if (...) { @(one-elem) }` collapses to a scalar string, so
+    // `$tokens[0]` would index a character ('apply'[0] -> 'a') and every
+    // dynamic completion falls through to file completion. The whole
+    // if-expression must be wrapped in @(...) to stay an array.
+    expect(pwsh).toContain('$prev = @(if ($elements.Count -gt 1)');
+    expect(pwsh).toContain('$tokens = @(if ($prev.Count -gt 1)');
+    expect(pwsh).toContain('$argTokens = @(if ($tokens.Count -gt 1)');
+    // The un-wrapped forms must NOT come back.
+    expect(pwsh).not.toContain('$tokens = if (');
+    expect(pwsh).not.toContain('$argTokens = if (');
+  });
+
   it('pwsh script embeds the static model (commands + baked value lists)', async () => {
     const pwsh = await renderCompletionScript('pwsh');
     // Command names ARE part of the baked model here (unlike bash/zsh,
