@@ -7,6 +7,7 @@ import { main } from '../src/main.js';
 import {
   resolveCompletions,
   parseCompletionLine,
+  buildPwshCompletionModel,
   COMPLETION_ALL_COMMANDS,
   COMPLETION_COMMAND_SPEC_KEYS,
 } from '../src/completion/resolve.js';
@@ -20,16 +21,16 @@ const wiredSubcommands = Object.keys(
 // ─── Shell-wrapper scripts ────────────────────────────────────────
 
 describe('renderCompletionScript', () => {
-  it('bash wrapper calls `monoceros __complete --line --point`', () => {
-    const bash = renderCompletionScript('bash');
+  it('bash wrapper calls `monoceros __complete --line --point`', async () => {
+    const bash = await renderCompletionScript('bash');
     expect(bash).toContain(
       'monoceros __complete --line "$COMP_LINE" --point "$COMP_POINT"',
     );
     expect(bash).toMatch(/complete -F _monoceros monoceros/);
   });
 
-  it('bash wrapper suppresses trailing space when the candidate ends in `=`', () => {
-    const bash = renderCompletionScript('bash');
+  it('bash wrapper suppresses trailing space when the candidate ends in `=`', async () => {
+    const bash = await renderCompletionScript('bash');
     // The single-candidate-ends-with-`=` branch must be present; that's
     // the fix that keeps `--with-ports=3000` from becoming
     // `--with-ports =3000` after Tab + manual `=3000`.
@@ -37,14 +38,14 @@ describe('renderCompletionScript', () => {
     expect(bash).toContain('"${COMPREPLY[0]}" == *=');
   });
 
-  it("zsh wrapper applies `-S ''` (no suffix) to candidates ending in `=`", () => {
-    const zsh = renderCompletionScript('zsh');
+  it("zsh wrapper applies `-S ''` (no suffix) to candidates ending in `=`", async () => {
+    const zsh = await renderCompletionScript('zsh');
     expect(zsh).toContain("compadd -S '' --");
     expect(zsh).toContain('*= ');
   });
 
-  it('zsh wrapper calls `monoceros __complete` with BUFFER+CURSOR', () => {
-    const zsh = renderCompletionScript('zsh');
+  it('zsh wrapper calls `monoceros __complete` with BUFFER+CURSOR', async () => {
+    const zsh = await renderCompletionScript('zsh');
     expect(zsh).toContain(
       'monoceros __complete --line "$line" --point "$point"',
     );
@@ -53,26 +54,91 @@ describe('renderCompletionScript', () => {
     expect(zsh.startsWith('#compdef monoceros\n')).toBe(true);
   });
 
-  it('pwsh wrapper calls `monoceros __complete` via Register-ArgumentCompleter', () => {
-    const pwsh = renderCompletionScript('pwsh');
+  it('pwsh script is self-contained: registers a native completer, never calls `__complete`', async () => {
+    const pwsh = await renderCompletionScript('pwsh');
     expect(pwsh).toMatch(
-      /Register-ArgumentCompleter -Native -CommandName monoceros/,
+      /Register-ArgumentCompleter -Native -CommandName @\('monoceros', 'monoceros\.cmd', 'monoceros\.exe'\)/,
     );
-    expect(pwsh).toContain('monoceros __complete --line $line --point $point');
+    // The whole point on Windows: no per-Tab CLI/WSL round-trip.
+    expect(pwsh).not.toContain('__complete');
   });
 
-  it('wrappers contain no per-command name hardcoded — the engine knows them', () => {
-    // The wrappers MUST NOT enumerate command names; that's the
-    // resolver's job. Picking a few non-trivial command names that
-    // would have appeared in the old scripts but shouldn't here.
-    const bash = renderCompletionScript('bash');
-    const zsh = renderCompletionScript('zsh');
-    const pwsh = renderCompletionScript('pwsh');
+  it('pwsh script embeds the static model (commands + baked value lists)', async () => {
+    const pwsh = await renderCompletionScript('pwsh');
+    // Command names ARE part of the baked model here (unlike bash/zsh,
+    // whose engine enumerates them live).
+    expect(pwsh).toContain('add-feature');
+    expect(pwsh).toContain('list-components');
+    // A couple of baked static value lists.
+    expect(pwsh).toContain('claude'); // a feature
+    expect(pwsh).toContain('postgres'); // a service
+    // Host-side dynamic lookups are wired by kind, no CLI call.
+    expect(pwsh).toContain('containerName');
+    expect(pwsh).toContain('__Monoceros_ContainerNames');
+    expect(pwsh).toContain('__Monoceros_Targets');
+  });
+
+  it('bash/zsh wrappers contain no per-command name hardcoded — the engine knows them', async () => {
+    // The thin wrappers MUST NOT enumerate command names; that's the
+    // resolver's job. (The pwsh script is different: it bakes the model
+    // in on purpose — covered above.)
+    const bash = await renderCompletionScript('bash');
+    const zsh = await renderCompletionScript('zsh');
     for (const name of ['add-feature', 'list-components', 'add-from-url']) {
       expect(bash).not.toContain(name);
       expect(zsh).not.toContain(name);
-      expect(pwsh).not.toContain(name);
     }
+  });
+});
+
+// ─── PowerShell static model ──────────────────────────────────────
+
+describe('buildPwshCompletionModel', () => {
+  it('lists every command and gives each a spec', async () => {
+    const model = await buildPwshCompletionModel();
+    expect([...model.commands].sort()).toEqual(
+      [...COMPLETION_ALL_COMMANDS].sort(),
+    );
+    for (const cmd of COMPLETION_ALL_COMMANDS) {
+      expect(model.specs[cmd]).toBeDefined();
+    }
+  });
+
+  it('bakes static positional/flag values, tags dynamic ones by kind', async () => {
+    const model = await buildPwshCompletionModel();
+
+    // Static positional: add-language's 2nd slot carries baked runtimes.
+    const langSlot = model.specs['add-language']!.positionals[1]!;
+    expect('values' in langSlot && langSlot.values).toContain('node');
+
+    // Static flag value: init --with-features carries baked feature names.
+    const featFlag = model.specs['init']!.flags['--with-features']!;
+    expect(featFlag.type).toBe('value');
+    expect(
+      featFlag.value && 'values' in featFlag.value && featFlag.value.values,
+    ).toContain('claude');
+
+    // Dynamic positional: container name is a kind, not baked values.
+    expect(model.specs['apply']!.positionals[0]).toEqual({
+      kind: 'containerName',
+    });
+    // Dynamic flag value: run --in resolves workspace dirs at Tab time.
+    expect(model.specs['run']!.flags['--in']!.value).toEqual({
+      kind: 'runInDir',
+    });
+    // status' 2nd positional degrades to app-only (services need YAML).
+    expect(model.specs['status']!.positionals[1]).toEqual({
+      kind: 'appOrService',
+    });
+  });
+
+  it('leaves freeform value flags without a baked value list', async () => {
+    const model = await buildPwshCompletionModel();
+    // --with-ports takes a value but has no suggestion source, so no
+    // baked value descriptor at all.
+    const portsFlag = model.specs['init']!.flags['--with-ports']!;
+    expect(portsFlag.type).toBe('value');
+    expect(portsFlag.value).toBeUndefined();
   });
 });
 

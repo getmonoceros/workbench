@@ -130,6 +130,20 @@ cwd is irrelevant — everything goes through convention.
   ports, run `docker rm -f monoceros-proxy` before testing in a
   different home (and so you don't leave a proxy corpse behind for the
   builder). Details in the README under “Developing on the workbench”.
+- **Keep shell completion in step with the CLI.** Completion is derived
+  from `COMMAND_SPECS` in
+  [`packages/cli/src/completion/resolve.ts`](packages/cli/src/completion/resolve.ts),
+  which is a hand-maintained mirror of the citty commands. When you add
+  or change a command, flag, or positional, update that spec in the same
+  change: register the new command, add its flags, and tag each value
+  source (`staticSource` for catalog-derived lists, `dynamicSource` with
+  a `kind` for filesystem-backed ones like container names or apps).
+  Both the bash/zsh engine and the self-contained PowerShell script are
+  generated from it (`buildPwshCompletionModel`), so an un-mirrored
+  change silently loses completion on Windows. A test pins the command
+  list, but flags and value sources are not auto-checked. A new dynamic
+  `kind` also needs a matching host-side resolver in the pwsh script in
+  [`packages/cli/src/commands/completion.ts`](packages/cli/src/commands/completion.ts).
 
 ## Working an issue (board workflow)
 

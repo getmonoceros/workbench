@@ -138,6 +138,48 @@ function isShellWhitespace(ch: string): boolean {
 
 type ValueSource = (ctx: Ctx) => Promise<string[]> | string[];
 
+// ─── PowerShell static-model tagging ──────────────────────────────
+//
+// The bash/zsh wrappers call back into `monoceros __complete` on every
+// Tab, so their value sources run live. On Windows the CLI lives inside
+// a WSL distro reached through a `.cmd` shim, so a per-Tab callback is a
+// full WSL round-trip — far too slow. Instead the pwsh script is
+// generated once (at install time) as a self-contained completer: it
+// bakes the STATIC candidate lists in and resolves the few dynamic ones
+// (container names, apps, workspace dirs, launch targets) directly off
+// the host filesystem — everything is reachable via the
+// `%USERPROFILE%\.monoceros` symlink, no CLI call needed.
+//
+// To emit that model we tag each value source as either `static`
+// (bakeable now) or `dynamic` with a `kind` the pwsh script knows how to
+// resolve from the filesystem. Untagged sources (freeform value flags,
+// the `upgrade` version slot, feature-option inner-args) get no pwsh
+// suggestions. Tagging keeps `COMMAND_SPECS` the single source of truth:
+// `buildPwshCompletionModel()` derives the whole model from it.
+
+/** Dynamic value kinds the pwsh completer resolves host-side. */
+export type PwshValueKind =
+  | 'containerName'
+  | 'app'
+  | 'appOrService'
+  | 'runInDir'
+  | 'target';
+
+type PwshMeta = { static: true } | { static: false; kind: PwshValueKind };
+const pwshMeta = new WeakMap<object, PwshMeta>();
+
+/** Tag a source whose values can be baked into the pwsh script now. */
+function staticSource(fn: ValueSource): ValueSource {
+  pwshMeta.set(fn, { static: true });
+  return fn;
+}
+
+/** Tag a source the pwsh script resolves from the filesystem at Tab time. */
+function dynamicSource(kind: PwshValueKind, fn: ValueSource): ValueSource {
+  pwshMeta.set(fn, { static: false, kind });
+  return fn;
+}
+
 interface FlagSpec {
   /** `boolean` = no value; `value` = `--flag <X>` or `--flag=<X>`. */
   type: 'boolean' | 'value';
@@ -675,7 +717,28 @@ const ALL_COMMANDS = [
 
 // ─── Command specs ────────────────────────────────────────────────
 
-const containerName: ValueSource = (ctx) => listContainerNames(ctx);
+// Dynamic sources — resolved live by the bash/zsh engine, and host-side
+// by the pwsh script (tagged with the `kind` it dispatches on).
+const containerName = dynamicSource('containerName', (ctx) =>
+  listContainerNames(ctx),
+);
+const appCandidates = dynamicSource('app', (ctx) => listAppCandidates(ctx));
+const appOrServiceCandidates = dynamicSource('appOrService', (ctx) =>
+  listAppOrServiceCandidates(ctx),
+);
+const targetCandidates = dynamicSource('target', (ctx) =>
+  listTargetCandidates(ctx),
+);
+const runInDirs = dynamicSource('runInDir', (ctx) => listRunInDirs(ctx));
+
+// Static sources — catalog-derived, baked into the pwsh script at
+// generation time.
+const languageValues = staticSource(() => listLanguageNames());
+const serviceValues = staticSource(() => listServiceNames());
+const featureValues = staticSource(() => listFeatureComponents());
+const providerValues = staticSource(() => listProviders());
+const shellValues = staticSource(() => listShellNames());
+const openToolValues = staticSource(() => [...OPEN_TOOLS]);
 
 const COMMAND_SPECS: Record<string, CommandSpec> = {
   init: {
@@ -685,12 +748,9 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     // flag suggestions.
     positionalCount: 1,
     flags: {
-      '--with-languages': { type: 'value', values: () => listLanguageNames() },
-      '--with-features': {
-        type: 'value',
-        values: () => listFeatureComponents(),
-      },
-      '--with-services': { type: 'value', values: () => listServiceNames() },
+      '--with-languages': { type: 'value', values: languageValues },
+      '--with-features': { type: 'value', values: featureValues },
+      '--with-services': { type: 'value', values: serviceValues },
       '--with-apt-packages': { type: 'value' },
       '--with-repos': { type: 'value' },
       '--with-ports': { type: 'value' },
@@ -700,7 +760,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     positionals: [containerName],
     flags: {
       '--yes': { type: 'boolean', aliases: ['-y'] },
-      '--open': { type: 'value', values: () => [...OPEN_TOOLS] },
+      '--open': { type: 'value', values: openToolValues },
     },
   },
   upgrade: {
@@ -717,46 +777,46 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     },
   },
   shell: { positionals: [containerName] },
-  open: { positionals: [containerName, () => [...OPEN_TOOLS]] },
+  open: { positionals: [containerName, openToolValues] },
   run: {
     positionals: [containerName],
-    flags: { '--in': { type: 'value', values: (ctx) => listRunInDirs(ctx) } },
+    flags: { '--in': { type: 'value', values: runInDirs } },
   },
   logs: {
-    positionals: [containerName, (ctx) => listAppCandidates(ctx)],
+    positionals: [containerName, appCandidates],
     flags: {
-      '--target': { type: 'value', values: (ctx) => listTargetCandidates(ctx) },
+      '--target': { type: 'value', values: targetCandidates },
     },
   },
   start: {
-    positionals: [containerName, (ctx) => listAppCandidates(ctx)],
+    positionals: [containerName, appCandidates],
     flags: {
-      '--target': { type: 'value', values: (ctx) => listTargetCandidates(ctx) },
-      '--open': { type: 'value', values: () => [...OPEN_TOOLS] },
+      '--target': { type: 'value', values: targetCandidates },
+      '--open': { type: 'value', values: openToolValues },
     },
   },
   stop: {
-    positionals: [containerName, (ctx) => listAppCandidates(ctx)],
+    positionals: [containerName, appCandidates],
     flags: {
-      '--target': { type: 'value', values: (ctx) => listTargetCandidates(ctx) },
+      '--target': { type: 'value', values: targetCandidates },
     },
   },
   status: {
-    positionals: [containerName, (ctx) => listAppOrServiceCandidates(ctx)],
+    positionals: [containerName, appOrServiceCandidates],
   },
   'list-apps': { positionals: [containerName] },
   'add-language': {
-    positionals: [containerName, () => listLanguageNames()],
+    positionals: [containerName, languageValues],
   },
   'add-service': {
-    positionals: [containerName, () => listServiceNames()],
+    positionals: [containerName, serviceValues],
   },
   'add-apt-packages': {
     positionals: [containerName],
     innerArgs: () => [], // freeform package names — no useful suggestion list
   },
   'add-feature': {
-    positionals: [containerName, () => listFeatureComponents()],
+    positionals: [containerName, featureValues],
     flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
     innerArgs: (ctx) => listFeatureOptionInnerArgs(ctx),
   },
@@ -767,7 +827,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
       '--path': { type: 'value' },
       '--git-name': { type: 'value' },
       '--git-email': { type: 'value' },
-      '--provider': { type: 'value', values: () => listProviders() },
+      '--provider': { type: 'value', values: providerValues },
       '--yes': { type: 'boolean', aliases: ['-y'] },
     },
   },
@@ -780,17 +840,17 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     innerArgs: () => [],
   },
   'remove-language': {
-    positionals: [containerName, () => listLanguageNames()],
+    positionals: [containerName, languageValues],
   },
   'remove-service': {
-    positionals: [containerName, () => listServiceNames()],
+    positionals: [containerName, serviceValues],
   },
   'remove-apt-packages': {
     positionals: [containerName],
     innerArgs: () => [],
   },
   'remove-feature': {
-    positionals: [containerName, () => listFeatureComponents()],
+    positionals: [containerName, featureValues],
     flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
   },
   'remove-from-url': { positionals: [containerName] },
@@ -806,17 +866,17 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     innerArgs: () => [],
   },
   tunnel: {
-    positionals: [containerName, () => listServiceNames()],
+    positionals: [containerName, serviceValues],
     flags: {
       '--local-port': { type: 'value' },
       '--local-address': { type: 'value' },
     },
   },
   share: {
-    positionals: [containerName, (ctx) => listAppCandidates(ctx)],
+    positionals: [containerName, appCandidates],
   },
   completion: {
-    positionals: [() => listShellNames()],
+    positionals: [shellValues],
   },
   'list-components': {},
   restore: {
@@ -830,3 +890,77 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
 /** Exposed for tests so the command list stays in sync with main.ts. */
 export const COMPLETION_ALL_COMMANDS = ALL_COMMANDS;
 export const COMPLETION_COMMAND_SPEC_KEYS = Object.keys(COMMAND_SPECS);
+
+// ─── PowerShell static-model builder ──────────────────────────────
+
+/**
+ * A completion value slot in the pwsh model: either a baked static list,
+ * a dynamic kind the pwsh script resolves host-side, or nothing (freeform
+ * / unsupported → no suggestions).
+ */
+export type PwshValueDesc =
+  | { values: string[] }
+  | { kind: PwshValueKind }
+  | Record<string, never>;
+
+export interface PwshFlagDesc {
+  type: 'boolean' | 'value';
+  aliases: string[];
+  /** Present only for value flags that carry a suggestion source. */
+  value?: PwshValueDesc;
+}
+
+export interface PwshCommandDesc {
+  positionals: PwshValueDesc[];
+  positionalCount: number;
+  flags: Record<string, PwshFlagDesc>;
+}
+
+export interface PwshCompletionModel {
+  commands: string[];
+  specs: Record<string, PwshCommandDesc>;
+}
+
+const EMPTY_CTX: Ctx = { prev: [], current: '', opts: {} };
+
+async function describeSource(
+  src: ValueSource | undefined,
+): Promise<PwshValueDesc> {
+  if (!src) return {};
+  const meta = pwshMeta.get(src);
+  // Untagged sources (freeform value flags, the `upgrade` version slot,
+  // `() => []` inner-args) get no pwsh suggestions.
+  if (!meta) return {};
+  if (meta.static) return { values: await src(EMPTY_CTX) };
+  return { kind: meta.kind };
+}
+
+/**
+ * Derive the self-contained model the pwsh completion script embeds, from
+ * the same `COMMAND_SPECS` the bash/zsh engine uses. Static value sources
+ * are evaluated now (catalog lookups) and baked in; dynamic ones are
+ * reduced to a `kind` the pwsh script resolves off the filesystem.
+ */
+export async function buildPwshCompletionModel(): Promise<PwshCompletionModel> {
+  const specs: Record<string, PwshCommandDesc> = {};
+  for (const [name, spec] of Object.entries(COMMAND_SPECS)) {
+    const posSources = spec.positionals ?? [];
+    const positionalCount = spec.positionalCount ?? posSources.length;
+    const positionals: PwshValueDesc[] = [];
+    for (const src of posSources) positionals.push(await describeSource(src));
+
+    const flags: Record<string, PwshFlagDesc> = {};
+    for (const [flag, fspec] of Object.entries(spec.flags ?? {})) {
+      const entry: PwshFlagDesc = {
+        type: fspec.type,
+        aliases: fspec.aliases ?? [],
+      };
+      if (fspec.type === 'value' && fspec.values) {
+        entry.value = await describeSource(fspec.values);
+      }
+      flags[flag] = entry;
+    }
+    specs[name] = { positionals, positionalCount, flags };
+  }
+  return { commands: [...ALL_COMMANDS], specs };
+}

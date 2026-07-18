@@ -40,6 +40,7 @@ if (-not $PSCommandPath) {
 }
 $SettingsPath = Join-Path $env:APPDATA 'Docker\settings-store.json'
 $ShimDir      = Join-Path $env:LOCALAPPDATA 'Monoceros\bin'
+$CompletionPath = Join-Path $env:LOCALAPPDATA 'Monoceros\completion.ps1'
 $LinkPath     = Join-Path $env:USERPROFILE '.monoceros'
 $CHECK = [char]0x2714; $CROSS = [char]0x2717
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
@@ -238,6 +239,20 @@ try {
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $parts = @($userPath -split ';' | Where-Object { $_ -and $_ -ne $ShimDir })
     [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')
+    # Completion script + the block install.ps1 appended to the PROFILE.
+    if (Test-Path $CompletionPath) { Remove-Item $CompletionPath -Force -ErrorAction SilentlyContinue }
+    $marker = '# monoceros completion (managed by install.ps1)'
+    $profilePath = $PROFILE.CurrentUserAllHosts
+    if (Test-Path $profilePath) {
+      $lines = @(Get-Content -LiteralPath $profilePath)
+      $kept = New-Object System.Collections.Generic.List[string]
+      for ($i = 0; $i -lt $lines.Count; $i++) {
+        # Drop the marker line and the dot-source line that follows it.
+        if ($lines[$i].Trim() -eq $marker) { $i++; continue }
+        [void]$kept.Add($lines[$i])
+      }
+      Set-Content -LiteralPath $profilePath -Value $kept -Encoding UTF8
+    }
     if (Test-Path $LinkPath) {
       $item = Get-Item $LinkPath -Force
       if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { (Get-Item $LinkPath -Force).Delete() }

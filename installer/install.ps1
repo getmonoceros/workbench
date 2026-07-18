@@ -14,6 +14,7 @@
     5. Link     - point %USERPROFILE%\.monoceros at the distro's ~/.monoceros.
     6. Editors  - allow wsl.localhost in VS Code / Codium so they don't prompt.
     7. Shim     - drop a `monoceros` shim at the front of PATH.
+    8. Complete - generate a PowerShell completion script and load it from $PROFILE.
 
   TEMPORARY STAND-INS (to be replaced as #32 progresses):
     - The rootfs is built on the fly from a base image (docker export); the real
@@ -64,6 +65,7 @@ if (-not $PSCommandPath -or -not (Test-Admin)) {
 # ----------------------------------------------------------------------------
 $SettingsPath  = Join-Path $env:APPDATA 'Docker\settings-store.json'
 $ShimDir       = Join-Path $env:LOCALAPPDATA 'Monoceros\bin'
+$CompletionPath = Join-Path $env:LOCALAPPDATA 'Monoceros\completion.ps1'
 $LinkPath      = Join-Path $env:USERPROFILE '.monoceros'
 $WorkDir       = Join-Path $env:TEMP "monoceros-install-$([System.Guid]::NewGuid().ToString('N').Substring(0,8))"
 $DistroUser    = 'ubuntu'  # default non-root user in the stand-in image (uid 1000)
@@ -344,6 +346,33 @@ if [ -f "$TPLDIR/monoceros-config.sample.env" ] && [ ! -f "$HOME/.monoceros/mono
     if ($hostCli) { $script:Warnings += "A separate Windows install of monoceros ($($hostCli.Source)) may shadow this one. Remove it with: npm uninstall -g @getmonoceros/workbench" }
   }
 
+  Invoke-Step '8. Installing PowerShell completion' {
+    # The CLI emits a self-contained completer (static candidates baked
+    # in, dynamic ones read host-side via the .monoceros symlink). We
+    # generate it ONCE here rather than calling the CLI per Tab, which
+    # on Windows would be a WSL round-trip each keystroke.
+    $completionScript = In-Distro "'$script:MonoBin' completion pwsh 2>/dev/null" $DistroUser
+    if ($completionScript -notmatch 'Register-ArgumentCompleter') {
+      throw "The CLI did not emit a completion script. Output:`n$completionScript"
+    }
+    $null = New-Item -ItemType Directory -Force -Path (Split-Path $CompletionPath -Parent)
+    # UTF-8 without BOM — PowerShell 5.1 chokes on a BOM mid-dot-source.
+    [IO.File]::WriteAllText($CompletionPath, $completionScript, (New-Object Text.UTF8Encoding $false))
+
+    # Wire it into the user's PROFILE, idempotently (guarded by a marker).
+    $marker = '# monoceros completion (managed by install.ps1)'
+    $profilePath = $PROFILE.CurrentUserAllHosts
+    $null = New-Item -ItemType Directory -Force -Path (Split-Path $profilePath -Parent)
+    $existing = if (Test-Path $profilePath) { Get-Content -Raw -LiteralPath $profilePath } else { '' }
+    if ($existing -notmatch [regex]::Escape($marker)) {
+      $block = "`r`n$marker`r`nif (Test-Path '$CompletionPath') { . '$CompletionPath' }`r`n"
+      Add-Content -LiteralPath $profilePath -Value $block -Encoding UTF8
+      "wired into $profilePath"
+    } else {
+      "already wired ($profilePath)"
+    }
+  }
+
   Stop-Spinner
   try { [Console]::CursorVisible = $true } catch {}
 
@@ -362,6 +391,7 @@ if [ -f "$TPLDIR/monoceros-config.sample.env" ] && [ ! -f "$HOME/.monoceros/mono
   Write-Host "       $LinkPath\container-configs" -ForegroundColor Cyan
   Write-Host ''
   Write-Host '   Open a new, unprivileged terminal to use monoceros.' -ForegroundColor Gray
+  Write-Host '   Tab completion for commands, flags and container names is wired in.' -ForegroundColor DarkGray
   Write-Host ''
   Write-Host '   Get started ' -ForegroundColor Gray -NoNewline; Write-Host '(describe a container, build it, then work inside):' -ForegroundColor DarkGray
   Write-Host '       monoceros init  myapp --with-languages=node --with-features=claude' -ForegroundColor Cyan
