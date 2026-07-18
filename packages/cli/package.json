@@ -1,6 +1,6 @@
 {
   "name": "@getmonoceros/workbench",
-  "version": "1.39.1",
+  "version": "1.39.2",
   "description": "Monoceros workbench CLI — local, reproducible dev containers with first-class AI coding tooling.",
   "keywords": [
     "devcontainer",
@@ -41,7 +41,7 @@
     "manifests:generate": "tsx scripts/generate-feature-manifests.ts",
     "catalog:json": "tsx scripts/generate-catalog-json.ts",
     "prebuild": "pnpm components:sync",
-    "build": "tsup",
+    "build": "tsup && node scripts/copy-catalog-to-dist.mjs",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
