@@ -23,7 +23,7 @@ export type PortProbeResult =
 
 const CONNECT_TIMEOUT_MS = 750;
 
-const realPortProbe: PortProbe = (port, address) => {
+export const realPortProbe: PortProbe = (port, address) => {
   // For 0.0.0.0 (any-interface) bindings, probing loopback is the
   // realistic conflict surface — anything LISTEN'ing on 0.0.0.0 or
   // 127.0.0.1 will collide with our `-p 0.0.0.0:<port>:…` mapping.

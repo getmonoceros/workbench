@@ -34,7 +34,10 @@ describe('buildCaddyDockerArgs', () => {
   it('publishes every port, mounts certs + Caddyfile read-only, runs pinned Caddy', () => {
     const args = buildCaddyDockerArgs({
       localAddress: '0.0.0.0',
-      ports: [5173, 8080],
+      ports: [
+        { host: 5173, container: 5173 },
+        { host: 8080, container: 8080 },
+      ],
       network: 'net',
       certDir: '/home/certs',
       caddyfilePath: '/home/share/acme__web.Caddyfile',
@@ -49,5 +52,17 @@ describe('buildCaddyDockerArgs', () => {
     // the image is the last arg, and both mounts come before it
     expect(args[args.length - 1]).toBe(CADDY_IMAGE);
     expect(args.lastIndexOf('-v')).toBeLessThan(args.indexOf(CADDY_IMAGE));
+  });
+
+  it('remaps only the host side of a publish (host:container may differ)', () => {
+    const args = buildCaddyDockerArgs({
+      localAddress: '0.0.0.0',
+      ports: [{ host: 15173, container: 5173 }],
+      network: 'net',
+      certDir: '/home/certs',
+      caddyfilePath: '/home/share/acme__web.Caddyfile',
+    });
+    // host 15173 -> container 5173; Caddy still terminates on the container port
+    expect(args).toContain('0.0.0.0:15173:5173');
   });
 });

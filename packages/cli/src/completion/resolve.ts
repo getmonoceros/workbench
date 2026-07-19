@@ -874,6 +874,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   },
   share: {
     positionals: [containerName, appCandidates],
+    flags: { '--forward-ports': { type: 'value' } },
   },
   completion: {
     positionals: [shellValues],

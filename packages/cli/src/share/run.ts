@@ -7,7 +7,7 @@ import {
   type ResolveOptions,
   type ResolvedTarget,
 } from '../tunnel/resolve.js';
-import { preflightLocalPort } from '../tunnel/port-check.js';
+import { realPortProbe, type PortProbe } from '../tunnel/port-check.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
@@ -46,14 +46,65 @@ import { cyan, dim } from '../util/format.js';
 
 const SHARE_ADDRESS = '0.0.0.0';
 
+/**
+ * A `--forward-ports` remap: publish the container port under a different host
+ * port. Docker `-p` order (`host:container`) is preserved in the CLI surface;
+ * this struct is the parsed form.
+ */
+export interface ForwardPortMapping {
+  host: number;
+  container: number;
+}
+
+/**
+ * Parse the `--forward-ports` value: a comma-separated list of `host:container`
+ * pairs (Docker `-p` order), e.g. `15173:5173,18000:8000`. Mirrors the
+ * project's `--with-*` convention (comma-separated). Throws with an actionable
+ * message on a malformed entry or an out-of-range port.
+ */
+export function parseForwardPorts(raw: string): ForwardPortMapping[] {
+  const out: ForwardPortMapping[] = [];
+  for (const entry of raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)) {
+    const m = /^(\d+):(\d+)$/.exec(entry);
+    if (!m) {
+      throw new Error(
+        `Invalid --forward-ports entry '${entry}': expected host:container (e.g. 15173:5173).`,
+      );
+    }
+    const host = Number(m[1]);
+    const container = Number(m[2]);
+    for (const [label, port] of [
+      ['host', host],
+      ['container', container],
+    ] as const) {
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error(
+          `Invalid --forward-ports ${label} port '${port}': must be between 1 and 65535.`,
+        );
+      }
+    }
+    out.push({ host, container });
+  }
+  return out;
+}
+
 export interface RunShareOptions {
   name: string;
   app: string;
   monocerosHome?: string;
+  /**
+   * Host-port remaps for busy ports (`--forward-ports`). Each publishes the
+   * container port under a different host port; unlisted ports keep parity.
+   */
+  forwardPorts?: ForwardPortMapping[];
   /** Injected in tests. */
   dockerSpawn?: DockerSpawn;
   resolve?: (opts: ResolveOptions) => Promise<ResolvedTarget>;
-  preflight?: typeof preflightLocalPort;
+  /** TCP-connect probe for the host ports share will bind. Injected in tests. */
+  probe?: PortProbe;
   installSignalHandler?: (handler: () => void) => () => void;
   hostAddresses?: () => HostAddresses;
   /**
@@ -168,6 +219,61 @@ async function caTrustDisplayPath(
   return `${prof.homeWin}\\.monoceros\\${rel}`;
 }
 
+/**
+ * First free host port at or after `start`, skipping anything already `taken`
+ * (other shared ports + earlier suggestions). Probed on 0.0.0.0 like the real
+ * bind. Bounded scan; falls back to `start` if nothing free is found (the value
+ * is only a suggestion in an error message, not a live bind).
+ */
+async function findFreeHostPort(
+  start: number,
+  probe: PortProbe,
+  taken: Set<number>,
+): Promise<number> {
+  let port = start > 65535 ? 20000 : start;
+  for (let i = 0; i < 200 && port <= 65535; i++, port++) {
+    if (taken.has(port)) continue;
+    const result = await probe(port, SHARE_ADDRESS);
+    if (result.ok) return port;
+  }
+  return start;
+}
+
+/**
+ * The `share`-specific "host port already in use" error. Names the real cause
+ * (the attached IDE's port auto-forward on 127.0.0.1, which cannot be reliably
+ * disabled) and the two real remedies: free the exact port in the IDE, or
+ * re-run with `--forward-ports` using the suggested free host ports. Unlike the
+ * tunnel error, it never mentions `--local-port` (which `share` does not have).
+ */
+function formatShareCollision(input: {
+  name: string;
+  app: string;
+  busyHostPorts: number[];
+  suggestions: string[];
+}): string {
+  const plural = input.busyHostPorts.length > 1;
+  const cmd = `monoceros share ${input.name} ${input.app} --forward-ports ${input.suggestions.join(',')}`;
+  return [
+    `Cannot share ${input.name}/${input.app}: host port${plural ? 's' : ''} ${input.busyHostPorts.join(', ')} already in use.`,
+    '',
+    "Your IDE forwards the container's ports to 127.0.0.1 (VS Code, Codium",
+    'and JetBrains auto-forward over Remote-SSH, and it cannot be reliably',
+    'turned off). That collides with share, which binds these ports on',
+    '0.0.0.0 to reach other devices.',
+    '',
+    'Resolve it one of two ways:',
+    '',
+    '  1. In the IDE\'s PORTS panel, right-click each port -> "Stop Forwarding',
+    '     Port" (stays gone across reconnects), then re-run share unchanged.',
+    '',
+    '  2. Re-run share and publish the busy ports under different host ports',
+    '     (Docker order, host:container):',
+    '',
+    `       ${cmd}`,
+  ].join('\n');
+}
+
 export async function runShare(opts: RunShareOptions): Promise<number> {
   const log: ShareLogger = opts.logger ?? {
     info: (m) => consola.info(m),
@@ -192,6 +298,55 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
   // every workspace port, so resolve once and reuse.
   const ports = [...new Set(ported.map((t) => t.port))];
 
+  // `--forward-ports` remaps the host side of busy container ports. Validate
+  // each names a container port we actually share, then build the effective
+  // host port per container port (parity unless remapped).
+  const overrides = new Map<number, number>();
+  for (const fp of opts.forwardPorts ?? []) {
+    if (!ports.includes(fp.container)) {
+      throw new Error(
+        `--forward-ports maps container port ${fp.container}, but no shared target uses it. Shared ports: ${ports.join(', ')}.`,
+      );
+    }
+    overrides.set(fp.container, fp.host);
+  }
+  const hostPortFor = (container: number): number =>
+    overrides.get(container) ?? container;
+  const pairs = ports.map((container) => ({
+    host: hostPortFor(container),
+    container,
+  }));
+
+  // Probe every effective host port on 0.0.0.0 (loopback is the real conflict
+  // surface) BEFORE touching Docker, so a busy port fails fast without spinning
+  // up target resolution or a cert. Collect ALL busy ports rather than dying on
+  // the first, so the message can list them together with a copy-pasteable
+  // remap command. The common holder is the attached IDE's port auto-forward,
+  // which binds 127.0.0.1:<port> and cannot be reliably turned off (issue #57).
+  const probe = opts.probe ?? realPortProbe;
+  const busy: ForwardPortMapping[] = [];
+  for (const pair of pairs) {
+    const result = await probe(pair.host, SHARE_ADDRESS);
+    if (!result.ok) busy.push(pair);
+  }
+  if (busy.length > 0) {
+    const taken = new Set<number>(pairs.map((p) => p.host));
+    const suggestions: string[] = [];
+    for (const b of busy) {
+      const free = await findFreeHostPort(b.container + 10000, probe, taken);
+      taken.add(free);
+      suggestions.push(`${free}:${b.container}`);
+    }
+    throw new Error(
+      formatShareCollision({
+        name: opts.name,
+        app: opts.app,
+        busyHostPorts: busy.map((b) => b.host),
+        suggestions,
+      }),
+    );
+  }
+
   const resolve = opts.resolve ?? resolveTunnelTarget;
   const base = await resolve({
     name: opts.name,
@@ -200,11 +355,6 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
       ? { monocerosHome: opts.monocerosHome }
       : {}),
   });
-
-  const preflight = opts.preflight ?? preflightLocalPort;
-  for (const port of ports) {
-    await preflight({ port, address: SHARE_ADDRESS });
-  }
 
   // Issue a leaf cert covering every name/address a device might use, so socat
   // can terminate TLS - HTTP over a LAN IP / `.local` name is an insecure
@@ -280,7 +430,7 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
   for (const t of ported) {
     banner.push('', `    ${cyan(t.name)}`);
     for (const addr of addresses) {
-      banner.push(`      https://${addr}:${t.port}`);
+      banner.push(`      https://${addr}:${hostPortFor(t.port)}`);
     }
   }
   banner.push(
@@ -297,7 +447,7 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
     dockerSpawn(
       buildCaddyDockerArgs({
         localAddress: SHARE_ADDRESS,
-        ports,
+        ports: pairs,
         network: base.network,
         certDir: tls.certDir,
         caddyfilePath,

@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
-import { runShare } from '../share/run.js';
+import { runShare, parseForwardPorts } from '../share/run.js';
 
 export const shareCommand = defineCommand({
   meta: {
@@ -22,10 +22,23 @@ export const shareCommand = defineCommand({
         'App to share (a path under projects/ with .monoceros/launch.json). Every target with a `port` is exposed on the LAN.',
       required: true,
     },
+    'forward-ports': {
+      type: 'string',
+      description:
+        'Publish busy container ports under different host ports. Docker `-p` order (host:container), comma-separated: --forward-ports 15173:5173,18000:8000. Use when an IDE already forwards the port to localhost. Unlisted ports keep parity.',
+      required: false,
+    },
   },
   async run({ args }) {
     try {
-      const exitCode = await runShare({ name: args.name, app: args.app });
+      const forwardPorts = args['forward-ports']
+        ? parseForwardPorts(String(args['forward-ports']))
+        : undefined;
+      const exitCode = await runShare({
+        name: args.name,
+        app: args.app,
+        ...(forwardPorts ? { forwardPorts } : {}),
+      });
       process.exit(exitCode);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));

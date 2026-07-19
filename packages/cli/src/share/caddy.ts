@@ -69,10 +69,22 @@ export function renderCaddyfile(
   ].join('\n');
 }
 
+/**
+ * One published port for the terminator. `host` is the LAN-facing port the
+ * Docker publish binds on `0.0.0.0`; `container` is the port Caddy listens on
+ * internally and proxies to. They are equal by default; they diverge only when
+ * `--forward-ports` remaps a busy host port (e.g. an IDE already forwards the
+ * container port to `127.0.0.1`). See ADR 0033.
+ */
+export interface CaddyPortMapping {
+  host: number;
+  container: number;
+}
+
 export interface BuildCaddyDockerArgsInput {
   /** Bind address on the host (`0.0.0.0` for LAN exposure). */
   localAddress: string;
-  ports: number[];
+  ports: CaddyPortMapping[];
   network: string;
   /** Host dir holding the leaf cert + key, mounted read-only at /certs. */
   certDir: string;
@@ -90,8 +102,8 @@ export function buildCaddyDockerArgs(
   input: BuildCaddyDockerArgsInput,
 ): string[] {
   const args = ['run', '--rm', '-i', `--network=${input.network}`];
-  for (const port of input.ports) {
-    args.push('-p', `${input.localAddress}:${port}:${port}`);
+  for (const { host, container } of input.ports) {
+    args.push('-p', `${input.localAddress}:${host}:${container}`);
   }
   args.push(
     '-v',
