@@ -418,6 +418,39 @@ interface PersistentHomeFile {
 }
 
 /**
+ * Persistent-home entries every container gets, independent of any
+ * feature. Shell history is base container state, not a feature
+ * concern: `monoceros shell` lands you in an interactive bash whose
+ * `~/.bash_history` lives in the container's writable layer, so
+ * `apply` (which force-removes and recreates the container) wipes it.
+ * We persist it through the same per-feature bind mechanism (ADR 0020),
+ * just always-on. Seeded empty; bash overwrites it wholesale on shell
+ * exit, exactly as it does on the host.
+ */
+const BASE_PERSISTENT_HOME_FILES: readonly PersistentHomeFile[] = [
+  { path: '.bash_history', initialContent: '' },
+];
+
+/**
+ * All `/home/node/` subpaths to bind so they survive `apply`: base
+ * container state (shell history) plus every resolved feature's
+ * declared dirs and files. Feeds the bind-mount emitters in both image
+ * mode (devcontainer.json `mounts`) and compose mode (`volumes:`).
+ */
+function persistentHomeSubpaths(
+  resolvedFeatures: readonly ResolvedFeature[],
+): string[] {
+  const subs = BASE_PERSISTENT_HOME_FILES.map((entry) => entry.path);
+  for (const f of resolvedFeatures) {
+    subs.push(
+      ...f.persistentHomePaths,
+      ...f.persistentHomeFiles.map((entry) => entry.path),
+    );
+  }
+  return subs;
+}
+
+/**
  * Root directory holding per-feature source dirs
  * (`<root>/<name>/devcontainer-feature.json`), or null when none is
  * available. When a root is returned and it contains the feature, the
@@ -890,16 +923,10 @@ export function buildDevcontainerJson(
   // root on Linux, breaking writes inside the container) and so a
   // requested **file** bind doesn't get spawned as a directory.
   const homeMounts: string[] = [];
-  for (const f of resolvedFeatures) {
-    const allSubs = [
-      ...f.persistentHomePaths,
-      ...f.persistentHomeFiles.map((entry) => entry.path),
-    ];
-    for (const sub of allSubs) {
-      homeMounts.push(
-        `source=\${localWorkspaceFolder}/home/${sub},target=/home/node/${sub},type=bind${idmapSuffix}`,
-      );
-    }
+  for (const sub of persistentHomeSubpaths(resolvedFeatures)) {
+    homeMounts.push(
+      `source=\${localWorkspaceFolder}/home/${sub},target=/home/node/${sub},type=bind${idmapSuffix}`,
+    );
   }
 
   // VS Code customizations — currently only the `remote.autoForwardPorts`
@@ -1234,14 +1261,8 @@ export function buildComposeYaml(
   // lives. Docker reads the host-side inode type to decide whether
   // the mount target inside the container is a file or a directory.
   const resolvedFeatures = resolveFeatures(opts);
-  for (const f of resolvedFeatures) {
-    const allSubs = [
-      ...f.persistentHomePaths,
-      ...f.persistentHomeFiles.map((entry) => entry.path),
-    ];
-    for (const sub of allSubs) {
-      lines.push(`      - ../home/${sub}:/home/node/${sub}`);
-    }
+  for (const sub of persistentHomeSubpaths(resolvedFeatures)) {
+    lines.push(`      - ../home/${sub}:/home/node/${sub}`);
   }
   // VS Code IDE-state persistence (extensions + user settings) via named
   // volumes — see ideStateVolumes / ADR 0015. Gated on the pinned
@@ -2014,19 +2035,24 @@ export async function writeScaffold(
   // mkdir; files get an empty touch (only when missing — already-
   // populated files like a complete .claude.json must not be
   // truncated on re-apply).
-  for (const f of resolvedFeatures) {
-    for (const sub of f.persistentHomePaths) {
-      await fs.mkdir(path.join(homeDir, sub), { recursive: true });
-    }
-    for (const entry of f.persistentHomeFiles) {
-      const filePath = path.join(homeDir, entry.path);
-      await fs.mkdir(path.dirname(filePath), { recursive: true });
-      if (!existsSync(filePath)) {
-        // Seed with the feature-author's initial content (defaults
-        // to empty). For JSON configs this should be at least `{}`
-        // so the tool doesn't choke on an unparseable empty file.
-        await fs.writeFile(filePath, entry.initialContent);
-      }
+  const persistentHomeDirs = resolvedFeatures.flatMap(
+    (f) => f.persistentHomePaths,
+  );
+  const persistentHomeFiles = [
+    ...BASE_PERSISTENT_HOME_FILES,
+    ...resolvedFeatures.flatMap((f) => f.persistentHomeFiles),
+  ];
+  for (const sub of persistentHomeDirs) {
+    await fs.mkdir(path.join(homeDir, sub), { recursive: true });
+  }
+  for (const entry of persistentHomeFiles) {
+    const filePath = path.join(homeDir, entry.path);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    if (!existsSync(filePath)) {
+      // Seed with the initial content (defaults to empty). For JSON
+      // configs this should be at least `{}` so the tool doesn't choke
+      // on an unparseable empty file.
+      await fs.writeFile(filePath, entry.initialContent);
     }
   }
 
