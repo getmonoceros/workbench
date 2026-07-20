@@ -8,7 +8,7 @@ options:
   apiToken:
     type: string
     default: ''
-    description: 'GitHub PAT (scopes: repo, read:org, gist); empty for `gh auth login` on first run.'
+    description: 'GitHub PAT (scopes: repo, read:org, gist, read:user); empty for `gh auth login` on first run.'
     surface: env
 feature:
   version: 1.0.0

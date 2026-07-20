@@ -35,8 +35,8 @@ defaults:
 
     # GitHub CLI — The official `gh` CLI. Login persists across
     # container rebuilds.
-    # Options: apiToken (GitHub PAT, scopes repo / read:org / gist;
-    # empty for `gh auth login` on first run).
+    # Options: apiToken (GitHub PAT, scopes repo / read:org / gist /
+    # read:user; empty for `gh auth login` on first run).
     # See https://cli.github.com/ for further information.
     # ghcr.io/getmonoceros/monoceros-features/github-cli:1:
     #   apiToken:
