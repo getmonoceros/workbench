@@ -42,16 +42,10 @@ export const addRepoCommand = defineCommand({
       description:
         'Git provider: github | gitlab | bitbucket. Required when the URL host is not github.com, gitlab.com, or bitbucket.org, so Monoceros knows which provider token to use for cloning.',
     },
-    yes: {
-      type: 'boolean',
-      description: 'Skip the interactive confirmation and apply the diff.',
-      alias: ['y'],
-      default: false,
-    },
   },
   async run({ args }) {
     try {
-      const result = await runAddRepo({
+      await runAddRepo({
         name: args.name,
         url: args.url,
         ...(typeof args.path === 'string' ? { path: args.path } : {}),
@@ -64,9 +58,8 @@ export const addRepoCommand = defineCommand({
         ...(typeof args.provider === 'string'
           ? { provider: args.provider }
           : {}),
-        yes: args.yes,
       });
-      process.exit(result.status === 'aborted' ? 1 : 0);
+      process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
       process.exit(1);

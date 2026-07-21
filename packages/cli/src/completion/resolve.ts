@@ -817,10 +817,12 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   },
   'add-feature': {
     positionals: [containerName, featureValues],
-    flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
     innerArgs: (ctx) => listFeatureOptionInnerArgs(ctx),
   },
-  'add-from-url': { positionals: [containerName] },
+  'add-from-url': {
+    positionals: [containerName],
+    flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
+  },
   'add-repo': {
     positionals: [containerName],
     flags: {
@@ -828,14 +830,12 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
       '--git-name': { type: 'value' },
       '--git-email': { type: 'value' },
       '--provider': { type: 'value', values: providerValues },
-      '--yes': { type: 'boolean', aliases: ['-y'] },
     },
   },
   'add-port': {
     positionals: [containerName],
     flags: {
       '--default': { type: 'boolean' },
-      '--yes': { type: 'boolean', aliases: ['-y'] },
     },
     innerArgs: () => [],
   },
@@ -851,13 +851,11 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   },
   'remove-feature': {
     positionals: [containerName, featureValues],
-    flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
   },
   'remove-from-url': { positionals: [containerName] },
   'remove-repo': { positionals: [containerName] },
   'remove-port': {
     positionals: [containerName],
-    flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
     innerArgs: () => [],
   },
   port: {

@@ -21,21 +21,14 @@ export const removeLanguageCommand = defineCommand({
       description: 'Language identifier (e.g. python, java, rust).',
       required: true,
     },
-    yes: {
-      type: 'boolean',
-      description: 'Skip the interactive confirmation and apply the diff.',
-      alias: ['y'],
-      default: false,
-    },
   },
   async run({ args }) {
     try {
-      const result = await runRemoveLanguage({
+      await runRemoveLanguage({
         name: args.name,
         language: args.language,
-        yes: args.yes,
       });
-      process.exit(result.status === 'aborted' ? 1 : 0);
+      process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
       process.exit(1);

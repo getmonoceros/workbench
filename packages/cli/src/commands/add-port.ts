@@ -23,12 +23,6 @@ export const addPortCommand = defineCommand({
         'One or more port numbers to expose (e.g. `3000 5173`). At least one is required.',
       required: false,
     },
-    yes: {
-      type: 'boolean',
-      description: 'Skip the interactive confirmation and apply the diff.',
-      alias: ['y'],
-      default: false,
-    },
     default: {
       type: 'boolean',
       description:
@@ -43,18 +37,17 @@ export const addPortCommand = defineCommand({
     const tokens = [...args._.slice(1).map(String), ...getInnerArgs()];
     if (tokens.length === 0) {
       consola.error(
-        'No ports given. Usage: `monoceros add-port <containername> [--default] [--yes] <port> [<port> …]`.',
+        'No ports given. Usage: `monoceros add-port <containername> [--default] <port> [<port> …]`.',
       );
       process.exit(1);
     }
     try {
-      const result = await runAddPort({
+      await runAddPort({
         name: args.name,
         ports: tokens.map(coerceToken),
-        yes: args.yes,
         asDefault: args.default,
       });
-      process.exit(result.status === 'aborted' ? 1 : 0);
+      process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
       process.exit(1);

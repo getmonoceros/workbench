@@ -55,9 +55,7 @@ const noopContainerLookupDocker = async () => ({
 });
 
 const baseOpts = {
-  yes: true,
   logger: silentLogger,
-  confirm: async () => true,
   output: () => {},
   containerLookupDocker: noopContainerLookupDocker,
 };
@@ -1439,6 +1437,49 @@ describe('add-*/remove-* against the yml', () => {
     expect(dyn).toContain('http://demo:3000');
     expect(dyn).toContain('http://demo:5173');
     expect(dyn).toContain('http://demo:6006');
+  });
+
+  it('runAddPort / runRemovePort skip the "apply to rebuild" reminder (ports are live), other mutators keep it', async () => {
+    await writeYml('live', 'schemaVersion: 1\nname: live\n');
+    const infos: string[] = [];
+    const capturing = {
+      info: (m: string) => infos.push(m),
+      success: () => {},
+      warn: () => {},
+    };
+
+    const added = await runAddPort({
+      ...portOpts,
+      logger: capturing,
+      name: 'live',
+      ports: [3000],
+      monocerosHome: home,
+    });
+    expect(added.status).toBe('updated');
+    expect(infos.some((m) => m.includes('to rebuild'))).toBe(false);
+
+    infos.length = 0;
+    const removed = await runRemovePort({
+      ...portOpts,
+      logger: capturing,
+      name: 'live',
+      ports: [3000],
+      monocerosHome: home,
+    });
+    expect(removed.status).toBe('updated');
+    expect(infos.some((m) => m.includes('to rebuild'))).toBe(false);
+
+    // A non-port (apply-only) mutator still emits the rebuild reminder.
+    infos.length = 0;
+    const lang = await runAddLanguage({
+      ...baseOpts,
+      logger: capturing,
+      name: 'live',
+      language: 'python',
+      monocerosHome: home,
+    });
+    expect(lang.status).toBe('updated');
+    expect(infos.some((m) => m.includes('to rebuild'))).toBe(true);
   });
 
   it('runAddPort refreshes the briefing (AGENTS.md) for a materialized container', async () => {

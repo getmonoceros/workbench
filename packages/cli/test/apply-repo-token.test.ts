@@ -17,9 +17,7 @@ import type { SolutionConfig } from '../src/config/schema.js';
 const silentLogger = { info: () => {}, success: () => {}, warn: () => {} };
 
 const baseOpts = {
-  yes: true,
   logger: silentLogger,
-  confirm: async () => true,
   output: () => {},
   containerLookupDocker: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
 };

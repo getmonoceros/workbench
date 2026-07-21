@@ -23,12 +23,6 @@ export const removePortCommand = defineCommand({
         'One or more port numbers to remove (e.g. `3000 5173`). At least one is required.',
       required: false,
     },
-    yes: {
-      type: 'boolean',
-      description: 'Skip the interactive confirmation and apply the diff.',
-      alias: ['y'],
-      default: false,
-    },
   },
   async run({ args }) {
     // Ports are positional (`remove-port acme 3000`); the `--` form still works
@@ -37,17 +31,16 @@ export const removePortCommand = defineCommand({
     const tokens = [...args._.slice(1).map(String), ...getInnerArgs()];
     if (tokens.length === 0) {
       consola.error(
-        'No ports given. Usage: `monoceros remove-port <containername> [--yes] <port> [<port> …]`.',
+        'No ports given. Usage: `monoceros remove-port <containername> <port> [<port> …]`.',
       );
       process.exit(1);
     }
     try {
-      const result = await runRemovePort({
+      await runRemovePort({
         name: args.name,
         ports: tokens.map(coerceToken),
-        yes: args.yes,
       });
-      process.exit(result.status === 'aborted' ? 1 : 0);
+      process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
       process.exit(1);

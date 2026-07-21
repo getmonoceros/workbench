@@ -23,12 +23,6 @@ export const addAptPackagesCommand = defineCommand({
         'One or more Debian/Ubuntu apt package names (e.g. `make jq`). At least one is required.',
       required: false,
     },
-    yes: {
-      type: 'boolean',
-      description: 'Skip the interactive confirmation and apply the diff.',
-      alias: ['y'],
-      default: false,
-    },
   },
   async run({ args }) {
     // Packages are positional (`add-apt-packages acme make jq`); the `--` form
@@ -37,17 +31,16 @@ export const addAptPackagesCommand = defineCommand({
     const packages = [...args._.slice(1).map(String), ...getInnerArgs()];
     if (packages.length === 0) {
       consola.error(
-        'No package names given. Usage: `monoceros add-apt-packages <containername> [--yes] <pkg> [<pkg> …]`.',
+        'No package names given. Usage: `monoceros add-apt-packages <containername> <pkg> [<pkg> …]`.',
       );
       process.exit(1);
     }
     try {
-      const result = await runAddAptPackages({
+      await runAddAptPackages({
         name: args.name,
         packages,
-        yes: args.yes,
       });
-      process.exit(result.status === 'aborted' ? 1 : 0);
+      process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
       process.exit(1);

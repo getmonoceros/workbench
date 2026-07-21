@@ -21,21 +21,14 @@ export const removeRepoCommand = defineCommand({
       description: 'Repo URL or its projects/<folder> name. Either works.',
       required: true,
     },
-    yes: {
-      type: 'boolean',
-      description: 'Skip the interactive confirmation and apply the diff.',
-      alias: ['y'],
-      default: false,
-    },
   },
   async run({ args }) {
     try {
-      const result = await runRemoveRepo({
+      await runRemoveRepo({
         name: args.name,
         target: args.target,
-        yes: args.yes,
       });
-      process.exit(result.status === 'aborted' ? 1 : 0);
+      process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
       process.exit(1);

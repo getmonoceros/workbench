@@ -22,21 +22,14 @@ export const addLanguageCommand = defineCommand({
         'Language identifier from the feature whitelist (e.g. python, java, rust).',
       required: true,
     },
-    yes: {
-      type: 'boolean',
-      description: 'Skip the interactive confirmation and apply the diff.',
-      alias: ['y'],
-      default: false,
-    },
   },
   async run({ args }) {
     try {
-      const result = await runAddLanguage({
+      await runAddLanguage({
         name: args.name,
         language: args.language,
-        yes: args.yes,
       });
-      process.exit(result.status === 'aborted' ? 1 : 0);
+      process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
       process.exit(1);

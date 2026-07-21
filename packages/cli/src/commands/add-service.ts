@@ -27,22 +27,15 @@ export const addServiceCommand = defineCommand({
       description:
         'Override the service name (the compose service / DNS name / data dir). Lets you add the same image more than once — e.g. two postgres servers as postgres-app and postgres-analytics.',
     },
-    yes: {
-      type: 'boolean',
-      description: 'Skip the interactive confirmation and apply the diff.',
-      alias: ['y'],
-      default: false,
-    },
   },
   async run({ args }) {
     try {
-      const result = await runAddService({
+      await runAddService({
         name: args.name,
         service: args.service,
         ...(args.as ? { as: args.as } : {}),
-        yes: args.yes,
       });
-      process.exit(result.status === 'aborted' ? 1 : 0);
+      process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
       process.exit(1);

@@ -25,7 +25,7 @@ export const addFromUrlCommand = defineCommand({
     yes: {
       type: 'boolean',
       description:
-        'Skip the security warning + diff confirm. Use only in scripts where you have already audited the URL.',
+        'Skip the security warning. Use only in scripts where you have already audited the URL.',
       alias: ['y'],
       default: false,
     },
@@ -35,12 +35,11 @@ export const addFromUrlCommand = defineCommand({
       printSecurityWarning(args.url);
     }
     try {
-      const result = await runAddFromUrl({
+      await runAddFromUrl({
         name: args.name,
         url: args.url,
-        yes: args.yes,
       });
-      process.exit(result.status === 'aborted' ? 1 : 0);
+      process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
       process.exit(1);
@@ -64,7 +63,7 @@ function printSecurityWarning(url: string): void {
   );
   w('  would silently run the new payload.');
   w('');
-  w('  Before confirming below:');
+  w('  Before adding it:');
   w('    1. Open the URL in a browser, read what the script does.');
   w(
     '    2. Verify the maintainer is who you think they are (HTTPS cert, repo).',

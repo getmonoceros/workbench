@@ -116,15 +116,11 @@ export interface ModifyLogger {
   warn: (message: string) => void;
 }
 
-export type ConfirmFn = (prompt: string) => Promise<boolean>;
-
 export interface ModifyOptions {
   /** Container name — resolves to `<home>/container-configs/<name>.yml`. */
   name: string;
-  yes?: boolean;
   logger?: ModifyLogger;
   output?: (line: string) => void;
-  confirm?: ConfirmFn;
   /** Override the resolved MONOCEROS_HOME. Tests inject a tmpdir. */
   monocerosHome?: string;
 }
@@ -223,8 +219,7 @@ export interface RemovePortInput extends ModifyOptions {
 
 export type ModifyResult =
   | { status: 'no-change' }
-  | { status: 'updated'; changedPaths: string[] }
-  | { status: 'aborted' };
+  | { status: 'updated'; changedPaths: string[] };
 
 type YmlMutator = (doc: Document) => boolean;
 
@@ -735,14 +730,18 @@ export async function runAddPort(input: AddPortInput): Promise<ModifyResult> {
       `--default takes exactly one port. Got: ${ports.join(', ')}. Run add-port once with --default for the new default, then again (without --default) for the rest.`,
     );
   }
-  const result = await mutate(input, (doc) => {
-    if (input.asDefault) {
-      // --default semantics: ensure the port exists AND sits at index
-      // 0. setDefaultPortInDoc covers both (insert-or-move).
-      return setDefaultPortInDoc(doc, ports[0]!);
-    }
-    return addPortsToDoc(doc, ports);
-  });
+  const result = await mutate(
+    input,
+    (doc) => {
+      if (input.asDefault) {
+        // --default semantics: ensure the port exists AND sits at index
+        // 0. setDefaultPortInDoc covers both (insert-or-move).
+        return setDefaultPortInDoc(doc, ports[0]!);
+      }
+      return addPortsToDoc(doc, ports);
+    },
+    { skipApplyReminder: true },
+  );
   // Hot-reload path: when the yml actually changed, push the new
   // route set to the Traefik dynamic-config directory and make sure
   // the proxy is up. The yml is the source of truth — we re-read it
@@ -975,7 +974,9 @@ export async function runRemovePort(
     );
   }
   const ports = normalizePorts(input.ports);
-  const result = await mutate(input, (doc) => removePortsFromDoc(doc, ports));
+  const result = await mutate(input, (doc) => removePortsFromDoc(doc, ports), {
+    skipApplyReminder: true,
+  });
   // Hot-reload path: same state-driven sync as add-port. When the
   // last port is gone the dynamic-config file is dropped and the
   // Traefik singleton is offered up for teardown via maybeStopProxy
@@ -1006,6 +1007,7 @@ export function runRemoveRepo(input: RemoveRepoInput): Promise<ModifyResult> {
 async function mutate(
   opts: ModifyOptions,
   apply: YmlMutator,
+  mutateOpts?: { skipApplyReminder?: boolean },
 ): Promise<ModifyResult> {
   if (!REGEX.solutionName.test(opts.name)) {
     throw new Error(
@@ -1055,9 +1057,11 @@ async function mutate(
   // a raw unified-diff prompt here was noise nobody could act on.
   await fs.writeFile(ymlPath, newText, 'utf8');
   logger.success(`Updated ${ymlPath}.`);
-  logger.info(
-    `Run \`monoceros apply ${opts.name}\` to rebuild the dev-container and pick up the change.`,
-  );
+  if (!mutateOpts?.skipApplyReminder) {
+    logger.info(
+      `Run \`monoceros apply ${opts.name}\` to rebuild the dev-container and pick up the change.`,
+    );
+  }
   return { status: 'updated', changedPaths: [ymlPath] };
 }
 
