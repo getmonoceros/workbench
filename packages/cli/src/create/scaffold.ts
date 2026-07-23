@@ -1806,7 +1806,7 @@ export function buildPostCreateScript(opts: CreateOptions): string {
         `  echo "→ Cloning ${repo.path} from ${url}…"`,
         `  if ! git clone "${url}" "projects/${repo.path}"; then`,
         `    echo "⚠ Could not clone ${repo.path} from ${url} — skipping." >&2`,
-        `    echo "  If it is private, set a token and re-apply (see the repo-access notice)." >&2`,
+        `    echo "  If it is private, the token is missing or lacks the required scopes — set it and re-apply (see the repo-access notice)." >&2`,
         `    rm -rf "projects/${repo.path}"`,
         `  fi`,
         `else`,

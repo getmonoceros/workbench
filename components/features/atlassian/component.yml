@@ -37,10 +37,10 @@ options:
   bitbucketToken:
     type: string
     default: ''
-    description: "Optional Bitbucket app password; only needed for twg's Bitbucket commands."
+    description: 'Bitbucket access for twg and repo clone: an Atlassian API token with `read/write:repository:bitbucket` scopes (app passwords retire 2026-06-09). Leave empty to reuse `apiToken` when that token already carries the Bitbucket scopes.'
     surface: env
 feature:
-  version: 1.2.1
+  version: 1.2.2
   persistentHomePaths: [.config/acli, .rovodev, .config/twg, .agents]
   vscodeExtensions: [Atlassian.atlascode]
   # Forge and twg are both keychain-free in a container: instead of a

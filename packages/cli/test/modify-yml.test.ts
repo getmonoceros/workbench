@@ -739,6 +739,25 @@ describe('add-*/remove-* against the yml', () => {
     expect(await ymlOf('gl')).toContain('gitlab-cli');
   });
 
+  it('runAddRepo adds the atlassian twg preset for a bitbucket repo (ADR 0035)', async () => {
+    await writeYml('bb', 'schemaVersion: 1\nname: bb\n');
+    await runAddRepo({
+      ...baseOpts,
+      name: 'bb',
+      url: 'https://bitbucket.org/acme/app.git',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('bb');
+    // Bitbucket's CLI in Monoceros is twg, so a bitbucket repo pulls in the
+    // atlassian feature's `twg` preset - twg only, no Rovo Dev or Forge.
+    expect(yml).toContain(
+      '- ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1',
+    );
+    expect(yml).toContain('rovodev: false');
+    expect(yml).toContain('twg: true');
+    expect(yml).toContain('forge: false');
+  });
+
   it('runAddRepo scaffolds a container git.user placeholder + seeds .env for the first repo', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddRepo({

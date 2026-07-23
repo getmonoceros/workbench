@@ -1,4 +1,5 @@
 import { existsSync, promises as fs } from 'node:fs';
+import path from 'node:path';
 import { consola } from 'consola';
 import {
   type MonocerosConfig,
@@ -109,7 +110,9 @@ import {
 import { writeGlobalDefaultGitUser } from '../config/global.js';
 import { setContainerGitUserInDoc } from '../modify/yml.js';
 import {
+  type FailedCloneRepo,
   type FeatureTokenPrompt,
+  formatFailedClones,
   formatUnauthenticatedRepos,
   formatTokenUse,
   resolveRepoTokens,
@@ -958,6 +961,44 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         const formatted = formatApplySummary(summaryLines);
         progressOut.write(`\n${formatted}\n`);
         applyLog.stream.write(`\n${stripAnsi(formatted)}\n`);
+      }
+
+      // Faithful reporting: the summary lists declared repos, but the clone
+      // runs in-container (post-create) and soft-fails, so a declared repo
+      // may not actually be checked out. The workspace (incl. projects/) is
+      // bind-mounted, and a failed clone rm -rf's its partial checkout, so a
+      // missing projects/<path> is ground truth. Warn about those — sibling
+      // to the missing-token warning below, at a later moment. Repos already
+      // flagged there (no token at all) are skipped so nothing is
+      // double-warned; what remains is "token present but clone still failed"
+      // (e.g. a token without the required scopes). Best-effort: a stat error
+      // other than "absent" leaves the repo unflagged (no false alarm).
+      const missingTokenHosts = new Set(repoTokens.missing.map((m) => m.host));
+      const failedClones: FailedCloneRepo[] = [];
+      for (const repo of createOpts.repos ?? []) {
+        if (!repo.path) continue;
+        let host: string | undefined;
+        try {
+          host = new URL(repo.url).hostname;
+        } catch {
+          host = undefined;
+        }
+        if (host && missingTokenHosts.has(host)) continue;
+        try {
+          const st = await fs.stat(path.join(targetDir, 'projects', repo.path));
+          if (!st.isDirectory()) {
+            failedClones.push({ path: repo.path, url: repo.url });
+          }
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+            failedClones.push({ path: repo.path, url: repo.url });
+          }
+        }
+      }
+      if (failedClones.length > 0) {
+        const warning = formatFailedClones(failedClones, opts.name);
+        progressOut.write(`\n${warning}\n`);
+        applyLog.stream.write(`\n${stripAnsi(warning)}\n`);
       }
 
       // Record the image this apply built, so the upgrade prune can later

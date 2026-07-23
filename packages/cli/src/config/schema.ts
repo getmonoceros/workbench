@@ -65,8 +65,10 @@ export const REGEX = {
  * (GitHub Enterprise, self-hosted GitLab, Bitbucket Data Center) must
  * declare `provider:` explicitly.
  *
- * Token-based repo auth is implemented for GitHub and GitLab; Bitbucket
- * is a declared provider but its token path is not built yet (ADR 0031).
+ * Token-based repo auth is implemented for all three. GitHub/GitLab use
+ * the `GIT_TOKEN__…` cascade (ADR 0031); Bitbucket is fronted by the
+ * Atlassian feature (twg) and authenticates off the Atlassian API token
+ * (ADR 0035).
  */
 export const PROVIDER_VALUES = ['github', 'gitlab', 'bitbucket'] as const;
 export type RepoProvider = (typeof PROVIDER_VALUES)[number];
@@ -76,6 +78,20 @@ export const PROVIDER_LABEL: Record<RepoProvider, string> = {
   github: 'GitHub',
   gitlab: 'GitLab',
   bitbucket: 'Bitbucket',
+};
+
+/**
+ * The catalog selector for the CLI feature a repo of each provider pulls
+ * in (ADR 0031 auto-add; ADR 0035 for Bitbucket). GitHub/GitLab map to
+ * their single-purpose CLI; Bitbucket maps to the Atlassian feature's
+ * `twg` preset (twg is the Bitbucket CLI, without Rovo/Forge). init and
+ * add-repo both add this selector when a repo of the provider is
+ * declared.
+ */
+export const PROVIDER_FEATURE_SELECTOR: Record<RepoProvider, string> = {
+  github: 'github',
+  gitlab: 'gitlab',
+  bitbucket: 'atlassian/twg',
 };
 
 /**

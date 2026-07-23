@@ -41,19 +41,11 @@ defaults:
     # ghcr.io/getmonoceros/monoceros-features/github-cli:1:
     #   apiToken:
 
-    # Atlassian — Rovo Dev (`acli rovodev`) and Teamwork Graph (`twg`)
-    # CLIs sharing one Atlassian account. Auth persists across rebuilds.
-    # Options: rovodev / twg (install toggles), instance
-    # (`yoursite.atlassian.net`), email + apiToken (Atlassian account),
-    # bitbucketToken (only for twg's Bitbucket commands).
-    # See https://developer.atlassian.com/cloud/ for further information.
-    # ghcr.io/getmonoceros/monoceros-features/atlassian:1:
-    #   rovodev: true
-    #   twg: true
-    #   instance:
-    #   email:
-    #   apiToken:
-    #   bitbucketToken:
+    # Atlassian (Rovo Dev / twg / Forge, and Bitbucket) authenticates
+    # from env, not here — set ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN /
+    # ATLASSIAN_INSTANCE (+ ATLASSIAN_BITBUCKET_TOKEN) in
+    # monoceros-config.env or a per-container <name>.env. See
+    # https://getmonoceros.build/docs/concepts/git-and-repos/.
 
 routing:
   # Host port the shared Traefik singleton binds. Default 80 →

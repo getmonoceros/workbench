@@ -167,7 +167,13 @@ fi
 if command -v opencode >/dev/null 2>&1; then
   TWG_SKILL_AGENTS+=(--agent opencode)
 fi
-twg skills install --global --yes "\${TWG_SKILL_AGENTS[@]}"
+# Best-effort: twg installs latest (unpinned by design — the feature model
+# is "always the current tool"), so its CLI can change flags across
+# releases and has broken this call before. A failure here must NOT fail
+# the whole post-create; warn and carry on with the skills simply absent.
+if ! twg skills install --yes "\${TWG_SKILL_AGENTS[@]}"; then
+  echo "[atlassian/twg] WARN: 'twg skills install' failed — twg's CLI may have changed. Container continues; twg agent skills are not installed until the feature is updated." >&2
+fi
 EOF
   chmod 0755 "${HOOK}"
   echo "[atlassian/twg] post-create skills hook installed; auth via TWG_* workspace env"

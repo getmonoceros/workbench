@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runInit } from '../src/init/index.js';
 import { parseConfig } from '../src/config/index.js';
@@ -10,6 +11,16 @@ const silentLogger = {
   success: () => {},
   info: () => {},
 };
+
+// test/ -> packages/cli -> packages -> <checkout root>; its `components/`
+// is the REAL catalog (the fixture built by buildFakeWorkbench has no
+// atlassian), used by the repo-driven auto-add test below.
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+);
 
 /**
  * Build a tmp "workbench root" with a tiny components catalog and
@@ -363,6 +374,28 @@ describe('runInit', () => {
     expect(text).not.toContain('# languages:');
     expect(text).not.toContain('# features:');
     expect(text).not.toContain('# services:');
+  });
+
+  it('--with-repos bitbucket auto-adds the atlassian twg preset (real catalog, ADR 0035)', async () => {
+    // Point at the real catalog (which has atlassian); the fixture used by
+    // the other cases has no atlassian, so the auto-add would skip.
+    const result = await runInit({
+      name: 'sandbox',
+      withRepo: ['https://bitbucket.org/acme/app.git'],
+      workbenchRoot: repoRoot,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    expect(text).toContain('- url: https://bitbucket.org/acme/app.git');
+    // Bitbucket's CLI in Monoceros is twg, so the repo pulls in the
+    // atlassian feature's `twg` preset - twg only, no Rovo Dev or Forge.
+    expect(text).toContain(
+      'ghcr.io/getmonoceros/monoceros-features/atlassian:1',
+    );
+    expect(text).toContain('rovodev: false');
+    expect(text).toContain('twg: true');
+    expect(text).toContain('forge: false');
   });
 
   it('--with-ports: writes an active routing block, first entry default', async () => {

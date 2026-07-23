@@ -37,6 +37,7 @@ import {
 import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
 import {
   KNOWN_PROVIDER_HOSTS,
+  PROVIDER_FEATURE_SELECTOR,
   PROVIDER_VALUES,
   REGEX,
   isValidEmail,
@@ -485,14 +486,14 @@ export async function runAddRepo(input: AddRepoInput): Promise<ModifyResult> {
   }
   // Add the provider's CLI feature to the yml (via the existing
   // add-feature), so it's present because of the repo — github → github,
-  // gitlab → gitlab. Only when the provider has a CLI feature and it
-  // isn't already declared (idempotent, and never overrides a token the
-  // builder already set).
+  // gitlab → gitlab, bitbucket → atlassian/twg (ADR 0035). Only when the
+  // provider is known and the feature isn't already declared (idempotent,
+  // and never overrides a token the builder already set).
   if (result.status === 'updated' && host) {
     const home = input.monocerosHome ?? defaultMonocerosHome();
     const prov = resolveProvider(host, entry.provider);
     const featureShort =
-      prov === 'github' ? 'github' : prov === 'gitlab' ? 'gitlab' : undefined;
+      prov === 'unknown' ? undefined : PROVIDER_FEATURE_SELECTOR[prov];
     if (featureShort) {
       const yml = await fs.readFile(
         containerConfigPath(input.name, home),

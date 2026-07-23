@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "cliVersion": "1.39.5",
+  "cliVersion": "1.40.0",
   "languages": [
     {
       "name": "dotnet",
@@ -270,7 +270,7 @@
           "type": "string",
           "surface": "env",
           "default": "",
-          "description": "Optional Bitbucket app password; only needed for twg's Bitbucket commands."
+          "description": "Bitbucket access for twg and repo clone: an Atlassian API token with `read/write:repository:bitbucket` scopes (app passwords retire 2026-06-09). Leave empty to reuse `apiToken` when that token already carries the Bitbucket scopes."
         },
         {
           "key": "email",

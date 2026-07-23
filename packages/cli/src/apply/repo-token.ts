@@ -18,23 +18,25 @@ import { bold, cyan, yellow } from '../util/format.js';
 import type { Component } from './../init/components.js';
 
 /**
- * Repo access-token resolution (ADR 0031). Pure convention, no prompting
- * and no yml mutation. Per declared repo, the token is resolved from the
- * merged env by this cascade (provider `P`, first URL path segment `S`):
+ * Repo access-token resolution (ADR 0031, ADR 0035). Pure convention, no
+ * prompting and no yml mutation. Each provider declares a token
+ * {@link ProviderTokenStrategy}: the ordered env vars to try for a repo,
+ * and whether the resolved token is also injected into a CLI feature.
  *
- *   1. `<P>_API_TOKEN`            — the feature placeholder; the builder's
- *                                   explicit per-container/global override.
- *                                   Only for providers with a CLI feature.
- *   2. `GIT_TOKEN__<P>_<S>`       — keyed by the first path segment
- *                                   (github owner / gitlab group / bitbucket
- *                                   workspace), uppercased, non-alnum → `_`.
- *   3. `GIT_TOKEN__<P>`           — provider-wide catch-all.
+ *   - github / gitlab: the `GIT_TOKEN__…` cascade (provider `P`, first URL
+ *     path segment `S`): `<P>_API_TOKEN` → `GIT_TOKEN__<P>_<S>` →
+ *     `GIT_TOKEN__<P>`. The token is injected into the provider's CLI
+ *     feature (so in-container `gh`/`glab` authenticate) AND returned per
+ *     host for git-credentials.
+ *   - bitbucket: fronted by the Atlassian feature (twg is the Bitbucket
+ *     CLI), so the clone token is the Atlassian API token —
+ *     `ATLASSIAN_BITBUCKET_TOKEN` (which the sample defaults to
+ *     `${ATLASSIAN_API_TOKEN}`). No feature injection: the Atlassian
+ *     feature authenticates twg off its own env options.
  *
- * The resolved token is injected into the provider CLI feature (so the
- * in-container `gh`/`glab` is authenticated) and returned per host for the
- * git-credentials writer (so the clone/push authenticates). A repo with no
- * resolvable token lands in `missing` so apply can abort with a clear hint.
- * Which var supplied each token is reported in `used` for logging.
+ * A repo with no resolvable token lands in `missing`; a missing token is
+ * non-fatal (public repos clone read-only), surfaced as an end-of-apply
+ * warning. Which var supplied each token is reported in `used`.
  */
 
 type Feature = {
@@ -118,14 +120,29 @@ function workspaceSegment(url: string): string | undefined {
 }
 
 /**
- * The env vars to try for a repo, in cascade order — the same three
- * shapes for every provider:
- *   `<P>_API_TOKEN` → `GIT_TOKEN__<P>_<SEGMENT>` → `GIT_TOKEN__<P>`.
- * For github/gitlab the first also happens to be the feature placeholder
- * (see PROVIDER_TOKEN_VAR); for bitbucket it's just the per-container
- * override. Uniform so every provider reads and errors the same way.
+ * How one provider resolves a repo's access token. Adding a provider is a
+ * new row here, not a change to the resolution loop (ADR 0035). The table
+ * governs token resolution only — host detection, git username and
+ * provider mapping stay their own tables in `config/schema.ts`.
  */
-function tokenVarCandidates(provider: RepoProvider, url: string): string[] {
+interface ProviderTokenStrategy {
+  /** Env vars to try for a repo URL, in order. First non-empty wins. */
+  candidates(url: string): string[];
+  /**
+   * Inject the resolved token into the provider's contributed CLI feature
+   * as its `apiToken` option, and let the provider take part in the
+   * repo-less feature-token loop (a CLI feature present without a repo).
+   * false for bitbucket: the Atlassian feature authenticates twg off its
+   * own env options, so repo-token never touches it.
+   */
+  injectFeature: boolean;
+}
+
+/**
+ * The github/gitlab cascade: `<P>_API_TOKEN` → `GIT_TOKEN__<P>_<SEGMENT>`
+ * → `GIT_TOKEN__<P>`. The first doubles as the CLI-feature placeholder.
+ */
+function gitTokenCascade(provider: RepoProvider, url: string): string[] {
   const p = provider.toUpperCase();
   const vars: string[] = [`${p}_API_TOKEN`];
   const segment = workspaceSegment(url);
@@ -133,6 +150,24 @@ function tokenVarCandidates(provider: RepoProvider, url: string): string[] {
   vars.push(`GIT_TOKEN__${p}`);
   return vars;
 }
+
+const PROVIDER_TOKEN_STRATEGY: Record<RepoProvider, ProviderTokenStrategy> = {
+  github: {
+    candidates: (url) => gitTokenCascade('github', url),
+    injectFeature: true,
+  },
+  gitlab: {
+    candidates: (url) => gitTokenCascade('gitlab', url),
+    injectFeature: true,
+  },
+  // Bitbucket auth is the user-scoped Atlassian token. No URL-segment
+  // keying (one token covers every workspace); the ATLASSIAN_API_TOKEN
+  // fall-through is the declarative sample default, not a code candidate.
+  bitbucket: {
+    candidates: () => ['ATLASSIAN_BITBUCKET_TOKEN'],
+    injectFeature: false,
+  },
+};
 
 export function resolveRepoTokens(
   config: SolutionConfig,
@@ -171,8 +206,9 @@ export function resolveRepoTokens(
     if (provider === 'unknown') continue;
     providersWithRepo.add(provider);
 
+    const strategy = PROVIDER_TOKEN_STRATEGY[provider];
     const ref = catalog.get(provider)?.file.contributes.features?.[0]?.ref;
-    const tried = tokenVarCandidates(provider, repo.url);
+    const tried = strategy.candidates(repo.url);
     const hit = tried.find((v) => (envVars[v] ?? '').trim().length > 0);
     if (!hit) {
       missing.push({ host, provider, tried });
@@ -181,7 +217,7 @@ export function resolveRepoTokens(
     const token = envVars[hit]!.trim();
     hostTokens.set(host, token);
     used.push({ host, provider, varName: hit, source: 'repo' });
-    injectFeatureToken(ref, token);
+    if (strategy.injectFeature) injectFeatureToken(ref, token);
   }
 
   // Provider CLI features present WITHOUT a repo (ADR 0031): no URL to
@@ -189,9 +225,12 @@ export function resolveRepoTokens(
   // `<P>_API_TOKEN` → `GIT_TOKEN__<P>`. Exactly one org-keyed token is
   // used automatically; several are genuinely ambiguous (the builder
   // picks at apply). The resolved token authenticates the feature AND
-  // seeds git-credentials for the provider's canonical host.
+  // seeds git-credentials for the provider's canonical host. Only
+  // providers whose strategy injects a feature token take part — bitbucket
+  // (Atlassian-fronted) authenticates twg off its own env, not here.
   for (const provider of PROVIDER_VALUES) {
     if (providersWithRepo.has(provider)) continue;
+    if (!PROVIDER_TOKEN_STRATEGY[provider].injectFeature) continue;
     const ref = catalog.get(provider)?.file.contributes.features?.[0]?.ref;
     if (!ref || !config.features.some((f) => f.ref === ref)) continue;
 
@@ -262,6 +301,21 @@ export function formatTokenUse(use: RepoTokenUse): string {
 }
 
 /**
+ * Shared heading for the end-of-apply repo warning blocks (the token
+ * warning and the failed-clone warning) so both render as the same kind
+ * of block. Bold-yellow so it stands out from the grey status output; in
+ * a non-TTY (piped / log file) the palette no-ops to plain text.
+ */
+function warnBlockHeading(title: string): string[] {
+  return [bold(yellow(`⚠  ${title}`)), ''];
+}
+
+/** Shared footer pointing at the repo-access docs. */
+function detailsFooter(): string {
+  return `   Details: ${cyan(REPO_DOCS_URL)}`;
+}
+
+/**
  * Prominent end-of-apply warning for repos left without a token. A
  * missing token is non-fatal (public repos clone read-only), but gh/glab
  * and any write/private operation won't work — so this states the
@@ -271,12 +325,8 @@ export function formatUnauthenticatedRepos(
   missing: readonly MissingRepoToken[],
   containerName: string,
 ): string {
-  // Own heading + colour so it stands out from the grey status output —
-  // yellow/bold heading, cyan var names (the "you set this" colour). In a
-  // non-TTY (piped / log file) the palette no-ops to plain text.
   const lines: string[] = [
-    bold(yellow('⚠  Repo access — action needed')),
-    '',
+    ...warnBlockHeading('Repo access — action needed'),
     yellow('   Some repositories are UNAUTHENTICATED:'),
   ];
   for (const m of missing) {
@@ -292,14 +342,67 @@ export function formatUnauthenticatedRepos(
     bold('   Set a token, then re-apply:'),
   );
   for (const m of missing) {
-    // tried order: [<PROVIDER>_API_TOKEN, GIT_TOKEN__<P>_<SEG>, GIT_TOKEN__<P>].
-    const featureVar = m.tried.find((v) => !v.startsWith('GIT_TOKEN__'))!;
-    const sharedVar = m.tried.find((v) => v.startsWith('GIT_TOKEN__'))!;
-    lines.push(
-      `     • ${PROVIDER_LABEL[m.provider]}: ${cyan(featureVar)} in container-configs/${containerName}.env,`,
-      `       or ${cyan(sharedVar)} in monoceros-config.env`,
-    );
+    const sharedVar = m.tried.find((v) => v.startsWith('GIT_TOKEN__'));
+    if (sharedVar) {
+      // github/gitlab cascade: [<P>_API_TOKEN, GIT_TOKEN__<P>_<SEG>, GIT_TOKEN__<P>].
+      const featureVar = m.tried.find((v) => !v.startsWith('GIT_TOKEN__'))!;
+      lines.push(
+        `     • ${PROVIDER_LABEL[m.provider]}: ${cyan(featureVar)} in container-configs/${containerName}.env,`,
+        `       or ${cyan(sharedVar)} in monoceros-config.env`,
+      );
+    } else {
+      // bitbucket: a single Atlassian var, valid in either env layer.
+      const tokenVar = m.tried[0]!;
+      lines.push(
+        `     • ${PROVIDER_LABEL[m.provider]}: ${cyan(tokenVar)} in container-configs/${containerName}.env`,
+        `       or monoceros-config.env (defaults to ${cyan('ATLASSIAN_API_TOKEN')}).`,
+      );
+    }
   }
-  lines.push('', `   Details: ${cyan(REPO_DOCS_URL)}`);
+  lines.push('', detailsFooter());
+  return lines.join('\n');
+}
+
+/** A repo declared in the yml that did not clone (its checkout is absent). */
+export interface FailedCloneRepo {
+  /** `projects/<path>` that did not materialize. */
+  path: string;
+  /** The declared clone URL, for the message. */
+  url: string;
+}
+
+/**
+ * End-of-apply warning for repos declared but NOT cloned — detected after
+ * the container is up by the absence of their `projects/<path>` checkout
+ * (the in-container clone soft-fails and cleans up any partial checkout,
+ * and the workspace is bind-mounted, so a missing dir is ground truth).
+ *
+ * Sibling of {@link formatUnauthenticatedRepos}: same block shape, later
+ * moment (post-clone, not token-resolution), different cause. A failed
+ * clone is non-fatal — apply still brings the container up — so this names
+ * what is missing and the most common fix rather than claiming success in
+ * the summary.
+ */
+export function formatFailedClones(
+  failed: readonly FailedCloneRepo[],
+  containerName: string,
+): string {
+  const lines: string[] = [
+    ...warnBlockHeading('Repositories not cloned'),
+    yellow('   Declared, but no checkout after apply:'),
+  ];
+  for (const f of failed) {
+    lines.push(`     • ${f.path}  (${f.url})`);
+  }
+  lines.push(
+    '',
+    bold('   The container is up; these checkouts are simply absent.'),
+    '   Most often a private repo whose token is missing or lacks the',
+    '   required scopes — the exact clone error is in the apply log. Set',
+    `   the token in container-configs/${containerName}.env (or`,
+    '   monoceros-config.env), then re-apply.',
+    '',
+    detailsFooter(),
+  );
   return lines.join('\n');
 }

@@ -8,6 +8,7 @@ import {
   resolveRepoTokens,
   resolveContainerRepoTokens,
   formatUnauthenticatedRepos,
+  formatFailedClones,
   formatTokenUse,
 } from '../src/apply/repo-token.js';
 import { loadComponentCatalog } from '../src/init/components.js';
@@ -114,24 +115,46 @@ describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
     expect(msg).toContain('monoceros-config.env');
   });
 
-  it('bitbucket uses the same cascade (BITBUCKET_API_TOKEN then workspace)', async () => {
+  it('bitbucket clone token is the Atlassian token (ADR 0035), no cascade', async () => {
     await seedRepo('demo', 'https://bitbucket.org/conciso/app.git');
     const config = await configOf('demo');
 
-    // Layer 2: workspace-keyed.
-    const byWorkspace = resolveRepoTokens(config, catalog, {
-      GIT_TOKEN__BITBUCKET_CONCISO: 'atatt',
+    // The single Bitbucket var — no BITBUCKET_* cascade, no workspace keying.
+    const resolved = resolveRepoTokens(config, catalog, {
+      ATLASSIAN_BITBUCKET_TOKEN: 'atatt',
     });
-    expect(byWorkspace.hostTokens.get('bitbucket.org')).toBe('atatt');
-    expect(byWorkspace.used[0]!.varName).toBe('GIT_TOKEN__BITBUCKET_CONCISO');
+    expect(resolved.hostTokens.get('bitbucket.org')).toBe('atatt');
+    expect(resolved.used[0]!.varName).toBe('ATLASSIAN_BITBUCKET_TOKEN');
 
-    // Layer 1: BITBUCKET_API_TOKEN — same per-container override the other
-    // providers have, so all three read the same way.
-    const byApiToken = resolveRepoTokens(config, catalog, {
+    // The old BITBUCKET_* vars no longer resolve — clean break.
+    const legacy = resolveRepoTokens(config, catalog, {
       BITBUCKET_API_TOKEN: 'atatt_1',
       GIT_TOKEN__BITBUCKET_CONCISO: 'atatt_2',
     });
-    expect(byApiToken.used[0]!.varName).toBe('BITBUCKET_API_TOKEN');
+    expect(legacy.hostTokens.get('bitbucket.org')).toBeUndefined();
+    expect(legacy.missing[0]!.provider).toBe('bitbucket');
+    expect(legacy.missing[0]!.tried).toEqual(['ATLASSIAN_BITBUCKET_TOKEN']);
+  });
+
+  it('formatFailedClones names the repo, url, and the scopes hint (ADR 0035)', () => {
+    const msg = formatFailedClones(
+      [
+        {
+          path: 'enblit-confluence-addon',
+          url: 'https://bitbucket.org/conciso/enblit-confluence-addon.git',
+        },
+      ],
+      'demo',
+    );
+    expect(msg).toContain('Repositories not cloned');
+    expect(msg).toContain('enblit-confluence-addon');
+    expect(msg).toContain(
+      'https://bitbucket.org/conciso/enblit-confluence-addon.git',
+    );
+    // Names the likely cause (missing/under-scoped token), not a false
+    // "container failed" — the clone is non-fatal.
+    expect(msg).toContain('scopes');
+    expect(msg).toContain('container-configs/demo.env');
   });
 
   it('is empty when there are no repos', async () => {
