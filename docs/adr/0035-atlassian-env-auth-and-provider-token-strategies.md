@@ -260,31 +260,36 @@ Deferred / undecided:
 - **yml-retirement**: removing the `defaults.features` mechanism and
   moving `routing`/`upgrade`/`git.user` to env.
 
-## Resolved: two tokens (classic for the apps, scoped for Bitbucket)
+## Resolved: two scoped tokens (Teamwork Graph app + Bitbucket app)
 
-Settled by real-account testing (2026-07-23):
+Settled by real-account testing (2026-07-23, refined 2026-07-24):
 
-- A **classic (unscoped) API token** covers Jira / Confluence / Assets /
-  Rovo / Forge — but **not** Bitbucket. (An earlier apparent 401 from a
-  classic token was a transient glitch, not the rule.)
-- A **Bitbucket-scoped token** (`read/write:repository:bitbucket`) covers
-  Bitbucket — clone and twg's Bitbucket commands.
-- **No single token covers both today.** A legacy token spanning many
-  products (Bitbucket + Confluence + Jira + …) still works, but such
-  multi-product tokens **can no longer be created** — the scoped-token
-  creation UI is single-select (one app per token). A true cross-product
-  single credential exists only via OAuth 2.0 (3LO), which is not the
-  personal-API-token model.
+- The **apps-side token** (`ATLASSIAN_API_TOKEN`) is a scoped API token with
+  **Teamwork Graph** as the app. It covers the full non-Bitbucket twg surface
+  — Jira, Confluence, JSM, Assets, Rovo and Forge. (A classic/unscoped token
+  also works but is the deprecated, lesser option; an early apparent 401 from
+  a classic token was a transient glitch, not the rule.)
+- The **Bitbucket-side token** (`ATLASSIAN_BITBUCKET_TOKEN`) is a scoped token
+  with **Bitbucket** as the app — `read/write:repository:bitbucket` for clone
+  and push, plus pull-request/pipeline/workspace scopes for twg's full
+  Bitbucket workflow. It covers both git clone/push and twg's Bitbucket
+  commands (`TWG_BBC_TOKEN`).
+- **No single token covers both.** The Teamwork Graph app carries no
+  repository scopes, and Bitbucket is a separate app in the single-select
+  scoped-token picker. A legacy multi-product token still works but can no
+  longer be created; a true cross-product single credential exists only via
+  OAuth 2.0 (3LO), not the personal-API-token model.
 
-So `ATLASSIAN_API_TOKEN` (classic, apps) and `ATLASSIAN_BITBUCKET_TOKEN`
-(scoped, Bitbucket) are **two independent tokens**, both creatable today —
-no dead end for new users, and no `=${…}` shared default. `instance` is
-required for the apps side, not for Bitbucket-only.
+So the two vars are **two independent scoped tokens**, both creatable today
+via the scoped-token picker (Atlassian even serves pre-filled links —
+`appId=twg` and `appId=bitbucket`, `selectedScopes=all` — that you open in a
+browser and create). No `=${…}` shared default. `instance` is required for
+the apps side, not for Bitbucket-only.
 
 Watch item (not blocking): classic tokens are on Atlassian's deprecation
-path. When they are retired, the apps side loses its single-token option;
-the deferred **OAuth-login fallback** becomes the answer then — analyzed
-feasible (`docker exec -it <container> twg login` in a PTY; twg documents
-the "run in a PTY, delegate browser approval to the user" pattern; auth
-persists via the feature's `.config/twg` mount). A support request to
-Atlassian about multi-product token creation is open.
+path, but the apps side no longer depends on them — the Teamwork Graph scoped
+token is the durable path, so there is no cliff. The deferred **OAuth-login
+fallback** (`docker exec -it <container> twg login` in a PTY; auth persists
+via the feature's `.config/twg` mount) stays a nice-to-have, not a
+necessity. A support request to Atlassian about multi-product token creation
+is open.
