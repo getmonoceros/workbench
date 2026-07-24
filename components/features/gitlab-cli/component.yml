@@ -24,5 +24,18 @@ feature:
   version: 1.0.0
   persistentHomePaths: [.config/glab-cli]
   vscodeExtensions: [GitLab.gitlab-workflow]
+  # glab reads GITLAB_TOKEN / GITLAB_HOST from the environment. Handing
+  # them to the workspace runtime env (compose `environment:` / image-mode
+  # `containerEnv`) makes them visible to every process regardless of shell
+  # type — including a plain (non-login) SSH session, which never sources
+  # /etc/profile.d. Without GITLAB_HOST in the process env a non-login shell
+  # would silently fall back to gitlab.com even against a self-managed host.
+  # install.sh still writes the profile.d snippet as a fallback for CLIs
+  # that predate this block; both carry the same values, so the redundancy
+  # is harmless. Empty values drop their var (→ `glab auth login`).
+  workspaceEnv:
+    - vars:
+        GITLAB_TOKEN: '${apiToken}'
+        GITLAB_HOST: '${host}'
 briefing:
   - text: 'GitLab CLI (`glab`) — merge requests, issues, CI/CD pipelines and releases. Targets the configured GitLab host (gitlab.com unless `host` was set). Pre-authenticated when a token was set; `glab auth status` shows the active account.'

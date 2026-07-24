@@ -14,5 +14,15 @@ feature:
   version: 1.0.0
   persistentHomePaths: [.config/gh]
   vscodeExtensions: [github.vscode-pull-request-github]
+  # gh reads GH_TOKEN from the environment. Handing it to the workspace
+  # runtime env (compose `environment:` / image-mode `containerEnv`) makes
+  # it visible to every process regardless of shell type — including a
+  # plain (non-login) SSH session, which never sources /etc/profile.d.
+  # install.sh still writes the profile.d snippet as a fallback for CLIs
+  # that predate this block; both carry the same value, so the redundancy
+  # is harmless. Empty apiToken drops the var (→ `gh auth login`).
+  workspaceEnv:
+    - vars:
+        GH_TOKEN: '${apiToken}'
 briefing:
   - text: 'GitHub CLI (`gh`) — repo, PR, issue, gist operations against github.com. Pre-authenticated; `gh auth status` reflects the active account.'

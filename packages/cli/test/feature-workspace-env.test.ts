@@ -7,6 +7,8 @@ import {
 import type { CreateOptions } from '../src/create/types.js';
 
 const ATLASSIAN = 'ghcr.io/getmonoceros/monoceros-features/atlassian:1';
+const GITHUB = 'ghcr.io/getmonoceros/monoceros-features/github-cli:1';
+const GITLAB = 'ghcr.io/getmonoceros/monoceros-features/gitlab-cli:1';
 
 const base: CreateOptions = {
   name: 'sandbox',
@@ -153,5 +155,50 @@ describe('atlassian forge → workspace runtime env (scaffold integration)', () 
       },
     });
     expect('containerEnv' in dc).toBe(false);
+  });
+});
+
+describe('github-cli → workspace runtime env (scaffold integration)', () => {
+  it('image mode: emits GH_TOKEN on containerEnv when apiToken is set', () => {
+    const dc = buildDevcontainerJson({
+      ...base,
+      features: { [GITHUB]: { apiToken: 'ghp_secret' } },
+    });
+    expect('containerEnv' in dc && dc.containerEnv).toEqual({
+      GH_TOKEN: 'ghp_secret',
+    });
+  });
+
+  it('image mode: no containerEnv when apiToken is empty', () => {
+    const dc = buildDevcontainerJson({
+      ...base,
+      features: { [GITHUB]: { apiToken: '' } },
+    });
+    expect('containerEnv' in dc).toBe(false);
+  });
+});
+
+describe('gitlab-cli → workspace runtime env (scaffold integration)', () => {
+  it('image mode: emits GITLAB_TOKEN and GITLAB_HOST when both are set', () => {
+    const dc = buildDevcontainerJson({
+      ...base,
+      features: {
+        [GITLAB]: { apiToken: 'glpat-x', host: 'gitlab.example.com' },
+      },
+    });
+    expect('containerEnv' in dc && dc.containerEnv).toEqual({
+      GITLAB_TOKEN: 'glpat-x',
+      GITLAB_HOST: 'gitlab.example.com',
+    });
+  });
+
+  it('image mode: drops GITLAB_HOST when only a token is set (targets gitlab.com)', () => {
+    const dc = buildDevcontainerJson({
+      ...base,
+      features: { [GITLAB]: { apiToken: 'glpat-x', host: '' } },
+    });
+    expect('containerEnv' in dc && dc.containerEnv).toEqual({
+      GITLAB_TOKEN: 'glpat-x',
+    });
   });
 });
