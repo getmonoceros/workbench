@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parse as parseYaml } from 'yaml';
 import { REGEX } from '../config/schema.js';
 
 /**
@@ -61,6 +62,35 @@ export const BriefingLineSchema = z.object({
   whenOption: z.string().optional(),
 });
 export type BriefingLine = z.infer<typeof BriefingLineSchema>;
+
+/**
+ * `deploy:` is this service's block for the project's pipeline compose
+ * file, verbatim: the whole service body including `image:`, only the
+ * `<name>:` key on top is added when it is rendered into
+ * `.monoceros/deploy.md`. Service-only.
+ *
+ * Compose rather than prose so it can be parsed, validated and started in
+ * a test. `image:` must match `service.image` (checked below), so a bumped
+ * tag cannot go stale here.
+ */
+export const DeployBlockSchema = z.object({
+  /** Compose body for this service, without the `<name>:` key. */
+  compose: z.string().min(1),
+  /**
+   * What this service needs BESIDE itself, as a compose fragment with
+   * top-level keys (`services:`, `volumes:`), copied verbatim. E.g. Keycloak
+   * must not share the application's database, so it brings its own postgres
+   * plus that volume's declaration.
+   *
+   * Top-level keys and not a second service body, because a volume has to be
+   * declared at the top level to exist at all, and because one service may
+   * need several. Everything it contributes must be named after the component
+   * (`keycloak-db`, `keycloak-db-data`, checked below), so it merges into the
+   * project's compose file without colliding with another block's parts.
+   */
+  requires: z.string().min(1).optional(),
+});
+export type DeployBlock = z.infer<typeof DeployBlockSchema>;
 
 const HealthcheckSchema = z.object({
   test: z.array(z.string()).min(1),
@@ -180,6 +210,31 @@ export const ServiceBlockSchema = z.object({
    * during the workspace's post-create.
    */
   deferStart: z.boolean().optional(),
+  /**
+   * Executables this service contributes to the workspace, copied at apply
+   * into `<container>/.monoceros/bin/`. Each entry is a plain file name in
+   * the component's own `tools/` directory (no path separators). Only
+   * shipped when the service is configured — a container without keycloak
+   * has no keycloak tool.
+   *
+   * For the operations a service needs that a compose file cannot express.
+   * E.g. Keycloak's boot import only fills an empty database, so applying a
+   * changed realm file to the RUNNING server needs an admin-API call:
+   * `tools/keycloak-realm` does exactly that. Write them against what the
+   * runtime image guarantees (bash, curl, jq) so they need no language
+   * runtime, and let them read the service's connection env instead of
+   * taking a URL, so they cannot be aimed at anything but this container.
+   */
+  tools: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .refine((name) => !name.includes('/') && !name.includes('\\'), {
+          message: 'must be a plain file name inside the component tools/ dir',
+        }),
+    )
+    .optional(),
 });
 export type ServiceBlock = z.infer<typeof ServiceBlockSchema>;
 
@@ -255,6 +310,7 @@ export const DescriptorSchema = z
     /** Free-text notes rendered above the component block at `init`. */
     usageNotes: z.array(z.string()).default([]),
     briefing: z.array(BriefingLineSchema).default([]),
+    deploy: DeployBlockSchema.optional(),
     language: LanguageBlockSchema.optional(),
     service: ServiceBlockSchema.optional(),
     feature: FeatureBlockSchema.optional(),
@@ -294,6 +350,51 @@ export const DescriptorSchema = z
         code: z.ZodIssueCode.custom,
         message: `category '${data.category}' requires a '${data.category}' block, found '${present[0]}'`,
       });
+    }
+
+    // `deploy:` describes a compose service, so it only makes sense on a
+    // service, and its `image:` must be the one this service runs.
+    if (data.deploy) {
+      if (data.category !== 'service') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['deploy'],
+          message: `deploy is only allowed on services, not '${data.category}'`,
+        });
+      }
+      const image = /^\s*image:\s*(\S+)\s*$/m.exec(data.deploy.compose)?.[1];
+      if (data.service && image !== data.service.image) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['deploy', 'compose'],
+          message:
+            `deploy.compose image '${image ?? '(missing)'}' must match ` +
+            `service.image '${data.service.image}'`,
+        });
+      }
+      // A `${VAR:-fallback}` would put a dev value in a deployment file, so
+      // a forgotten variable would start a reachable service on credentials
+      // from this repo instead of failing. Values come from the pipeline.
+      for (const [field, text] of [
+        ['compose', data.deploy.compose],
+        ...(data.deploy.requires
+          ? ([['requires', data.deploy.requires]] as const)
+          : []),
+      ] as const) {
+        const fallback = /\$\{[A-Za-z_][A-Za-z0-9_]*:-/.exec(text);
+        if (fallback) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['deploy', field],
+            message:
+              `deploy.${field} must not default a variable (${fallback[0]}…): ` +
+              'use `${VAR:?why it is needed}`',
+          });
+        }
+      }
+      if (data.deploy.requires !== undefined) {
+        validateDeployRequires(data.deploy.requires, data.id, ctx);
+      }
     }
 
     // Every briefing.whenOption must reference a declared option.
@@ -355,3 +456,62 @@ export const DescriptorSchema = z
   });
 
 export type Descriptor = z.infer<typeof DescriptorSchema>;
+
+/**
+ * A `deploy.requires` fragment must parse as compose and everything it
+ * contributes must be named after the component, so two blocks in one file
+ * cannot collide on a service or volume name.
+ */
+function validateDeployRequires(
+  requires: string,
+  id: string,
+  ctx: z.RefinementCtx,
+): void {
+  let doc: unknown;
+  try {
+    doc = parseYaml(requires);
+  } catch (err) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['deploy', 'requires'],
+      message: `deploy.requires is not valid YAML: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    });
+    return;
+  }
+  if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['deploy', 'requires'],
+      message:
+        'deploy.requires must be a compose fragment with top-level keys ' +
+        '(`services:`, `volumes:`)',
+    });
+    return;
+  }
+  const fragment = doc as Record<string, unknown>;
+  for (const section of ['services', 'volumes'] as const) {
+    const block = fragment[section];
+    if (block === undefined || block === null) continue;
+    if (typeof block !== 'object' || Array.isArray(block)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['deploy', 'requires'],
+        message: `deploy.requires ${section} must be a mapping`,
+      });
+      continue;
+    }
+    for (const name of Object.keys(block as Record<string, unknown>)) {
+      if (name !== id && !name.startsWith(`${id}-`)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['deploy', 'requires'],
+          message:
+            `deploy.requires ${section} '${name}' must be named after the ` +
+            `component ('${id}' or '${id}-…'), so two blocks cannot collide`,
+        });
+      }
+    }
+  }
+}

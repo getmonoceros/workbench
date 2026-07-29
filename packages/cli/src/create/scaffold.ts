@@ -1,6 +1,6 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import { workbenchCheckoutRoot } from '../config/paths.js';
+import { componentsRootDir, workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { descriptorToFeatureManifest } from '../catalog/generate-manifest.js';
@@ -10,6 +10,7 @@ import { isWsl, windowsSshPort } from '../devcontainer/ssh-attach.js';
 import { writeOpencodeConfig } from './opencode-config.js';
 import {
   BUILTIN_LANGUAGES,
+  curatedServiceTools,
   LANGUAGE_CATALOG,
   SERVICE_CATALOG,
   knownLanguages,
@@ -1134,17 +1135,106 @@ export function composeScalar(value: string): string {
   return `"${escaped}"`;
 }
 
-// Rewrite a service volume's source segment to a path relative to the
-// `.devcontainer/` directory (where compose runs). The `data` shorthand
-// maps to the per-service bind-mounted data dir under `../data/<name>`;
-// any other (relative, validated) host path is prefixed with `../` to
-// reach up to the container root. The destination + mode segments pass
-// through verbatim.
-export function composeVolumeSource(spec: string, serviceName: string): string {
+/**
+ * Docker volume holding one service's own data files (`data:` shorthand).
+ *
+ * A docker-managed volume, NOT a host bind mount, because the files in it
+ * belong to the service process and nothing else: a database's cluster
+ * directory is written, owned and ownership-checked by the engine, and no
+ * one edits it from the host. Routing it through the host file-sharing
+ * layer buys nothing and couples it to that layer's uid semantics — which
+ * is exactly what broke: under Docker Desktop's current VirtioFS the
+ * entrypoint's `chown` to the service uid no longer reaches the host, so
+ * postgres saw a root-owned PGDATA and refused to initialise
+ * (`data directory ... has wrong ownership`). Inside a volume the chown is
+ * a normal chown on the VM's own filesystem, on every platform, and the
+ * same move retires the rootless-Linux uid mismatch. See ADR 0036.
+ *
+ * Project artifacts the developer DOES edit (a Keycloak realm export, a
+ * theme dir) stay bind mounts — they are repo content, not service
+ * internals.
+ *
+ * The name puts `data` in a FIXED position, before the service, so the
+ * remainder after the prefix is unambiguously the service name: service
+ * names may contain dashes, and a `-data` suffix scheme would also match
+ * the IDE-state volume `monoceros-<name>-jetbrains-data`. Keep new
+ * `ideStateVolumes` entries out of the `data-` prefix for the same reason.
+ */
+export function serviceDataVolume(
+  containerName: string,
+  serviceName: string,
+): string {
+  return `monoceros-${containerName}-data-${serviceName}`;
+}
+
+/**
+ * Copy the executables the configured services contribute (descriptor
+ * `service.tools`) into `<container>/.monoceros/bin/`, mode 0755.
+ *
+ * Per-service and not part of the runtime image: a container without
+ * keycloak has no keycloak tool, and the tool version follows the CLI that
+ * wrote the container, not the image it happens to run. The directory is
+ * rewritten on every apply and removed when the last contributing service
+ * leaves the yml, so a tool cannot outlive its service.
+ */
+export async function writeServiceTools(
+  services: readonly ResolvedService[],
+  monocerosDir: string,
+): Promise<void> {
+  const binDir = path.join(monocerosDir, 'bin');
+  const wanted = services.flatMap((svc) =>
+    curatedServiceTools(svc.name).map((file) => ({ svc: svc.name, file })),
+  );
+  if (wanted.length === 0) {
+    await fs.rm(binDir, { recursive: true, force: true });
+    return;
+  }
+  await fs.mkdir(binDir, { recursive: true });
+  for (const { svc, file } of wanted) {
+    const source = path.join(
+      componentsRootDir(),
+      'services',
+      svc,
+      'tools',
+      file,
+    );
+    await fs.copyFile(source, path.join(binDir, file));
+    await fs.chmod(path.join(binDir, file), 0o755);
+  }
+}
+
+/**
+ * Every data volume this container's services need, in service order.
+ * Feeds the compose `volumes:` declaration, the apply-time migration of an
+ * existing `data/<svc>/` directory (`migrateServiceDataVolumes`) and the
+ * backup + delete in `remove`.
+ */
+export function serviceDataVolumes(
+  containerName: string,
+  services: readonly ResolvedService[],
+): string[] {
+  return services
+    .filter((svc) => svc.volumes.some((v) => v.split(':')[0] === 'data'))
+    .map((svc) => serviceDataVolume(containerName, svc.name));
+}
+
+// Rewrite a service volume's source segment for the compose file. The
+// `data` shorthand maps to the per-service docker volume (see
+// serviceDataVolume); any other (relative, validated) host path is a bind
+// mount and gets prefixed with `../` to reach up to the container root
+// from `.devcontainer/`, where compose runs. The destination + mode
+// segments pass through verbatim.
+export function composeVolumeSource(
+  spec: string,
+  serviceName: string,
+  containerName: string,
+): string {
   const parts = spec.split(':');
   const src = parts[0]!;
   const rest = parts.slice(1).join(':');
-  if (src === 'data') return `../data/${serviceName}:${rest}`;
+  if (src === 'data') {
+    return `${serviceDataVolume(containerName, serviceName)}:${rest}`;
+  }
   // Host-relative source: strip a leading `./` (compose habit) so the
   // `../` prefix that walks up to the container root stays clean.
   const relative = src.startsWith('./') ? src.slice(2) : src;
@@ -1176,7 +1266,7 @@ export function serviceVolumeHostDirs(
   for (const svc of services) {
     for (const vol of svc.volumes) {
       const src = vol.split(':')[0]!;
-      if (src === 'data') continue; // handled via the per-service data dir
+      if (src === 'data') continue; // a docker volume, nothing to pre-create
       const rel = src.startsWith('./') ? src.slice(2) : src;
       // Covered by a repo clone → the clone provides it; don't pre-create.
       if (cloneTargets.some((t) => rel === t || rel.startsWith(`${t}/`))) {
@@ -1331,7 +1421,7 @@ export function buildComposeYaml(
     if (svc.volumes.length > 0) {
       lines.push('    volumes:');
       for (const vol of svc.volumes) {
-        lines.push(`      - ${composeVolumeSource(vol, svc.name)}`);
+        lines.push(`      - ${composeVolumeSource(vol, svc.name, opts.name)}`);
       }
     }
     if (svc.healthcheck) {
@@ -1352,16 +1442,21 @@ export function buildComposeYaml(
     }
   }
 
-  // Top-level declaration of the IDE-state named volumes. `name:` pins
-  // the exact Docker volume name (no compose project prefix) so the
-  // names match image-mode and `monoceros remove` can delete them
-  // deterministically. Only emitted when the pinned runtime supports
-  // them (else there are no IDE volumes to declare).
-  if (ideVolumes.length > 0) {
+  // Top-level declaration of the named volumes: IDE state (extensions +
+  // user settings, ADR 0015) and per-service data (ADR 0036). `name:` pins
+  // the exact Docker volume name (no compose project prefix) so the names
+  // match image-mode and `monoceros remove` can find and delete them
+  // deterministically. The IDE set is empty when the pinned runtime
+  // predates it.
+  const declaredVolumes = [
+    ...ideVolumes.map((v) => v.volume),
+    ...serviceDataVolumes(opts.name, opts.services),
+  ];
+  if (declaredVolumes.length > 0) {
     lines.push('volumes:');
-    for (const v of ideVolumes) {
-      lines.push(`  ${v.volume}:`);
-      lines.push(`    name: ${v.volume}`);
+    for (const volume of declaredVolumes) {
+      lines.push(`  ${volume}:`);
+      lines.push(`    name: ${volume}`);
     }
   }
 
@@ -1903,23 +1998,16 @@ export async function writeScaffold(
   const monocerosDir = path.join(targetDir, '.monoceros');
   const projectsDir = path.join(targetDir, 'projects');
   const homeDir = path.join(targetDir, 'home');
-  const dataDir = path.join(targetDir, 'data');
   await fs.mkdir(devcontainerDir, { recursive: true });
   await fs.mkdir(monocerosDir, { recursive: true });
   await fs.mkdir(projectsDir, { recursive: true });
   await fs.mkdir(homeDir, { recursive: true });
   if (needsCompose(opts)) {
-    await fs.mkdir(dataDir, { recursive: true });
-    // Pre-create one subdir per service that uses the `data:` volume
-    // shorthand, so docker bind-mounts onto an existing host path (and
-    // doesn't auto-mkdir as root, which breaks postgres/mysql first-run
-    // on Linux).
-    for (const svc of opts.services) {
-      const hasDataVolume = svc.volumes.some((v) => v.split(':')[0] === 'data');
-      if (hasDataVolume) {
-        await fs.mkdir(path.join(dataDir, svc.name), { recursive: true });
-      }
-    }
+    // No `data/<svc>/` pre-create: service data lives in a docker volume
+    // (ADR 0036), so there is no host path to own. A `data/` left over
+    // from a pre-0036 container stays untouched — apply moves its content
+    // into the volume once (migrateServiceDataVolumes).
+    //
     // Pre-create host source dirs for the OTHER (non-`data`) service bind
     // mounts, so docker doesn't auto-mkdir a missing source as root and
     // crash the service (e.g. Keycloak's theme dir on a brand-new app).
@@ -1928,6 +2016,8 @@ export async function writeScaffold(
       await fs.mkdir(path.join(targetDir, dir), { recursive: true });
     }
   }
+
+  await writeServiceTools(opts.services, monocerosDir);
 
   // Container-root `.gitignore`. Excludes the directories that hold
   // builder-private or container-runtime state and the Monoceros-
@@ -2067,7 +2157,7 @@ export async function writeScaffold(
   // instructions), derived from the opencode feature's yml options. Same
   // apply-time-merge rationale as the claude write above. No-op without
   // the opencode feature.
-  await writeOpencodeConfig(targetDir, opts.name, opts.features);
+  await writeOpencodeConfig(targetDir, opts.name, opts.features, opts.services);
 
   await writePostCreateScript(devcontainerDir, opts);
 

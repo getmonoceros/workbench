@@ -60,6 +60,7 @@ import {
 import { cyan, dim, red, sectionLine, stripAnsi } from '../util/format.js';
 import { migrateDeprecatedFeatureRef } from '../util/ref.js';
 import { createApplyLog, teeApplyLogger } from './apply-log.js';
+import { migrateServiceDataVolumes } from './service-data-volumes.js';
 import {
   type ApplyProgress,
   createApplyProgress,
@@ -632,6 +633,19 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
   await fs.mkdir(targetDir, { recursive: true });
   await writeScaffold(createOpts, targetDir, { dockerMode });
+
+  // Service data moved from a host bind mount into a docker volume
+  // (ADR 0036). A container created before that carries its database in
+  // `data/<svc>/`; move that content into the volume once, before anything
+  // starts, so the service comes up on its existing data instead of an
+  // empty directory. No-op for a fresh container and on every later apply.
+  await migrateServiceDataVolumes({
+    name: opts.name,
+    targetDir,
+    services: createOpts.services,
+    dockerExec: opts.dockerExec ?? defaultDockerExec,
+    logger,
+  });
   await writeStateFile(
     targetDir,
     buildStateFile({

@@ -34,3 +34,19 @@ options:
     type: string
     default: monoceros
     surface: env
+# The service block for the project's pipeline compose file, verbatim.
+deploy:
+  compose: |-
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set it as a pipeline secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it as a pipeline secret}
+      POSTGRES_DB: ${POSTGRES_DB:?set it as a pipeline secret}
+    healthcheck:
+      # -h checks over TCP; on the unix socket pg_isready answers during init.
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, "${POSTGRES_USER}", -d, "${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # No volume: each run starts empty. `CREATE EXTENSION vector;` belongs in
+    # the project's first migration, not here.

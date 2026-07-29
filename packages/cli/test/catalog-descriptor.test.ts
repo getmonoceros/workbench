@@ -306,6 +306,228 @@ feature:
     );
   });
 
+  it('rejects a deploy block on a non-service', async () => {
+    await writeDescriptor(
+      'features',
+      'deployfeat',
+      `
+id: deployfeat
+category: feature
+displayName: DeployFeat
+description: A feature that tries to carry a pipeline shape.
+feature:
+  version: 1.0.0
+deploy:
+  compose: |-
+    environment:
+      FOO: bar
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /deploy is only allowed on services, not 'feature'/,
+    );
+  });
+
+  it('rejects a deploy fragment whose image drifted from the service image', async () => {
+    await writeDescriptor(
+      'services',
+      'deployimg',
+      `
+id: deployimg
+category: service
+displayName: DeployImg
+description: A service whose deploy fragment names a different tag.
+service:
+  image: acme/thing:2
+  defaultPort: 1234
+deploy:
+  compose: |-
+    image: acme/thing:1
+    environment:
+      FOO: bar
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /deploy\.compose image 'acme\/thing:1' must match service\.image 'acme\/thing:2'/,
+    );
+  });
+
+  it('rejects a deploy fragment with no image at all', async () => {
+    await writeDescriptor(
+      'services',
+      'deploynoimg',
+      `
+id: deploynoimg
+category: service
+displayName: DeployNoImg
+description: A service whose deploy fragment forgot the image.
+service:
+  image: acme/thing:1
+  defaultPort: 1234
+deploy:
+  compose: |-
+    environment:
+      FOO: bar
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /deploy\.compose image '\(missing\)' must match/,
+    );
+  });
+
+  it('rejects a deploy fragment that defaults a variable to a dev value', async () => {
+    await writeDescriptor(
+      'services',
+      'deploydefault',
+      `
+id: deploydefault
+category: service
+displayName: DeployDefault
+description: A service whose deploy fragment carries dev credentials as fallbacks.
+service:
+  image: acme/thing:1
+  defaultPort: 1234
+deploy:
+  compose: |-
+    image: acme/thing:1
+    environment:
+      THING_PASSWORD: \${THING_PASSWORD:-monoceros}
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /must not default a variable \(\$\{THING_PASSWORD:-…\)/,
+    );
+  });
+
+  it('accepts a deploy fragment that marks its variables required', async () => {
+    await writeDescriptor(
+      'services',
+      'deployrequired',
+      `
+id: deployrequired
+category: service
+displayName: DeployRequired
+description: A service whose deploy fragment requires every value from the pipeline.
+service:
+  image: acme/thing:1
+  defaultPort: 1234
+deploy:
+  compose: |-
+    image: acme/thing:1
+    environment:
+      THING_PASSWORD: \${THING_PASSWORD:?required, set it as a pipeline secret}
+`,
+    );
+    const catalog = await loadDescriptorCatalog(root);
+    expect(catalog.get('deployrequired')!.descriptor.deploy?.compose).toContain(
+      '${THING_PASSWORD:?required',
+    );
+  });
+
+  it('rejects a deploy.requires whose services are not named after the component', async () => {
+    await writeDescriptor(
+      'services',
+      'needy',
+      `
+id: needy
+category: service
+displayName: Needy
+description: Brings a service named after something else.
+service:
+  image: acme/thing:1
+  defaultPort: 1234
+deploy:
+  compose: |-
+    image: acme/thing:1
+  requires: |-
+    services:
+      shared-db:
+        image: postgres:18
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /requires services 'shared-db' must be named after the component \('needy'/,
+    );
+  });
+
+  it('rejects a deploy.requires that is not valid YAML', async () => {
+    await writeDescriptor(
+      'services',
+      'broken',
+      `
+id: broken
+category: service
+displayName: Broken
+description: The fragment does not parse.
+service:
+  image: acme/thing:1
+  defaultPort: 1234
+deploy:
+  compose: |-
+    image: acme/thing:1
+  requires: |-
+    services:
+      broken-db:
+       image: postgres:18
+        bad: indentation
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /deploy\.requires is not valid YAML/,
+    );
+  });
+
+  it('accepts a deploy.requires that brings several component-named parts', async () => {
+    await writeDescriptor(
+      'services',
+      'twin',
+      `
+id: twin
+category: service
+displayName: Twin
+description: Brings two services and a volume, all named after itself.
+service:
+  image: acme/thing:1
+  defaultPort: 1234
+deploy:
+  compose: |-
+    image: acme/thing:1
+  requires: |-
+    services:
+      twin-db:
+        image: postgres:18
+      twin-cache:
+        image: redis:8
+    volumes:
+      twin-db-data:
+`,
+    );
+    const catalog = await loadDescriptorCatalog(root);
+    expect(catalog.get('twin')!.descriptor.deploy?.requires).toContain(
+      'twin-cache',
+    );
+  });
+
+  it('rejects a service tool that is a path instead of a plain file name', async () => {
+    await writeDescriptor(
+      'services',
+      'toolpath',
+      `
+id: toolpath
+category: service
+displayName: ToolPath
+description: A service whose tool escapes its component directory.
+service:
+  image: acme/thing:1
+  defaultPort: 1234
+  tools: ['../../../etc/passwd']
+`,
+    );
+    await expect(loadDescriptorCatalog(root)).rejects.toThrow(
+      /plain file name inside the component tools\/ dir/,
+    );
+  });
+
   it('rejects a workspaceEnv template token that references an unknown option', async () => {
     await writeDescriptor(
       'features',

@@ -218,15 +218,24 @@ describe('VS Code IDE-state volumes (ADR 0015)', () => {
     if (!('runArgs' in unpinned)) throw new Error('expected image-mode shape');
     expect((unpinned.mounts ?? []).join('\n')).not.toContain('.vscode-server');
 
-    // Below the minimum (1.0.0 < 1.1.0) — compose-mode: no volume refs,
-    // and no top-level `volumes:` block at all.
+    // Below the minimum (1.0.0 < 1.1.0) — compose-mode: no IDE volume
+    // refs. The top-level `volumes:` block still holds the service data
+    // volume (ADR 0036), which is not runtime-gated.
     const yaml = buildComposeYaml({
       ...base,
       runtimeVersion: '1.0.0',
       services: [resolveService(expandCuratedService('postgres'))],
     });
     expect(yaml).not.toContain('.vscode-server');
-    expect(yaml).not.toMatch(/^volumes:/m);
+    expect(yaml).not.toContain('vscode-extensions');
+    const volumesSection = yaml.slice(yaml.indexOf('\nvolumes:'));
+    expect(volumesSection.trim()).toBe(
+      [
+        'volumes:',
+        `  monoceros-${base.name}-data-postgres:`,
+        `    name: monoceros-${base.name}-data-postgres`,
+      ].join('\n'),
+    );
   });
 
   it('resolves the image from the pinned runtimeVersion', () => {

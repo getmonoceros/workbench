@@ -437,6 +437,25 @@ export interface ServiceEntry {
    * The single source for what the in-container agent is told about a service.
    */
   briefing?: readonly BriefingLine[];
+  /**
+   * Pipeline-shaped compose body from the descriptor's `deploy.compose`,
+   * rendered under this service in the generated `.monoceros/deploy.md`
+   * (see briefing/deploy-md.ts). Carries the catalog's `image:`; the
+   * renderer swaps in the image this container actually runs.
+   */
+  deploy?: string;
+  /**
+   * Compose fragment with top-level keys for what this service needs beside
+   * itself (descriptor `deploy.requires`), e.g. Keycloak's own database plus
+   * that volume's declaration. Rendered verbatim after the service's own
+   * block in `.monoceros/deploy.md`.
+   */
+  deployRequires?: string;
+  /**
+   * File names in the component's `tools/` dir, copied at apply into
+   * `<container>/.monoceros/bin/` (see scaffold.ts#writeServiceTools).
+   */
+  tools?: readonly string[];
 }
 
 // The `monoceros` user/password/db below are deliberate dev-only
@@ -491,6 +510,13 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
           ...(c.descriptor.briefing && c.descriptor.briefing.length > 0
             ? { briefing: c.descriptor.briefing }
             : {}),
+          ...(c.descriptor.deploy
+            ? { deploy: c.descriptor.deploy.compose }
+            : {}),
+          ...(c.descriptor.deploy?.requires
+            ? { deployRequires: c.descriptor.deploy.requires }
+            : {}),
+          ...(svc.tools ? { tools: svc.tools } : {}),
         };
         return [key, entry];
       }),
@@ -543,6 +569,35 @@ export function curatedServiceExampleVolumes(name: string): readonly string[] {
  */
 export function curatedServiceBriefing(name: string): readonly string[] {
   return (SERVICE_CATALOG[name]?.briefing ?? []).map((line) => line.text);
+}
+
+/**
+ * Pipeline compose body for a curated service, from its descriptor's
+ * `deploy.compose`. Undefined for a service without one and for
+ * non-curated (custom-image) names — Monoceros knows nothing about those,
+ * and `.monoceros/deploy.md` says so rather than guessing.
+ */
+/**
+ * Tool file names a curated service contributes to the workspace. Looked up
+ * by catalog name, like `client` and `deploy`: a renamed instance
+ * (`--as analytics`) gets none, because its connection env is prefixed with
+ * the new name and the tool reads the catalog-named one.
+ */
+export function curatedServiceTools(name: string): readonly string[] {
+  return SERVICE_CATALOG[name]?.tools ?? [];
+}
+
+export function curatedServiceDeploy(name: string): string | undefined {
+  return SERVICE_CATALOG[name]?.deploy;
+}
+
+/**
+ * Compose fragment for what a curated service needs beside itself
+ * (`deploy.requires`), e.g. Keycloak's own database. Undefined when the
+ * service needs nothing extra.
+ */
+export function curatedServiceDeployRequires(name: string): string | undefined {
+  return SERVICE_CATALOG[name]?.deployRequires;
 }
 
 /**

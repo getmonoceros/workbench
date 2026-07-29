@@ -34,3 +34,18 @@ options:
     type: string
     default: monoceros
     surface: env
+# The service block for the project's pipeline compose file, verbatim.
+deploy:
+  compose: |-
+    image: mongo:8
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?set it as a pipeline secret}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?set it as a pipeline secret}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:?set it as a pipeline secret}
+    healthcheck:
+      test: [CMD, mongosh, --quiet, --eval, "db.adminCommand({ ping: 1 }).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # No volume: each run starts empty, collections and indexes come from the
+    # project's migrations.

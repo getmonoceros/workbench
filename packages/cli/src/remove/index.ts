@@ -16,6 +16,10 @@ import {
   type DockerExec,
 } from '../devcontainer/compose.js';
 import { ideStateVolumes } from '../create/scaffold.js';
+import {
+  backupServiceDataVolumes,
+  composeServiceDataVolumes,
+} from './service-data-volumes.js';
 import { stopBridgeDaemon } from '../devcontainer/bridge-daemon.js';
 import { removeSshAttach } from '../devcontainer/ssh-attach.js';
 import { maybeStopProxy } from '../proxy/index.js';
@@ -31,14 +35,15 @@ import { removeDynamicConfig } from '../proxy/dynamic.js';
  *        - compose containers (label `com.docker.compose.project=<project>`)
  *        - any image-mode container matching `vsc-<name>-*`
  *        - the project network `<project>_default`
- *      Named docker volumes are no longer used as of fea2b3f (DB data
- *      is bind-mounted onto `<container-dir>/data/<svc>/`), so they
- *      go away with the directory delete below.
+ *      Named volumes: the IDE-state ones go here, the per-service data
+ *      volumes (`monoceros-<name>-data-<svc>`, ADR 0036) only after the
+ *      backup below has copied them out.
  *
  *   2. Optionally back up the host-side state:
  *        - `container-configs/<name>.yml`
  *        - `container/<name>/` (entire scaffold incl. `home/`,
- *          `projects/`, `.monoceros/`, `data/`)
+ *          `projects/`, `.monoceros/`)
+ *        - each service data volume, copied into `container/data/<svc>/`
  *      Lands at `container-backups/<name>-<timestamp>/`. Plain
  *      directory copy — readable with normal filesystem tools.
  *
@@ -162,6 +167,11 @@ export async function runRemove(
     .map((v) => v.volume);
   await dockerExec(['volume', 'rm', '-f', ...ideVolumes]);
 
+  // The service data volumes (ADR 0036) hold the databases, so unlike the
+  // IDE volumes they are NOT deleted here: they get copied into the backup
+  // in step 2 first and are deleted after it.
+  const dataVolumes = await composeServiceDataVolumes(containerPath, opts.name);
+
   // ── Step 2: optional backup ────────────────────────────────────
   let backupPath: string | null = null;
   if (!opts.noBackup && (hasYml || hasContainer)) {
@@ -214,8 +224,31 @@ export async function runRemove(
           );
         }
       }
+      // Databases live in docker volumes, not in the copied tree, so they
+      // need their own copy step into the same `data/<svc>/` layout the
+      // bind mount used to produce. Restore + apply put them back from
+      // there.
+      if (dataVolumes.length > 0) {
+        await backupServiceDataVolumes({
+          volumes: dataVolumes,
+          backupContainerDir: dst,
+          dockerExec,
+          logger,
+        });
+      }
     }
     logger.info(`Backup written to ${prettyPath(backupPath)}.`);
+  }
+
+  // Now that the data is in the backup (or the builder asked for none),
+  // the data volumes can go. `-f` no-ops on volumes that never existed.
+  if (dataVolumes.length > 0) {
+    await dockerExec([
+      'volume',
+      'rm',
+      '-f',
+      ...dataVolumes.map((v) => v.volume),
+    ]);
   }
 
   // Stop the host-side browser-bridge daemon (if running) before we delete

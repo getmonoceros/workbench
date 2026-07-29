@@ -9,6 +9,7 @@ import {
   serviceConnectionEnv,
   curatedServiceBriefing,
 } from '../create/catalog.js';
+import { hasDeployBriefing } from './deploy-md.js';
 import type { FeatureManifestSummary } from '../init/manifest.js';
 
 /**
@@ -295,6 +296,13 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   lines.push('## Conventions and pitfalls');
   lines.push('');
   lines.push(
+    '- **Write everything that goes into the repo in English**: code',
+    '  comments, README, docs, commit messages, config comments. The repo',
+    '  outlives this conversation and gets readers who do not share the',
+    '  language you are chatting in, and a file with two languages in it is',
+    '  worse than either. Talk to the user in whatever language they use.',
+    '  If they want the project in another language, they will say so, and then',
+    '  that language applies to the whole repo, still not mixed per file.',
     `- **Build everything under \`/workspaces/${input.containerName}/projects/\`.**`,
     '  That is the project workspace — create new apps and scaffolding there',
     '  (e.g. `projects/<app>/`), and `cd` into it before generating files. Do',
@@ -437,6 +445,22 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     `on the host (\`monoceros add-port ${input.containerName} <port>\`) and re-apply.`,
   );
   lines.push('');
+
+  if (hasDeployBriefing(input.services)) {
+    lines.push('## Taking the services to a pipeline');
+    lines.push('');
+    lines.push(
+      'The services above are the ones CI has to bring up too, but not in',
+      'the shape they have in here. When the project needs a compose file',
+      'for its pipeline, build it from the per-service blocks in the',
+      "imported parts list — do not derive it from this container's",
+      '`.devcontainer/compose.yaml`, which is dev-shaped, and do not write',
+      'the service configuration from memory:',
+    );
+    lines.push('');
+    lines.push('@.monoceros/deploy.md');
+    lines.push('');
+  }
 
   lines.push('## Command reference');
   lines.push('');

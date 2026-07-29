@@ -15,7 +15,9 @@ service:
   # dir). Verified on a native Ubuntu host.
   user: '0:0'
   healthcheck:
-    test: [CMD, curl, -f, 'http://localhost:9000/minio/health/live']
+    # /health, not the MinIO-compatible paths: those answer 403 on this
+    # image, so the service would show up as permanently unhealthy.
+    test: [CMD, curl, -f, 'http://localhost:9000/health']
     interval: 10s
     timeout: 5s
     retries: 5
@@ -38,3 +40,24 @@ options:
     type: string
     default: rustfsadmin
     surface: env
+# The service block for the project's pipeline compose file, verbatim.
+deploy:
+  compose: |-
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?set it as a pipeline secret}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?set it as a pipeline secret}
+    volumes:
+      # The objects ARE the payload here, so unlike a database in CI this keeps
+      # them. No `user:` needed: the volume inherits the image's ownership.
+      - rustfs-data:/data
+    healthcheck:
+      # /health reports iam + storage ready; the MinIO-compatible paths
+      # answer 403 on this image, so they never turn healthy.
+      test: [CMD, curl, -f, 'http://127.0.0.1:9000/health']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  requires: |-
+    volumes:
+      rustfs-data:

@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Replace this container's Keycloak realm with the contents of a realm JSON
+# file, without recreating the container.
+#
+# Why this exists: Keycloak's boot import only fills an EMPTY database, so a
+# changed realm file does nothing until `monoceros apply` recreates the
+# service. This applies it now, against the running server.
+#
+# It replaces: an existing realm is deleted and recreated from the file, so
+# the file always wins. Gone afterwards are anything created at runtime
+# (users you clicked together), all sessions (the new realm has new signing
+# keys, so everyone logs in again) and the generated secrets of confidential
+# clients. Whatever is not in the file does not survive.
+#
+# It can only ever reach this container's Keycloak: the URL comes from the
+# environment, there is no way to point it somewhere else.
+set -euo pipefail
+
+usage() {
+  echo "usage: keycloak-realm <path/to/realm.json>" >&2
+}
+
+file=${1:-}
+if [ -z "$file" ] || [ "$file" = '-h' ] || [ "$file" = '--help' ]; then
+  usage
+  [ -n "$file" ] && exit 0
+  exit 64
+fi
+if [ ! -f "$file" ]; then
+  echo "keycloak-realm: no such file: $file" >&2
+  exit 66
+fi
+
+: "${KEYCLOAK_URL:?not set, is the keycloak service configured in this container?}"
+: "${KEYCLOAK_USER:?not set, is the keycloak service configured in this container?}"
+: "${KEYCLOAK_PASSWORD:?not set, is the keycloak service configured in this container?}"
+
+realm=$(jq -r '.realm // empty' "$file")
+if [ -z "$realm" ]; then
+  echo "keycloak-realm: $file has no top-level \"realm\" field." >&2
+  exit 65
+fi
+
+token=$(
+  curl -sS --fail-with-body \
+    -d client_id=admin-cli \
+    -d "username=$KEYCLOAK_USER" \
+    -d "password=$KEYCLOAK_PASSWORD" \
+    -d grant_type=password \
+    "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" |
+    jq -r '.access_token // empty'
+)
+if [ -z "$token" ]; then
+  echo "keycloak-realm: admin login at $KEYCLOAK_URL failed." >&2
+  exit 1
+fi
+
+status=$(curl -sS -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $token" "$KEYCLOAK_URL/admin/realms/$realm")
+if [ "$status" = 200 ]; then
+  echo "Replacing realm '$realm': runtime state, sessions and generated client secrets are lost."
+  curl -sS --fail-with-body -X DELETE \
+    -H "Authorization: Bearer $token" "$KEYCLOAK_URL/admin/realms/$realm" >/dev/null
+fi
+
+curl -sS --fail-with-body -X POST \
+  -H "Authorization: Bearer $token" \
+  -H 'Content-Type: application/json' \
+  --data-binary "@$file" \
+  "$KEYCLOAK_URL/admin/realms" >/dev/null
+
+users=$(jq -r '[.users // [] | .[].username] | join(", ") // ""' "$file")
+clients=$(jq -r '[.clients // [] | .[].clientId] | join(", ")' "$file")
+echo "Realm '$realm' imported from $file."
+[ -n "$clients" ] && echo "  clients: $clients"
+[ -n "$users" ] && echo "  users:   $users"
+exit 0

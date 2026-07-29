@@ -9,6 +9,7 @@ import {
 } from './agents-md.js';
 import { generateClaudeMd } from './claude-md.js';
 import { generateCommandsMd } from './commands-md.js';
+import { generateDeployMd } from './deploy-md.js';
 import { replaceMarkerBlock, wrapWithMarkers } from './markers.js';
 import {
   loadFeatureManifestSummary,
@@ -16,11 +17,13 @@ import {
 } from '../init/manifest.js';
 
 /**
- * Write the three briefing files into the container workspace:
+ * Write the briefing files into the container workspace:
  *
  *   <targetDir>/AGENTS.md           — Monoceros block in markers + user notes
  *   <targetDir>/CLAUDE.md           — `@AGENTS.md` import in markers + user notes
  *   <targetDir>/.monoceros/commands.md  — per-subcommand reference
+ *   <targetDir>/.monoceros/deploy.md    — pipeline compose parts, when any
+ *                                         configured service has one
  *
  * Both AGENTS.md and CLAUDE.md use marker-aware writes: if an existing
  * file already has the `<!-- monoceros:begin -->` /
@@ -37,8 +40,10 @@ import {
  * AGENTS.md is still the better place for content shared across
  * tools.
  *
- * commands.md is always rewritten in full — it's 100% Monoceros-owned
- * and not a place where user notes belong.
+ * commands.md and deploy.md are always rewritten in full — both are 100%
+ * Monoceros-owned and not a place where user notes belong. deploy.md is
+ * removed again when the last service that contributed to it leaves the
+ * yml, so a stale parts list can't outlive the services it describes.
  */
 export async function writeBriefing(input: WriteBriefingInput): Promise<void> {
   const subCommands = input.subCommands ?? (await loadSubCommandsDynamic());
@@ -55,6 +60,7 @@ export async function writeBriefing(input: WriteBriefingInput): Promise<void> {
   );
   const claudeBody = generateClaudeMd();
   const commandsBody = generateCommandsMd(subCommands);
+  const deployBody = generateDeployMd(input.createOpts.services);
 
   await writeMarkerAware(path.join(input.targetDir, 'AGENTS.md'), agentsBody);
   await writeMarkerAware(path.join(input.targetDir, 'CLAUDE.md'), claudeBody);
@@ -66,6 +72,13 @@ export async function writeBriefing(input: WriteBriefingInput): Promise<void> {
     commandsBody,
     'utf8',
   );
+
+  const deployPath = path.join(monocerosDir, 'deploy.md');
+  if (deployBody) {
+    await fs.writeFile(deployPath, deployBody, 'utf8');
+  } else {
+    await fs.rm(deployPath, { force: true });
+  }
 }
 
 export interface WriteBriefingInput {

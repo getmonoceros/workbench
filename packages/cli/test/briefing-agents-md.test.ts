@@ -33,6 +33,24 @@ describe('AGENTS.md generator', () => {
     );
   });
 
+  it('tells the agent to write repo content in English by default', () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: [],
+      services: [],
+      features: [],
+      repos: [],
+      ports: [],
+    });
+    expect(md).toContain(
+      '- **Write everything that goes into the repo in English**',
+    );
+    // Chat language is the user's; only what lands in the repo is fixed, and
+    // the user can override it for the whole project.
+    expect(md).toContain('Talk to the user in whatever language they use.');
+    expect(md).toContain('If they want the project in another language');
+  });
+
   it('lists languages with display names and skips section when empty', () => {
     const withLangs = generateAgentsMd({
       containerName: 'demo',

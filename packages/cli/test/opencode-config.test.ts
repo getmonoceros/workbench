@@ -7,6 +7,7 @@ import {
   parseOpencodeModel,
   writeOpencodeConfig,
 } from '../src/create/opencode-config.js';
+import { resolveService } from '../src/create/catalog.js';
 
 const OPENCODE_REF = 'ghcr.io/getmonoceros/monoceros-features/opencode:1';
 const NAME = 'sandbox';
@@ -239,6 +240,36 @@ describe('writeOpencodeConfig', () => {
     const ext = perm.external_directory as Record<string, unknown>;
     expect(ext['/data/*']).toBe('allow');
     expect(ext[`/workspaces/${NAME}/projects/*`]).toBe('allow');
+  });
+
+  // OpenCode does not follow the `@`-imports in AGENTS.md the way Claude
+  // Code does, so every briefing file it should see has to be listed here.
+  it('lists .monoceros/deploy.md when a service carries a pipeline shape', async () => {
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: {} }, [
+      resolveService({ name: 'postgres', image: 'postgres:18' }),
+    ]);
+    const cfg = await read();
+    expect(cfg.instructions).toEqual([
+      `/workspaces/${NAME}/AGENTS.md`,
+      `/workspaces/${NAME}/.monoceros/commands.md`,
+      `/workspaces/${NAME}/.monoceros/deploy.md`,
+    ]);
+  });
+
+  it('drops the deploy.md entry again when that service leaves the yml', async () => {
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: {} }, [
+      resolveService({ name: 'postgres', image: 'postgres:18' }),
+    ]);
+    // Re-apply without the service: writeBriefing deletes the file, so a
+    // leftover entry would point OpenCode at a missing path.
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: {} }, [
+      resolveService({ name: 'weird', image: 'acme/weird:1' }),
+    ]);
+    const cfg = await read();
+    expect(cfg.instructions).toEqual([
+      `/workspaces/${NAME}/AGENTS.md`,
+      `/workspaces/${NAME}/.monoceros/commands.md`,
+    ]);
   });
 
   it('is a no-op when no opencode feature is present', async () => {

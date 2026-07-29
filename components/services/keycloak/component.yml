@@ -23,6 +23,9 @@ service:
   # mounted realm JSON on every apply. No healthcheck: the service is not
   # in runServices (nothing gates on it) and the image ships no curl.
   deferStart: true
+  # Applies a changed realm.json to the RUNNING Keycloak; the boot import
+  # only fills an empty database.
+  tools: [keycloak-realm]
   # Rendered as a COMMENTED volumes: scaffold in the yml (the catalog
   # can't know your repo path). Uncomment + edit to mount realm/theme.
   exampleVolumes:
@@ -49,6 +52,68 @@ usageNotes:
   - 'Custom theme: bind-mount it into `/opt/keycloak/themes/<name>`, e.g. `projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>`, then set `loginTheme`/`accountTheme` to `<name>` in the realm. In dev mode themes are not cached, so edits show on reload.'
   - 'Paths are relative to the container root (`projects/<app>/...`); Monoceros resolves the bind source for you. Do not turn off the deferred start while mounting a repo file - the file would not exist at boot.'
   - 'Import is one-way: admin-UI changes live in the Keycloak database, not the file. To keep them, export the realm and overwrite the committed JSON.'
+  - 'The boot import only fills an EMPTY database, so a changed realm file does nothing until apply recreates the service. To apply it to the running Keycloak, run `.monoceros/bin/keycloak-realm <path/to/realm.json>` in the container.'
+# The service block for the project's pipeline compose file, verbatim.
+deploy:
+  compose: |-
+    image: quay.io/keycloak/keycloak:26.6
+    # `start`, not start-dev: start-dev keeps everything in an in-memory
+    # database and turns the hostname check off. The realm is imported on
+    # first boot and skipped once it exists.
+    command: start --import-realm
+    environment:
+      # Keycloak's own database, see below. With a managed database, point
+      # this at it and delete the keycloak-db service.
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: ${KC_DB_USERNAME:?set it as a pipeline secret}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?set it as a pipeline secret}
+      # The public URL clients get redirected to, e.g. https://id.example.com.
+      KC_HOSTNAME: ${KC_HOSTNAME:?set it as a pipeline secret}
+      # TLS terminates in the proxy in front of Keycloak, which forwards the
+      # original host and scheme. Serving TLS here instead needs certificates.
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?set it as a pipeline secret}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?set it as a pipeline secret}
+      KC_HEALTH_ENABLED: "true"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    volumes:
+      # The realm is a repo artifact. It installs an empty environment once;
+      # a later change needs its own step, the boot import skips an existing
+      # realm.
+      - ./keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    healthcheck:
+      # The image has no curl; bash opens the socket itself. /health/ready
+      # is on the management port and 503s until the realm import is done.
+      test: [CMD-SHELL, "exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; grep -q '200 OK' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  requires: |-
+    services:
+      # Keycloak's own database, never the application's: it owns ~90 tables
+      # and migrates them on its own upgrade cycle. Delete this service if you
+      # have a managed database.
+      keycloak-db:
+        image: postgres:18
+        environment:
+          POSTGRES_USER: ${KC_DB_USERNAME:?set it as a pipeline secret}
+          POSTGRES_PASSWORD: ${KC_DB_PASSWORD:?set it as a pipeline secret}
+          POSTGRES_DB: keycloak
+        volumes:
+          - keycloak-db-data:/var/lib/postgresql
+        healthcheck:
+          test: [CMD, pg_isready, -h, 127.0.0.1, -U, "${KC_DB_USERNAME}", -d, keycloak]
+          interval: 5s
+          timeout: 5s
+          retries: 20
+    volumes:
+      # Unlike the application's database, this one keeps its data: users,
+      # sessions and everything the realm gained at runtime live here.
+      keycloak-db-data:
 briefing:
   - text: 'Identity & access management, reached in-container as host `keycloak`. Admin console + API at `$KEYCLOAK_URL` (admin `$KEYCLOAK_USER` / `$KEYCLOAK_PASSWORD`).'
   - text: 'Keycloak auto-imports realms at startup (`--import-realm`) from `/opt/keycloak/data/import`, and its database is ephemeral - it re-seeds from those files on every apply. So keep the realm as a file in the repo at `projects/<app>/keycloak/realm.json`; do NOT configure it by hand in the admin UI, that is lost on the next apply.'
@@ -61,4 +126,12 @@ briefing:
       ```
 
       Mount the single realm.json to a distinctly-named `*.json` target under the import dir. Do NOT mount the whole `keycloak/` directory onto `/opt/keycloak/data/import`, and do NOT prefix the source with `./`. Then have the user run `monoceros apply <name>` on the host.
+  - text: |-
+      The boot import only fills an EMPTY database, so editing that file changes nothing until the next apply recreates the service. To apply a changed realm file to the RUNNING Keycloak, from the workspace root:
+
+      ```
+      .monoceros/bin/keycloak-realm projects/<app>/keycloak/realm.json
+      ```
+
+      It replaces the realm from the file, so the file always wins: anything created at runtime, all sessions, and the generated secrets of confidential clients are gone afterwards. Do not write your own import script for this, and never point one at anything but this container.
   - text: "In the realm, define a public client (e.g. `<app>-web`) with your app's redirect URIs, and have the frontend reach Keycloak same-origin under `/realms/<realm>` so the issuer follows the request host (works on `.localhost` and over `monoceros share`)."

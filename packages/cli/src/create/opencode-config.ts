@@ -2,6 +2,7 @@ import { existsSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
 import { matchMonocerosFeature } from '../util/ref.js';
+import { hasDeployBriefing } from '../briefing/deploy-md.js';
 import type { CreateOptions } from './types.js';
 
 /**
@@ -81,7 +82,12 @@ export function parseOpencodeModel(
  *
  * `instructions` (AGENTS.md + the `.monoceros/commands.md` reference,
  * absolute workspace paths) is always written so the briefing loads
- * regardless of auth mode. `permission.external_directory` pre-allows the
+ * regardless of auth mode; `.monoceros/deploy.md` joins it when the
+ * container has services that carry a pipeline shape. Claude Code reaches
+ * the same two files through the `@`-imports in AGENTS.md — OpenCode does
+ * not follow those, so it needs them listed here or the agent works from
+ * a briefing with two holes in it.
+ * `permission.external_directory` pre-allows the
  * workspace paths the briefing tells the agent to use (`projects/*`, the
  * `<name>.code-workspace` file, `logs/*`) so it isn't prompted for those;
  * `home/`, `data/` and credentials stay gated.
@@ -90,6 +96,7 @@ export async function writeOpencodeConfig(
   targetDir: string,
   containerName: string,
   features: CreateOptions['features'],
+  services: CreateOptions['services'] = [],
 ): Promise<void> {
   if (!features) return;
   const entry = Object.entries(features).find(
@@ -142,6 +149,17 @@ export async function writeOpencodeConfig(
   const managedInstructions = [
     `${workspaceRoot}/AGENTS.md`,
     `${workspaceRoot}/.monoceros/commands.md`,
+    ...(hasDeployBriefing(services)
+      ? [`${workspaceRoot}/.monoceros/deploy.md`]
+      : []),
+  ];
+  // Filter the user's list against every path we may ever manage, not just
+  // the active ones: when the last service leaves the yml, deploy.md is
+  // deleted, and a leftover entry would point OpenCode at a missing file.
+  const everManaged = [
+    `${workspaceRoot}/AGENTS.md`,
+    `${workspaceRoot}/.monoceros/commands.md`,
+    `${workspaceRoot}/.monoceros/deploy.md`,
   ];
   const existingInstructions = Array.isArray(config.instructions)
     ? (config.instructions as unknown[]).filter(
@@ -150,7 +168,7 @@ export async function writeOpencodeConfig(
     : [];
   config.instructions = [
     ...managedInstructions,
-    ...existingInstructions.filter((i) => !managedInstructions.includes(i)),
+    ...existingInstructions.filter((i) => !everManaged.includes(i)),
   ];
 
   // Pre-approve the workspace paths the Monoceros briefing tells the agent to

@@ -62,6 +62,14 @@ service in `compose.yaml`.
 
 ### Compose service data under `<container-dir>/data/`
 
+> **Superseded by [ADR 0036](0036-service-data-in-docker-volumes.md).**
+> Service data now lives in a docker volume
+> (`monoceros-<container>-data-<service>`), because the uid mapping this
+> section relies on stopped happening under Docker Desktop's VirtioFS and
+> Postgres refused to initialise. The rest of this section describes what
+> Monoceros did until CLI 1.41.x; `remove` still writes the data into a
+> backup at `container/data/<svc>/`.
+
 DB data (Postgres, MySQL, Redis) is container state too and therefore
 belongs under `<container-dir>/`. For it we no longer use
 **docker named volumes** but bind mounts:

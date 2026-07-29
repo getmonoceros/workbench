@@ -58,6 +58,92 @@ describe('writeBriefing', () => {
     expect(commands).toContain('### `monoceros apply <name>');
   });
 
+  it('writes .monoceros/deploy.md and imports it from AGENTS.md when a service has a pipeline shape', async () => {
+    const { existsSync } = await import('node:fs');
+    await writeBriefing({
+      targetDir: dir,
+      createOpts: {
+        name: 'demo',
+        languages: [],
+        services: [
+          {
+            name: 'postgres',
+            image: 'postgres:18',
+            port: 5432,
+            env: {},
+            volumes: [],
+          },
+        ],
+      },
+      components: new Map(),
+      subCommands,
+    });
+
+    const deploy = await readFile(
+      path.join(dir, '.monoceros', 'deploy.md'),
+      'utf8',
+    );
+    expect(deploy).toContain('## postgres');
+    expect(deploy).toContain('image: postgres:18');
+
+    const agents = await readFile(path.join(dir, 'AGENTS.md'), 'utf8');
+    expect(agents).toContain('@.monoceros/deploy.md');
+    expect(existsSync(path.join(dir, '.monoceros', 'deploy.md'))).toBe(true);
+  });
+
+  it('removes a stale deploy.md and its import when the last such service leaves', async () => {
+    const { existsSync } = await import('node:fs');
+    const withPostgres = {
+      name: 'demo',
+      languages: [],
+      services: [
+        {
+          name: 'postgres',
+          image: 'postgres:18',
+          port: 5432,
+          env: {},
+          volumes: [],
+        },
+      ],
+    };
+    await writeBriefing({
+      targetDir: dir,
+      createOpts: withPostgres,
+      components: new Map(),
+      subCommands,
+    });
+    expect(existsSync(path.join(dir, '.monoceros', 'deploy.md'))).toBe(true);
+
+    await writeBriefing({
+      targetDir: dir,
+      createOpts: { name: 'demo', languages: [], services: [] },
+      components: new Map(),
+      subCommands,
+    });
+    expect(existsSync(path.join(dir, '.monoceros', 'deploy.md'))).toBe(false);
+    const agents = await readFile(path.join(dir, 'AGENTS.md'), 'utf8');
+    expect(agents).not.toContain('@.monoceros/deploy.md');
+  });
+
+  it('writes no deploy.md when no service carries a pipeline shape', async () => {
+    const { existsSync } = await import('node:fs');
+    await writeBriefing({
+      targetDir: dir,
+      createOpts: {
+        name: 'demo',
+        languages: [],
+        services: [
+          { name: 'weird', image: 'acme/weird:1', env: {}, volumes: [] },
+        ],
+      },
+      components: new Map(),
+      subCommands,
+    });
+    expect(existsSync(path.join(dir, '.monoceros', 'deploy.md'))).toBe(false);
+    const agents = await readFile(path.join(dir, 'AGENTS.md'), 'utf8');
+    expect(agents).not.toContain('@.monoceros/deploy.md');
+  });
+
   it('preserves user notes between marker-aware rewrites of AGENTS.md', async () => {
     // First write — fresh file with full template.
     await writeBriefing({

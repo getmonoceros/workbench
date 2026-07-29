@@ -40,3 +40,21 @@ options:
     type: string
     default: monoceros
     surface: env
+# The service block for the project's pipeline compose file, verbatim.
+deploy:
+  compose: |-
+    image: mysql:8
+    environment:
+      # root stays for administration only; the application connects as
+      # MYSQL_USER, which the image grants access to MYSQL_DATABASE alone.
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set it as a pipeline secret}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?set it as a pipeline secret}
+      MYSQL_USER: ${MYSQL_USER:?set it as a pipeline secret}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set it as a pipeline secret}
+    healthcheck:
+      # -h checks over TCP; on the unix socket mysqladmin answers during init.
+      test: [CMD, mysqladmin, ping, -h, 127.0.0.1, -u, root, '-p${MYSQL_ROOT_PASSWORD}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # No volume: each run starts empty, the schema comes from the project's migrations.

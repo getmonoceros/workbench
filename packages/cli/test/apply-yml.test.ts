@@ -703,7 +703,7 @@ describe('runApply', () => {
     expect(composeText).toContain('postgres:');
   });
 
-  it('binds service data to <container-dir>/data/<svc>/ instead of named volumes', async () => {
+  it('puts service data in a per-service docker volume, not a host bind mount', async () => {
     await writeYml(
       'dbhost',
       [
@@ -730,35 +730,34 @@ describe('runApply', () => {
       path.join(home, 'container', 'dbhost', '.devcontainer', 'compose.yaml'),
       'utf8',
     );
-    // Bind-mount each service onto a sibling `data/<svc>` directory
-    // (paths in compose.yaml are relative to .devcontainer/).
+    // Each service's data goes into its own docker volume (ADR 0036), so
+    // the engine owns the files and no host file-sharing layer can mangle
+    // their ownership.
     expect(composeText).toContain(
-      '      - ../data/postgres:/var/lib/postgresql',
+      '      - monoceros-dbhost-data-postgres:/var/lib/postgresql',
     );
-    expect(composeText).toContain('      - ../data/redis:/data');
-    // Service DB data stays on the bind mounts above — never a named
-    // volume. The only top-level `volumes:` are the VS Code IDE-state
-    // volumes (extensions + user settings, ADR 0015); the DB services
-    // must not appear there.
+    expect(composeText).toContain('      - monoceros-dbhost-data-redis:/data');
+    expect(composeText).not.toContain('../data/');
+    // Declared top-level with a pinned `name:` alongside the IDE-state
+    // volumes, so `remove` finds and deletes them deterministically.
     const volumesSection = composeText.slice(composeText.indexOf('\nvolumes:'));
     expect(volumesSection).toContain('monoceros-dbhost-vscode-extensions:');
     expect(volumesSection).toContain('monoceros-dbhost-vscode-userdata:');
-    expect(volumesSection).not.toContain('postgres');
-    expect(volumesSection).not.toContain('redis');
+    expect(volumesSection).toContain('  monoceros-dbhost-data-postgres:');
+    expect(volumesSection).toContain(
+      '    name: monoceros-dbhost-data-postgres',
+    );
+    expect(volumesSection).toContain('  monoceros-dbhost-data-redis:');
 
-    // Host-side dirs are pre-created so docker doesn't auto-mkdir
-    // them as root.
+    // No host-side `data/` tree any more: there is no bind source to own.
     const containerRoot = path.join(home, 'container', 'dbhost');
     const fsp = await import('node:fs/promises');
-    await expect(
-      fsp.readdir(path.join(containerRoot, 'data', 'postgres')),
-    ).resolves.toEqual([]);
-    await expect(
-      fsp.readdir(path.join(containerRoot, 'data', 'redis')),
-    ).resolves.toEqual([]);
+    await expect(fsp.readdir(path.join(containerRoot, 'data'))).rejects.toThrow(
+      /ENOENT/,
+    );
 
-    // `.gitignore` excludes data/ so DB content doesn't sneak into
-    // a wrapping git repo.
+    // `.gitignore` keeps excluding data/ — a pre-0036 container that still
+    // carries the old directory must not leak it into a wrapping git repo.
     const gitignore = await readFile(
       path.join(containerRoot, '.gitignore'),
       'utf8',

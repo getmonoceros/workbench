@@ -15,3 +15,16 @@ service:
     URL: smtp://${host}:${port}
     HOST: ${host}
     PORT: ${port}
+# The service block for the project's pipeline compose file, verbatim.
+deploy:
+  compose: |-
+    image: axllent/mailpit:latest
+    # Test runs only. Mailpit catches mail so nothing leaves the machine, which
+    # is what integration tests want and what an environment with real users
+    # must never have. There, the app sends through a real mail service.
+    healthcheck:
+      test: [CMD, /mailpit, readyz]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # No volume: caught mail is test output, not data.

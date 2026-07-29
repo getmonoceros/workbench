@@ -18,3 +18,19 @@ service:
     URL: redis://${host}:${port}
     HOST: ${host}
     PORT: ${port}
+# The service block for the project's pipeline compose file, verbatim.
+deploy:
+  compose: |-
+    image: redis:8
+    # Redis accepts every connection unauthenticated by default, so it needs a
+    # password the moment it is not alone on a machine.
+    command: redis-server --requirepass ${REDIS_PASSWORD:?set it as a pipeline secret}
+    environment:
+      # Same value again, for the healthcheck below.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set it as a pipeline secret}
+    healthcheck:
+      test: [CMD, redis-cli, --no-auth-warning, -a, "${REDIS_PASSWORD}", ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # No volume: a cache starts cold. Add one if sessions or queues live here.

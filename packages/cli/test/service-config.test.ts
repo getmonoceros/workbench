@@ -429,8 +429,10 @@ describe('buildComposeYaml — generic service objects', () => {
     // env values are always double-quoted so special chars survive
     expect(yaml).toContain('      POSTGRES_DB: "logoscraper"');
     expect(yaml).toContain('      POSTGRES_PASSWORD: "p@ss: word"');
-    // data: shorthand → per-service host data dir; host path → ../<path>
-    expect(yaml).toContain('      - ../data/postgres:/var/lib/postgresql/data');
+    // data: shorthand → per-service docker volume; host path → ../<path>
+    expect(yaml).toContain(
+      '      - monoceros-logoscraper-data-postgres:/var/lib/postgresql/data',
+    );
     expect(yaml).toContain(
       '      - ../projects/logoscraper/init.sql:/docker-entrypoint-initdb.d/init.sql:ro',
     );

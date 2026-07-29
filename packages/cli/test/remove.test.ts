@@ -171,6 +171,62 @@ describe('runRemove', () => {
     expect(volumeRm).not.toContain('monoceros-jetbrains-dist');
   });
 
+  it('copies the service data volumes into the backup BEFORE deleting them (ADR 0036)', async () => {
+    await seedContainer('sandbox');
+    // The compose file is the source of truth for which data volumes exist.
+    const devcontainerDir = path.join(
+      home,
+      'container',
+      'sandbox',
+      '.devcontainer',
+    );
+    await mkdir(devcontainerDir, { recursive: true });
+    await writeFile(
+      path.join(devcontainerDir, 'compose.yaml'),
+      [
+        'volumes:',
+        '  monoceros-sandbox-vscode-extensions:',
+        '    name: monoceros-sandbox-vscode-extensions',
+        '  monoceros-sandbox-data-postgres:',
+        '    name: monoceros-sandbox-data-postgres',
+        '  monoceros-sandbox-data-redis:',
+        '    name: monoceros-sandbox-data-redis',
+        '',
+      ].join('\n'),
+    );
+    const dockerCalls: string[][] = [];
+    const result = await runRemove({
+      name: 'sandbox',
+      monocerosHome: home,
+      dockerExec: captureDockerExec(dockerCalls),
+      proxyDocker: captureDockerExec([]),
+      logger: silentLogger,
+    });
+
+    // Each data volume is copied out into the backup's data/<svc>/ …
+    const copies = dockerCalls.filter(
+      (c) => c[0] === 'run' && c.join(' ').includes('cp -a /src/. /dst/'),
+    );
+    const copyText = flattenCalls(copies);
+    expect(copyText).toContain('monoceros-sandbox-data-postgres:/src:ro');
+    expect(copyText).toContain('monoceros-sandbox-data-redis:/src:ro');
+    expect(copyText).toContain(
+      `${path.join(result.backupPath!, 'container', 'data', 'postgres')}:/dst`,
+    );
+
+    // … and only then deleted. The IDE-volume rm (which runs first) must
+    // NOT carry them, or the data would be gone before the copy.
+    const volumeRms = dockerCalls.filter(
+      (c) => c[0] === 'volume' && c[1] === 'rm',
+    );
+    expect(flattenCalls([volumeRms[0]!])).not.toContain('postgres-data');
+    const dataRm = volumeRms.at(-1)!;
+    expect(dataRm).toContain('monoceros-sandbox-data-postgres');
+    expect(dataRm).toContain('monoceros-sandbox-data-redis');
+    const copyIndex = dockerCalls.indexOf(copies[0]!);
+    expect(copyIndex).toBeLessThan(dockerCalls.indexOf(dataRm));
+  });
+
   it('skips the backup step under --no-backup', async () => {
     await seedContainer('sandbox');
     const dockerCalls: string[][] = [];
