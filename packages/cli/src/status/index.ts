@@ -5,6 +5,11 @@ import { solutionConfigToCreateOptions } from '../config/transform.js';
 import { listApps, readLaunchConfig } from '../config/launch-config.js';
 import { runtimeSupportsAppStatus } from '../create/catalog.js';
 import {
+  findUnmountedServiceConfigs,
+  type UnmountedServiceConfig,
+} from '../check/index.js';
+import type { ResolvedService } from '../create/types.js';
+import {
   realDockerLookup,
   type DockerLookupExec,
 } from '../devcontainer/locate-running.js';
@@ -45,6 +50,13 @@ export interface ServiceState {
   status: string;
   /** In-container listen port, when the catalog declares one. */
   port?: number;
+  /**
+   * Config files written for this service at the standard location that
+   * no volume in the yml mounts, so the service runs without ever reading
+   * them. Same detector `monoceros check` uses, so the two cannot
+   * disagree. Empty for a service with nothing pending.
+   */
+  unmountedConfigs: UnmountedServiceConfig[];
 }
 
 export interface AppTargetState {
@@ -122,6 +134,7 @@ export async function gatherStatus(
   let languages: string[] = [];
   let features: string[] = [];
   let declaredServices: { name: string; port?: number }[] = [];
+  let resolvedServices: ResolvedService[] = [];
   let declaredPorts: number[] = [];
   let configured = false;
   try {
@@ -135,6 +148,7 @@ export async function gatherStatus(
       name: s.name,
       ...(typeof s.port === 'number' ? { port: s.port } : {}),
     }));
+    resolvedServices = [...createOpts.services];
     declaredPorts = createOpts.ports ?? [];
   } catch {
     // No yml (or unreadable) — render what we can; `configured` stays false.
@@ -190,6 +204,9 @@ export async function gatherStatus(
           live.set(svc, { running: state === 'running', status: status ?? '' });
       }
     }
+    // Config files written for a service that no volume feeds to it. Host-
+    // side read of the workspace, so it works with the container down.
+    const unmounted = await findUnmountedServiceConfigs(root, resolvedServices);
     for (const s of declaredServices) {
       const m = live.get(s.name);
       services.push({
@@ -197,6 +214,7 @@ export async function gatherStatus(
         running: m?.running ?? false,
         status: m?.status ?? 'not created',
         ...(typeof s.port === 'number' ? { port: s.port } : {}),
+        unmountedConfigs: unmounted.filter((u) => u.service === s.name),
       });
     }
   }
@@ -358,9 +376,83 @@ function renderServices(p: Palette, m: StatusModel): string[] {
     const detail = s.running
       ? p.dim(typeof s.port === 'number' ? `running    :${s.port}` : 'running')
       : p.dim(s.status || 'stopped');
-    out.push(row(p, liveMarker(p, s.running), s.name, detail, pad));
+    const marked =
+      s.unmountedConfigs.length > 0
+        ? `${detail}    ${p.yellow(`⚠ ${s.unmountedConfigs.map((u) => baseName(u.file)).join(', ')} not mounted`)}`
+        : detail;
+    out.push(row(p, liveMarker(p, s.running), s.name, marked, pad));
   }
+  out.push(
+    ...unmountedConfigLines(
+      p,
+      m.name,
+      m.services.flatMap((s) => s.unmountedConfigs),
+    ),
+  );
   return out;
+}
+
+/** Last path segment, for the short marker on a service row. */
+function baseName(file: string): string {
+  return file.slice(file.lastIndexOf('/') + 1);
+}
+
+/**
+ * The service runs, and runs without the config the project wrote for it.
+ * The way out is a yml edit, not a command, so the spec is printed ready
+ * to paste — and the apply is real here, unlike with `add-port`: a volume
+ * needs the container recreated.
+ */
+function unmountedConfigLines(
+  p: Palette,
+  name: string,
+  pending: readonly UnmountedServiceConfig[],
+): string[] {
+  if (pending.length === 0) return [];
+  const out: string[] = [];
+  for (const u of pending) {
+    out.push(
+      `  ${p.dim(`${u.file} is never read. Add it to the \`${u.service}\` service's \`volumes:\` in the yml:`)}`,
+    );
+    out.push(`    - ${u.mountSpec}`);
+  }
+  out.push(`  ${p.dim('Then:')} monoceros apply ${name}`);
+  return out;
+}
+
+/**
+ * Ports an app's targets declare that the yml does not expose, with the
+ * one command that exposes them. Shared by the full view and the
+ * per-app view so a narrowed `status` says the same thing.
+ */
+function unexposedPortLines(
+  p: Palette,
+  m: StatusModel,
+  targets: readonly AppTargetState[],
+): string[] {
+  const unexposed = [
+    ...new Set(
+      targets
+        .filter((a) => a.portRouted === false && a.port !== null)
+        .map((a) => a.port as number),
+    ),
+  ].sort((a, b) => a - b);
+  if (unexposed.length === 0) return [];
+  // One call takes every port, and `add-port` pushes the routes to the
+  // proxy itself — no apply needed.
+  //
+  // The note about the first port is only true while the yml exposes
+  // none: `routing.ports[0]` is what answers on `http://<name>.localhost`,
+  // and add-port appends. With ports already there, the existing first one
+  // keeps that URL and we say nothing about it.
+  return [
+    `  ${p.dim(
+      m.ports.length === 0
+        ? `Expose them so the proxy can route them (the first port answers on http://${m.name}.localhost):`
+        : 'Expose them so the proxy can route them:',
+    )}`,
+    `    monoceros add-port ${m.name} ${unexposed.join(' ')}`,
+  ];
 }
 
 function appTargetDetail(p: Palette, name: string, t: AppTargetState): string {
@@ -409,13 +501,10 @@ function renderApps(p: Palette, m: StatusModel): string[] {
       );
     }
   }
-  // One pointer, not a second report: the full finding (with the
-  // add-port command) belongs to `monoceros check`.
-  if (m.apps.some((a) => a.portRouted === false)) {
-    out.push(
-      `  ${p.dim(`A marked port is declared by the app but not exposed in the yml: monoceros check ${m.name}`)}`,
-    );
-  }
+  // The marker states the problem; this states the way out. Pointing at
+  // another command that only prints another report would leave the
+  // builder exactly where they were.
+  out.push(...unexposedPortLines(p, m, m.apps));
   return out;
 }
 
@@ -482,6 +571,8 @@ export function renderApp(m: StatusModel, app: string, p: Palette): string {
       ),
     );
   }
+  // Narrowing to one app must not drop the reason it cannot answer.
+  out.push(...unexposedPortLines(p, m, targets));
   return out.join('\n');
 }
 
@@ -500,8 +591,14 @@ export function renderService(
   const detail = s.running
     ? p.dim(typeof s.port === 'number' ? `running    :${s.port}` : 'running')
     : p.dim(s.status || 'stopped');
+  const marked =
+    s.unmountedConfigs.length > 0
+      ? `${detail}    ${p.yellow(`⚠ ${s.unmountedConfigs.map((u) => baseName(u.file)).join(', ')} not mounted`)}`
+      : detail;
   return [
     p.sectionLine('Services'),
-    row(p, liveMarker(p, s.running), s.name, detail, s.name.length),
+    row(p, liveMarker(p, s.running), s.name, marked, s.name.length),
+    // Narrowing to one service must not drop the config it never reads.
+    ...unmountedConfigLines(p, m.name, s.unmountedConfigs),
   ].join('\n');
 }

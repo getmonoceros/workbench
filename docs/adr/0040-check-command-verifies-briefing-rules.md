@@ -17,7 +17,7 @@ the agent read. What it can do is look at the result afterwards.
 ## Decision
 
 `monoceros check <name>` reports, host-side, the briefing rules that leave a
-trace on disk. Four rules:
+trace on disk. Seven rules:
 
 - `workspace-registration` - a directory directly under `projects/` that is
   missing from `<name>.code-workspace`, so the editor never lists it.
@@ -34,10 +34,37 @@ trace on disk. Four rules:
 - `launch-config` - a project that serves something but declares no
   `.monoceros/launch.json`, a target on a port the container does not expose,
   or a start command that pins the server to `127.0.0.1`.
+- `service-config` - a config file written for a service at the location the
+  descriptor's `exampleVolumes` prescribe (`projects/<app>/keycloak/*.json`)
+  that no volume in the yml mounts. This one is structural, not a slip: the
+  agent can write the realm from inside the container but not the bind that
+  feeds it, which lives in the yml on the host. The finding reads the file to
+  name what it is (a realm export names its realm) and hands over the volume
+  spec with `<app>` filled in. Only that directory is searched; a file the agent
+  put elsewhere is out of scope, because guessing at any JSON under `projects/`
+  would report more than it finds.
+- `ports` - two launch targets on one port, which only one of them can bind,
+  and a port exposed in the yml that no launch config declares, i.e. a route
+  into the void. The second half stays quiet until at least one app has a launch
+  config, since "ports exposed, apps not built yet" is the normal state right
+  after `init --with-ports`.
+- `briefing-markers` - `AGENTS.md` or `CLAUDE.md` without the marker pair. Apply
+  then treats the file as Monoceros-owned and rewrites it whole, so notes the
+  builder added to it are lost, silently.
 
 It reads the container directory and the yml, needs no container, no docker and
 no agent, and changes nothing. It exits 1 when it finds something, so a
 pipeline or an e2e scenario can assert on it.
+
+`monoceros status` carries the two rules that belong to its own register -
+whether a thing that runs can actually answer - as markers on the row they
+concern: a target on an unexposed port (no `.localhost` URL for it either, since
+the proxy has no route) and a service whose config file nothing mounts. Both
+print the way out where the builder is standing, rather than pointing at
+`check`, which would only print another report. The `service-config` detector is
+shared between the two commands so they cannot disagree. The remaining rules
+stay out of `status`: a compose file that deliberately pins an older database is
+the builder's call, and `status` must not become a nag screen.
 
 The language rule and "do not write service configuration from memory" are not
 checkable. That is exactly why they sit in the first lines of the briefing

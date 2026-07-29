@@ -5,8 +5,12 @@ import { readConfig } from '../config/io.js';
 import { containerConfigPath, containerDir } from '../config/paths.js';
 import { listApps, readLaunchConfig } from '../config/launch-config.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
-import { curatedServiceDeploy } from '../create/catalog.js';
+import {
+  curatedServiceDeploy,
+  curatedServiceExampleVolumes,
+} from '../create/catalog.js';
 import { RELAY_DIRNAME } from '../devcontainer/browser-bridge.js';
+import { MARKER_BEGIN, MARKER_END } from '../briefing/markers.js';
 import type { ResolvedService } from '../create/types.js';
 import type { Palette } from '../util/format.js';
 
@@ -47,7 +51,10 @@ export type CheckRule =
   | 'workspace-registration'
   | 'workspace-root'
   | 'compose-drift'
-  | 'launch-config';
+  | 'launch-config'
+  | 'service-config'
+  | 'ports'
+  | 'briefing-markers';
 
 export interface Finding {
   rule: CheckRule;
@@ -147,11 +154,15 @@ export async function runCheck(
     findings.push(...(await checkComposeFile(root, rel, createOpts.services)));
   }
 
+  findings.push(...(await checkServiceConfigFiles(root, createOpts.services)));
+
   const apps = await listApps(name, opts.home);
   findings.push(
     ...(await checkLaunchConfigs(name, apps, declaredPorts, opts.home)),
   );
   findings.push(...(await checkUndeclaredServers(root, projects, apps)));
+  findings.push(...(await checkPorts(name, apps, declaredPorts, opts.home)));
+  findings.push(...(await checkBriefingMarkers(root)));
 
   return {
     name,
@@ -278,6 +289,135 @@ async function checkWorkspaceRoot(
     });
   }
   return out;
+}
+
+/**
+ * A service config file the agent wrote that nothing mounts. The trap is
+ * structural: the agent can write `projects/<app>/keycloak/realm.json`
+ * from inside, but the bind that feeds it to the service lives in the yml
+ * on the host, which it cannot edit. The file then sits there and the
+ * service never sees it.
+ *
+ * Deliberately narrow, and only where the answer is unambiguous: the
+ * descriptor's own `exampleVolumes` give the standard directory
+ * (`projects/<app>/keycloak/`), we look at the `*.json` files in exactly
+ * that directory, and peek inside to say what the file is. A file the
+ * agent put somewhere else is out of scope - guessing at any JSON under
+ * `projects/` would report more than it finds.
+ */
+export interface UnmountedServiceConfig {
+  /** Compose service the file was written for. */
+  service: string;
+  /** Project it belongs to (the `<app>` of the descriptor's pattern). */
+  project: string;
+  /** Container-relative path of the file nothing mounts. */
+  file: string;
+  /** The volume spec that would feed it to the service. */
+  mountSpec: string;
+  /** What the file says it is, read from the file. */
+  describes: string;
+}
+
+/**
+ * The detector behind the `service-config` rule, shared with `monoceros
+ * status`: status marks the service, check spells the finding out, and
+ * both work from this one pass so they can never disagree.
+ */
+export async function findUnmountedServiceConfigs(
+  root: string,
+  services: readonly ResolvedService[],
+): Promise<UnmountedServiceConfig[]> {
+  const projects = await topLevelProjects(root);
+  const out: UnmountedServiceConfig[] = [];
+  for (const svc of services) {
+    // Directories the descriptor points at, `<app>` still in them.
+    const dirs = new Set(
+      curatedServiceExampleVolumes(svc.name)
+        .map((spec) => spec.split(':')[0] ?? '')
+        .filter((source) => source.endsWith('.json'))
+        .map((source) => source.slice(0, source.lastIndexOf('/'))),
+    );
+    const mounted = new Set(
+      svc.volumes.map((spec) => spec.split(':')[0] ?? ''),
+    );
+    for (const project of projects) {
+      for (const pattern of dirs) {
+        const rel = pattern.replace('<app>', project);
+        let entries;
+        try {
+          entries = await fs.readdir(path.join(root, rel), {
+            withFileTypes: true,
+          });
+        } catch {
+          continue; // the standard directory does not exist here
+        }
+        for (const entry of entries) {
+          if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+          const fileRel = `${rel}/${entry.name}`;
+          if (mounted.has(fileRel)) continue;
+          out.push({
+            service: svc.name,
+            project,
+            file: fileRel,
+            mountSpec: `${fileRel}:${mountTargetFor(svc.name, project, pattern)}`,
+            describes: await describeJson(path.join(root, fileRel)),
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+async function checkServiceConfigFiles(
+  root: string,
+  services: readonly ResolvedService[],
+): Promise<Finding[]> {
+  const found = await findUnmountedServiceConfigs(root, services);
+  return found.map((f) => ({
+    rule: 'service-config' as const,
+    where: f.file,
+    what: `${f.describes}, but no volume in the yml mounts it, so ${f.service} never reads it.`,
+    fix: `Add \`${f.mountSpec}\` to the \`${f.service}\` service's \`volumes:\` in the yml, then re-apply.`,
+  }));
+}
+
+/**
+ * What the file is, read from the file itself rather than from its name:
+ * a Keycloak realm export names its realm, and quoting it makes the
+ * finding checkable at a glance.
+ */
+async function describeJson(file: string): Promise<string> {
+  try {
+    const parsed: unknown = JSON.parse(await fs.readFile(file, 'utf8'));
+    const realm =
+      parsed && typeof parsed === 'object'
+        ? (parsed as { realm?: unknown }).realm
+        : undefined;
+    if (typeof realm === 'string' && realm.length > 0) {
+      return `Declares the realm \`${realm}\``;
+    }
+  } catch {
+    // Unreadable or not JSON after all — fall through to the plain wording.
+  }
+  return 'Sits at the standard location for this service';
+}
+
+/**
+ * The container path the descriptor's example maps this file to, with
+ * `<app>` filled in — so the fix line is a volume spec the builder can
+ * paste rather than a shape to work out.
+ */
+function mountTargetFor(
+  service: string,
+  project: string,
+  sourceDir: string,
+): string {
+  const example = curatedServiceExampleVolumes(service).find((spec) =>
+    (spec.split(':')[0] ?? '').startsWith(sourceDir),
+  );
+  const target = example?.split(':').slice(1).join(':') ?? '';
+  return target.replaceAll('<app>', project);
 }
 
 /** Compose files under `projects/`, container-relative, sorted. */
@@ -506,7 +646,9 @@ async function checkLaunchConfigs(
           rule: 'launch-config',
           where: `${rel} → ${target.name}`,
           what: `Port ${target.port} is not exposed on the container, so the proxy cannot reach it.`,
-          fix: `Run \`monoceros add-port ${name} ${target.port}\` and \`monoceros apply ${name}\`, or move the target to an exposed port.`,
+          // `add-port` syncs the routes to the proxy itself, so this needs
+          // no apply (ADR 0007).
+          fix: `Run \`monoceros add-port ${name} ${target.port}\`, or move the target to an exposed port.`,
         });
       }
       const pinned = LOOPBACK_BINDING.exec(target.command);
@@ -519,6 +661,99 @@ async function checkLaunchConfigs(
         });
       }
     }
+  }
+  return out;
+}
+
+/**
+ * Ports across the whole workbench, which no single launch config can
+ * see: two targets on the same port cannot both come up (the second
+ * fails to bind, and `start` waits for a port that is already answering
+ * from the wrong process), and an exposed port that nothing declares is
+ * a route into the void.
+ *
+ * The dead-route half only runs once at least one app declares a launch
+ * config. On a workbench where the apps are still to be built, every
+ * exposed port would show up, and that is the normal state right after
+ * `init --with-ports`.
+ */
+async function checkPorts(
+  name: string,
+  apps: readonly string[],
+  declaredPorts: readonly number[],
+  home?: string,
+): Promise<Finding[]> {
+  const byPort = new Map<number, string[]>();
+  let anyConfig = false;
+  for (const app of apps) {
+    let config;
+    try {
+      config = await readLaunchConfig(name, app, home);
+    } catch {
+      continue; // reported by checkLaunchConfigs
+    }
+    if (!config) continue;
+    anyConfig = true;
+    for (const target of config.configurations) {
+      if (typeof target.port !== 'number') continue;
+      const holders = byPort.get(target.port) ?? [];
+      holders.push(`${app} → ${target.name}`);
+      byPort.set(target.port, holders);
+    }
+  }
+
+  const out: Finding[] = [];
+  for (const [port, holders] of [...byPort].sort((a, b) => a[0] - b[0])) {
+    if (holders.length < 2) continue;
+    out.push({
+      rule: 'ports',
+      where: `port ${port}`,
+      what: `Claimed by ${holders.length} targets (${holders.join(', ')}), and only one of them can bind it.`,
+      fix: 'Give each server its own port, and expose the new one.',
+    });
+  }
+  if (anyConfig) {
+    for (const port of declaredPorts) {
+      if (byPort.has(port)) continue;
+      out.push({
+        rule: 'ports',
+        where: `port ${port}`,
+        what: `Exposed in the yml, but no launch config declares it, so the route answers nothing.`,
+        fix: `Point a target at it, or drop it with \`monoceros remove-port ${name} ${port}\`.`,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The marker pair in `AGENTS.md` / `CLAUDE.md`. Without it, apply treats
+ * the file as Monoceros-owned and rewrites it whole, so notes the builder
+ * added to it are gone on the next apply - silently, which is the reason
+ * this is worth a finding at all.
+ */
+async function checkBriefingMarkers(root: string): Promise<Finding[]> {
+  const out: Finding[] = [];
+  for (const file of ['AGENTS.md', 'CLAUDE.md']) {
+    let content: string;
+    try {
+      content = await fs.readFile(path.join(root, file), 'utf8');
+    } catch {
+      continue; // a workbench applied before the briefing existed
+    }
+    if (
+      content.includes(MARKER_BEGIN) &&
+      content.includes(MARKER_END) &&
+      content.indexOf(MARKER_BEGIN) < content.indexOf(MARKER_END)
+    ) {
+      continue;
+    }
+    out.push({
+      rule: 'briefing-markers',
+      where: file,
+      what: 'The Monoceros marker pair is gone, so the next apply rewrites this file whole and anything you added to it is lost.',
+      fix: `Move your own notes out of the way, then let \`monoceros apply\` write the file again and keep your notes below \`${MARKER_END}\`.`,
+    });
   }
   return out;
 }
@@ -640,7 +875,10 @@ const RULE_LABEL: Record<CheckRule, string> = {
   'workspace-registration': 'Workspace registration',
   'workspace-root': 'Files at the workspace root',
   'compose-drift': 'Compose drift',
+  'service-config': 'Service config nothing mounts',
   'launch-config': 'Launch config',
+  ports: 'Ports',
+  'briefing-markers': 'Briefing markers',
 };
 
 /**

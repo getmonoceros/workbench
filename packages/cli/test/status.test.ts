@@ -224,6 +224,46 @@ describe('renderStatus', () => {
     expect(renderStatus(m, plain)).toContain('(not created)');
   });
 
+  it('marks a service whose config file nothing mounts and prints the volume spec', async () => {
+    // The service runs, and runs without the realm the project wrote for
+    // it: exactly the kind of "looks fine, is not" that belongs in status.
+    await writeFile(
+      path.join(home, 'container-configs', 'acme.yml'),
+      YML.replace(
+        '    port: 5432',
+        '    port: 5432\n  - name: keycloak\n    image: quay.io/keycloak/keycloak:26.6\n    port: 8080',
+      ),
+    );
+    const realm = path.join(
+      home,
+      'container',
+      'acme',
+      'projects',
+      'web',
+      'keycloak',
+    );
+    await mkdir(realm, { recursive: true });
+    await writeFile(
+      path.join(realm, 'realm.json'),
+      JSON.stringify({ realm: 'web' }),
+    );
+
+    const m = await gatherStatus('acme', { home, docker: makeDocker(RUNNING) });
+    const keycloak = m.services.find((s) => s.name === 'keycloak')!;
+    expect(keycloak.unmountedConfigs).toHaveLength(1);
+    expect(
+      m.services.find((s) => s.name === 'postgres')!.unmountedConfigs,
+    ).toEqual([]);
+
+    const out = renderStatus(m, plain);
+    expect(out).toContain('⚠ realm.json not mounted');
+    expect(out).toContain(
+      '- projects/web/keycloak/realm.json:/opt/keycloak/data/import/web.json:ro',
+    );
+    // A volume needs the container recreated, so here the apply is real.
+    expect(out).toContain('monoceros apply acme');
+  });
+
   it('marks a target whose port the yml does not expose, and prints no URL for it', async () => {
     // The app declares 4200; the yml exposes only 3000, so the proxy has
     // no route - status must not offer a `.localhost` URL for it.
@@ -250,8 +290,10 @@ describe('renderStatus', () => {
     const out = renderStatus(m, plain);
     expect(out).toContain('⚠ :4200 not exposed');
     expect(out).not.toContain('http://acme-4200.localhost');
-    // The full finding, with the add-port command, stays in `check`.
-    expect(out).toContain('monoceros check acme');
+    // And the way out, not a pointer at another report. One add-port call
+    // takes every port and syncs the proxy itself, so no apply is needed.
+    expect(out).toContain('monoceros add-port acme 4200');
+    expect(out).not.toContain('monoceros apply acme');
   });
 });
 

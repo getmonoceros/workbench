@@ -32,6 +32,14 @@ async function workspace(folders: { path: string; name?: string }[]) {
   await file(`${NAME}.code-workspace`, JSON.stringify({ folders }, null, 2));
 }
 
+/** A briefing file the way apply writes it: body inside the marker pair. */
+async function briefing(name: string, body: string): Promise<void> {
+  await file(
+    name,
+    `<!-- monoceros:begin -->\n\n${body}\n<!-- monoceros:end -->\n`,
+  );
+}
+
 /** A minimal materialized container: yml + workspace file + projects/. */
 async function scaffold(
   yml = 'schemaVersion: 1\nname: acme\nlanguages:\n  - node\n',
@@ -95,8 +103,8 @@ describe('runCheck', () => {
 
   it('flags project files at the workspace root and leaves Monoceros entries alone', async () => {
     await scaffold();
-    await file('AGENTS.md', '# briefing\n');
-    await file('CLAUDE.md', '@AGENTS.md\n');
+    await briefing('AGENTS.md', '# briefing\n');
+    await briefing('CLAUDE.md', '@AGENTS.md\n');
     await file('.monoceros/commands.md', '# commands\n');
     await file('package.json', '{"name":"oops"}');
     await mkdir(path.join(containerRoot(), 'src'), { recursive: true });
@@ -317,6 +325,105 @@ describe('runCheck', () => {
     expect(launch[0]!.where).toBe('projects/web/package.json');
     expect(launch[0]!.what).toContain('`dev` script');
     expect(launch[0]!.fix).toContain('projects/web/.monoceros/launch.json');
+  });
+
+  it('flags a service config file at the standard location that nothing mounts', async () => {
+    // The trap the briefing warns about: the agent can write the realm
+    // from inside, the bind that feeds it lives in the yml on the host.
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nservices:\n  - name: keycloak\n    image: quay.io/keycloak/keycloak:26.6\n',
+    );
+    await workspace([
+      { path: '.', name: 'workspace' },
+      { path: 'projects/shop', name: 'shop' },
+    ]);
+    await file(
+      'projects/shop/keycloak/realm.json',
+      JSON.stringify({ realm: 'shop', clients: [] }),
+    );
+
+    const report = await runCheck(NAME, { home });
+    const found = report.findings.filter((f) => f.rule === 'service-config');
+    expect(found).toHaveLength(1);
+    expect(found[0]!.where).toBe('projects/shop/keycloak/realm.json');
+    // Read from the file, not guessed from its name.
+    expect(found[0]!.what).toContain('Declares the realm `shop`');
+    // Paste-ready volume spec, with <app> filled in on both sides.
+    expect(found[0]!.fix).toContain(
+      'projects/shop/keycloak/realm.json:/opt/keycloak/data/import/shop.json:ro',
+    );
+  });
+
+  it('says nothing when the yml already mounts that file', async () => {
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nservices:\n  - name: keycloak\n    image: quay.io/keycloak/keycloak:26.6\n    volumes:\n      - projects/shop/keycloak/realm.json:/opt/keycloak/data/import/shop.json:ro\n',
+    );
+    await workspace([
+      { path: '.', name: 'workspace' },
+      { path: 'projects/shop', name: 'shop' },
+    ]);
+    await file(
+      'projects/shop/keycloak/realm.json',
+      JSON.stringify({ realm: 'shop' }),
+    );
+
+    const report = await runCheck(NAME, { home });
+    expect(report.findings.filter((f) => f.rule === 'service-config')).toEqual(
+      [],
+    );
+  });
+
+  it('flags two targets on one port and a port nothing declares', async () => {
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nrouting:\n  ports:\n    - 3000\n    - 9999\n',
+    );
+    await workspace([
+      { path: '.', name: 'workspace' },
+      { path: 'projects/web', name: 'web' },
+      { path: 'projects/api', name: 'api' },
+    ]);
+    await file(
+      'projects/web/.monoceros/launch.json',
+      JSON.stringify({
+        targets: [{ name: 'web', command: 'npm run dev', port: 3000 }],
+      }),
+    );
+    await file(
+      'projects/api/.monoceros/launch.json',
+      JSON.stringify({
+        targets: [{ name: 'api', command: 'npm start', port: 3000 }],
+      }),
+    );
+
+    const report = await runCheck(NAME, { home });
+    const ports = report.findings.filter((f) => f.rule === 'ports');
+    expect(ports.map((f) => f.where)).toEqual(['port 3000', 'port 9999']);
+    expect(ports[0]!.what).toContain('api → api');
+    expect(ports[0]!.what).toContain('web → web');
+    expect(ports[1]!.fix).toContain('monoceros remove-port acme 9999');
+  });
+
+  it('does not call an exposed port dead while no app declares a launch config', async () => {
+    // The normal state right after `init --with-ports`: the apps are still
+    // to be built, and every port would show up as a dead route.
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nrouting:\n  ports:\n    - 3000\n',
+    );
+    const report = await runCheck(NAME, { home });
+    expect(report.findings.filter((f) => f.rule === 'ports')).toEqual([]);
+  });
+
+  it('flags a briefing file whose marker pair is gone', async () => {
+    await scaffold();
+    await briefing('CLAUDE.md', '@AGENTS.md\n');
+    await file('AGENTS.md', '# my own notes, markers deleted\n');
+
+    const report = await runCheck(NAME, { home });
+    const markers = report.findings.filter(
+      (f) => f.rule === 'briefing-markers',
+    );
+    expect(markers.map((f) => f.where)).toEqual(['AGENTS.md']);
+    expect(markers[0]!.what).toContain('rewrites this file whole');
   });
 
   it('finds a server marker one level down and counts a nested launch config as covered', async () => {
