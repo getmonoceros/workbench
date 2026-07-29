@@ -130,9 +130,13 @@ describe('gatherStatus', () => {
       pid: 412,
       port: 3000,
       default: true,
+      // 3000 is in `routing.ports`, so the proxy has a route for it.
+      portRouted: true,
     });
     const worker = m.apps.find((a) => a.target === 'worker')!;
     expect(worker.running).toBe(false);
+    // No port declared, so routing does not apply.
+    expect(worker.portRouted).toBeNull();
 
     expect(m.ports).toEqual([
       { port: 3000, url: 'http://acme-3000.localhost', isDefault: true },
@@ -218,6 +222,36 @@ describe('renderStatus', () => {
   it('shows (not created) when the container is absent', async () => {
     const m = await gatherStatus('acme', { home, docker: makeDocker({}) });
     expect(renderStatus(m, plain)).toContain('(not created)');
+  });
+
+  it('marks a target whose port the yml does not expose, and prints no URL for it', async () => {
+    // The app declares 4200; the yml exposes only 3000, so the proxy has
+    // no route - status must not offer a `.localhost` URL for it.
+    const lc = path.join(home, 'container', 'acme', 'projects', 'web');
+    await writeFile(
+      path.join(lc, '.monoceros', 'launch.json'),
+      JSON.stringify({
+        version: 1,
+        configurations: [
+          { name: 'admin', command: 'npm run admin', port: 4200 },
+        ],
+      }),
+    );
+    const m = await gatherStatus('acme', {
+      home,
+      docker: makeDocker({
+        ...RUNNING,
+        appJson:
+          '{"app":"web","target":"admin","running":true,"pid":99,"port":4200,"default":false}\n',
+      }),
+    });
+    expect(m.apps[0]!.portRouted).toBe(false);
+
+    const out = renderStatus(m, plain);
+    expect(out).toContain('⚠ :4200 not exposed');
+    expect(out).not.toContain('http://acme-4200.localhost');
+    // The full finding, with the add-port command, stays in `check`.
+    expect(out).toContain('monoceros check acme');
   });
 });
 
