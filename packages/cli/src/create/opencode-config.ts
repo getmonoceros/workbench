@@ -80,13 +80,14 @@ export function parseOpencodeModel(
  *     id. `apiToken` (if set) becomes `options.apiKey` (some proxies
  *     need it; local Ollama does not).
  *
- * `instructions` (AGENTS.md + the `.monoceros/commands.md` reference,
- * absolute workspace paths) is always written so the briefing loads
- * regardless of auth mode; `.monoceros/deploy.md` joins it when the
- * container has services that carry a pipeline shape. Claude Code reaches
- * the same two files through the `@`-imports in AGENTS.md — OpenCode does
- * not follow those, so it needs them listed here or the agent works from
- * a briefing with two holes in it.
+ * `instructions` (AGENTS.md plus the chapters it imports —
+ * `.monoceros/conventions.md`, `.monoceros/servers.md`,
+ * `.monoceros/commands.md`, absolute workspace paths) is always written so
+ * the briefing loads regardless of auth mode; `.monoceros/deploy.md` joins
+ * it when the container has services that carry a pipeline shape. Claude
+ * Code reaches those files through the `@`-imports in AGENTS.md — OpenCode
+ * does not follow those, so it needs them listed here or the agent works
+ * from a briefing with holes in it.
  * `permission.external_directory` pre-allows the
  * workspace paths the briefing tells the agent to use (`projects/*`, the
  * `<name>.code-workspace` file, `logs/*`) so it isn't prompted for those;
@@ -148,6 +149,8 @@ export async function writeOpencodeConfig(
   const workspaceRoot = `/workspaces/${containerName}`;
   const managedInstructions = [
     `${workspaceRoot}/AGENTS.md`,
+    `${workspaceRoot}/.monoceros/conventions.md`,
+    `${workspaceRoot}/.monoceros/servers.md`,
     `${workspaceRoot}/.monoceros/commands.md`,
     ...(hasDeployBriefing(services)
       ? [`${workspaceRoot}/.monoceros/deploy.md`]
@@ -158,6 +161,8 @@ export async function writeOpencodeConfig(
   // deleted, and a leftover entry would point OpenCode at a missing file.
   const everManaged = [
     `${workspaceRoot}/AGENTS.md`,
+    `${workspaceRoot}/.monoceros/conventions.md`,
+    `${workspaceRoot}/.monoceros/servers.md`,
     `${workspaceRoot}/.monoceros/commands.md`,
     `${workspaceRoot}/.monoceros/deploy.md`,
   ];

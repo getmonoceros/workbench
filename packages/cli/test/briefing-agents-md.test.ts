@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   agentsMdInputFromCreateOptions,
   generateAgentsMd,
+  LINE_COUNT_PLACEHOLDER,
+  resolveLineCount,
 } from '../src/briefing/agents-md.js';
 import type { CreateOptions } from '../src/create/types.js';
 import type { FeatureManifestSummary } from '../src/init/manifest.js';
@@ -19,21 +21,45 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('# Monoceros Container — Stack Briefing');
     expect(md).toContain('monoceros apply demo');
     expect(md).toContain('monoceros add-* demo');
-    // The agent must build under projects/, not at the workspace root.
-    expect(md).toContain('Build everything under `/workspaces/demo/projects/`');
-    // Self-scaffolded projects must be registered in the workspace file so
-    // VS Code opened from the host lists them (clones get added by apply).
-    expect(md).toContain('Register new projects in `demo.code-workspace`');
-    expect(md).toContain('/workspaces/demo/demo.code-workspace');
-    expect(md).toContain('{ "path": "projects/<app>", "name": "<app>" }');
-    // One root per top-level dir under projects/, not per sub-project,
-    // so the Explorer stays readable as more projects land.
-    expect(md).toContain(
-      'Add **exactly one** folder entry per directory directly under `projects/`',
-    );
+    expect(md).toContain('## What Monoceros is');
   });
 
-  it('tells the agent to write repo content in English by default', () => {
+  // The reason for the whole shape: an agent that reads only the first
+  // screen must land on the rules, not on background. So the rules block
+  // comes before the inventory, and both come before the explanations.
+  it('puts the rules block before the inventory and the background', () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: ['node'],
+      services: [],
+      features: [],
+      repos: [],
+      ports: [],
+    });
+    const rules = md.indexOf('## Rules');
+    const inventory = md.indexOf('## What is here');
+    const background = md.indexOf('## What Monoceros is');
+    expect(rules).toBeGreaterThan(-1);
+    expect(rules).toBeLessThan(inventory);
+    expect(inventory).toBeLessThan(background);
+    // Every rule the moved chapters carry survives here as a one-liner.
+    expect(md).toContain('- Build under `/workspaces/demo/projects/`');
+    expect(md).toContain(
+      '- Register every project directory you create in `demo.code-workspace`',
+    );
+    expect(md).toContain(
+      '- Write everything that goes into the repo in English',
+    );
+    expect(md).toContain('- Read service credentials, hosts and URLs from the');
+    expect(md).toContain('- A server needs three things:');
+    expect(md).toContain(
+      '- Start and stop servers with `monoceros-ctl start|stop|logs <app>`',
+    );
+    expect(md).toContain('- Nothing you install from inside survives the next');
+    expect(md).toContain("- `monoceros …` commands are the user's to run");
+  });
+
+  it('states its own line count and the files it imports', () => {
     const md = generateAgentsMd({
       containerName: 'demo',
       languages: [],
@@ -42,13 +68,66 @@ describe('AGENTS.md generator', () => {
       repos: [],
       ports: [],
     });
+    // The count is a placeholder here: only the writer knows the final file
+    // (markers + user notes), so it substitutes the real number.
     expect(md).toContain(
-      '- **Write everything that goes into the repo in English**',
+      `This file is ${LINE_COUNT_PLACEHOLDER} lines long and imports 3 more:`,
     );
-    // Chat language is the user's; only what lands in the repo is fixed, and
-    // the user can override it for the whole project.
-    expect(md).toContain('Talk to the user in whatever language they use.');
-    expect(md).toContain('If they want the project in another language');
+    expect(md).toContain(
+      '`.monoceros/conventions.md`, `.monoceros/servers.md`, `.monoceros/commands.md`.',
+    );
+    expect(md).toContain('Read it whole.');
+  });
+
+  it('counts deploy.md as an import and adds the pipeline rule when a service has one', () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: [],
+      services: [
+        {
+          name: 'postgres',
+          image: 'postgres:18',
+          port: 5432,
+          env: {},
+          volumes: [],
+        },
+      ],
+      features: [],
+      repos: [],
+      ports: [],
+    });
+    expect(md).toContain(
+      `This file is ${LINE_COUNT_PLACEHOLDER} lines long and imports 4 more:`,
+    );
+    expect(md).toContain(
+      '- Take a compose file for the pipeline from `.monoceros/deploy.md`',
+    );
+  });
+
+  it('imports the two long chapters instead of carrying them', () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: [],
+      services: [],
+      features: [],
+      repos: [],
+      ports: [5173],
+    });
+    expect(md).toContain('@.monoceros/conventions.md');
+    expect(md).toContain('@.monoceros/servers.md');
+    // The chapters' own long form is gone from the briefing itself.
+    expect(md).not.toContain('projects/<app>/.monoceros/launch.json`, then');
+    expect(md).not.toContain('monoceros-ctl logs <app>');
+    expect(md).not.toContain(
+      '- **Write everything that goes into the repo in English**:',
+    );
+    expect(md).not.toContain('### Dev servers');
+  });
+
+  it('resolveLineCount replaces the placeholder with the file’s real line count', () => {
+    const file = ['a', `lines: ${LINE_COUNT_PLACEHOLDER}`, 'c', ''].join('\n');
+    // 3 lines, wc -l style: the trailing newline adds no fourth line.
+    expect(resolveLineCount(file)).toBe('a\nlines: 3\nc\n');
   });
 
   it('lists languages with display names and skips section when empty', () => {
@@ -292,75 +371,6 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('xdg-open http://demo.localhost');
   });
 
-  it('always briefs the launch config, with an add-port step when no ports exist', () => {
-    const noPorts = generateAgentsMd({
-      containerName: 'demo',
-      languages: ['node'],
-      services: [],
-      features: [],
-      repos: [],
-      ports: [],
-    });
-    // Emitted even with zero ports: otherwise a port-less workbench leaves the
-    // agent with no hint the launch-config mechanism exists at all.
-    expect(noPorts).toContain('## Running a long-running server');
-    expect(noPorts).toContain('projects/<app>/.monoceros/launch.json');
-    // It resolves the chicken-and-egg: have the user add a port first.
-    expect(noPorts).toContain('This container exposes **no ports yet**');
-    expect(noPorts).toContain('monoceros add-port demo <port>');
-    // The example carries a placeholder port, not an invented real one.
-    expect(noPorts).toContain('"port": <port>');
-
-    const withPorts = generateAgentsMd({
-      containerName: 'demo',
-      languages: ['node'],
-      services: [],
-      features: [],
-      repos: [],
-      ports: [5173],
-    });
-    expect(withPorts).toContain('## Running a long-running server');
-    expect(withPorts).toContain('"port": 5173');
-    expect(withPorts).not.toContain('This container exposes **no ports yet**');
-  });
-
-  it('shows a multi-server default set and tells the agent to keep later servers in it', () => {
-    const md = generateAgentsMd({
-      containerName: 'demo',
-      languages: ['node'],
-      services: [],
-      features: [],
-      repos: [],
-      ports: [3000, 5173],
-    });
-    // The example is a TWO-target default set (api + web), both default, so
-    // the multi-default case reads as the norm, not the exception.
-    expect(md).toContain(
-      '{ "name": "api", "command": "<the API\'s start command>", "port": 3000, "default": true },',
-    );
-    expect(md).toContain(
-      '{ "name": "web", "command": "<the web start command>", "port": 5173, "default": true }',
-    );
-    // A second exposed port fills the web target; with only one port the
-    // web target falls back to the placeholder.
-    const onePort = generateAgentsMd({
-      containerName: 'demo',
-      languages: ['node'],
-      services: [],
-      features: [],
-      repos: [],
-      ports: [3000],
-    });
-    expect(onePort).toContain('"name": "web"');
-    expect(onePort).toContain('"port": <port>, "default": true');
-    // The incremental case: a server added later must be re-evaluated for
-    // the default set, not left out because one default already exists.
-    expect(md).toContain('When you add a server in a later session');
-    expect(md).toContain(
-      'does not mean later servers should\nstay non-default',
-    );
-  });
-
   it('keeps .localhost URLs suffix-free at the default host port 80', () => {
     const md = generateAgentsMd({
       containerName: 'demo',
@@ -386,13 +396,12 @@ describe('AGENTS.md generator', () => {
       ports: [3000, 5173],
       hostPort: 8080,
     });
-    // Default + secondary routes, xdg-open, HMR hint, and the 502 note all
-    // carry the :8080 suffix — otherwise the agent hits a dead :80.
+    // Default + secondary routes and xdg-open all carry the :8080 suffix —
+    // otherwise the agent hits a dead :80. (The HMR hint and the 502 note
+    // moved to servers.md and are covered there.)
     expect(md).toContain('3000 (default route) → http://demo.localhost:8080');
     expect(md).toContain('5173 → http://demo-5173.localhost:8080');
     expect(md).toContain('xdg-open http://demo.localhost:8080');
-    expect(md).toContain('`<name>.localhost:8080`');
-    expect(md).toContain('`demo.localhost:8080` returns 502 Bad Gateway');
     // And never a bare port-less default route.
     expect(md).not.toContain('(default route) → http://demo.localhost\n');
   });

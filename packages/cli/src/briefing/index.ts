@@ -6,10 +6,13 @@ import type { Component } from '../init/components.js';
 import {
   agentsMdInputFromCreateOptions,
   generateAgentsMd,
+  resolveLineCount,
 } from './agents-md.js';
 import { generateClaudeMd } from './claude-md.js';
 import { generateCommandsMd } from './commands-md.js';
+import { generateConventionsMd } from './conventions-md.js';
 import { generateDeployMd } from './deploy-md.js';
+import { generateServersMd } from './servers-md.js';
 import { replaceMarkerBlock, wrapWithMarkers } from './markers.js';
 import {
   loadFeatureManifestSummary,
@@ -21,6 +24,8 @@ import {
  *
  *   <targetDir>/AGENTS.md           — Monoceros block in markers + user notes
  *   <targetDir>/CLAUDE.md           — `@AGENTS.md` import in markers + user notes
+ *   <targetDir>/.monoceros/conventions.md — the conventions chapter
+ *   <targetDir>/.monoceros/servers.md     — the long-running-server chapter
  *   <targetDir>/.monoceros/commands.md  — per-subcommand reference
  *   <targetDir>/.monoceros/deploy.md    — pipeline compose parts, when any
  *                                         configured service has one
@@ -40,7 +45,8 @@ import {
  * AGENTS.md is still the better place for content shared across
  * tools.
  *
- * commands.md and deploy.md are always rewritten in full — both are 100%
+ * conventions.md, servers.md, commands.md and deploy.md are always
+ * rewritten in full — all four are 100%
  * Monoceros-owned and not a place where user notes belong. deploy.md is
  * removed again when the last service that contributed to it leaves the
  * yml, so a stale parts list can't outlive the services it describes.
@@ -50,16 +56,17 @@ export async function writeBriefing(input: WriteBriefingInput): Promise<void> {
 
   const manifestLoader =
     input.manifestLoader ?? ((ref: string) => loadFeatureManifestSummary(ref));
-  const agentsBody = generateAgentsMd(
-    agentsMdInputFromCreateOptions(
-      input.createOpts,
-      featureDisplayMap(input.components),
-      manifestLoader,
-      input.hostPort ?? 80,
-    ),
+  const agentsInput = agentsMdInputFromCreateOptions(
+    input.createOpts,
+    featureDisplayMap(input.components),
+    manifestLoader,
+    input.hostPort ?? 80,
   );
+  const agentsBody = generateAgentsMd(agentsInput);
   const claudeBody = generateClaudeMd();
   const commandsBody = generateCommandsMd(subCommands);
+  const conventionsBody = generateConventionsMd(agentsInput);
+  const serversBody = generateServersMd(agentsInput);
   const deployBody = generateDeployMd(input.createOpts.services);
 
   await writeMarkerAware(path.join(input.targetDir, 'AGENTS.md'), agentsBody);
@@ -70,6 +77,16 @@ export async function writeBriefing(input: WriteBriefingInput): Promise<void> {
   await fs.writeFile(
     path.join(monocerosDir, 'commands.md'),
     commandsBody,
+    'utf8',
+  );
+  await fs.writeFile(
+    path.join(monocerosDir, 'conventions.md'),
+    conventionsBody,
+    'utf8',
+  );
+  await fs.writeFile(
+    path.join(monocerosDir, 'servers.md'),
+    serversBody,
     'utf8',
   );
 
@@ -140,6 +157,10 @@ function featureDisplayMap(
  * everything outside (user notes). If the markers are missing or the
  * file doesn't exist, write a fresh marker-wrapped body. Used for both
  * AGENTS.md and CLAUDE.md.
+ *
+ * The line count the briefing states about itself is resolved here, on
+ * the assembled file — including the markers and whatever the user keeps
+ * outside them, because that is what `wc -l` and a truncated read see.
  */
 async function writeMarkerAware(filePath: string, body: string): Promise<void> {
   let existing: string | null = null;
@@ -151,12 +172,12 @@ async function writeMarkerAware(filePath: string, body: string): Promise<void> {
   if (existing) {
     const updated = replaceMarkerBlock(existing, body);
     if (updated !== null) {
-      await fs.writeFile(filePath, updated, 'utf8');
+      await fs.writeFile(filePath, resolveLineCount(updated), 'utf8');
       return;
     }
     // Markers missing — treat as Monoceros-owned, full rewrite.
   }
-  await fs.writeFile(filePath, wrapWithMarkers(body), 'utf8');
+  await fs.writeFile(filePath, resolveLineCount(wrapWithMarkers(body)), 'utf8');
 }
 
 async function loadSubCommandsDynamic(): Promise<Record<string, unknown>> {

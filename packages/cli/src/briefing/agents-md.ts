@@ -28,6 +28,16 @@ import type { FeatureManifestSummary } from '../init/manifest.js';
  *   - how to suggest `monoceros …` commands to the user so they're
  *     copy-paste-ready.
  *
+ * **Order matters more than completeness.** A live test showed an agent
+ * reading the file with `head -100`, which used to be exactly the
+ * background and the inventory: the first 100 lines carried no rule at
+ * all. So the shape is now rules → inventory → explanation, and the two
+ * long chapters live in imported files (`.monoceros/conventions.md`,
+ * `.monoceros/servers.md`) with their rules kept here as one-liners. A
+ * truncated read loses background, not behaviour. The header states the
+ * file's line count and its imports, so a partial read has a visible
+ * contradiction in front of it.
+ *
  * The full command reference (signatures + flags) is delegated to a
  * sibling file `.monoceros/commands.md` via an `@`-import at the end
  * of the briefing.
@@ -64,6 +74,28 @@ export interface FeatureDisplay {
   lines: string[];
 }
 
+/**
+ * Stands in for the file's own line count in the generated header. The
+ * number can only be known once the block is wrapped in markers and
+ * merged into whatever the user keeps outside them, so
+ * `resolveLineCount` substitutes it on the final file content. It sits
+ * inside a line, never on one of its own, so replacing it cannot change
+ * the count it reports.
+ */
+export const LINE_COUNT_PLACEHOLDER = '%%MONOCEROS_LINE_COUNT%%';
+
+/**
+ * Replace `LINE_COUNT_PLACEHOLDER` with the number of lines the given
+ * file content actually has (counted like `wc -l`, i.e. a trailing
+ * newline does not add an empty line). Call this on the complete file
+ * text, after markers and user notes are in place — otherwise the
+ * briefing states a number the agent cannot verify.
+ */
+export function resolveLineCount(content: string): string {
+  const count = content.replace(/\n$/, '').split('\n').length;
+  return content.replaceAll(LINE_COUNT_PLACEHOLDER, String(count));
+}
+
 export function generateAgentsMd(input: AgentsMdInput): string {
   const lines: string[] = [];
 
@@ -72,6 +104,14 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   // and the common case stays a clean port-less URL.
   const hostPort = input.hostPort ?? 80;
   const portSuffix = hostPort === 80 ? '' : `:${hostPort}`;
+
+  const deploy = hasDeployBriefing(input.services);
+  const imports = [
+    '.monoceros/conventions.md',
+    '.monoceros/servers.md',
+    ...(deploy ? ['.monoceros/deploy.md'] : []),
+    '.monoceros/commands.md',
+  ];
 
   lines.push('# Monoceros Container — Stack Briefing');
   lines.push('');
@@ -82,40 +122,51 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     'inside or invent capabilities that do not exist.',
   );
   lines.push('');
-
-  lines.push('## What Monoceros is');
-  lines.push('');
   lines.push(
-    'Monoceros is a workbench that materializes Linux dev containers from',
-    'a declarative yml configuration on the host. The yml lists languages,',
-    'services, AI tools (Devcontainer Features), cloned repos, and exposed',
-    `ports. \`monoceros apply ${input.containerName}\` on the host rebuilds`,
-    'this container from that yml.',
+    `This file is ${LINE_COUNT_PLACEHOLDER} lines long and imports ${imports.length} more:`,
+    `${imports.map((i) => `\`${i}\``).join(', ')}.`,
+    'Read it whole. If you have seen fewer lines than that, or have not',
+    'read the imports, you do not have the briefing yet — read the rest',
+    'before you write anything. Do not summarize it back to yourself from',
+    'the first screen.',
   );
   lines.push('');
-  lines.push('Implications you need to understand:');
+
+  lines.push('## Rules');
   lines.push('');
   lines.push(
-    '- **The yml is the source of truth.** What is installed here matches',
-    '  the yml plus the catalog defaults. If something is not listed below,',
-    '  it is not available — and cannot be made available from inside.',
-    '- **Changes from inside the container do not persist** across a',
-    '  rebuild. `apt-get install`, `npm install -g`, system-level edits,',
-    '  globally installed binaries — all gone after the next',
-    `  \`monoceros apply ${input.containerName}\`. What survives a rebuild:`,
-    '  the workspace (`projects/`), the data directories of services, and',
-    '  a small set of home subdirectories that tools use to keep their',
-    '  auth state.',
-    '- **Extension happens on the host.** When a language, service, or',
-    `  tool is missing, the user runs \`monoceros add-* ${input.containerName} …\``,
-    `  on their host and then \`monoceros apply ${input.containerName}\`.`,
-    '  You do not have access to the host and cannot run these commands',
-    '  yourself.',
-    "- **The container is isolated.** You cannot reach other containers'",
-    '  environment variables, the host filesystem, or the Docker daemon',
-    '  from inside. Services are reachable on the Docker network by',
-    '  service name (e.g. `postgres:5432`); anything else is out of',
-    '  reach.',
+    'These are the rules of this container. The sections below only add',
+    'detail; none of them relaxes a rule here.',
+  );
+  lines.push('');
+  lines.push(
+    `- Build under \`/workspaces/${input.containerName}/projects/\`, one directory per project.`,
+    '  Never at the workspace root, which is Monoceros-managed.',
+    `- Register every project directory you create in \`${input.containerName}.code-workspace\``,
+    '  (`folders`), exactly one entry per directory directly under `projects/`.',
+    '  Otherwise it never shows up in the editor.',
+    '- Write everything that goes into the repo in English (code, comments,',
+    '  docs, commit messages). Chat with the user in their language.',
+    '- Read service credentials, hosts and URLs from the environment',
+    '  (`<SERVICE>_URL`, `<SERVICE>_USER`, …). Never write service',
+    '  configuration from memory, never hardcode it, never ask for it.',
+    '- A server needs three things: a port exposed on the container, an entry',
+    '  in `projects/<app>/.monoceros/launch.json`, and a process that listens',
+    '  on `0.0.0.0` (not `127.0.0.1`).',
+    '- Start and stop servers with `monoceros-ctl start|stop|logs <app>`. A',
+    '  foreground start dies with this session.',
+    ...(deploy
+      ? [
+          '- Take a compose file for the pipeline from `.monoceros/deploy.md`, block',
+          "  by block. Not from this container's `.devcontainer/compose.yaml`, not",
+          '  from memory.',
+        ]
+      : []),
+    '- Nothing you install from inside survives the next',
+    `  \`monoceros apply ${input.containerName}\`. A missing language, service, tool or`,
+    '  port is added on the host, by the user.',
+    `- \`monoceros …\` commands are the user's to run, on the host. Print one per`,
+    '  line in a fenced code block and wait; you cannot run them yourself.',
   );
   lines.push('');
 
@@ -238,34 +289,43 @@ export function generateAgentsMd(input: AgentsMdInput): string {
       'the URL, so they can open it themselves if no bridge is active.',
     );
     lines.push('');
-    lines.push('### Dev servers (so the proxy and LAN can reach them)');
-    lines.push('');
-    lines.push(
-      'A dev server you start must be reachable through the Monoceros proxy',
-      '(and, when the user shares it to their phone/LAN, over the network).',
-      'Configure it so:',
-    );
-    lines.push('');
-    lines.push(
-      '- it **listens on `0.0.0.0`**, not `127.0.0.1` (otherwise the proxy',
-      '  cannot reach it);',
-      '- it **accepts the proxy/LAN hostnames** — Vite `server.allowedHosts`,',
-      '  Angular `--allowed-hosts`, CRA `DANGEROUSLY_DISABLE_HOST_CHECK`;',
-      '- it does **not pin the HMR/live-reload socket** to a fixed host or port',
-      '  — let it follow the page URL (e.g. for Vite, do not set',
-      `  \`server.hmr.clientPort\`), so HMR works on \`<name>.localhost${portSuffix}\` and over`,
-      '  the LAN alike;',
-      '- the **backend is reached via the dev-server proxy** under a relative',
-      '  path (Vite `server.proxy`, Angular `proxy.conf.json`, CRA',
-      '  `setupProxy.js`) so the browser only ever talks to one origin.',
-    );
-    lines.push('');
-    lines.push(
-      'These are dev-server-only settings (a production build ignores them), so',
-      'they are safe to keep.',
-    );
-    lines.push('');
   }
+
+  lines.push('## What Monoceros is');
+  lines.push('');
+  lines.push(
+    'Monoceros is a workbench that materializes Linux dev containers from',
+    'a declarative yml configuration on the host. The yml lists languages,',
+    'services, AI tools (Devcontainer Features), cloned repos, and exposed',
+    `ports. \`monoceros apply ${input.containerName}\` on the host rebuilds`,
+    'this container from that yml.',
+  );
+  lines.push('');
+  lines.push('Implications you need to understand:');
+  lines.push('');
+  lines.push(
+    '- **The yml is the source of truth.** What is installed here matches',
+    '  the yml plus the catalog defaults. If something is not listed above,',
+    '  it is not available — and cannot be made available from inside.',
+    '- **Changes from inside the container do not persist** across a',
+    '  rebuild. `apt-get install`, `npm install -g`, system-level edits,',
+    '  globally installed binaries — all gone after the next',
+    `  \`monoceros apply ${input.containerName}\`. What survives a rebuild:`,
+    '  the workspace (`projects/`), the data directories of services, and',
+    '  a small set of home subdirectories that tools use to keep their',
+    '  auth state.',
+    '- **Extension happens on the host.** When a language, service, or',
+    `  tool is missing, the user runs \`monoceros add-* ${input.containerName} …\``,
+    `  on their host and then \`monoceros apply ${input.containerName}\`.`,
+    '  You do not have access to the host and cannot run these commands',
+    '  yourself.',
+    "- **The container is isolated.** You cannot reach other containers'",
+    '  environment variables, the host filesystem, or the Docker daemon',
+    '  from inside. Services are reachable on the Docker network by',
+    '  service name (e.g. `postgres:5432`); anything else is out of',
+    '  reach.',
+  );
+  lines.push('');
 
   lines.push('## How to extend this container');
   lines.push('');
@@ -296,157 +356,25 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   lines.push('## Conventions and pitfalls');
   lines.push('');
   lines.push(
-    '- **Write everything that goes into the repo in English**: code',
-    '  comments, README, docs, commit messages, config comments. The repo',
-    '  outlives this conversation and gets readers who do not share the',
-    '  language you are chatting in, and a file with two languages in it is',
-    '  worse than either. Talk to the user in whatever language they use.',
-    '  If they want the project in another language, they will say so, and then',
-    '  that language applies to the whole repo, still not mixed per file.',
-    `- **Build everything under \`/workspaces/${input.containerName}/projects/\`.**`,
-    '  That is the project workspace — create new apps and scaffolding there',
-    '  (e.g. `projects/<app>/`), and `cd` into it before generating files. Do',
-    `  **not** put project files at the workspace root \`/workspaces/${input.containerName}\`:`,
-    '  it holds Monoceros-managed directories (`.devcontainer/`, `home/`,',
-    '  `data/`, `logs/`), not your code. Cloned repos already live at',
-    '  `projects/<repo>/` and are git repositories — commit normally.',
-    `- **Register new projects in \`${input.containerName}.code-workspace\`.** When`,
-    '  you scaffold a new project directly under `projects/` (not a clone of a',
-    '  repo already listed above), add it to the VS Code multi-root workspace so',
-    `  it shows up in the Explorer. Open \`/workspaces/${input.containerName}/${input.containerName}.code-workspace\``,
-    '  and append an entry to the `folders` array, for example',
-    '  `{ "path": "projects/<app>", "name": "<app>" }`.',
-    '  Add **exactly one** folder entry per directory directly under `projects/`:',
-    '  the top-level project directory itself, even when it contains several',
-    '  sub-projects (e.g. a `backend/` and a `frontend/`, or a multi-module',
-    '  layout). Do **not** register those sub-directories as separate roots — one',
-    '  root per top-level project keeps the Explorer readable as more projects',
-    '  land in the container. Cloned repos are added there automatically by the',
-    '  apply; projects you create yourself are not, so without this step VS Code',
-    '  (opened on the host from the workspace file) would not list them.',
-    '  Hand-added folder entries survive `monoceros apply`: the apply merges into',
-    '  the file, it does not overwrite your edits.',
-    '- You run as the `node` user. `sudo` is available but its effects do',
-    '  not persist across rebuilds.',
-    '- A bare `EXPOSE` directive has no effect on host reachability. Ports',
-    '  the user wants to hit from their browser require',
-    `  \`monoceros add-port ${input.containerName} <port>\` on the host.`,
-    '- If you suggest writing a `.env` file inside a project for local',
-    '  values, that is fine — it stays in the workspace. Do not write',
-    '  credentials into source-controlled files.',
-    `- \`monoceros tunnel ${input.containerName} <service>\` on the host opens a TCP`,
-    "  tunnel from the user's host to a service in this container. Useful",
-    '  to suggest when the user wants to connect a GUI client (psql,',
-    '  DataGrip) to one of the services.',
+    'The rules above in full - where to build, what the workspace root is,',
+    'how to register a project, what does not survive a rebuild:',
   );
   lines.push('');
-
-  // Always emitted, even with no ports declared: an agent building a server
-  // needs to know the launch-config mechanism exists (and that ports come from
-  // the host first). Gating this behind ports left port-less workbenches with
-  // no hint at all, so the agent had nothing to find.
-  const examplePort =
-    input.ports.length > 0 ? String(input.ports[0]) : '<port>';
-  const secondPort = input.ports.length > 1 ? String(input.ports[1]) : '<port>';
+  lines.push('@.monoceros/conventions.md');
+  lines.push('');
 
   lines.push('## Running a long-running server');
   lines.push('');
   lines.push(
-    'When you build something that serves on a port (a web app, an API),',
-    'it must keep running after this session ends. A plain `npm start` (or',
-    'any foreground start) dies the moment the user exits you or closes the',
-    input.ports.length > 0
-      ? `terminal, and then \`${input.containerName}.localhost${portSuffix}\` returns 502 Bad Gateway.`
-      : 'terminal, and the app stops responding.',
+    'Nearly every app in a workbench serves a port, so this is the normal',
+    'case, not a special one. The launch config, the `monoceros-ctl`',
+    'commands, and what the proxy needs from a dev server:',
   );
   lines.push('');
-  if (input.ports.length === 0) {
-    lines.push(
-      'This container exposes **no ports yet**, so a server has nothing to be',
-      'reached on. Before serving one, ask the user to add a port on the host',
-      'and re-apply - you cannot do this from inside:',
-    );
-    lines.push('');
-    lines.push('```');
-    lines.push(`monoceros add-port ${input.containerName} <port>`);
-    lines.push(`monoceros apply ${input.containerName}`);
-    lines.push('```');
-    lines.push('');
-  }
-  lines.push(
-    "Declare the server in the app's own launch config at",
-    '`projects/<app>/.monoceros/launch.json`, then start it with',
-    '`monoceros-ctl`. Add or update an entry whenever you set up a',
-    'long-running server. The file travels with the app, so the human can',
-    'restart it later without knowing your start command:',
-  );
-  lines.push('');
-  lines.push('```json');
-  lines.push('{');
-  lines.push('  "targets": [');
-  lines.push(
-    `    { "name": "api", "command": "<the API's start command>", "port": ${examplePort}, "default": true },`,
-  );
-  lines.push(
-    `    { "name": "web", "command": "<the web start command>", "port": ${secondPort}, "default": true }`,
-  );
-  lines.push('  ]');
-  lines.push('}');
-  lines.push('```');
-  lines.push('');
-  lines.push(
-    'Use whatever start command the project actually uses (`npm run dev`,',
-    '`./mvnw spring-boot:run`, `python manage.py runserver`, `go run .`, …).',
-    'Do not force a language-specific one. `<app>` is the path under',
-    '`projects/`; `port` must be a port exposed on the container.',
-  );
-  lines.push('');
-  lines.push('Start it, stop it, tail its log:');
-  lines.push('');
-  lines.push('```');
-  lines.push('monoceros-ctl start <app>');
-  lines.push('monoceros-ctl stop <app>');
-  lines.push('monoceros-ctl logs <app>');
-  lines.push('```');
-  lines.push('');
-  lines.push(
-    '`start` launches it detached (it survives your session) and, when a',
-    '`port` is set, waits until it actually listens before returning. The',
-    'human can do the same from the host with',
-    `\`monoceros start ${input.containerName} <app>\` / \`monoceros stop ${input.containerName} <app>\`,`,
-    `and follow output with \`monoceros logs ${input.containerName} <app>\`.`,
-  );
-  lines.push('');
-  lines.push(
-    'An app can declare several servers (e.g. an API and a web frontend).',
-    'Mark every server that should come up together with `"default": true`;',
-    '`monoceros-ctl start <app>` (no `--target`) then starts the whole default',
-    'set in the order the entries appear in the file, waiting for each',
-    "server's `port` to listen before starting the next - so order an entry",
-    'before anything that depends on it. If one fails to come up, the rest are',
-    'not started. Pass `--target <name>` to start or stop a single one.',
-  );
-  lines.push('');
-  lines.push(
-    'When you add a server in a later session, revisit the existing',
-    '`launch.json` instead of assuming its current `default` set is complete.',
-    'If the new server belongs to the app that should come up together (a',
-    'backend the frontend calls, a worker the app relies on), give it',
-    '`"default": true` too and place its entry before whatever depends on it.',
-    'A single pre-existing default entry does not mean later servers should',
-    'stay non-default - most servers that make up the running app belong in',
-    'the default set.',
-  );
-  lines.push('');
-  lines.push(
-    'The server must listen on `0.0.0.0` (not `127.0.0.1`) on the exposed',
-    'port, or Traefik cannot reach it. You only have the ports already',
-    'declared on the container; if you need another, ask the human to add it',
-    `on the host (\`monoceros add-port ${input.containerName} <port>\`) and re-apply.`,
-  );
+  lines.push('@.monoceros/servers.md');
   lines.push('');
 
-  if (hasDeployBriefing(input.services)) {
+  if (deploy) {
     lines.push('## Taking the services to a pipeline');
     lines.push('');
     lines.push(

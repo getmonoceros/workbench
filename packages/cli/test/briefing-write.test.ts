@@ -56,6 +56,53 @@ describe('writeBriefing', () => {
     );
     expect(commands).toContain('# monoceros — Command reference');
     expect(commands).toContain('### `monoceros apply <name>');
+
+    // The two long chapters are imported, so they have to exist on disk.
+    const conventions = await readFile(
+      path.join(dir, '.monoceros', 'conventions.md'),
+      'utf8',
+    );
+    expect(conventions).toContain('# Conventions and pitfalls');
+    const servers = await readFile(
+      path.join(dir, '.monoceros', 'servers.md'),
+      'utf8',
+    );
+    expect(servers).toContain('# Running a long-running server');
+    expect(agents).toContain('@.monoceros/conventions.md');
+    expect(agents).toContain('@.monoceros/servers.md');
+  });
+
+  it('states the line count the finished AGENTS.md really has, user notes included', async () => {
+    await writeBriefing({
+      targetDir: dir,
+      createOpts: { name: 'demo', languages: ['node'], services: [] },
+      components: new Map<string, Component>(),
+      subCommands,
+    });
+
+    const lineCountOf = (s: string): number =>
+      s.replace(/\n$/, '').split('\n').length;
+    const agentsPath = path.join(dir, 'AGENTS.md');
+    const first = await readFile(agentsPath, 'utf8');
+    expect(first).toContain(
+      `This file is ${lineCountOf(first)} lines long and imports 3 more:`,
+    );
+
+    // A user note outside the markers lengthens the file, and the next apply
+    // has to say so — an agent that read 100 lines of a file claiming more
+    // has a visible contradiction in front of it.
+    await writeFile(agentsPath, first + '\n- Note.\n- Another note.\n', 'utf8');
+    await writeBriefing({
+      targetDir: dir,
+      createOpts: { name: 'demo', languages: ['node'], services: [] },
+      components: new Map<string, Component>(),
+      subCommands,
+    });
+    const second = await readFile(agentsPath, 'utf8');
+    expect(lineCountOf(second)).toBeGreaterThan(lineCountOf(first));
+    expect(second).toContain(
+      `This file is ${lineCountOf(second)} lines long and imports 3 more:`,
+    );
   });
 
   it('writes .monoceros/deploy.md and imports it from AGENTS.md when a service has a pipeline shape', async () => {

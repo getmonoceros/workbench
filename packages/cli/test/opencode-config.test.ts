@@ -73,6 +73,8 @@ describe('writeOpencodeConfig', () => {
     expect(cfg.model).toBe('anthropic/claude-sonnet-4-6');
     expect(cfg.instructions).toEqual([
       `/workspaces/${NAME}/AGENTS.md`,
+      `/workspaces/${NAME}/.monoceros/conventions.md`,
+      `/workspaces/${NAME}/.monoceros/servers.md`,
       `/workspaces/${NAME}/.monoceros/commands.md`,
     ]);
     const provider = cfg.provider as Record<
@@ -92,6 +94,8 @@ describe('writeOpencodeConfig', () => {
     // Instructions are written regardless of auth mode.
     expect(cfg.instructions).toEqual([
       `/workspaces/${NAME}/AGENTS.md`,
+      `/workspaces/${NAME}/.monoceros/conventions.md`,
+      `/workspaces/${NAME}/.monoceros/servers.md`,
       `/workspaces/${NAME}/.monoceros/commands.md`,
     ]);
   });
@@ -126,6 +130,8 @@ describe('writeOpencodeConfig', () => {
     // Managed instructions come first, the user's survive and aren't duplicated.
     expect(cfg.instructions).toEqual([
       `/workspaces/${NAME}/AGENTS.md`,
+      `/workspaces/${NAME}/.monoceros/conventions.md`,
+      `/workspaces/${NAME}/.monoceros/servers.md`,
       `/workspaces/${NAME}/.monoceros/commands.md`,
       'docs/style.md',
     ]);
@@ -251,6 +257,8 @@ describe('writeOpencodeConfig', () => {
     const cfg = await read();
     expect(cfg.instructions).toEqual([
       `/workspaces/${NAME}/AGENTS.md`,
+      `/workspaces/${NAME}/.monoceros/conventions.md`,
+      `/workspaces/${NAME}/.monoceros/servers.md`,
       `/workspaces/${NAME}/.monoceros/commands.md`,
       `/workspaces/${NAME}/.monoceros/deploy.md`,
     ]);
@@ -268,6 +276,8 @@ describe('writeOpencodeConfig', () => {
     const cfg = await read();
     expect(cfg.instructions).toEqual([
       `/workspaces/${NAME}/AGENTS.md`,
+      `/workspaces/${NAME}/.monoceros/conventions.md`,
+      `/workspaces/${NAME}/.monoceros/servers.md`,
       `/workspaces/${NAME}/.monoceros/commands.md`,
     ]);
   });
