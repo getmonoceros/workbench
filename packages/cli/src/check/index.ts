@@ -70,7 +70,18 @@ export interface CheckOptions {
   home?: string;
 }
 
-/** Entries at the container root that Monoceros itself owns. */
+/**
+ * Entries at the container root that are not a misplaced project file:
+ * the directories and files Monoceros owns, plus the tool caches that
+ * legitimately land here.
+ *
+ * `.pnpm-store` is the second kind. pnpm keeps its store on the same
+ * filesystem as the project, and in a dev container `/workspaces/<name>`
+ * is the host bind while `$HOME` is the container's own layer — so pnpm
+ * creates the store at the mount root, in every Node workbench where it
+ * ran. Telling the builder to move it under `projects/` would be wrong
+ * advice, every single time.
+ */
 const OWNED_ROOT_ENTRIES = new Set([
   '.devcontainer',
   '.monoceros',
@@ -79,6 +90,7 @@ const OWNED_ROOT_ENTRIES = new Set([
   '.gitignore',
   '.git',
   '.DS_Store',
+  '.pnpm-store',
   'projects',
   'home',
   'data',
@@ -397,18 +409,44 @@ async function checkComposeFile(
         });
         continue;
       }
-      if (!actualValue.includes(`\${${variable}:?`)) {
-        out.push({
-          rule: 'compose-drift',
-          where: `${rel} → services.${key}`,
-          what: `\`${envKey}\` is \`${actualValue}\` instead of \`\${${variable}:?…}\`, so the pipeline starts with a value nobody set on purpose.`,
-          fix: `Write \`${envKey}: \${${variable}:?…}\` and provide the value as a pipeline secret.`,
-        });
-      }
+      // What the catalog block requires is a value that FAILS FAST, not
+      // one that carries the catalog's variable name: a project reading
+      // `${PG_PASSWORD:?…}` is doing exactly the right thing under its
+      // own name.
+      if (FAIL_FAST_VAR.test(actualValue)) continue;
+      // Two mistakes remain, and neither is about the name. A variable
+      // without `:?` starts the service on an empty value when the
+      // pipeline forgets the secret; a literal value ships the value in
+      // the repo, and there the catalog's variable is the better hint.
+      const own = /^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}$/.exec(
+        actualValue.trim(),
+      );
+      out.push(
+        own
+          ? {
+              rule: 'compose-drift',
+              where: `${rel} → services.${key}`,
+              what: `\`${envKey}\` reads \`${actualValue}\`, which has no \`:?\` — a forgotten pipeline secret starts the service on an empty value instead of failing.`,
+              fix: `Write \`${envKey}: \${${own[1]}:?…}\` (your own variable name is fine, the \`:?\` is what matters).`,
+            }
+          : {
+              rule: 'compose-drift',
+              where: `${rel} → services.${key}`,
+              what: `\`${envKey}\` is the literal \`${actualValue}\`, so the value lives in the repo instead of in a pipeline secret.`,
+              fix: `Write \`${envKey}: \${${variable}:?…}\` and provide the value as a pipeline secret.`,
+            },
+      );
     }
   }
   return out;
 }
+
+/**
+ * A compose value that refuses to start without its variable:
+ * `${VAR:?…}`. Any variable name counts — the requirement is the
+ * fail-fast, not the catalog's spelling.
+ */
+const FAIL_FAST_VAR = /\$\{[A-Za-z_][A-Za-z0-9_]*:\?/;
 
 /** Compose `environment:` as a map, from either the map or the `K=V` list form. */
 function envMap(raw: unknown): Record<string, string> {

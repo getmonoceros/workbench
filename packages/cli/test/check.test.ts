@@ -112,6 +112,51 @@ describe('runCheck', () => {
     ]);
   });
 
+  it('leaves the pnpm store at the root alone', async () => {
+    // pnpm puts its store on the project's filesystem, which in a dev
+    // container is the workspace mount, not $HOME. It shows up in every
+    // Node workbench and is nobody's mistake.
+    await scaffold();
+    await mkdir(path.join(containerRoot(), '.pnpm-store'), { recursive: true });
+
+    const report = await runCheck(NAME, { home });
+    expect(report.findings).toEqual([]);
+  });
+
+  it('keeps the project’s own variable name and asks only for the `:?`', async () => {
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nservices:\n  - name: postgres\n    image: postgres:18\n',
+    );
+    await workspace([
+      { path: '.', name: 'workspace' },
+      { path: 'projects/api', name: 'api' },
+    ]);
+    await file(
+      'projects/api/compose.yaml',
+      [
+        'services:',
+        '  postgres:',
+        '    image: postgres:18',
+        '    environment:',
+        '      POSTGRES_USER: ${PG_USER}',
+        '      POSTGRES_PASSWORD: ${PG_PASSWORD:?set it as a pipeline secret}',
+        '      POSTGRES_DB: ${PG_DB:?set it as a pipeline secret}',
+        '    healthcheck:',
+        '      test: [CMD, pg_isready]',
+        '',
+      ].join('\n'),
+    );
+
+    const report = await runCheck(NAME, { home });
+    const drift = report.findings.filter((f) => f.rule === 'compose-drift');
+    // `${PG_PASSWORD:?…}` and `${PG_DB:?…}` fail fast under their own
+    // names, so nothing to report there. Only the missing `:?` is left.
+    expect(drift).toHaveLength(1);
+    expect(drift[0]!.what).toContain('`POSTGRES_USER` reads `${PG_USER}`');
+    expect(drift[0]!.fix).toContain('POSTGRES_USER: ${PG_USER:?…}');
+    expect(drift[0]!.fix).toContain('your own variable name is fine');
+  });
+
   it('treats a service volume source directory at the root as owned', async () => {
     // A yml-declared bind source is legitimate even at the root.
     await scaffold(
@@ -153,10 +198,11 @@ describe('runCheck', () => {
     expect(what).toContain('postgres:18');
     // Missing healthcheck.
     expect(what).toContain('No healthcheck');
-    // A hardcoded value and a default where the block requires `${VAR:?…}`.
-    expect(what).toContain('`POSTGRES_USER` is `app`');
+    // A literal value ships a credential in the repo.
+    expect(what).toContain('`POSTGRES_USER` is the literal `app`');
+    // A default is a variable without `:?` — the name is not the problem.
     expect(what).toContain(
-      '`POSTGRES_PASSWORD` is `${POSTGRES_PASSWORD:-secret}`',
+      '`POSTGRES_PASSWORD` reads `${POSTGRES_PASSWORD:-secret}`, which has no `:?`',
     );
     // And the variable the file does not set at all.
     expect(what).toContain('Does not set `POSTGRES_DB`');
