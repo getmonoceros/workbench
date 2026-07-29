@@ -691,6 +691,7 @@ const ALL_COMMANDS = [
   'start',
   'stop',
   'status',
+  'check',
   'apply',
   'upgrade',
   'remove',
@@ -804,6 +805,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   status: {
     positionals: [containerName, appOrServiceCandidates],
   },
+  check: { positionals: [containerName] },
   'list-apps': { positionals: [containerName] },
   'add-language': {
     positionals: [containerName, languageValues],

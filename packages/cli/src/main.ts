@@ -7,6 +7,7 @@ import { addLanguageCommand } from './commands/add-language.js';
 import { addPortCommand } from './commands/add-port.js';
 import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
+import { checkCommand } from './commands/check.js';
 import { completionCommand } from './commands/completion.js';
 import { __bridgeCommand } from './commands/__bridge.js';
 import { __completeCommand } from './commands/__complete.js';
@@ -54,6 +55,7 @@ export const main = defineCommand({
     start: startCommand,
     stop: stopCommand,
     status: statusCommand,
+    check: checkCommand,
     apply: applyCommand,
     upgrade: upgradeCommand,
     remove: removeCommand,
