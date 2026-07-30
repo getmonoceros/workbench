@@ -7,7 +7,13 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
-import { relayDir, relayUrlFile, watchRelayUrl } from './browser-bridge.js';
+import {
+  relayClipboardFile,
+  relayDir,
+  relayUrlFile,
+  watchRelayUrl,
+} from './browser-bridge.js';
+import { watchClipboard } from './clipboard-bridge.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 import { isWorkspaceRunning, spawnDocker, type DockerExec } from './compose.js';
 
@@ -22,6 +28,9 @@ import { isWorkspaceRunning, spawnDocker, type DockerExec } from './compose.js';
  * runs the SAME relay watcher (`watchRelayUrl`) for the container's whole
  * lifetime, so the always-on relay `xdg-open` shipped in the runtime image
  * (>= 1.3.3, on PATH + `$BROWSER`) reaches the host browser from any session.
+ * It carries the clipboard relay (ADR 0041) on the same terms: the runtime's
+ * `xclip`/`xsel`/`wl-copy`/`pbcopy` shims (>= 1.7.0) reach the host clipboard
+ * from any session, attach sessions included.
  *
  * Lifecycle: spawned detached by `apply`/`start` once the container is up,
  * self-exits when the container stops (it polls `isWorkspaceRunning`), and is
@@ -124,6 +133,8 @@ export async function runBridgeDaemon(opts: {
   dockerExec?: DockerExec;
   /** Container-running poll interval (ms). Default 5000; tests shorten it. */
   lifecheckMs?: number;
+  /** Clipboard sink; defaults to the real host clipboard. Tests inject one. */
+  writeClipboard?: (text: string) => void;
 }): Promise<void> {
   const { root } = opts;
   const dockerExec = opts.dockerExec ?? spawnDocker;
@@ -135,12 +146,19 @@ export async function runBridgeDaemon(opts: {
   // (e.g. right after `apply`/`upgrade`). Only URLs written while we watch
   // should open. Mirrors what the per-session bridge does on startup.
   await fsp.rm(relayUrlFile(root), { force: true });
+  // Same for a leftover clipboard payload: nobody wants a copy from the last
+  // session landing on the host clipboard when the daemon comes up.
+  await fsp.rm(relayClipboardFile(root), { force: true });
   await fsp.writeFile(bridgePidFile(root), String(process.pid));
 
   const watcher = watchRelayUrl({
     urlFile: relayUrlFile(root),
     root,
     spawn: opts.spawn ?? spawnDevcontainer,
+  });
+  const clipboard = watchClipboard({
+    clipboardFile: relayClipboardFile(root),
+    ...(opts.writeClipboard ? { write: opts.writeClipboard } : {}),
   });
 
   await new Promise<void>((resolve) => {
@@ -171,5 +189,6 @@ export async function runBridgeDaemon(opts: {
   });
 
   watcher.dispose();
+  clipboard.dispose();
   await fsp.rm(bridgePidFile(root), { force: true });
 }

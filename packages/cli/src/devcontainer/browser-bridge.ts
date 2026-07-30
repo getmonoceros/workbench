@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import { existsSync, promises as fsp, readFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { isWslHost } from '../util/wsl.js';
+import { watchClipboard } from './clipboard-bridge.js';
 import type { DevcontainerSpawn } from './cli.js';
 
 // Dir under the container root (bind-mounted into the workspace) holding the
@@ -18,6 +20,14 @@ export function relayDir(root: string): string {
 /** Host-side url-file the relay `xdg-open` writes to (and the watcher reads). */
 export function relayUrlFile(root: string): string {
   return path.join(relayDir(root), 'url');
+}
+
+/**
+ * Host-side clipboard-file the container's relay `xclip`/`xsel`/`wl-copy`/
+ * `pbcopy` shims write to (and the clipboard watcher takes from). See ADR 0041.
+ */
+export function relayClipboardFile(root: string): string {
+  return path.join(relayDir(root), 'clipboard');
 }
 
 /**
@@ -100,21 +110,7 @@ export function wrapExec(
 /** Open a URL in the host's default browser. Best-effort, never throws. */
 function openInBrowser(url: string): void {
   const platform = process.platform;
-  // Under WSL the "host" is a headless Linux distro with no xdg-open / no
-  // browser (e.g. Monoceros's managed distro on Windows). Reach the Windows
-  // browser via interop instead.
-  const wsl =
-    platform === 'linux' &&
-    (!!process.env.WSL_DISTRO_NAME ||
-      (() => {
-        try {
-          return readFileSync('/proc/sys/kernel/osrelease', 'utf8')
-            .toLowerCase()
-            .includes('microsoft');
-        } catch {
-          return false;
-        }
-      })());
+  const wsl = isWslHost(platform);
   // Use PowerShell's Start-Process with a single-quoted URL: `cmd /c start`
   // treats `&` as a command separator and truncates OAuth URLs at the first
   // query param. Works on native Windows and via WSL interop alike.
@@ -152,6 +148,11 @@ function openInBrowser(url: string): void {
  * and replay the callback into the container, so the sign-in completes without
  * anyone copying or pasting a code.
  *
+ * The same session also gets the clipboard relay (ADR 0041), which runs over
+ * the same relay dir in the other direction: the container's `xclip`/`xsel`/
+ * `wl-copy`/`pbcopy` shims drop what a tool copied into `clipboard`, and we
+ * put it on the host clipboard.
+ *
  * The caller prepends `relayDirInContainer` to the inner command's PATH and
  * calls `dispose()` when the session ends.
  */
@@ -163,8 +164,12 @@ export async function startBrowserBridge(opts: {
   const dir = relayDir(opts.root);
   const relayScript = path.join(dir, 'xdg-open');
   const urlFile = relayUrlFile(opts.root);
+  const clipboardFile = relayClipboardFile(opts.root);
   await fsp.mkdir(dir, { recursive: true });
   await fsp.rm(urlFile, { force: true });
+  // Drop a payload left over from an earlier session before watching, so we
+  // don't hijack the host clipboard with something copied minutes ago.
+  await fsp.rm(clipboardFile, { force: true });
   await fsp.writeFile(
     relayScript,
     '#!/bin/sh\nprintf \'%s\\n\' "$1" > "$(dirname "$0")/url"\nexit 0\n',
@@ -177,11 +182,13 @@ export async function startBrowserBridge(opts: {
     root: opts.root,
     spawn: opts.spawn,
   });
+  const clipboard = watchClipboard({ clipboardFile });
 
   return {
     relayDirInContainer: `/workspaces/${opts.name}/${RELAY_DIRNAME}`,
     async dispose(): Promise<void> {
       watcher.dispose();
+      clipboard.dispose();
       await fsp.rm(dir, { recursive: true, force: true });
     },
   };
