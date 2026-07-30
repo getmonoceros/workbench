@@ -27,18 +27,25 @@ function tempDir(): string {
   return mkdtempSync(path.join(tmpdir(), 'monoceros-clipboard-'));
 }
 
-/** Run the runtime relay shim under a given tool name, with stdin. */
+/**
+ * Run the runtime relay shim under a given tool name. Omit `stdin` for a
+ * paste-mode invocation: like the real `xclip -o`, the shim exits without
+ * reading, so writing into it would race us into EPIPE — and no caller pipes
+ * into a paste anyway.
+ */
 function runRelay(
   dir: string,
   name: string,
   args: string[],
-  stdin: string,
+  stdin?: string,
 ): string {
   const link = path.join(dir, name);
   copyFileSync(RELAY_SCRIPT, link);
   chmodSync(link, 0o755);
   return execFileSync(link, args, {
-    input: stdin,
+    ...(stdin === undefined
+      ? { stdio: ['ignore', 'pipe', 'pipe'] as const }
+      : { input: stdin }),
     encoding: 'utf8',
     env: { ...process.env, MONOCEROS_BRIDGE_DIR: path.join(dir, 'bridge') },
   });
@@ -178,7 +185,7 @@ describe('runtime relay shim', () => {
       ['xclip', ['-o']],
     ] as const) {
       const dir = tempDir();
-      const out = runRelay(dir, name, [...args], 'not a copy');
+      const out = runRelay(dir, name, [...args]);
       expect(out).toBe('');
       expect(existsSync(path.join(dir, 'bridge', 'clipboard'))).toBe(false);
     }
