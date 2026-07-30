@@ -1458,6 +1458,122 @@ describe('add-*/remove-* against the yml', () => {
     expect(dyn).toContain('http://demo:6006');
   });
 
+  // #74: the route above is worthless if the container is not on the
+  // monoceros-proxy network — Traefik cannot resolve `demo` and every
+  // request answers 502. Network membership is a creation-time docker
+  // arg, and a container applied without ports never got it, so
+  // add-port has to join it live or its "no apply needed" promise is
+  // false for the first port.
+  const NETWORKS_FORMAT = '{{json .NetworkSettings.Networks}}';
+
+  /** Records every docker call; answers the two the attach path needs. */
+  function recordingProxyDocker(networksJson: string) {
+    const calls: string[][] = [];
+    const exec = async (args: string[]) => {
+      calls.push(args);
+      if (args.includes(NETWORKS_FORMAT)) {
+        return { stdout: networksJson, stderr: '', exitCode: 0 };
+      }
+      return { stdout: 'true\n', stderr: '', exitCode: 0 };
+    };
+    return { exec, calls };
+  }
+
+  const lookupFinding = (id: string) => async () => ({
+    stdout: `${id}\n`,
+    stderr: '',
+    exitCode: 0,
+  });
+
+  it('runAddPort joins a running bridge-only container to the proxy network', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const docker = recordingProxyDocker('{"bridge":{"Aliases":[]}}');
+    await runAddPort({
+      ...baseOpts,
+      proxyDocker: docker.exec,
+      containerLookupDocker: lookupFinding('c0ffee123456'),
+      name: 'demo',
+      ports: [3000],
+      monocerosHome: home,
+    });
+    expect(docker.calls).toContainEqual([
+      'network',
+      'connect',
+      '--alias',
+      'demo',
+      'monoceros-proxy',
+      'c0ffee123456',
+    ]);
+  });
+
+  it('runAddPort reconciles the network even when the port is already declared', async () => {
+    // The state `check` points at: yml already lists the port, so the
+    // mutation is a no-change — but the container still is not on the
+    // network. Re-running add-port has to fix it, otherwise the advice
+    // "run add-port again" is worthless.
+    await writeYml(
+      'demo',
+      'schemaVersion: 1\nname: demo\nrouting:\n  ports:\n    - 3000\n',
+    );
+    const docker = recordingProxyDocker('{"bridge":{}}');
+    const result = await runAddPort({
+      ...baseOpts,
+      proxyDocker: docker.exec,
+      containerLookupDocker: lookupFinding('c0ffee123456'),
+      name: 'demo',
+      ports: [3000],
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('no-change');
+    expect(docker.calls).toContainEqual([
+      'network',
+      'connect',
+      '--alias',
+      'demo',
+      'monoceros-proxy',
+      'c0ffee123456',
+    ]);
+  });
+
+  it('runAddPort does not re-connect a container that already carries the network', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const docker = recordingProxyDocker(
+      '{"monoceros-proxy":{"Aliases":["demo"]}}',
+    );
+    await runAddPort({
+      ...baseOpts,
+      proxyDocker: docker.exec,
+      containerLookupDocker: lookupFinding('c0ffee123456'),
+      name: 'demo',
+      ports: [3000],
+      monocerosHome: home,
+    });
+    expect(
+      docker.calls.some((c) => c[0] === 'network' && c[1] === 'connect'),
+    ).toBe(false);
+  });
+
+  it('runAddPort writes the route and stays quiet when no container is running', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const docker = recordingProxyDocker('{"bridge":{}}');
+    const result = await runAddPort({
+      ...portOpts, // containerLookupDocker reports nothing running
+      proxyDocker: docker.exec,
+      name: 'demo',
+      ports: [3000],
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    expect(
+      docker.calls.some((c) => c[0] === 'network' && c[1] === 'connect'),
+    ).toBe(false);
+    const dyn = await fs.readFile(
+      path.join(home, 'traefik', 'dynamic', 'demo.yml'),
+      'utf8',
+    );
+    expect(dyn).toContain('http://demo:3000');
+  });
+
   it('runAddPort / runRemovePort skip the "apply to rebuild" reminder (ports are live), other mutators keep it', async () => {
     await writeYml('live', 'schemaVersion: 1\nname: live\n');
     const infos: string[] = [];

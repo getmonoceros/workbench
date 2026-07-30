@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   PROXY_CONTAINER_NAME,
   PROXY_NETWORK_NAME,
+  attachToProxyNetwork,
   ensureProxy,
+  isAttachedToProxyNetwork,
   maybeStopProxy,
   proxyDynamicDir,
   type DockerExec,
@@ -282,5 +284,89 @@ describe('maybeStopProxy', () => {
     });
     expect(logs.length).toBeGreaterThan(0);
     expect(logs[0]).toContain('active endpoints');
+  });
+});
+
+describe('attachToProxyNetwork (#74)', () => {
+  it('connects a container that is only on the default bridge, with the alias', async () => {
+    const docker = fakeDocker((args) => {
+      if (args[0] === 'inspect') return ok('{"bridge":{"Aliases":[]}}');
+      return ok();
+    });
+    const outcome = await attachToProxyNetwork('abc123', 'oct', {
+      docker: docker.exec,
+    });
+    expect(outcome).toBe('attached');
+    expect(docker.calls[1]).toEqual([
+      'network',
+      'connect',
+      '--alias',
+      'oct',
+      PROXY_NETWORK_NAME,
+      'abc123',
+    ]);
+  });
+
+  it('is a no-op when the container already carries the proxy network', async () => {
+    const docker = fakeDocker(() =>
+      ok(`{"${PROXY_NETWORK_NAME}":{"Aliases":["oct"]}}`),
+    );
+    const outcome = await attachToProxyNetwork('abc123', 'oct', {
+      docker: docker.exec,
+    });
+    expect(outcome).toBe('already-attached');
+    expect(docker.calls).toHaveLength(1); // inspected, never connected
+  });
+
+  it('treats a concurrent attach (docker "already exists") as success', async () => {
+    const docker = fakeDocker((args) => {
+      if (args[0] === 'inspect') return ok('{"bridge":{}}');
+      return fail(
+        'Error response from daemon: endpoint already exists in network monoceros-proxy',
+      );
+    });
+    await expect(
+      attachToProxyNetwork('abc123', 'oct', { docker: docker.exec }),
+    ).resolves.toBe('already-attached');
+  });
+
+  it('throws with the docker message when the connect genuinely fails', async () => {
+    const docker = fakeDocker((args) => {
+      if (args[0] === 'inspect') return ok('{"bridge":{}}');
+      return fail('Error response from daemon: no such container');
+    });
+    await expect(
+      attachToProxyNetwork('abc123', 'oct', { docker: docker.exec }),
+    ).rejects.toThrow('no such container');
+  });
+
+  it('still attempts the connect when inspect output is unparseable', async () => {
+    const docker = fakeDocker((args) => {
+      if (args[0] === 'inspect') return ok('<not json>');
+      return ok();
+    });
+    await expect(
+      attachToProxyNetwork('abc123', 'oct', { docker: docker.exec }),
+    ).resolves.toBe('attached');
+  });
+});
+
+describe('isAttachedToProxyNetwork (#74)', () => {
+  it('true when the proxy network is present, false when it is not', async () => {
+    const on = fakeDocker(() => ok(`{"${PROXY_NETWORK_NAME}":{}}`));
+    const off = fakeDocker(() => ok('{"bridge":{}}'));
+    await expect(
+      isAttachedToProxyNetwork('abc', { docker: on.exec }),
+    ).resolves.toBe(true);
+    await expect(
+      isAttachedToProxyNetwork('abc', { docker: off.exec }),
+    ).resolves.toBe(false);
+  });
+
+  it('undefined — not false — when docker cannot answer', async () => {
+    const gone = fakeDocker(() => fail('No such object'));
+    await expect(
+      isAttachedToProxyNetwork('abc', { docker: gone.exec }),
+    ).resolves.toBeUndefined();
   });
 });

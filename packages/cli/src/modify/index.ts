@@ -46,6 +46,7 @@ import {
 } from '../config/schema.js';
 import { loadComponentCatalog } from '../init/components.js';
 import {
+  attachToProxyNetwork,
   ensureProxy,
   maybeStopProxy,
   type DockerExec as ProxyDockerExec,
@@ -211,11 +212,18 @@ export interface AddPortInput extends ModifyOptions {
   asDefault?: boolean;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
+  /**
+   * Override the docker exec used to locate the running container for
+   * the proxy-network attach (#74). Tests inject a fake.
+   */
+  containerLookupDocker?: DockerLookupExec;
 }
 export interface RemovePortInput extends ModifyOptions {
   ports: number[];
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
+  /** Unused here; `syncPortsToProxy` is shared with add-port (#74). */
+  containerLookupDocker?: DockerLookupExec;
 }
 
 export type ModifyResult =
@@ -750,8 +758,16 @@ export async function runAddPort(input: AddPortInput): Promise<ModifyResult> {
   // entries that pre-existed this `add-port` call), not just the
   // delta. Proxy failures surface as warns but never roll back the
   // yml write. See ADR 0007.
+  //
+  // The sync runs even when the yml did NOT change (#74). Ports are live
+  // state, and re-running add-port for an already-declared port is the
+  // natural way to reconcile it: the dynamic config is rewritten, a
+  // stopped proxy comes up, and a container that is not on the proxy
+  // network joins it. Without this, the one command a builder reaches
+  // for against a 502 is the one command that does nothing. Only the
+  // briefing stays tied to an actual yml change.
+  await syncPortsToProxy(input);
   if (result.status === 'updated') {
-    await syncPortsToProxy(input);
     await refreshBriefingFromYml(
       input.name,
       input.monocerosHome ?? defaultMonocerosHome(),
@@ -1140,6 +1156,30 @@ async function syncPortsToProxy(
         ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
         logger: { info: (m) => logger.info(m), warn: (m) => logger.warn(m) },
       });
+      // A container applied without ports sits on the default bridge:
+      // `--network`/`--network-alias` are creation-time args, so the
+      // route we just wrote would point at an unresolvable backend and
+      // answer 502. Join it live instead of sending the builder through
+      // an apply the docs say they don't need (#74). No running
+      // container → nothing to do; the next apply creates it attached.
+      const containerId = await findRunningContainerByLocalFolder(
+        containerDir(input.name, home),
+        {
+          ...(input.containerLookupDocker
+            ? { docker: input.containerLookupDocker }
+            : {}),
+        },
+      );
+      if (containerId) {
+        const outcome = await attachToProxyNetwork(containerId, input.name, {
+          ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
+        });
+        if (outcome === 'attached') {
+          logger.info(
+            `Joined the running container to the monoceros-proxy network so Traefik can reach it.`,
+          );
+        }
+      }
       const urls = proxyUrlsFor(input.name, allPorts, hostPort);
       const lines = urls.map((u) => {
         const tag = u.isDefault ? ' (default)' : '';

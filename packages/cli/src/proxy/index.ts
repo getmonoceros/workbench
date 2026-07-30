@@ -213,6 +213,102 @@ export async function ensureProxy(opts: ProxyOptions = {}): Promise<void> {
   );
 }
 
+/** What `attachToProxyNetwork` had to do — for the caller's message. */
+export type ProxyAttachOutcome = 'attached' | 'already-attached';
+
+/**
+ * Join a RUNNING container to the `monoceros-proxy` network under a
+ * stable DNS alias, so Traefik's `http://<alias>:<port>` backend
+ * resolves.
+ *
+ * Why this exists as a live operation: `create/scaffold.ts` passes
+ * `--network` + `--network-alias` only when the yml declares at least
+ * one port at apply time, and network membership is fixed at container
+ * creation. A container applied WITHOUT ports therefore sits on the
+ * default bridge, and `add-port` — which writes the route hot and
+ * promises no apply (ADR 0007) — would leave Traefik pointing at an
+ * unresolvable backend: 502 Bad Gateway, silently. `docker network
+ * connect` fixes exactly that without a recreate, which keeps the
+ * documented promise true for the first port too. See #74.
+ *
+ * Idempotent: inspects the container's networks first and treats
+ * docker's "already exists in network" as success, so a concurrent
+ * attach doesn't turn into an error.
+ */
+export async function attachToProxyNetwork(
+  containerId: string,
+  alias: string,
+  opts: ProxyOptions = {},
+): Promise<ProxyAttachOutcome> {
+  const docker = opts.docker ?? realDocker;
+  const inspect = await docker([
+    'inspect',
+    '--format',
+    '{{json .NetworkSettings.Networks}}',
+    containerId,
+  ]);
+  if (inspect.exitCode === 0) {
+    try {
+      const networks = JSON.parse(inspect.stdout.trim()) as Record<
+        string,
+        unknown
+      >;
+      if (Object.hasOwn(networks, PROXY_NETWORK_NAME)) {
+        return 'already-attached';
+      }
+    } catch {
+      // Unparseable inspect output: fall through to the connect and let
+      // docker be the authority on whether it was needed.
+    }
+  }
+  const connect = await docker([
+    'network',
+    'connect',
+    '--alias',
+    alias,
+    PROXY_NETWORK_NAME,
+    containerId,
+  ]);
+  if (connect.exitCode !== 0) {
+    const message = connect.stderr.trim();
+    if (/already exists in network/i.test(message)) return 'already-attached';
+    throw new Error(
+      `Could not attach the container to the ${PROXY_NETWORK_NAME} network: ${message || `exit ${connect.exitCode}`}`,
+    );
+  }
+  return 'attached';
+}
+
+/**
+ * Is a running container joined to the `monoceros-proxy` network?
+ * Read-only counterpart to `attachToProxyNetwork`, used by `check` to
+ * report "route exists, backend unreachable" without changing
+ * anything. `undefined` means undecidable (container gone, daemon
+ * unreachable, unparseable output) — a check must not guess.
+ */
+export async function isAttachedToProxyNetwork(
+  containerId: string,
+  opts: ProxyOptions = {},
+): Promise<boolean | undefined> {
+  const docker = opts.docker ?? realDocker;
+  const inspect = await docker([
+    'inspect',
+    '--format',
+    '{{json .NetworkSettings.Networks}}',
+    containerId,
+  ]);
+  if (inspect.exitCode !== 0) return undefined;
+  try {
+    const networks = JSON.parse(inspect.stdout.trim()) as Record<
+      string,
+      unknown
+    >;
+    return Object.hasOwn(networks, PROXY_NETWORK_NAME);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Stop and drop the singleton + network IFF no other container is
  * still attached. Safe to call from any lifecycle exit (`stop`,

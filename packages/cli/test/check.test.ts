@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   renderCheckReport,
   runCheck,
+  type CheckOptions,
   type CheckRule,
   type Finding,
 } from '../src/check/index.js';
@@ -30,6 +31,24 @@ async function file(rel: string, body: string): Promise<void> {
 
 async function workspace(folders: { path: string; name?: string }[]) {
   await file(`${NAME}.code-workspace`, JSON.stringify({ folders }, null, 2));
+}
+
+/**
+ * Every runCheck call goes through this so the proxy-network rule (#74)
+ * never reaches the host docker daemon: the lookup reports "nothing
+ * running", which is the rule's silent branch. Tests that DO exercise the
+ * rule pass their own stubs.
+ */
+function checkOpts(extra: Partial<CheckOptions> = {}): CheckOptions {
+  return {
+    home,
+    containerLookupDocker: async () => ({
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
+    }),
+    ...extra,
+  };
 }
 
 /** A briefing file the way apply writes it: body inside the marker pair. */
@@ -63,7 +82,7 @@ afterEach(async () => {
 describe('runCheck', () => {
   it('errors when the container is not materialized', async () => {
     await writeYml('schemaVersion: 1\nname: acme\n');
-    await expect(runCheck(NAME, { home })).rejects.toThrow(
+    await expect(runCheck(NAME, checkOpts())).rejects.toThrow(
       /No materialized container/,
     );
   });
@@ -76,7 +95,7 @@ describe('runCheck', () => {
       { path: 'projects/web', name: 'web' },
     ]);
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(report.findings).toEqual([]);
     expect(report.scanned).toEqual({
       projects: 1,
@@ -91,7 +110,7 @@ describe('runCheck', () => {
       recursive: true,
     });
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(rulesOf(report.findings)).toEqual(['workspace-registration']);
     const finding = report.findings[0]!;
     expect(finding.where).toBe('projects/shop');
@@ -109,7 +128,7 @@ describe('runCheck', () => {
     await file('package.json', '{"name":"oops"}');
     await mkdir(path.join(containerRoot(), 'src'), { recursive: true });
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(rulesOf(report.findings)).toEqual([
       'workspace-root',
       'workspace-root',
@@ -127,7 +146,7 @@ describe('runCheck', () => {
     await scaffold();
     await mkdir(path.join(containerRoot(), '.pnpm-store'), { recursive: true });
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(report.findings).toEqual([]);
   });
 
@@ -155,7 +174,7 @@ describe('runCheck', () => {
       ].join('\n'),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     const drift = report.findings.filter((f) => f.rule === 'compose-drift');
     // `${PG_PASSWORD:?…}` and `${PG_DB:?…}` fail fast under their own
     // names, so nothing to report there. Only the missing `:?` is left.
@@ -172,7 +191,7 @@ describe('runCheck', () => {
     );
     await file('seed/realm.json', '{}');
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(report.findings).toEqual([]);
   });
 
@@ -197,7 +216,7 @@ describe('runCheck', () => {
       ].join('\n'),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(report.scanned.composeFiles).toBe(1);
     const drift = report.findings.filter((f) => f.rule === 'compose-drift');
     const what = drift.map((f) => f.what).join('\n');
@@ -243,7 +262,7 @@ describe('runCheck', () => {
       ].join('\n'),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(report.findings.filter((f) => f.rule === 'compose-drift')).toEqual(
       [],
     );
@@ -260,7 +279,7 @@ describe('runCheck', () => {
       'services:\n  api:\n    image: acme/api:1\n  db:\n    image: postgres:15\n',
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(report.findings.filter((f) => f.rule === 'compose-drift')).toEqual(
       [],
     );
@@ -289,7 +308,7 @@ describe('runCheck', () => {
       }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     const launch = report.findings.filter((f) => f.rule === 'launch-config');
     expect(launch.map((f) => f.where)).toEqual([
       'projects/web/.monoceros/launch.json → admin',
@@ -318,7 +337,7 @@ describe('runCheck', () => {
       }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     const launch = report.findings.filter((f) => f.rule === 'launch-config');
     expect(launch.map((f) => f.where)).toEqual([
       'projects/api/.monoceros/launch.json → api',
@@ -344,7 +363,7 @@ describe('runCheck', () => {
       }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(report.findings.filter((f) => f.rule === 'launch-config')).toEqual(
       [],
     );
@@ -369,7 +388,7 @@ describe('runCheck', () => {
       JSON.stringify({ scripts: { build: 'tsc' } }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     const launch = report.findings.filter((f) => f.rule === 'launch-config');
     expect(launch).toHaveLength(1);
     expect(launch[0]!.where).toBe('projects/web/package.json');
@@ -400,7 +419,7 @@ describe('runCheck', () => {
       }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     const launch = report.findings.filter((f) => f.rule === 'launch-config');
     expect(launch).toHaveLength(2);
     expect(launch[0]!.what).toContain(
@@ -448,7 +467,7 @@ describe('runCheck', () => {
       }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(
       report.findings.filter(
         (f) => f.rule === 'launch-config' && f.what.includes('script'),
@@ -483,7 +502,7 @@ describe('runCheck', () => {
       }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     const launch = report.findings.filter((f) => f.rule === 'launch-config');
     expect(launch).toHaveLength(1);
     expect(launch[0]!.what).toContain('projects/web/ui/package.json');
@@ -504,7 +523,7 @@ describe('runCheck', () => {
       JSON.stringify({ realm: 'shop', clients: [] }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     const found = report.findings.filter((f) => f.rule === 'service-config');
     expect(found).toHaveLength(1);
     expect(found[0]!.where).toBe('projects/shop/keycloak/realm.json');
@@ -529,7 +548,7 @@ describe('runCheck', () => {
       JSON.stringify({ realm: 'shop' }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(report.findings.filter((f) => f.rule === 'service-config')).toEqual(
       [],
     );
@@ -557,7 +576,7 @@ describe('runCheck', () => {
       }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     const ports = report.findings.filter((f) => f.rule === 'ports');
     expect(ports.map((f) => f.where)).toEqual(['port 3000', 'port 9999']);
     expect(ports[0]!.what).toContain('api → api');
@@ -571,7 +590,7 @@ describe('runCheck', () => {
     await scaffold(
       'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nrouting:\n  ports:\n    - 3000\n',
     );
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     expect(report.findings.filter((f) => f.rule === 'ports')).toEqual([]);
   });
 
@@ -580,7 +599,7 @@ describe('runCheck', () => {
     await briefing('CLAUDE.md', '@AGENTS.md\n');
     await file('AGENTS.md', '# my own notes, markers deleted\n');
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     const markers = report.findings.filter(
       (f) => f.rule === 'briefing-markers',
     );
@@ -611,7 +630,7 @@ describe('runCheck', () => {
       }),
     );
 
-    const report = await runCheck(NAME, { home });
+    const report = await runCheck(NAME, checkOpts());
     const launch = report.findings.filter((f) => f.rule === 'launch-config');
     expect(launch.map((f) => f.where)).toEqual([
       'projects/shop/backend/manage.py',
@@ -664,5 +683,119 @@ describe('renderCheckReport', () => {
     expect(out).toContain('→ Add it.');
     expect(out).toContain('2 findings in 1 project, 1 compose file');
     expect(out).toContain('Nothing was changed.');
+  });
+});
+
+/**
+ * #74: the container declares ports, Traefik has the route, but the
+ * container is not on the monoceros-proxy network — so every request
+ * answers 502 and nothing in the workbench says why. The rule needs a
+ * RUNNING container to decide, and stays silent otherwise.
+ */
+describe('runCheck: proxy-network attachment (#74)', () => {
+  const NETWORKS_FORMAT = '{{json .NetworkSettings.Networks}}';
+
+  beforeEach(async () => {
+    home = await mkdtemp(path.join(tmpdir(), 'monoceros-check-proxy-'));
+    await mkdir(containerRoot(), { recursive: true });
+    await workspace([]);
+  });
+
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  const running = (id: string) => async () => ({
+    stdout: `${id}\n`,
+    stderr: '',
+    exitCode: 0,
+  });
+
+  const networks = (json: string) => async (args: string[]) =>
+    args.includes(NETWORKS_FORMAT)
+      ? { stdout: json, stderr: '', exitCode: 0 }
+      : { stdout: '', stderr: '', exitCode: 0 };
+
+  it('reports the 502 cause when a running container is not on the network', async () => {
+    await writeYml(
+      'schemaVersion: 1\nname: acme\nrouting:\n  ports:\n    - 3000\n',
+    );
+    const report = await runCheck(
+      NAME,
+      checkOpts({
+        containerLookupDocker: running('c0ffee123456'),
+        proxyDocker: networks('{"bridge":{}}'),
+      }),
+    );
+    const finding = report.findings.find(
+      (f) => f.where === `container ${NAME}`,
+    );
+    expect(finding).toBeDefined();
+    expect(finding?.what).toContain('502');
+    expect(finding?.fix).toContain(`monoceros add-port ${NAME} 3000`);
+  });
+
+  it('says nothing when the container is on the network', async () => {
+    await writeYml(
+      'schemaVersion: 1\nname: acme\nrouting:\n  ports:\n    - 3000\n',
+    );
+    const report = await runCheck(
+      NAME,
+      checkOpts({
+        containerLookupDocker: running('c0ffee123456'),
+        proxyDocker: networks('{"monoceros-proxy":{"Aliases":["acme"]}}'),
+      }),
+    );
+    expect(report.findings.some((f) => f.where === `container ${NAME}`)).toBe(
+      false,
+    );
+  });
+
+  it('says nothing when no container is running — the next apply attaches it', async () => {
+    await writeYml(
+      'schemaVersion: 1\nname: acme\nrouting:\n  ports:\n    - 3000\n',
+    );
+    const report = await runCheck(
+      NAME,
+      checkOpts({ proxyDocker: networks('{"bridge":{}}') }),
+    );
+    expect(report.findings.some((f) => f.where === `container ${NAME}`)).toBe(
+      false,
+    );
+  });
+
+  it('never asks docker at all when the yml declares no ports', async () => {
+    await writeYml('schemaVersion: 1\nname: acme\n');
+    let asked = false;
+    await runCheck(
+      NAME,
+      checkOpts({
+        containerLookupDocker: async () => {
+          asked = true;
+          return { stdout: '', stderr: '', exitCode: 0 };
+        },
+      }),
+    );
+    expect(asked).toBe(false);
+  });
+
+  it('stays silent when docker cannot answer which networks the container has', async () => {
+    await writeYml(
+      'schemaVersion: 1\nname: acme\nrouting:\n  ports:\n    - 3000\n',
+    );
+    const report = await runCheck(
+      NAME,
+      checkOpts({
+        containerLookupDocker: running('c0ffee123456'),
+        proxyDocker: async () => ({
+          stdout: '',
+          stderr: 'No such object',
+          exitCode: 1,
+        }),
+      }),
+    );
+    expect(report.findings.some((f) => f.where === `container ${NAME}`)).toBe(
+      false,
+    );
   });
 });

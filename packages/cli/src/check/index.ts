@@ -15,6 +15,14 @@ import {
   runtimeSupportsReadyTimeout,
 } from '../create/catalog.js';
 import { RELAY_DIRNAME } from '../devcontainer/browser-bridge.js';
+import {
+  findRunningContainerByLocalFolder,
+  type DockerLookupExec,
+} from '../devcontainer/locate-running.js';
+import {
+  isAttachedToProxyNetwork,
+  type DockerExec as ProxyDockerExec,
+} from '../proxy/index.js';
 import { MARKER_BEGIN, MARKER_END } from '../briefing/markers.js';
 import type { ResolvedService } from '../create/types.js';
 import type { Palette } from '../util/format.js';
@@ -47,8 +55,9 @@ import type { Palette } from '../util/format.js';
  *     does not define.
  *   - `service-config` — a config file written for a service where the
  *     descriptor says it belongs, that no volume in the yml mounts.
- *   - `ports` — two targets on one port, or an exposed port nothing
- *     declares.
+ *   - `ports` — two targets on one port, an exposed port nothing
+ *     declares, or a running container that is not on the
+ *     `monoceros-proxy` network, so every route answers 502 (#74).
  *   - `briefing-markers` — a briefing file whose marker pair is gone, so
  *     the next apply rewrites it whole and drops the builder's notes.
  *
@@ -88,6 +97,12 @@ export interface CheckReport {
 
 export interface CheckOptions {
   home?: string;
+  /**
+   * Docker injection points for the proxy-network rule (#74). Tests
+   * inject fakes; production uses the real docker cli.
+   */
+  containerLookupDocker?: DockerLookupExec;
+  proxyDocker?: ProxyDockerExec;
 }
 
 /**
@@ -181,6 +196,9 @@ export async function runCheck(
   );
   findings.push(...(await checkUndeclaredServers(root, projects, apps)));
   findings.push(...(await checkPorts(name, apps, declaredPorts, opts.home)));
+  findings.push(
+    ...(await checkProxyAttachment(name, root, declaredPorts, opts)),
+  );
   findings.push(...(await checkBriefingMarkers(root)));
 
   return {
@@ -841,6 +859,54 @@ const NON_SCRIPT_SUBCOMMANDS = new Set([
   'rebuild',
   'licenses',
 ]);
+
+/**
+ * Route exists, backend unreachable: the container declares ports and
+ * is running, but is not joined to the `monoceros-proxy` network, so
+ * Traefik cannot resolve `http://<name>:<port>` and every request
+ * answers 502 Bad Gateway.
+ *
+ * How a workbench gets there: network membership is a creation-time
+ * argument (`create/scaffold.ts` passes `--network` only when the yml
+ * declares a port), so a container applied without ports keeps the
+ * default bridge even after `add-port` wrote the route. Fixed in
+ * add-port since #74; this rule catches the containers that predate
+ * the fix, and any future path that writes a route without attaching.
+ *
+ * Silent when the container is not running (nothing to decide, and the
+ * next apply attaches it) or when docker cannot answer.
+ */
+async function checkProxyAttachment(
+  name: string,
+  root: string,
+  declaredPorts: readonly number[],
+  opts: CheckOptions,
+): Promise<Finding[]> {
+  if (declaredPorts.length === 0) return [];
+  let containerId: string | null;
+  try {
+    containerId = await findRunningContainerByLocalFolder(root, {
+      ...(opts.containerLookupDocker
+        ? { docker: opts.containerLookupDocker }
+        : {}),
+    });
+  } catch {
+    return [];
+  }
+  if (!containerId) return [];
+  const attached = await isAttachedToProxyNetwork(containerId, {
+    ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
+  });
+  if (attached !== false) return [];
+  return [
+    {
+      rule: 'ports',
+      where: `container ${name}`,
+      what: `Running, but not on the monoceros-proxy network, so Traefik cannot reach it and every route answers 502.`,
+      fix: `Run \`monoceros add-port ${name} ${declaredPorts[0]}\` again (it now joins the network), or \`monoceros apply ${name}\`.`,
+    },
+  ];
+}
 
 /**
  * Ports across the whole workbench, which no single launch config can
