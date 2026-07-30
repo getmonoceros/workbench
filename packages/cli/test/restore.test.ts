@@ -6,6 +6,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
+import { promises as fsPromises } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -201,5 +202,135 @@ describe('runRestore', () => {
     } finally {
       await rm(bk, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * A backup written by `remove` can carry files the unprivileged CLI cannot
+ * read back: 0600 SSH host keys, a postgres cluster at 0700 owned by uid
+ * 999. `remove` copies them in as root through a throw-away container;
+ * without the same fallback on the way out, restore dies on its own
+ * backup. It surfaced on a Linux CI runner - on macOS the plain copy
+ * works, because Docker Desktop does not pass the ownership to the host.
+ */
+describe('runRestore: root-owned files in the backup', () => {
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(path.join(tmpdir(), 'monoceros-restore-eacces-'));
+    await mkdir(path.join(home, 'container-configs'), { recursive: true });
+    await mkdir(path.join(home, 'container'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  /** A backup dir on disk, without going through remove. */
+  async function backupOnly(name: string): Promise<string> {
+    const backup = path.join(home, 'container-backups', `${name}-ts`);
+    await mkdir(path.join(backup, 'container', '.monoceros'), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(backup, `${name}.yml`),
+      `schemaVersion: 1\nname: ${name}\n`,
+    );
+    await writeFile(
+      path.join(backup, 'container', '.monoceros', 'marker'),
+      'x',
+    );
+    return backup;
+  }
+
+  /**
+   * Make the next `fs.cp` fail the way an unreadable 0600 key does, and put
+   * the real implementation back straight away so the fallback path itself
+   * is not crippled. The returned cleanup covers the case where the failure
+   * never fired.
+   */
+  function failNextCp(code: 'EACCES' | 'EPERM'): () => void {
+    const original = fsPromises.cp;
+    const patched: typeof fsPromises.cp = () => {
+      fsPromises.cp = original;
+      const err = new Error(
+        `${code}: permission denied, copyfile 'ssh_host_ecdsa_key'`,
+      ) as NodeJS.ErrnoException;
+      err.code = code;
+      return Promise.reject(err);
+    };
+    fsPromises.cp = patched;
+    return () => {
+      fsPromises.cp = original;
+    };
+  }
+
+  it('falls back to a throw-away container when the copy hits EACCES', async () => {
+    const backup = await backupOnly('acme');
+    const calls: string[][] = [];
+    const restoreCp = failNextCp('EACCES');
+    try {
+      const result = await runRestore({
+        backupPath: backup,
+        monocerosHome: home,
+        logger: silentLogger,
+        dockerExec: async (args: string[]) => {
+          calls.push(args);
+          return { exitCode: 0, stdout: '', stderr: '' };
+        },
+      });
+      expect(result.name).toBe('acme');
+    } finally {
+      restoreCp();
+    }
+    expect(calls).toHaveLength(1);
+    const args = calls[0]!;
+    expect(args[0]).toBe('run');
+    expect(args).toContain('alpine:3.21');
+    expect(args.join(' ')).toContain('cp -a /src/. /dst/');
+    expect(args.join(' ')).toContain(
+      `${path.join(backup, 'container')}:/src:ro`,
+    );
+    expect(args.join(' ')).toContain(
+      `${path.join(home, 'container', 'acme')}:/dst`,
+    );
+  });
+
+  it('reports the docker failure instead of claiming a restore that did not happen', async () => {
+    const backup = await backupOnly('acme');
+    const restoreCp = failNextCp('EPERM');
+    try {
+      await expect(
+        runRestore({
+          backupPath: backup,
+          monocerosHome: home,
+          logger: silentLogger,
+          dockerExec: async () => ({
+            exitCode: 1,
+            stdout: '',
+            stderr: 'no such image',
+          }),
+        }),
+      ).rejects.toThrow(
+        /docker-based restore .* failed \(exit 1: no such image/,
+      );
+    } finally {
+      restoreCp();
+    }
+  });
+
+  it('never reaches for docker on an ordinary backup', async () => {
+    const backup = await backupOnly('acme');
+    let asked = false;
+    await runRestore({
+      backupPath: backup,
+      monocerosHome: home,
+      logger: silentLogger,
+      dockerExec: async () => {
+        asked = true;
+        return { exitCode: 0, stdout: '', stderr: '' };
+      },
+    });
+    expect(asked).toBe(false);
   });
 });

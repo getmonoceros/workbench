@@ -9,6 +9,7 @@ import {
   monocerosHome as defaultMonocerosHome,
   prettyPath,
 } from '../config/paths.js';
+import { spawnDocker, type DockerExec } from '../devcontainer/compose.js';
 
 /**
  * `monoceros restore <backup-path>` — re-instantiate the host-side
@@ -32,15 +33,27 @@ import {
  *
  * Restore does NOT recreate the docker objects: builder runs
  * `monoceros apply <name>` afterwards. That keeps restore a
- * pure filesystem operation, safe to dry-run, with no side-
- * effects on the docker daemon.
+ * filesystem operation, safe to dry-run, with no side-effects on the
+ * docker daemon - with one exception it cannot avoid: when the backup
+ * carries root-owned files (SSH host keys, a postgres cluster), the
+ * copy needs root, so it falls back to a throw-away alpine container
+ * the same way `remove` does when it writes them.
  */
+
+/** Same throw-away image `remove` uses for its own root-owned copies. */
+const RESTORE_COPY_IMAGE = 'alpine:3.21';
 
 export interface RunRestoreOptions {
   /** Path to a `<MONOCEROS_HOME>/container-backups/<name>-<ts>/` dir. */
   backupPath: string;
   /** Override of the user-data home. Tests inject a tmpdir. */
   monocerosHome?: string;
+  /**
+   * Docker invocation for the root-owned-files fallback only. Never
+   * touched on the happy path, so a restore of an ordinary backup still
+   * needs no daemon. Tests inject a fake.
+   */
+  dockerExec?: DockerExec;
   logger?: {
     info: (msg: string) => void;
     success: (msg: string) => void;
@@ -66,6 +79,7 @@ export async function runRestore(
     info: (msg) => consola.info(msg),
     success: (msg) => consola.success(msg),
   };
+  const dockerExec = opts.dockerExec ?? spawnDocker;
 
   const backup = path.resolve(opts.backupPath);
   if (!existsSync(backup)) {
@@ -124,7 +138,43 @@ export async function runRestore(
     await fs.copyFile(envInBackup, containerEnvPath(name, home));
   }
   if (hasContainer) {
-    await fs.cp(containerInBackup, destContainer, { recursive: true });
+    try {
+      await fs.cp(containerInBackup, destContainer, { recursive: true });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EACCES' && code !== 'EPERM') throw err;
+      // The mirror of what `remove` does when it writes the backup: a
+      // container leaves files the unprivileged monoceros process cannot
+      // read - the 0600 SSH host keys, a postgres cluster at 0700 owned by
+      // uid 999 - and `remove` copies them into the backup as root via a
+      // throw-away container, preserving owner and mode. Without the same
+      // fallback here, a backup the CLI wrote itself cannot be read back:
+      // restore died on `.monoceros/ssh/host/ssh_host_ecdsa_key`. Only
+      // Linux hits it; Docker Desktop's VirtioFS does not pass the
+      // ownership through to the host, so on macOS the plain copy works.
+      logger.info(
+        `[restore] hit ${code} on root-owned files; copying via a throw-away alpine container…`,
+      );
+      await fs.mkdir(destContainer, { recursive: true });
+      const { exitCode, stderr } = await dockerExec([
+        'run',
+        '--rm',
+        '-v',
+        `${containerInBackup}:/src:ro`,
+        '-v',
+        `${destContainer}:/dst`,
+        RESTORE_COPY_IMAGE,
+        'sh',
+        '-c',
+        'cp -a /src/. /dst/',
+      ]);
+      if (exitCode !== 0) {
+        throw new Error(
+          `docker-based restore of ${containerInBackup} failed (exit ${exitCode}` +
+            `${stderr.trim() ? `: ${stderr.trim()}` : ''}).`,
+        );
+      }
+    }
   }
 
   logger.success(`Restored '${name}' from ${prettyPath(backup)}.`);
