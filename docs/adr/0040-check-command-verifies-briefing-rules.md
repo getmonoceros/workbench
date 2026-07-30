@@ -32,8 +32,25 @@ trace on disk. Seven rules:
   literal keeps the credential in the repo. Only service keys that name a
   catalog service are compared.
 - `launch-config` - a project that serves something but declares no
-  `.monoceros/launch.json`, a target on a port the container does not expose,
-  or a start command that pins the server to `127.0.0.1`.
+  `.monoceros/launch.json`, a target on a port the container does not expose, a
+  start command that pins the server to `127.0.0.1`, and a `readyTimeout` the
+  pinned runtime is too old to honour (dropped in silence, so the target keeps
+  the 20 seconds it was written to escape). Plus the two things that decide
+  whether a target can start at all: a `cwd` that does not exist under the app
+  directory, and a package script the project does not define - the `npm run dev`
+  where the script is called `start`, which otherwise surfaces as an npm error
+  out of the container on the first `monoceros start`. The finding lists the
+  scripts the package does have.
+
+  That last one only fires where the answer is unambiguous. Three things produce
+  nothing: a compound command (`cd ui && npm run dev`), a workspace flag, where
+  the script lives in that workspace's package rather than this one, and any
+  toolchain outside npm, pnpm and yarn. The workspace case is not
+  hypothetical: it is what the first real workbench this ran against used, and a
+  naive lookup would have reported a script that is defined exactly where it
+  should be. Leading environment assignments (`PORT=3000 npm start`) are skipped,
+  and the `package.json` is resolved under the target's `cwd`, not the app root.
+
 - `service-config` - a config file written for a service at the location the
   descriptor's `exampleVolumes` prescribe (`projects/<app>/keycloak/*.json`)
   that no volume in the yml mounts. This one is structural, not a slip: the

@@ -42,8 +42,15 @@ import type { Palette } from '../util/format.js';
  *     healthcheck, a required variable turned optional).
  *   - `launch-config` — a server without a launch-config entry, an entry
  *     on a port the container does not expose, one that pins the server to
- *     `127.0.0.1`, or a `readyTimeout` the pinned runtime is too old to
- *     honour.
+ *     `127.0.0.1`, a `readyTimeout` the pinned runtime is too old to
+ *     honour, a `cwd` that does not exist, or a package script the project
+ *     does not define.
+ *   - `service-config` — a config file written for a service where the
+ *     descriptor says it belongs, that no volume in the yml mounts.
+ *   - `ports` — two targets on one port, or an exposed port nothing
+ *     declares.
+ *   - `briefing-markers` — a briefing file whose marker pair is gone, so
+ *     the next apply rewrites it whole and drops the builder's notes.
  *
  * The language rule and "do not write service configuration from memory"
  * cannot be verified mechanically — that is why they sit in the first
