@@ -8,6 +8,10 @@ import {
   runBridgeDaemon,
   runningBridgePid,
 } from '../src/devcontainer/bridge-daemon.js';
+import {
+  relayDir,
+  startBrowserBridge,
+} from '../src/devcontainer/browser-bridge.js';
 
 describe('runtimeSupportsBrowserBridge', () => {
   it('gates the always-on bridge on runtime 1.3.3', () => {
@@ -89,5 +93,49 @@ describe('runBridgeDaemon lifecycle', () => {
     });
 
     expect(existsSync(urlFile)).toBe(false);
+  });
+});
+
+describe('per-session bridge cleanup', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await fsp.mkdtemp(path.join(os.tmpdir(), 'mono-bridge-'));
+  });
+  afterEach(async () => {
+    await fsp.rm(root, { recursive: true, force: true });
+  });
+
+  const noSpawn = async (): Promise<number> => 0;
+
+  it('leaves a running daemon its pid file when the session ends', async () => {
+    // The daemon outlives the session and keeps its pid file in the same relay
+    // dir. Wiping the dir on dispose would strand it: `apply`/`start` would
+    // spawn a second daemon and `remove` could no longer stop the first.
+    await fsp.mkdir(relayDir(root), { recursive: true });
+    await fsp.writeFile(bridgePidFile(root), String(process.pid));
+
+    const bridge = await startBrowserBridge({
+      name: 'acme',
+      root,
+      spawn: noSpawn,
+    });
+    await bridge.dispose();
+
+    expect(runningBridgePid(root)).toBe(process.pid);
+    // Everything the session itself put there is gone.
+    expect(await fsp.readdir(relayDir(root))).toEqual(['daemon.pid']);
+  });
+
+  it('takes the relay dir with it when no daemon is running', async () => {
+    const bridge = await startBrowserBridge({
+      name: 'acme',
+      root,
+      spawn: noSpawn,
+    });
+    expect(existsSync(path.join(relayDir(root), 'xdg-open'))).toBe(true);
+
+    await bridge.dispose();
+    expect(existsSync(relayDir(root))).toBe(false);
   });
 });

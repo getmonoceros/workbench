@@ -189,7 +189,19 @@ export async function startBrowserBridge(opts: {
     async dispose(): Promise<void> {
       watcher.dispose();
       clipboard.dispose();
-      await fsp.rm(dir, { recursive: true, force: true });
+      // Remove what the SESSION owns, not the directory. The always-on bridge
+      // daemon keeps its pid file in here and outlives us by design — wiping
+      // the dir would delete the pid of a live process, so `apply`/`start`
+      // would spawn a second daemon and `remove` could no longer stop the
+      // first. Drop the dir itself only when nothing else is left in it.
+      await Promise.all(
+        [relayScript, urlFile, clipboardFile].map((file) =>
+          fsp.rm(file, { force: true }),
+        ),
+      );
+      await fsp.rmdir(dir).catch(() => {
+        /* still in use (daemon pid file) — leave it standing */
+      });
     },
   };
 }
