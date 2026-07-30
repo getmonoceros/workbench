@@ -67,7 +67,7 @@ export function generateServersMd(
   lines.push('{');
   lines.push('  "targets": [');
   lines.push(
-    `    { "name": "api", "command": "<the API's start command>", "port": ${examplePort}, "default": true },`,
+    `    { "name": "api", "command": "<the API's start command>", "port": ${examplePort}, "readyTimeout": 120, "default": true },`,
   );
   lines.push(
     `    { "name": "web", "command": "<the web start command>", "port": ${secondPort}, "default": true }`,
@@ -83,6 +83,18 @@ export function generateServersMd(
     '`projects/`; `port` must be a port exposed on the container.',
   );
   lines.push('');
+  lines.push(
+    '`readyTimeout` is how many seconds the server may take to start',
+    'listening. Set it whenever the start command BUILDS before it serves - a',
+    'Go, Maven, Gradle or Rust build, or a script that compiles first - because',
+    'the default is 20 seconds and a cold build outruns that. The server is then',
+    'reported failed while it is still perfectly fine, and the targets after it',
+    'in the default set are skipped. 120 is a sound starting point for a',
+    'compiled server, 300 for a large project building from an empty cache.',
+    'Leave the field out for anything that serves right away (`npm run dev`, a',
+    'Python dev server) - the 20 seconds are plenty there.',
+  );
+  lines.push('');
   lines.push('Start it, stop it, tail its log:');
   lines.push('');
   lines.push('```');
@@ -90,13 +102,6 @@ export function generateServersMd(
   lines.push('monoceros-ctl stop <app>');
   lines.push('monoceros-ctl logs <app>');
   lines.push('```');
-  lines.push('');
-  lines.push(
-    'If the start command builds before it serves (Go, Maven, Gradle, Rust),',
-    'add `"readyTimeout": <seconds>` to that entry. The default window is 20',
-    'seconds; a cold build outruns it, and the server is then reported failed',
-    'while it is still coming up.',
-  );
   lines.push('');
   lines.push(
     '`start` launches it detached (it survives your session) and, when a',

@@ -30,7 +30,7 @@ describe('.monoceros/servers.md generator', () => {
     // The example is a TWO-target default set (api + web), both default, so
     // the multi-default case reads as the norm, not the exception.
     expect(md).toContain(
-      '{ "name": "api", "command": "<the API\'s start command>", "port": 3000, "default": true },',
+      '{ "name": "api", "command": "<the API\'s start command>", "port": 3000, "readyTimeout": 120, "default": true },',
     );
     expect(md).toContain(
       '{ "name": "web", "command": "<the web start command>", "port": 5173, "default": true }',
@@ -45,6 +45,29 @@ describe('.monoceros/servers.md generator', () => {
     expect(md).toContain('When you add a server in a later session');
     expect(md).toContain(
       'does not mean later servers should\nstay non-default',
+    );
+  });
+
+  it('teaches readyTimeout in the example, with the rule right below it', () => {
+    const md = generateServersMd({
+      containerName: 'demo',
+      ports: [3000, 5173],
+    });
+    // In the EXAMPLE, not only in prose: an agent copies the example, so a
+    // field that appears nowhere in it is a field that never gets written.
+    expect(md).toContain('"readyTimeout": 120');
+    // Explained where the example is, above the start/stop commands - the
+    // agent writes the file before it reads how to start it.
+    const explained = md.indexOf('`readyTimeout` is how many seconds');
+    const startCommands = md.indexOf('monoceros-ctl start <app>');
+    expect(explained).toBeGreaterThan(-1);
+    expect(explained).toBeLessThan(startCommands);
+    // A number to reach for, and when to leave the field out entirely.
+    expect(md).toContain('120 is a sound starting point');
+    expect(md).toContain('Leave the field out for anything that serves right');
+    // Only the building target carries it; the web target stays clean.
+    expect(md).toContain(
+      '{ "name": "web", "command": "<the web start command>", "port": 5173, "default": true }',
     );
   });
 

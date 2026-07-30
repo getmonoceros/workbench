@@ -3,7 +3,11 @@ import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { readConfig } from '../config/io.js';
 import { containerConfigPath, containerDir } from '../config/paths.js';
-import { listApps, readLaunchConfig } from '../config/launch-config.js';
+import {
+  listApps,
+  readLaunchConfig,
+  type LaunchTarget,
+} from '../config/launch-config.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
 import {
   curatedServiceDeploy,
@@ -684,10 +688,152 @@ async function checkLaunchConfigs(
           fix: `Run \`monoceros upgrade ${name}\` to move to a runtime that honours it.`,
         });
       }
+      out.push(...(await checkTargetCommand(name, app, rel, target, home)));
     }
   }
   return out;
 }
+
+/**
+ * Can this target even start? Two things are decidable without knowing a
+ * single framework:
+ *
+ *   - a `cwd` that does not exist;
+ *   - a package-manager script the project does not define. The agent
+ *     writes `npm run dev` where the script is called `start` often
+ *     enough, and today that surfaces as an npm error out of the
+ *     container on the first `monoceros start`.
+ *
+ * Everything else is left alone. `./mvnw spring-boot:run`, `python
+ * manage.py runserver`, `go run .` would each need their own tooling
+ * knowledge, and a wrong finding costs more than a missing one.
+ */
+async function checkTargetCommand(
+  name: string,
+  app: string,
+  rel: string,
+  target: LaunchTarget,
+  home?: string,
+): Promise<Finding[]> {
+  const appDir = path.join(containerDir(name, home), 'projects', app);
+  const out: Finding[] = [];
+
+  const cwd = target.cwd?.trim();
+  if (cwd && cwd !== '.') {
+    try {
+      const stat = await fs.stat(path.join(appDir, cwd));
+      if (!stat.isDirectory()) throw new Error('not a directory');
+    } catch {
+      out.push({
+        rule: 'launch-config',
+        where: `${rel} → ${target.name}`,
+        what: `\`cwd: ${cwd}\` does not exist under projects/${app}/, so the target cannot start.`,
+        fix: 'Point `cwd` at a directory that exists, relative to the app directory.',
+      });
+      return out; // no point looking for a package.json under a missing cwd
+    }
+  }
+
+  const script = packageScriptOf(target.command);
+  if (!script) return out;
+  const pkgPath = path.join(appDir, cwd ?? '.', 'package.json');
+  let scripts: Record<string, unknown> | undefined;
+  try {
+    const parsed: unknown = JSON.parse(await fs.readFile(pkgPath, 'utf8'));
+    const raw =
+      parsed && typeof parsed === 'object'
+        ? (parsed as { scripts?: unknown }).scripts
+        : undefined;
+    if (raw && typeof raw === 'object') {
+      scripts = raw as Record<string, unknown>;
+    }
+  } catch {
+    return out; // no package.json to check against
+  }
+  if (scripts && typeof scripts[script] !== 'string') {
+    const have = Object.keys(scripts);
+    out.push({
+      rule: 'launch-config',
+      where: `${rel} → ${target.name}`,
+      what: `Runs the \`${script}\` script, which ${path.posix.join(`projects/${app}`, cwd ?? '.', 'package.json')} does not define.`,
+      fix:
+        have.length > 0
+          ? `Use one of its scripts (${have.join(', ')}), or add \`${script}\` to the package.`
+          : `Add a \`${script}\` script to the package.`,
+    });
+  }
+  return out;
+}
+
+/**
+ * The script name a package-manager command runs, or `undefined` when the
+ * command is not one we can resolve. Deliberately gives up on anything
+ * ambiguous:
+ *
+ *   - a compound command (`cd web && npm run dev`) - which package.json
+ *     would even apply;
+ *   - a workspace flag (`npm run dev --workspace @acme/backend`) - the
+ *     script lives in that workspace's package, not this one, and
+ *     resolving the workspace globs to find it is more guessing than the
+ *     finding is worth;
+ *   - a package-manager subcommand that is not a script (`npm ci`,
+ *     `pnpm dlx …`).
+ *
+ * Leading environment assignments (`PORT=3000 npm run dev`) are skipped,
+ * since they say nothing about the script.
+ */
+function packageScriptOf(command: string): string | undefined {
+  if (/[&;|]/.test(command)) return undefined;
+  if (/(^|\s)(--workspaces?|-w)(\s|=)/.test(command)) return undefined;
+  const tokens = command.trim().split(/\s+/);
+  while (tokens.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0]!)) {
+    tokens.shift();
+  }
+  const manager = tokens.shift();
+  if (!manager || !['npm', 'pnpm', 'yarn'].includes(manager)) return undefined;
+  let candidate = tokens.shift();
+  if (candidate === 'run') candidate = tokens.shift();
+  if (!candidate || candidate.startsWith('-')) return undefined;
+  if (NON_SCRIPT_SUBCOMMANDS.has(candidate)) return undefined;
+  return candidate;
+}
+
+/**
+ * Package-manager subcommands that are not scripts. `start` and `test`
+ * are deliberately absent: both run the same-named script when the
+ * package defines one, and that is exactly what we are checking.
+ */
+const NON_SCRIPT_SUBCOMMANDS = new Set([
+  'install',
+  'i',
+  'ci',
+  'add',
+  'remove',
+  'rm',
+  'update',
+  'up',
+  'exec',
+  'dlx',
+  'x',
+  'create',
+  'init',
+  'link',
+  'unlink',
+  'publish',
+  'pack',
+  'audit',
+  'why',
+  'list',
+  'ls',
+  'outdated',
+  'config',
+  'cache',
+  'store',
+  'dedupe',
+  'prune',
+  'rebuild',
+  'licenses',
+]);
 
 /**
  * Ports across the whole workbench, which no single launch config can

@@ -377,6 +377,118 @@ describe('runCheck', () => {
     expect(launch[0]!.fix).toContain('projects/web/.monoceros/launch.json');
   });
 
+  it('flags a package script the project does not define, and a cwd that is not there', async () => {
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nrouting:\n  ports:\n    - 3000\n    - 5173\n',
+    );
+    await workspace([
+      { path: '.', name: 'workspace' },
+      { path: 'projects/web', name: 'web' },
+    ]);
+    await file(
+      'projects/web/package.json',
+      JSON.stringify({ scripts: { start: 'vite', build: 'vite build' } }),
+    );
+    await file(
+      'projects/web/.monoceros/launch.json',
+      JSON.stringify({
+        targets: [
+          // `dev` does not exist here; the package calls it `start`.
+          { name: 'web', command: 'npm run dev', port: 3000 },
+          { name: 'ghost', command: 'npm run serve', port: 5173, cwd: 'ui' },
+        ],
+      }),
+    );
+
+    const report = await runCheck(NAME, { home });
+    const launch = report.findings.filter((f) => f.rule === 'launch-config');
+    expect(launch).toHaveLength(2);
+    expect(launch[0]!.what).toContain(
+      'Runs the `dev` script, which projects/web/package.json does not define',
+    );
+    // The fix names what the package actually offers.
+    expect(launch[0]!.fix).toContain('start, build');
+    // A missing cwd is reported on its own, and stops there: looking for a
+    // package.json underneath it would only add noise.
+    expect(launch[1]!.what).toContain('`cwd: ui` does not exist');
+    expect(launch[1]!.what).not.toContain('serve');
+  });
+
+  it('leaves alone what it cannot resolve: workspaces, compound commands, other toolchains', async () => {
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nrouting:\n  ports:\n    - 3000\n',
+    );
+    await workspace([
+      { path: '.', name: 'workspace' },
+      { path: 'projects/web', name: 'web' },
+    ]);
+    // Only `dev:api` here, so a naive lookup of `dev` would fire on the
+    // workspace command - which runs `dev` in the workspace package, not
+    // in this one.
+    await file(
+      'projects/web/package.json',
+      JSON.stringify({
+        scripts: { 'dev:api': 'x' },
+        workspaces: ['packages/*'],
+      }),
+    );
+    await file(
+      'projects/web/.monoceros/launch.json',
+      JSON.stringify({
+        targets: [
+          {
+            name: 'api',
+            command: 'npm run dev --workspace @acme/backend',
+            port: 3000,
+          },
+          { name: 'chained', command: 'cd ui && npm run dev', port: 3000 },
+          { name: 'maven', command: './mvnw spring-boot:run', port: 3000 },
+          { name: 'installer', command: 'npm ci', port: 3000 },
+        ],
+      }),
+    );
+
+    const report = await runCheck(NAME, { home });
+    expect(
+      report.findings.filter(
+        (f) => f.rule === 'launch-config' && f.what.includes('script'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('resolves the package.json under the target cwd', async () => {
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nrouting:\n  ports:\n    - 3000\n',
+    );
+    await workspace([
+      { path: '.', name: 'workspace' },
+      { path: 'projects/web', name: 'web' },
+    ]);
+    // The root package has `dev`, the one under `ui/` does not: the target
+    // runs in `ui/`, so that is the package that decides.
+    await file(
+      'projects/web/package.json',
+      JSON.stringify({ scripts: { dev: 'vite' } }),
+    );
+    await file(
+      'projects/web/ui/package.json',
+      JSON.stringify({ scripts: { start: 'vite' } }),
+    );
+    await file(
+      'projects/web/.monoceros/launch.json',
+      JSON.stringify({
+        targets: [
+          { name: 'ui', command: 'npm run dev', port: 3000, cwd: 'ui' },
+        ],
+      }),
+    );
+
+    const report = await runCheck(NAME, { home });
+    const launch = report.findings.filter((f) => f.rule === 'launch-config');
+    expect(launch).toHaveLength(1);
+    expect(launch[0]!.what).toContain('projects/web/ui/package.json');
+  });
+
   it('flags a service config file at the standard location that nothing mounts', async () => {
     // The trap the briefing warns about: the agent can write the realm
     // from inside, the bind that feeds it lives in the yml on the host.
