@@ -106,6 +106,13 @@ const MIN_RUNTIME_FOR_APP_RESTART = '1.6.0';
 // state. Same image as the `reconcile` work; frozen at the introducing version.
 const MIN_RUNTIME_FOR_APP_STATUS = '1.6.0';
 
+// Minimum runtime whose `monoceros-ctl start` honours a target's
+// `readyTimeout`. Below this the field is silently ignored and every target
+// gets the built-in 20s window - which is what `monoceros check` warns about,
+// because a compiled server then keeps being reported as failed while it is
+// still building. Frozen at the introducing version.
+const MIN_RUNTIME_FOR_READY_TIMEOUT = '1.6.2';
+
 /**
  * Resolve a pinned `runtimeVersion` to a concrete image ref.
  * `MONOCEROS_BASE_IMAGE_OVERRIDE` (dev) always wins. With no pin we fall
@@ -211,6 +218,18 @@ export function runtimeSupportsAppStatus(version?: string): boolean {
   return compareRuntimeVersions(version, MIN_RUNTIME_FOR_APP_STATUS) >= 0;
 }
 
+/**
+ * Whether the pinned runtime's `monoceros-ctl start` honours a target's
+ * `readyTimeout`. Below this the runner does not know the field and every
+ * target keeps the built-in 20s readiness window. False when unpinned too -
+ * support is then unknowable from the yml, so a caller that turns this into a
+ * warning must skip the unpinned case rather than cry wolf.
+ */
+export function runtimeSupportsReadyTimeout(version?: string): boolean {
+  if (!version) return false;
+  return compareRuntimeVersions(version, MIN_RUNTIME_FOR_READY_TIMEOUT) >= 0;
+}
+
 export interface LanguageEntry {
   id: string;
   feature: string;
@@ -243,6 +262,20 @@ export interface LanguageEntry {
    * (VS Code / Codium) list-both rationale.
    */
   vscodeExtensions?: readonly string[];
+  /**
+   * Home-relative dirs persisted per container across a rebuild (what the
+   * PROJECT installs, e.g. Go's `GOBIN`). See descriptor.ts for why this is
+   * per container while `sharedCachePaths` is machine-wide.
+   */
+  persistentHomePaths?: readonly string[];
+  /**
+   * Absolute in-container dirs backed by a machine-wide volume shared by every
+   * workbench with this language — compiler caches, downloaded and compiled
+   * once. See descriptor.ts.
+   */
+  sharedCachePaths?: readonly string[];
+  /** Literal env injected into the workspace container for this language. */
+  workspaceEnv?: Readonly<Record<string, string>>;
 }
 
 // ─── Descriptor-derived catalogs (ADR 0020) ──────────────────────
@@ -316,6 +349,17 @@ export const LANGUAGE_CATALOG: Readonly<Record<string, LanguageEntry>> =
             : {}),
           ...(c.descriptor.language!.vscodeExtensions
             ? { vscodeExtensions: c.descriptor.language!.vscodeExtensions }
+            : {}),
+          ...(c.descriptor.language!.persistentHomePaths
+            ? {
+                persistentHomePaths: c.descriptor.language!.persistentHomePaths,
+              }
+            : {}),
+          ...(c.descriptor.language!.sharedCachePaths
+            ? { sharedCachePaths: c.descriptor.language!.sharedCachePaths }
+            : {}),
+          ...(c.descriptor.language!.workspaceEnv
+            ? { workspaceEnv: c.descriptor.language!.workspaceEnv }
             : {}),
         };
         return [key, entry];

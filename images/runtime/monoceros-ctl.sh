@@ -30,6 +30,13 @@ die() {
   exit 1
 }
 
+# Default readiness window, in seconds: how long `start` waits for a target to
+# bind its port before calling it failed. Fine for interpreted stacks, too short
+# for a compiled one whose command builds first (a cold Go or Maven build easily
+# outruns it, and the target is then reported failed while it is still coming
+# up). A target overrides it with `readyTimeout` in its launch config.
+READY_TIMEOUT_DEFAULT=20
+
 # The workspace root is the sole directory under /workspaces. The script is
 # generic (one image, many containers), so it discovers the name rather than
 # hard-coding it.
@@ -174,10 +181,27 @@ start_one() {
     return 0
   fi
 
-  local command cwd port workdir
+  local command cwd port workdir ready_timeout ready_timeout_type
   command="$(field "$app" "$target" '.command')"
   cwd="$(field "$app" "$target" '.cwd')"
   port="$(field "$app" "$target" '.port')"
+  # `jq -r` renders the string "20" and the number 20 identically, so the type
+  # is read separately - the host-side parser only accepts a number, and the
+  # two must not disagree about the same file.
+  ready_timeout="$(field "$app" "$target" '.readyTimeout')"
+  ready_timeout_type="$(field "$app" "$target" '(.readyTimeout | type)')"
+  if [ -z "$ready_timeout" ]; then
+    ready_timeout="$READY_TIMEOUT_DEFAULT"
+  elif [ "$ready_timeout_type" != number ]; then
+    die "invalid readyTimeout for $app/$target: '$ready_timeout' is a $ready_timeout_type, expected a number of seconds"
+  fi
+  case "$ready_timeout" in
+    *[!0-9]*)
+      die "invalid readyTimeout for $app/$target: '$ready_timeout' (expected whole seconds)"
+      ;;
+  esac
+  [ "$ready_timeout" -gt 0 ] ||
+    die "invalid readyTimeout for $app/$target: must be greater than 0"
   workdir="$WS/projects/$app"
   [ -n "$cwd" ] && workdir="$workdir/$cwd"
   [ -d "$workdir" ] || die "working directory does not exist: $workdir"
@@ -233,8 +257,9 @@ start_one() {
 
   # Readiness probe: wait until something actually listens on the port, so
   # "started" means "up" - not "spawned and maybe crashed". Bail if the
-  # process group dies first, or if nothing binds within the window.
-  for i in $(seq 1 100); do
+  # process group dies first, or if nothing binds within the window. Probed
+  # every 0.2s, hence five ticks per declared second.
+  for i in $(seq 1 $((ready_timeout * 5))); do
     if ! pid_alive "$pidf"; then
       target_line "${C_RED}✗${C_RESET}" "$target" \
         "exited before binding port $port - see $rellog"
@@ -248,8 +273,15 @@ start_one() {
     fi
     sleep 0.2
   done
-  target_line "${C_RED}✗${C_RESET}" "$target" \
-    "no listener on port $port after 20s - see $rellog"
+  # Out of time. The process may well still be alive and mid-build, so say so
+  # instead of implying it died - the fix is a longer window, not a restart.
+  if pid_alive "$pidf"; then
+    target_line "${C_RED}✗${C_RESET}" "$target" \
+      "port $port still not listening after ${ready_timeout}s, process alive (raise readyTimeout) - see $rellog"
+  else
+    target_line "${C_RED}✗${C_RESET}" "$target" \
+      "no listener on port $port after ${ready_timeout}s - see $rellog"
+  fi
   return 1
 }
 

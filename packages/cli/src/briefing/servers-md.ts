@@ -92,6 +92,13 @@ export function generateServersMd(
   lines.push('```');
   lines.push('');
   lines.push(
+    'If the start command builds before it serves (Go, Maven, Gradle, Rust),',
+    'add `"readyTimeout": <seconds>` to that entry. The default window is 20',
+    'seconds; a cold build outruns it, and the server is then reported failed',
+    'while it is still coming up.',
+  );
+  lines.push('');
+  lines.push(
     '`start` launches it detached (it survives your session) and, when a',
     '`port` is set, waits until it actually listens before returning. The',
     'human can do the same from the host with',

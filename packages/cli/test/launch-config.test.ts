@@ -66,6 +66,19 @@ describe('readLaunchConfig', () => {
     });
   });
 
+  it('keeps readyTimeout, and only when it is a number', async () => {
+    await writeLaunch('acme', 'web', {
+      version: 1,
+      targets: [
+        { name: 'api', command: './dev.sh', port: 7777, readyTimeout: 120 },
+        { name: 'web', command: 'npm run dev', readyTimeout: '120' },
+      ],
+    });
+    const cfg = await readLaunchConfig('acme', 'web', home);
+    expect(cfg?.configurations[0]?.readyTimeout).toBe(120);
+    expect(cfg?.configurations[1]?.readyTimeout).toBeUndefined();
+  });
+
   it('accepts the canonical "targets" key (alias of "configurations")', async () => {
     await writeLaunch('acme', 'web', {
       version: 1,

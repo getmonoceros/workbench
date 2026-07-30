@@ -40,6 +40,14 @@ export interface LaunchTarget {
   port?: number;
   /** Extra environment variables for the process. */
   env?: Record<string, string>;
+  /**
+   * Seconds `start` waits for `port` to listen before reporting the target
+   * failed. Defaults to 20 in the runner. A compiled language whose command
+   * builds first (Go, Maven, Rust with a cold cache) needs more, otherwise a
+   * healthy server is reported as failed and the rest of the default set is
+   * skipped.
+   */
+  readyTimeout?: number;
   /** When true, this target is used if `--target` is omitted. At most one. */
   default?: boolean;
 }
@@ -114,6 +122,9 @@ function validate(parsed: unknown, where: string): LaunchConfig {
       ...(typeof t.port === 'number' ? { port: t.port } : {}),
       ...(t.env && typeof t.env === 'object'
         ? { env: t.env as Record<string, string> }
+        : {}),
+      ...(typeof t.readyTimeout === 'number'
+        ? { readyTimeout: t.readyTimeout }
         : {}),
       ...(t.default === true ? { default: true } : {}),
     };

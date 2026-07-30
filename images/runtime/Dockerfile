@@ -112,6 +112,11 @@ COPY egress-allow.default.txt /etc/monoceros/egress-allow.default.txt
 # root-owned - which breaks every tool that writes elsewhere under them
 # (e.g. opencode's ~/.local/share/opencode, which made its feature build
 # fail at the `opencode --version` self-check).
+# The language cache dirs below exist for the same reason: a shared,
+# machine-wide volume per compiler cache (Go's build + module cache today),
+# which must initialise node-owned or the toolchain cannot write into it.
+# Declared in the language descriptor (`sharedCachePaths`), mounted only on
+# a runtime that pre-creates them.
 RUN mkdir -p /home/node/.vscode-server/extensions \
              /home/node/.vscode-server/data/User \
              /home/node/.vscodium-server/extensions \
@@ -120,9 +125,25 @@ RUN mkdir -p /home/node/.vscode-server/extensions \
              /home/node/.config/JetBrains \
              /home/node/.local/share/JetBrains \
              /home/node/.claude/remote \
+             /home/node/.cache/go-build \
+             /home/node/.cache/go-mod \
+             /home/node/go/bin \
  && chown -R node:node /home/node/.vscode-server /home/node/.vscodium-server \
       /home/node/.cache /home/node/.config /home/node/.local \
-      /home/node/.claude
+      /home/node/.claude /home/node/go
+
+# Put the per-container GOBIN ahead of the Go feature's own /go/bin, so a
+# tool a project pins and installs itself wins over the one the feature
+# baked into the image (both are named e.g. `golangci-lint`). Set here rather
+# than through the container env, because the workspace env lands in a compose
+# file where `${PATH}` would interpolate against the HOST environment.
+#
+# This ENV covers non-login shells. A LOGIN shell re-runs /etc/profile, which
+# rebuilds PATH and drops it - hence the profile.d snippet below, which repeats
+# the prepend for that case.
+ENV PATH=/home/node/go/bin:${PATH}
+COPY toolchain-path.sh /etc/profile.d/monoceros-toolchain-path.sh
+RUN chmod 0644 /etc/profile.d/monoceros-toolchain-path.sh
 
 COPY entrypoint.sh /usr/local/bin/monoceros-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/monoceros-entrypoint.sh

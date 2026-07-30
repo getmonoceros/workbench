@@ -8,6 +8,7 @@ import { solutionConfigToCreateOptions } from '../config/transform.js';
 import {
   curatedServiceDeploy,
   curatedServiceExampleVolumes,
+  runtimeSupportsReadyTimeout,
 } from '../create/catalog.js';
 import { RELAY_DIRNAME } from '../devcontainer/browser-bridge.js';
 import { MARKER_BEGIN, MARKER_END } from '../briefing/markers.js';
@@ -36,8 +37,9 @@ import type { Palette } from '../util/format.js';
  *     differs from the catalog's `deploy.compose` (image tag, missing
  *     healthcheck, a required variable turned optional).
  *   - `launch-config` — a server without a launch-config entry, an entry
- *     on a port the container does not expose, or one that pins the
- *     server to `127.0.0.1`.
+ *     on a port the container does not expose, one that pins the server to
+ *     `127.0.0.1`, or a `readyTimeout` the pinned runtime is too old to
+ *     honour.
  *
  * The language rule and "do not write service configuration from memory"
  * cannot be verified mechanically — that is why they sit in the first
@@ -158,7 +160,13 @@ export async function runCheck(
 
   const apps = await listApps(name, opts.home);
   findings.push(
-    ...(await checkLaunchConfigs(name, apps, declaredPorts, opts.home)),
+    ...(await checkLaunchConfigs(
+      name,
+      apps,
+      declaredPorts,
+      createOpts.runtimeVersion,
+      opts.home,
+    )),
   );
   findings.push(...(await checkUndeclaredServers(root, projects, apps)));
   findings.push(...(await checkPorts(name, apps, declaredPorts, opts.home)));
@@ -619,8 +627,16 @@ async function checkLaunchConfigs(
   name: string,
   apps: readonly string[],
   declaredPorts: readonly number[],
+  runtimeVersion?: string,
   home?: string,
 ): Promise<Finding[]> {
+  // A `readyTimeout` the pinned runtime does not understand is dropped in
+  // silence, and the target keeps the 20s window it was written to escape.
+  // Only decidable on a pinned runtime; unpinned resolves to the major tag,
+  // whose runner may well support it.
+  const readyTimeoutIgnored =
+    runtimeVersion !== undefined &&
+    !runtimeSupportsReadyTimeout(runtimeVersion);
   const out: Finding[] = [];
   for (const app of apps) {
     const rel = `projects/${app}/.monoceros/launch.json`;
@@ -658,6 +674,14 @@ async function checkLaunchConfigs(
           where: `${rel} → ${target.name}`,
           what: `The start command binds \`${pinned[0]}\`, so only the container itself can reach the server.`,
           fix: 'Bind `0.0.0.0` instead.',
+        });
+      }
+      if (readyTimeoutIgnored && typeof target.readyTimeout === 'number') {
+        out.push({
+          rule: 'launch-config',
+          where: `${rel} → ${target.name}`,
+          what: `\`readyTimeout: ${target.readyTimeout}\` is ignored by runtime ${runtimeVersion}, so the target still fails after 20s.`,
+          fix: `Run \`monoceros upgrade ${name}\` to move to a runtime that honours it.`,
         });
       }
     }

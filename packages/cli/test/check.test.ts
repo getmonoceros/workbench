@@ -300,6 +300,56 @@ describe('runCheck', () => {
     expect(launch[1]!.what).toContain('--host 127.0.0.1');
   });
 
+  it('flags a readyTimeout the pinned runtime is too old to honour', async () => {
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nruntimeVersion: 1.6.1\nlanguages:\n  - go\nrouting:\n  ports:\n    - 7777\n',
+    );
+    await workspace([
+      { path: '.', name: 'workspace' },
+      { path: 'projects/api', name: 'api' },
+    ]);
+    await file(
+      'projects/api/.monoceros/launch.json',
+      JSON.stringify({
+        targets: [
+          { name: 'api', command: './dev.sh', port: 7777, readyTimeout: 120 },
+          { name: 'worker', command: './worker.sh', port: 7777 },
+        ],
+      }),
+    );
+
+    const report = await runCheck(NAME, { home });
+    const launch = report.findings.filter((f) => f.rule === 'launch-config');
+    expect(launch.map((f) => f.where)).toEqual([
+      'projects/api/.monoceros/launch.json → api',
+    ]);
+    expect(launch[0]!.what).toContain('ignored by runtime 1.6.1');
+    expect(launch[0]!.fix).toContain('monoceros upgrade acme');
+  });
+
+  it('leaves readyTimeout alone on a runtime that honours it', async () => {
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nruntimeVersion: 1.6.2\nlanguages:\n  - go\nrouting:\n  ports:\n    - 7777\n',
+    );
+    await workspace([
+      { path: '.', name: 'workspace' },
+      { path: 'projects/api', name: 'api' },
+    ]);
+    await file(
+      'projects/api/.monoceros/launch.json',
+      JSON.stringify({
+        targets: [
+          { name: 'api', command: './dev.sh', port: 7777, readyTimeout: 120 },
+        ],
+      }),
+    );
+
+    const report = await runCheck(NAME, { home });
+    expect(report.findings.filter((f) => f.rule === 'launch-config')).toEqual(
+      [],
+    );
+  });
+
   it('flags a project that serves something but declares no launch config', async () => {
     await scaffold(
       'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nrouting:\n  ports:\n    - 3000\n',

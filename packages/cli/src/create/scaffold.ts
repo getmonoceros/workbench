@@ -440,6 +440,7 @@ const BASE_PERSISTENT_HOME_FILES: readonly PersistentHomeFile[] = [
  */
 function persistentHomeSubpaths(
   resolvedFeatures: readonly ResolvedFeature[],
+  languages: readonly string[] = [],
 ): string[] {
   const subs = BASE_PERSISTENT_HOME_FILES.map((entry) => entry.path);
   for (const f of resolvedFeatures) {
@@ -448,7 +449,82 @@ function persistentHomeSubpaths(
       ...f.persistentHomeFiles.map((entry) => entry.path),
     );
   }
+  subs.push(...languagePersistentHomePaths(languages));
   return subs;
+}
+
+/**
+ * Each present language's own persistent home dirs — what the PROJECT installs
+ * into the toolchain (Go's `GOBIN`). Read straight off the language specs, not
+ * off `resolveFeatures`: a builtin language at its base-image version installs
+ * no feature and is skipped there, but its caches are just as real.
+ */
+function languagePersistentHomePaths(languages: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const spec of languages) {
+    const parsed = parseLanguageSpec(spec);
+    const entry = parsed ? LANGUAGE_CATALOG[parsed.name] : undefined;
+    if (entry?.persistentHomePaths) out.push(...entry.persistentHomePaths);
+  }
+  return [...new Set(out)];
+}
+
+/**
+ * Literal workspace env contributed by the present languages, pointing a
+ * toolchain at its persisted/shared directories (Go's `GOMODCACHE`, `GOBIN`).
+ * Same "read the specs, not the resolved features" reasoning as above.
+ */
+export function languageWorkspaceEnv(
+  languages: readonly string[],
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const spec of languages) {
+    const parsed = parseLanguageSpec(spec);
+    const entry = parsed ? LANGUAGE_CATALOG[parsed.name] : undefined;
+    if (entry?.workspaceEnv) Object.assign(env, entry.workspaceEnv);
+  }
+  return env;
+}
+
+/**
+ * Machine-wide cache volumes for the present languages: a compiler's
+ * content-addressed caches, downloaded and compiled once per machine instead of
+ * once per workbench, and unaffected by `apply` recreating the container.
+ *
+ * Shared is safe here and only here: these caches are keyed by content, built
+ * for concurrent use by parallel builds, and identical across containers by
+ * construction. Anything a project's version pin can differ on (installed tool
+ * binaries) stays per container via `persistentHomePaths`.
+ *
+ * Gated on the runtime that pre-creates the targets node-owned: a fresh named
+ * volume inherits the mountpoint's ownership from the image, and a root-owned
+ * cache dir is unwritable for the `node` user - the same trap the IDE-state
+ * volumes had (ADR 0015).
+ */
+export function languageCacheVolumes(
+  languages: readonly string[],
+  version?: string,
+): IdeStateVolume[] {
+  if (!version || compareRuntimeVersions(version, '1.6.2') < 0) return [];
+  const out: IdeStateVolume[] = [];
+  const seen = new Set<string>();
+  for (const spec of languages) {
+    const parsed = parseLanguageSpec(spec);
+    const entry = parsed ? LANGUAGE_CATALOG[parsed.name] : undefined;
+    for (const target of entry?.sharedCachePaths ?? []) {
+      if (seen.has(target)) continue;
+      seen.add(target);
+      out.push({
+        // Machine-wide, so the name carries the language and the cache, never
+        // the container name. `monoceros remove` skips shared volumes.
+        volume: `monoceros-cache-${parsed!.name}-${path.basename(target)}`,
+        target,
+        minRuntime: '1.6.2',
+        shared: true,
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -924,7 +1000,7 @@ export function buildDevcontainerJson(
   // root on Linux, breaking writes inside the container) and so a
   // requested **file** bind doesn't get spawned as a directory.
   const homeMounts: string[] = [];
-  for (const sub of persistentHomeSubpaths(resolvedFeatures)) {
+  for (const sub of persistentHomeSubpaths(resolvedFeatures, opts.languages)) {
     homeMounts.push(
       `source=\${localWorkspaceFolder}/home/${sub},target=/home/node/${sub},type=bind${idmapSuffix}`,
     );
@@ -983,6 +1059,7 @@ export function buildDevcontainerJson(
   // connection env only exists in compose mode, where services live.)
   const workspaceEnv = {
     ...featureWorkspaceEnv(resolvedFeatures),
+    ...languageWorkspaceEnv(opts.languages),
     ...(sshBridgePort
       ? { MONOCEROS_SSH_PUBLISH_PORT: String(sshBridgePort) }
       : {}),
@@ -1024,10 +1101,10 @@ export function buildDevcontainerJson(
   // Code IDE-state volumes (extensions + user settings) — but only when
   // the pinned runtime supports them (ADR 0015/0017); otherwise they'd
   // break on an image without the node-owned dirs.
-  const ideMounts = ideStateVolumesForRuntime(
-    opts.name,
-    opts.runtimeVersion,
-  ).map((v) => `source=${v.volume},target=${v.target},type=volume`);
+  const ideMounts = [
+    ...ideStateVolumesForRuntime(opts.name, opts.runtimeVersion),
+    ...languageCacheVolumes(opts.languages, opts.runtimeVersion),
+  ].map((v) => `source=${v.volume},target=${v.target},type=volume`);
   const mounts: string[] = [...homeMounts, ...ideMounts];
   const mountsField = mounts.length > 0 ? { mounts } : {};
 
@@ -1301,7 +1378,10 @@ export function buildComposeYaml(
   const sshBridgePort = windowsBridgePort(opts);
   const lines: string[] = ['services:'];
 
-  const ideVolumes = ideStateVolumesForRuntime(opts.name, opts.runtimeVersion);
+  const ideVolumes = [
+    ...ideStateVolumesForRuntime(opts.name, opts.runtimeVersion),
+    ...languageCacheVolumes(opts.languages, opts.runtimeVersion),
+  ];
 
   lines.push('  workspace:');
   lines.push(`    image: ${resolveRuntimeImage(opts.runtimeVersion)}`);
@@ -1351,7 +1431,7 @@ export function buildComposeYaml(
   // lives. Docker reads the host-side inode type to decide whether
   // the mount target inside the container is a file or a directory.
   const resolvedFeatures = resolveFeatures(opts);
-  for (const sub of persistentHomeSubpaths(resolvedFeatures)) {
+  for (const sub of persistentHomeSubpaths(resolvedFeatures, opts.languages)) {
     lines.push(`      - ../home/${sub}:/home/node/${sub}`);
   }
   // VS Code IDE-state persistence (extensions + user settings) via named
@@ -1367,6 +1447,7 @@ export function buildComposeYaml(
   const wsEnv: Record<string, string> = {
     ...serviceConnectionEnv(opts.services),
     ...featureWorkspaceEnv(resolvedFeatures),
+    ...languageWorkspaceEnv(opts.languages),
     ...(sshBridgePort
       ? { MONOCEROS_SSH_PUBLISH_PORT: String(sshBridgePort) }
       : {}),
@@ -2125,9 +2206,10 @@ export async function writeScaffold(
   // mkdir; files get an empty touch (only when missing — already-
   // populated files like a complete .claude.json must not be
   // truncated on re-apply).
-  const persistentHomeDirs = resolvedFeatures.flatMap(
-    (f) => f.persistentHomePaths,
-  );
+  const persistentHomeDirs = [
+    ...resolvedFeatures.flatMap((f) => f.persistentHomePaths),
+    ...languagePersistentHomePaths(opts.languages),
+  ];
   const persistentHomeFiles = [
     ...BASE_PERSISTENT_HOME_FILES,
     ...resolvedFeatures.flatMap((f) => f.persistentHomeFiles),

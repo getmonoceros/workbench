@@ -7,3 +7,18 @@ language:
   defaultVersion: latest
   versions: [latest, 1.24, 1.23]
   vscodeExtensions: [golang.go]
+  # Build and module cache: content-addressed, identical across workbenches,
+  # and expensive (a mid-sized project fills ~1.1 GB and ~1.2 GB). Shared
+  # machine-wide, so they are downloaded and compiled once, and an `apply`
+  # never throws them away. GOMODCACHE is moved here from its default under
+  # GOPATH (`/go/pkg/mod`), which the upstream feature owns.
+  sharedCachePaths:
+    - /home/node/.cache/go-build
+    - /home/node/.cache/go-mod
+  # Where `go install` puts binaries a project pins itself (linters, codegen).
+  # Per container, NOT shared: two workbenches may pin different versions of
+  # the same tool, and one directory holds one file per name.
+  persistentHomePaths: [go/bin]
+  workspaceEnv:
+    GOMODCACHE: /home/node/.cache/go-mod
+    GOBIN: /home/node/go/bin

@@ -131,6 +131,33 @@ export const LanguageBlockSchema = z.object({
    * `[ms-python.python, ms-python.vscode-pylance]` — Codium drops Pylance.
    */
   vscodeExtensions: z.array(z.string()).optional(),
+  /**
+   * Home-relative directories that survive a rebuild, bind-mounted per
+   * container out of `container/<name>/home/` — the same mechanism features
+   * use for their login state. For a language this is where a toolchain keeps
+   * what the PROJECT installed (Go's `GOBIN`, later `~/.m2/settings.xml`-style
+   * state): per container, because two workbenches may pin different versions
+   * of the same tool and a shared directory holds only one file per name.
+   */
+  persistentHomePaths: z.array(z.string().min(1)).optional(),
+  /**
+   * Absolute in-container directories backed by a MACHINE-WIDE docker volume,
+   * shared by every workbench that has this language. Only for content that is
+   * identical across containers by construction: a compiler's content-addressed
+   * caches (Go's build and module cache, later `~/.m2/repository`, Cargo's
+   * registry). Downloaded and compiled once, not per workbench, and not lost on
+   * `apply`. Never use it for anything a project's own version pin can differ
+   * on — that belongs in `persistentHomePaths`.
+   */
+  sharedCachePaths: z.array(z.string().min(1)).optional(),
+  /**
+   * Named runtime env injected into the workspace container (compose
+   * `environment:` / image-mode `containerEnv`), the language-side sibling of
+   * a feature's `workspaceEnv`. Plain literal values, no `${…}` templating:
+   * they land in a compose file, where interpolation would resolve against the
+   * HOST environment. Used to point a toolchain at the paths declared above.
+   */
+  workspaceEnv: z.record(z.string(), z.string()).optional(),
 });
 export type LanguageBlock = z.infer<typeof LanguageBlockSchema>;
 
