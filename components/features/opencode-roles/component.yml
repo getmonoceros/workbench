@@ -3,7 +3,7 @@ name: opencode-roles
 category: feature
 displayName: OpenCode roles (plan / implement / review)
 description: 'Three OpenCode agents that split a task: a planner writes a plan file, an implementer executes it, a reviewer checks the result against it. Adds `/monoceros-plan`, `/monoceros-ship` and `/monoceros-review`. Requires the `opencode` feature.'
-documentationURL: https://getmonoceros.build/docs/concepts/opencode-roles/
+documentationURL: https://getmonoceros.build/docs/features/opencode-roles/
 options:
   plannerModel:
     type: string

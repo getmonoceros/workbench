@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "cliVersion": "1.46.4",
+  "cliVersion": "1.47.0",
   "languages": [
     {
       "name": "dotnet",
@@ -433,7 +433,7 @@
           "description": "Model for the reviewing role. Reviewing needs the same class of model as planning: it has to notice a step that was skipped, not just read a diff. Empty: same fallback as `plannerModel`."
         }
       ],
-      "documentationURL": "https://getmonoceros.build/docs/concepts/opencode-roles/",
+      "documentationURL": "https://getmonoceros.build/docs/features/opencode-roles/",
       "presets": []
     }
   ]
