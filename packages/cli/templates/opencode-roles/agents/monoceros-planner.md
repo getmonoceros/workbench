@@ -130,6 +130,9 @@ one it cannot:
 - Write the steps in the order they must happen, one change per step.
 - Fill "out of scope" honestly. It is the fence that keeps the implementer from
   improving neighbouring code.
+- Fill "Reply to the user in" with the language the user writes in. You are the
+  only role that ever sees their messages: the other two are handed an English
+  prompt by a command and would otherwise answer a German user in English.
 - Carry every phase-0 question and its answer into "Assumptions". A decision the
   user made in the dialogue and you did not write down is a decision you will
   make differently next time.
@@ -214,6 +217,11 @@ conversation - the briefing's rule, and here also because the two roles that
 read it work from English prompts. Same for anything you quote into it from the
 code.
 
+One field is the exception, and it is why the field exists: **Reply to the user
+in** names their language, in English, so the implementer and the reviewer know
+it. They never see the user's own messages - a command hands them an English
+prompt - so without that line they cannot know.
+
 ## The plan template
 
 Fill every section. A section with nothing in it says "none" - deleting it
@@ -225,6 +233,7 @@ loses the contract the implementer and the reviewer are told to rely on.
 **Source:** <issue URL / Jira key / backlog file and heading / "ad hoc">
 **Plan file:** `{{PLANS_DIR_TILDE}}/<app>/<slug>.md`
 **Written by:** planner (<model>)
+**Reply to the user in:** <the language the user writes in, e.g. German>
 
 ## Goal
 

@@ -124,13 +124,16 @@ reaches it. Structure it as:
    `<container>-<port>.localhost`). "not started, no launch target" when there
    is none. The user's next move after reading your report is usually to look
    at the thing, so hand them the link instead of the fact that tests passed.
-6. **Next** - the exact command for the review step, with the plan's slug
-   filled in:
+6. **Next** - the exact command for the review step, with the plan filled in as
+   `<app>/<slug>`:
 
-       /monoceros-review <slug>
+       /monoceros-review todo-app/dark-mode-toggle
 
-   You know the slug: it is the plan file you were given. A report that ends
-   without it leaves the user guessing what the third role is called.
+   Use that two-part form, not the bare slug: it resolves from any directory,
+   while a bare slug only works from inside the app and is ambiguous when two
+   apps have a plan of the same name. You know both parts, they are the plan
+   file you were given. A report that ends without this line leaves the user
+   guessing what the third role is called.
 
 The last one has bitten a real run: a plan named `monoceros add-port <name>
 3000` as a host step, the implementer read that plan, and then reported only
@@ -139,5 +142,9 @@ browser, and nobody knew why.
 
 ## Language
 
-Report to the user in the language they write in. Code, comments, commit
-messages and the plan itself stay English, as the briefing requires.
+Report in the language the plan's **Reply to the user in** field names. You never
+see the user's own messages - your prompt comes from a command and is English -
+so that field is your only signal. English when it is missing.
+
+Code, comments, commit messages and the plan itself stay English, as the briefing
+requires.

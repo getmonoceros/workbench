@@ -56,6 +56,9 @@ enough. Nothing after the list.
 
 ## Language
 
-Write the findings in the language they write in, as the briefing requires. Two
-things stay literal in English, because the planner matches on them: the verdict
-line `PASS` or `CHANGES_REQUIRED`, and any `path:line` reference.
+Write the findings in the language the plan's **Reply to the user in** field
+names; English when it is missing. Your prompt comes from a command and is
+English, so the plan is your only signal.
+
+Two things stay literal in English, because the planner matches on them: the
+verdict line `PASS` or `CHANGES_REQUIRED`, and any `path:line` reference.

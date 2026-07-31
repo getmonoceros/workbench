@@ -278,30 +278,46 @@ describe('writeOpencodeRoles', () => {
   // The workbench briefing already says it ("Chat with the user in their
   // language", AGENTS.md), but a several-hundred-line English system prompt
   // outweighs a briefing chapter: the planner answered a German prompt in
-  // English. Each role repeats the rule where the model actually looks, with
-  // the boundary that keeps it stable - artifacts stay English.
-  it('tells every role to answer in the user language and keep artifacts English', async () => {
+  // English. And the other two roles cannot even tell - their prompt comes from
+  // a command and is English, they never see the user's messages. So the plan
+  // carries the language, like everything else the roles agree on.
+  it('carries the user language in the plan, because only the planner sees it', async () => {
     await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
-    for (const f of await readdir(agentsDir())) {
-      const body = await read(path.join(agentsDir(), f));
-      expect(body, f).toContain('## Language');
-      expect(body, f).toMatch(/language they write in/);
-      expect(body, f).toContain('English');
-    }
-    // The planner keeps the plan file English, because the two roles that read
-    // it work from English prompts.
     const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
-    expect(planner).toMatch(/plan \*\*file\*\* stays English/);
-    // The reviewer must not translate what the planner matches on.
+    const impl = await read(path.join(agentsDir(), 'monoceros-implement.md'));
     const review = await read(path.join(agentsDir(), 'monoceros-review.md'));
+
+    // The field is in the template the planner fills…
+    expect(planner).toContain('**Reply to the user in:**');
+    expect(planner).toMatch(/only role that ever sees their messages/);
+    // …and the plan file itself stays English apart from that field.
+    expect(planner).toMatch(/plan \*\*file\*\* stays English/);
+
+    // …and the two roles read it, with a defined fallback.
+    for (const [name, body] of [
+      ['implement', impl],
+      ['review', review],
+    ] as const) {
+      expect(body, name).toContain('**Reply to the user in**');
+      expect(body, name).toMatch(/English when it is missing/);
+    }
+    // The reviewer must not translate what the planner matches on.
     expect(review).toContain('`PASS`');
     expect(review).toContain('`CHANGES_REQUIRED`');
     expect(review).toMatch(/stay literal/);
   });
 
-  // A real run ended with 14 green tests, no running app and no hint at the
-  // third role. Green tests are not a running app: `node server.js` does not
-  // reload, so the user was looking at the code from before the change.
+  // `<app>/<slug>` resolves from any directory (the resolver tries
+  // `$root/$p`), a bare slug only from inside the app - and it is ambiguous
+  // when two apps have a plan of the same name.
+  it('hands over the two-part plan reference, not a bare slug', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const impl = await read(path.join(agentsDir(), 'monoceros-implement.md'));
+    expect(impl).toContain('/monoceros-review todo-app/dark-mode-toggle');
+    expect(impl).toMatch(/not the bare slug/);
+    expect(impl).toMatch(/resolves from any directory/);
+  });
+
   it('has the implementer restart the app and name the review step', async () => {
     await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
     const impl = await read(path.join(agentsDir(), 'monoceros-implement.md'));
@@ -317,7 +333,7 @@ describe('writeOpencodeRoles', () => {
     // The report gained the two parts the run was missing.
     expect(impl).toContain('5. **Running**');
     expect(impl).toContain('6. **Next**');
-    expect(impl).toContain('/monoceros-review <slug>');
+    expect(impl).toContain('/monoceros-review todo-app/dark-mode-toggle');
     // …and it hands over a URL rather than the fact that tests passed.
     expect(impl).toContain('localhost');
   });
