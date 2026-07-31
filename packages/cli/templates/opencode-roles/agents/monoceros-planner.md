@@ -7,8 +7,12 @@ permission:
   # feature persists (`.local/share/opencode`) - so they survive both an
   # `apply` and wiping `projects/`. Absolute, because it is outside the
   # workspace, and external_directory has to allow it for the same reason.
-  edit: { '*': deny, '{{PLANS_DIR}}/*': allow }
-  write: { '*': deny, '{{PLANS_DIR}}/*': allow }
+  # Two spellings on purpose: `edit` asks with the path relative to the
+  # worktree, and the plans dir is outside it, so the relative form starts
+  # with `../..` and an absolute pattern never matches it. The star-prefixed
+  # one covers both; without it the planner cannot write its own plan.
+  edit: { '*': deny, '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
+  write: { '*': deny, '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
   external_directory: { '{{PLANS_DIR}}/*': allow }
   bash:
     # Allow by default, deny what mutates. An allowlist loses here: opencode

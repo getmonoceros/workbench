@@ -120,9 +120,9 @@ describe('writeOpencodeRoles', () => {
   it('renders the plans directory in both spellings, and leaves no placeholder', async () => {
     await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
     const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
-    // Permissions need the absolute path (it is outside the workspace, so
-    // external_directory is checked against it); the prose reads better with ~.
-    expect(planner).toContain(`edit: { '*': deny, '${PLANS}/*': allow }`);
+    // external_directory is asked with the canonical absolute path, so that
+    // rule keeps the absolute spelling; the prose reads better with ~. The
+    // edit/write pair needs both spellings and has its own test below.
     expect(planner).toContain(`external_directory: { '${PLANS}/*': allow }`);
     expect(planner).toContain('~/.local/share/opencode/plans/<app>/<slug>.md');
     for (const d of [agentsDir(), commandsDir()]) {
@@ -222,6 +222,57 @@ describe('writeOpencodeRoles', () => {
     // instead of writing into the root and losing the slug-only lookup.
     expect(cmd).toMatch(/If the\s+line above is empty/);
     expect(cmd).toContain('say which one you picked');
+  });
+
+  // The bug this closes locked the planner out of its own plans directory:
+  // the edit tool asks with the path RELATIVE to the worktree, the plans dir
+  // sits outside it, so the relative form starts with `../..` and an absolute
+  // pattern never matches. Only `edit deny *` was left, and every write was
+  // refused. Both spellings have to be covered - and the implementer's deny
+  // has the same problem in reverse, or it could edit the plan it is measured
+  // against.
+  it('covers both path spellings in the plans permissions', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
+    const impl = await read(path.join(agentsDir(), 'monoceros-implement.md'));
+    for (const perm of ['edit', 'write']) {
+      expect(planner, perm).toContain(
+        `${perm}: { '*': deny, '${PLANS}/*': allow, '*/.local/share/opencode/plans/*': allow }`,
+      );
+      expect(impl, perm).toContain(
+        `${perm}: { '*': allow, '${PLANS}/*': deny, '*/.local/share/opencode/plans/*': deny }`,
+      );
+    }
+  });
+
+  // Same wildcard semantics opencode uses (`*` becomes `.*`, spanning
+  // slashes), so this pins the property rather than the string: the pattern
+  // has to match what a tool actually asks with, and nothing else.
+  it('the plans pattern matches both spellings and stays narrow', async () => {
+    const toRe = (pattern: string) =>
+      new RegExp(
+        '^' +
+          pattern
+            .replace(/[.+^${}()|[\]\\]/g, (c) => '\\' + c)
+            .replace(/\*/g, '.*')
+            .replace(/\?/g, '.') +
+          '$',
+      );
+    const pattern = '*/.local/share/opencode/plans/*';
+    // What the tools ask with:
+    expect(toRe(pattern).test(`${PLANS}/todo-app/x.md`)).toBe(true);
+    expect(
+      toRe(pattern).test(
+        '../../../../home/node/.local/share/opencode/plans/todo-app/x.md',
+      ),
+    ).toBe(true);
+    // What must stay outside it:
+    expect(toRe(pattern).test('src/server.js')).toBe(false);
+    expect(
+      toRe(pattern).test(
+        '../../../../home/node/.local/share/opencode/auth.json',
+      ),
+    ).toBe(false);
   });
 
   it('overwrites its own files on a second apply', async () => {

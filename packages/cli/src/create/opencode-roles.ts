@@ -38,6 +38,17 @@ import type { CreateOptions } from './types.js';
 const CONTAINER_HOME = '/home/node';
 const PLANS_DIR = `${CONTAINER_HOME}/.local/share/opencode/plans`;
 const PLANS_DIR_TILDE = '~/.local/share/opencode/plans';
+/**
+ * The same directory as a permission pattern that matches BOTH spellings a
+ * tool can produce. `edit` asks with the path relative to the worktree
+ * (`path.relative(instance.worktree, filePath)` in edit.ts), and the plans
+ * directory is outside the workspace - so the relative form starts with
+ * `../../..`, which an absolute pattern can never match. That is not a
+ * theoretical concern: it locked the planner out of its own plans directory
+ * until the leading `*` was added. `external_directory` asks with the
+ * canonical absolute path, so both forms have to be covered.
+ */
+const PLANS_MATCH = '*/.local/share/opencode/plans';
 
 const AGENTS = [
   'monoceros-planner',
@@ -129,6 +140,7 @@ export async function writeOpencodeRoles(
 export function renderRoleTemplate(body: string, model: string): string {
   const out = body
     .replaceAll('{{PLANS_DIR_TILDE}}', PLANS_DIR_TILDE)
+    .replaceAll('{{PLANS_MATCH}}', PLANS_MATCH)
     .replaceAll('{{PLANS_DIR}}', PLANS_DIR);
   if (!model) {
     // Drop the whole line, including its newline: an agent without a `model`

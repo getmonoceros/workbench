@@ -6,8 +6,11 @@ permission:
   # May change code, never the plan it is measured against. The plan lives
   # in opencode's data dir, outside the workspace, so it needs an explicit
   # external_directory allow to be read at all.
-  edit: { '*': allow, '{{PLANS_DIR}}/*': deny }
-  write: { '*': allow, '{{PLANS_DIR}}/*': deny }
+  # Both spellings, same reason as in the planner: a deny that only covers
+  # the absolute form would let this agent edit the plan it is measured
+  # against, because the edit tool asks with a worktree-relative path.
+  edit: { '*': allow, '{{PLANS_DIR}}/*': deny, '{{PLANS_MATCH}}/*': deny }
+  write: { '*': allow, '{{PLANS_DIR}}/*': deny, '{{PLANS_MATCH}}/*': deny }
   external_directory: { '{{PLANS_DIR}}/*': allow }
   task: { '*': deny, 'monoceros-review': allow }
 ---
