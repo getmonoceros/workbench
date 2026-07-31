@@ -73,6 +73,28 @@ monoceros-ctl` costs nothing; a hand-rolled server start because "the tool is
 missing" costs the user a broken restart path. When the plan's claim turns out
 wrong, report that in your deviations.
 
+## Leave the app running the new code
+
+Green tests are not a running app. A server that was up is still running the
+code from before your change - `node server.js` does not reload - so the user
+looks at the old behaviour and believes you.
+
+So once the acceptance command is green, and only then: if the app has a launch
+config (`projects/<app>/.monoceros/launch.json`), bring it up on the new code.
+
+    monoceros-ctl list
+    monoceros-ctl stop <app>
+    monoceros-ctl start <app>
+
+`start` waits until the port listens, so a failure to come up is something you
+find out here rather than the user finding out later. If it fails, say so in
+your report with the tail of `monoceros-ctl logs <app> --no-follow` - a change
+that passes its tests and cannot serve is not finished.
+
+If there is no launch config, do not invent one and do not start a server by
+hand: say in your report that the app has no launch target, so nothing was
+started.
+
 ## When the plan is wrong
 
 It happens: a step is impossible, a named file does not exist, two steps
@@ -97,6 +119,18 @@ reaches it. Structure it as:
    them over here they are lost: the work looks finished, the tests are green,
    and the app is still unreachable. Write "none" only when the plan's section
    says none.
+5. **Running** - what you started or restarted and where it can be seen: the
+   target, and the URL from the briefing (`<container>.localhost` or
+   `<container>-<port>.localhost`). "not started, no launch target" when there
+   is none. The user's next move after reading your report is usually to look
+   at the thing, so hand them the link instead of the fact that tests passed.
+6. **Next** - the exact command for the review step, with the plan's slug
+   filled in:
+
+       /monoceros-review <slug>
+
+   You know the slug: it is the plan file you were given. A report that ends
+   without it leaves the user guessing what the third role is called.
 
 The last one has bitten a real run: a plan named `monoceros add-port <name>
 3000` as a host step, the implementer read that plan, and then reported only

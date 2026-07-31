@@ -299,6 +299,29 @@ describe('writeOpencodeRoles', () => {
     expect(review).toMatch(/stay literal/);
   });
 
+  // A real run ended with 14 green tests, no running app and no hint at the
+  // third role. Green tests are not a running app: `node server.js` does not
+  // reload, so the user was looking at the code from before the change.
+  it('has the implementer restart the app and name the review step', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const impl = await read(path.join(agentsDir(), 'monoceros-implement.md'));
+
+    // Restart, through the tool that cannot hang, and only after the gate.
+    expect(impl).toContain('Leave the app running the new code');
+    expect(impl).toContain('monoceros-ctl stop <app>');
+    expect(impl).toContain('monoceros-ctl start <app>');
+    expect(impl).toMatch(/once the acceptance command is green/i);
+    // No launch target is a report line, not a reason to improvise a server.
+    expect(impl).toMatch(/do not start a server by\s+hand/);
+
+    // The report gained the two parts the run was missing.
+    expect(impl).toContain('5. **Running**');
+    expect(impl).toContain('6. **Next**');
+    expect(impl).toContain('/monoceros-review <slug>');
+    // …and it hands over a URL rather than the fact that tests passed.
+    expect(impl).toContain('localhost');
+  });
+
   it('overwrites its own files on a second apply', async () => {
     await writeOpencodeRoles(dir, {
       [OPENCODE]: {},

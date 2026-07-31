@@ -14,8 +14,11 @@ The plan to implement resolved to:
 
 Implement that plan. Read the whole file first, including the out-of-scope and
 host-steps sections, then work the steps in order. Run the acceptance command the
-plan names and paste the tail of its real output. Report changed files,
-acceptance output, deviations and host steps.
+plan names and paste the tail of its real output. Once it is green, bring the app
+up on the new code if it has a launch target.
+
+Report changed files, acceptance output, deviations, host steps, what is running
+and where to see it, and the `/monoceros-review` command to run next.
 
 If that line is not a path but starts with NOT FOUND, AMBIGUOUS or NO ARGUMENT
 GIVEN, stop there. Do not go looking for a plan yourself and do not touch any
