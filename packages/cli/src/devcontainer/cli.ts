@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { createSecretMaskStream, maskSecrets } from '../util/mask-secrets.js';
+import { restoreTerminalModes } from '../util/terminal-restore.js';
 import {
   createRuntimePullHintStream,
   type PullHintState,
@@ -98,7 +99,19 @@ export const spawnDevcontainer: DevcontainerSpawn = (
         stdio: 'inherit',
       });
       child.on('error', reject);
-      child.on('exit', (code) => resolve(code ?? 0));
+      child.on('exit', (code) => {
+        // A TUI inside the container (opencode, claude, lazygit, …) leaves
+        // mouse reporting and the alternate screen enabled on the BUILDER's
+        // terminal, and only undoes that when it exits by itself. It never
+        // gets to when `monoceros apply` recreates the container underneath
+        // it: every process inside dies at once and this exec just ends. The
+        // terminal then prints escape junk on every mouse movement, long
+        // after the session is gone. Nobody but the host side can clean up
+        // after a process that is already dead, so we do it here, on every
+        // exit path, not only the tidy ones.
+        restoreTerminalModes();
+        resolve(code ?? 0);
+      });
       return;
     }
     const child = spawn(process.execPath, [binPath, ...args], {
