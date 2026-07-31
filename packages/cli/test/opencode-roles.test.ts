@@ -143,6 +143,45 @@ describe('writeOpencodeRoles', () => {
     }
   });
 
+  // Phase 0. The failure it prevents was measured: a planner wrote a 229-line
+  // plan for a web app when "Todo-App" could as well have meant a CLI tool, and
+  // only stated the assumption afterwards. Batched questions get one vague
+  // answer, so the protocol is one at a time with a recommended default - and
+  // nothing that the repo or the environment can answer is asked at all.
+  it('makes the planner grill the task before it writes a plan', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
+
+    expect(planner).toContain('Phase 0');
+    expect(planner).toContain('**One question at a time.**');
+    expect(planner).toContain('recommended answer');
+    expect(planner).toContain('**Never ask what you can read.**');
+    expect(planner).toContain('At most five questions');
+    // Bounded to what changes the plan, and skipped entirely when the task
+    // already carries its own acceptance criteria - otherwise this becomes the
+    // next round of pointless prompting.
+    expect(planner).toContain('shape of the plan');
+    expect(planner).toContain('Ask nothing at all when the task is already');
+    // The answers have to survive the dialogue: they land in the plan.
+    expect(planner).toMatch(/Assumptions.* section/s);
+    // Phase 0 sits after loading and exploring, so it does not ask what the
+    // code answers, and before the plan is written.
+    expect(planner.indexOf('## 2. Explore')).toBeLessThan(
+      planner.indexOf('## 3. Phase 0'),
+    );
+    expect(planner.indexOf('## 3. Phase 0')).toBeLessThan(
+      planner.indexOf('## 4. Write the plan'),
+    );
+  });
+
+  it('has the plan command ask for phase 0 explicitly', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const cmd = await read(path.join(commandsDir(), 'monoceros-plan.md'));
+    expect(cmd).toContain('phase 0');
+    expect(cmd).toContain('one question at a time');
+    expect(cmd).toContain('If it is already unambiguous');
+  });
+
   it('overwrites its own files on a second apply', async () => {
     await writeOpencodeRoles(dir, {
       [OPENCODE]: {},

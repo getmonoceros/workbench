@@ -10,5 +10,10 @@ agent: monoceros-planner
 
 Plan this task: $ARGUMENTS
 
-Follow your planning protocol. Stop once the plan file is written and show me
-the plan summary. Do not delegate yet.
+Follow your planning protocol, phase 0 included: if the task leaves the shape of
+the work open, grill me one question at a time before you write anything, each
+with the answer you would assume. If it is already unambiguous, say so and go
+straight to the plan.
+
+Stop once the plan file is written and show me the plan summary. Do not delegate
+yet.
