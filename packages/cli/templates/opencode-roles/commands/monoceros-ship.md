@@ -8,7 +8,15 @@ agent: monoceros-implement
      `.opencode/agents/` (or `.opencode/commands/`), which wins over the
      global one and is yours to keep. -->
 
-Implement the plan at $ARGUMENTS. Read the whole plan first, including the
-out-of-scope and host-steps sections, then work the steps in order. Run the
-acceptance command the plan names and paste the tail of its real output.
-Report changed files, acceptance output, deviations and host steps.
+The plan to implement resolved to:
+
+!`p="$ARGUMENTS"; root="$HOME/.local/share/opencode/plans"; app=$(pwd | sed -n 's|.*/projects/\([^/]*\).*|\1|p'); out=""; if [ -z "$p" ]; then out="NO ARGUMENT GIVEN. Plans for ${app:-(no app in the working directory)}: $(ls "$root/$app" 2>/dev/null | tr '\n' ' ')"; else for c in "$p" "$root/$app/$p" "$root/$app/$p.md" "$root/$p" "$root/$p.md"; do [ -f "$c" ] && { out="$c"; break; }; done; fi; if [ -z "$out" ] && [ -n "$p" ]; then m=$(find "$root" -name "$p" -o -name "$p.md" 2>/dev/null); n=$(printf '%s' "$m" | grep -c .); if [ "$n" = 1 ]; then out="$m"; elif [ "$n" = 0 ]; then out="NOT FOUND: no plan matching '$p' under $root"; else out="AMBIGUOUS: $(printf '%s' "$m" | tr '\n' ' ')"; fi; fi; printf '%s' "$out"`
+
+Implement that plan. Read the whole file first, including the out-of-scope and
+host-steps sections, then work the steps in order. Run the acceptance command the
+plan names and paste the tail of its real output. Report changed files,
+acceptance output, deviations and host steps.
+
+If that line is not a path but starts with NOT FOUND, AMBIGUOUS or NO ARGUMENT
+GIVEN, stop there. Do not go looking for a plan yourself and do not touch any
+files: show the line and ask which plan is meant.

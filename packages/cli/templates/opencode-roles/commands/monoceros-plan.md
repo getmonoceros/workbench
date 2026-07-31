@@ -10,10 +10,17 @@ agent: monoceros-planner
 
 Plan this task: $ARGUMENTS
 
+The app of the working directory is: !`pwd | sed -n 's|.*/projects/\([^/]*\).*|\1|p'`
+
+Write the plan to `~/.local/share/opencode/plans/<that app>/<slug>.md`. If the
+line above is empty you are not inside a project directory: then use the app the
+plan is about - the directory under `projects/` you will create or change - as
+the folder name, and say which one you picked.
+
 Follow your planning protocol, phase 0 included: if the task leaves the shape of
 the work open, grill me one question at a time before you write anything, each
 with the answer you would assume. If it is already unambiguous, say so and go
 straight to the plan.
 
-Stop once the plan file is written and show me the plan summary. Do not delegate
-yet.
+Stop once the plan file is written. Show me the plan summary and the slug I can
+pass to `/monoceros-ship`. Do not delegate yet.

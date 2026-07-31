@@ -124,7 +124,7 @@ describe('writeOpencodeRoles', () => {
     // external_directory is checked against it); the prose reads better with ~.
     expect(planner).toContain(`edit: { '*': deny, '${PLANS}/*': allow }`);
     expect(planner).toContain(`external_directory: { '${PLANS}/*': allow }`);
-    expect(planner).toContain('~/.local/share/opencode/plans/<slug>.md');
+    expect(planner).toContain('~/.local/share/opencode/plans/<app>/<slug>.md');
     for (const d of [agentsDir(), commandsDir()]) {
       for (const f of await readdir(d)) {
         expect(await read(path.join(d, f)), f).not.toContain('{{');
@@ -180,6 +180,48 @@ describe('writeOpencodeRoles', () => {
     expect(cmd).toContain('phase 0');
     expect(cmd).toContain('one question at a time');
     expect(cmd).toContain('If it is already unambiguous');
+  });
+
+  // The path the builder had to type was 40 characters of boilerplate. The
+  // commands now resolve a bare slug themselves, in shell, before the model
+  // sees anything: opencode substitutes $ARGUMENTS first and runs the !`…`
+  // blocks second, so this is deterministic rather than the model guessing.
+  it('resolves a bare slug in the ship and review commands', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    for (const name of ['monoceros-ship', 'monoceros-review']) {
+      const cmd = await read(path.join(commandsDir(), `${name}.md`));
+      // The resolver runs as one shell block and must not contain a backtick,
+      // or opencode's !`…` regex would end it early.
+      const block = cmd.match(/!`([^`]+)`/);
+      expect(block, name).not.toBeNull();
+      const sh = block![1]!;
+      expect(sh).toContain('$ARGUMENTS');
+      // A real path wins, then the app folder, then a unique match anywhere.
+      expect(sh).toContain('projects/');
+      expect(sh).toContain('$root/$app/$p');
+      expect(sh).toContain('find');
+      // Every unhappy outcome is named, so the agent can refuse instead of
+      // inventing a plan.
+      expect(sh).toContain('NOT FOUND');
+      expect(sh).toContain('AMBIGUOUS');
+      expect(sh).toContain('NO ARGUMENT GIVEN');
+      // …and the prompt tells it to refuse on exactly those.
+      expect(cmd).toContain('NOT FOUND, AMBIGUOUS or NO ARGUMENT');
+      expect(cmd).toMatch(/do not touch any\s+files/);
+    }
+  });
+
+  it('scopes plans per app, in the planner and in the plan command', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
+    expect(planner).toContain('~/.local/share/opencode/plans/<app>/<slug>.md');
+    const cmd = await read(path.join(commandsDir(), 'monoceros-plan.md'));
+    // The app comes from the working directory, resolved in shell…
+    expect(cmd).toMatch(/!`pwd \| sed[^`]*projects[^`]*`/);
+    // …and the planner is told what to do when there is no app in the cwd,
+    // instead of writing into the root and losing the slug-only lookup.
+    expect(cmd).toMatch(/If the\s+line above is empty/);
+    expect(cmd).toContain('say which one you picked');
   });
 
   it('overwrites its own files on a second apply', async () => {

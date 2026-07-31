@@ -113,8 +113,9 @@ implementer.
 
 ## 4. Write the plan
 
-Write it to `{{PLANS_DIR_TILDE}}/<slug>.md` using the template at the end of this
-prompt.
+Write it to `{{PLANS_DIR_TILDE}}/<app>/<slug>.md` - one folder per app under
+`projects/`, so a slug alone is enough to find it later. Use the template at the
+end of this prompt.
 Rules that make the difference between a plan a smaller model can execute and
 one it cannot:
 
@@ -143,7 +144,7 @@ One step, one delegation:
 
     task(subagent_type: "monoceros-implement",
          prompt: "Implement step 2 of the plan at
-                  {{PLANS_DIR_TILDE}}/<slug>.md. Read the
+                  {{PLANS_DIR_TILDE}}/<app>/<slug>.md. Read the
                   whole plan first. Run <acceptance command> and paste the
                   output tail in your final message.")
 
@@ -163,7 +164,7 @@ Once the check is green:
 
     task(subagent_type: "monoceros-review",
          prompt: "Review the change against
-                  {{PLANS_DIR_TILDE}}/<slug>.md. Changed files are
+                  {{PLANS_DIR_TILDE}}/<app>/<slug>.md. Changed files are
                   in `git diff`, new ones are untracked in `git status` and have
                   to be read in full. Verdict plus numbered items.")
 
@@ -208,7 +209,7 @@ loses the contract the implementer and the reviewer are told to rely on.
 # <one-line title of the change>
 
 **Source:** <issue URL / Jira key / backlog file and heading / "ad hoc">
-**Plan file:** `{{PLANS_DIR_TILDE}}/<slug>.md`
+**Plan file:** `{{PLANS_DIR_TILDE}}/<app>/<slug>.md`
 **Written by:** planner (<model>)
 
 ## Goal
