@@ -130,6 +130,19 @@ cwd is irrelevant — everything goes through convention.
   ports, run `docker rm -f monoceros-proxy` before testing in a
   different home (and so you don't leave a proxy corpse behind for the
   builder). Details in the README under “Developing on the workbench”.
+- **On macOS you cannot see a permission bug in the container tree.**
+  Docker Desktop's VirtioFS does not pass container-side ownership to the
+  host, so an SSH host key (0600 root) or a postgres cluster (0700, uid 999) looks like your own file and every host-side read, copy and delete
+  succeeds. On Linux the uids are real and the same code raises `EACCES`.
+  So: anything touching `<container-dir>/.monoceros/ssh/`,
+  `data/<service>/` or a backup of either does the work **from a
+  container** (`alpine:3.21`, `cp -a`), and is verified against a **docker
+  volume** populated as root, not against a host fixture. A `chmod 000`
+  file on macOS proves nothing — container-root cannot read it either,
+  for the opposite reason. This cost three defects in one sitting
+  ([#75](https://github.com/getmonoceros/workbench/issues/75) plus two in
+  the e2e suite); the rule is
+  [ADR 0042](docs/adr/0042-root-owned-files-need-a-container-to-touch-them.md)
 - **Keep shell completion in step with the CLI.** Completion is derived
   from `COMMAND_SPECS` in
   [`packages/cli/src/completion/resolve.ts`](packages/cli/src/completion/resolve.ts),
