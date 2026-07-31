@@ -210,18 +210,34 @@ describe('writeOpencodeConfig', () => {
     const ext = (cfg.permission as Record<string, Record<string, unknown>>)
       .external_directory!;
     expect(ext).toEqual({
-      [`/workspaces/${NAME}/projects/*`]: 'allow',
+      [`/workspaces/${NAME}/*`]: 'allow',
       [`/workspaces/${NAME}/${NAME}.code-workspace`]: 'allow',
-      [`/workspaces/${NAME}/logs/*`]: 'allow',
-      [`/workspaces/${NAME}/AGENTS.md`]: 'allow',
-      [`/workspaces/${NAME}/CLAUDE.md`]: 'allow',
-      [`/workspaces/${NAME}/.monoceros/*`]: 'allow',
+      [`/workspaces/${NAME}/home/*`]: 'deny',
+      [`/workspaces/${NAME}/data/*`]: 'deny',
+      [`/workspaces/${NAME}/.devcontainer/*`]: 'deny',
       [`/workspaces/${NAME}/.monoceros/git-credentials`]: 'deny',
     });
-    // No blanket workspace allow, nothing under home/ or data/.
-    expect(ext[`/workspaces/${NAME}/*`]).toBeUndefined();
-    expect(ext[`/workspaces/${NAME}/home/*`]).toBeUndefined();
-    expect(ext[`/workspaces/${NAME}/data/*`]).toBeUndefined();
+  });
+
+  it('keeps the closed paths closed and after the allow', async () => {
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: {} });
+    const cfg = await read();
+    const ext = (cfg.permission as Record<string, Record<string, unknown>>)
+      .external_directory!;
+    const keys = Object.keys(ext);
+    const allowAt = keys.indexOf(`/workspaces/${NAME}/*`);
+    for (const closed of [
+      `/workspaces/${NAME}/home/*`,
+      `/workspaces/${NAME}/data/*`,
+      `/workspaces/${NAME}/.devcontainer/*`,
+      `/workspaces/${NAME}/.monoceros/git-credentials`,
+    ]) {
+      expect(ext[closed], closed).toBe('deny');
+      expect(
+        keys.indexOf(closed),
+        `${closed} must come after the allow`,
+      ).toBeGreaterThan(allowAt);
+    }
   });
 
   // The bug this closes: every path in `instructions` sits at the workspace
@@ -272,7 +288,7 @@ describe('writeOpencodeConfig', () => {
     expect(cfg.permission).toBe('allow');
   });
 
-  it('merges external_directory: keeps user entries, adds projects/*', async () => {
+  it('merges external_directory: keeps user entries, adds the workspace', async () => {
     await fsp.mkdir(path.dirname(cfgPath()), { recursive: true });
     await fsp.writeFile(
       cfgPath(),
@@ -289,7 +305,7 @@ describe('writeOpencodeConfig', () => {
     expect(perm.bash).toBe('allow');
     const ext = perm.external_directory as Record<string, unknown>;
     expect(ext['/data/*']).toBe('allow');
-    expect(ext[`/workspaces/${NAME}/projects/*`]).toBe('allow');
+    expect(ext[`/workspaces/${NAME}/*`]).toBe('allow');
   });
 
   // OpenCode does not follow the `@`-imports in AGENTS.md the way Claude

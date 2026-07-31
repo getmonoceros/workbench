@@ -88,12 +88,11 @@ export function parseOpencodeModel(
  * Code reaches those files through the `@`-imports in AGENTS.md — OpenCode
  * does not follow those, so it needs them listed here or the agent works
  * from a briefing with holes in it.
- * `permission.external_directory` pre-allows the
- * workspace paths the briefing tells the agent to use (`projects/*`, the
- * `<name>.code-workspace` file, `logs/*`) **and the briefing files
- * themselves** (`AGENTS.md`, `CLAUDE.md`, `.monoceros/*`) so it isn't
- * prompted for those; `home/`, `data/`, `.devcontainer/` and the git
- * credentials stay gated.
+ * `permission.external_directory` follows the mount: the workspace is
+ * pre-allowed (it is the agent's working area, and the briefing files the
+ * `instructions` above point at live at its root), with `home/`, `data/`,
+ * `.devcontainer/` and `.monoceros/git-credentials` denied back afterwards -
+ * last matching rule wins.
  */
 export async function writeOpencodeConfig(
   targetDir: string,
@@ -200,29 +199,38 @@ export async function writeOpencodeConfig(
       permission.external_directory !== null
         ? (permission.external_directory as Record<string, unknown>)
         : {};
+    // The whole workspace, then the few things inside it that stay closed.
+    //
+    // It used to be `projects/*`, the code-workspace file and `logs/*`, which
+    // left the agent asking for the workbench's own briefing: every path in
+    // `instructions` above sits at the workspace root, so an agent launched
+    // from a project subdir is outside all of them, and the same function that
+    // points it at those files never allowed them. Listing the briefing files
+    // one by one fixed that case and left the next one: `ls /workspaces/<name>`
+    // still prompts, and so does every path a builder adds later.
+    //
+    // So the rule follows the actual boundary. The workspace is the agent's
+    // working area - that is what the mount is for. What must not leak is
+    // narrower than a directory listing and is denied back below, after the
+    // allow, because OpenCode resolves last-match-wins.
     for (const p of [
-      `${workspaceRoot}/projects/*`,
+      `${workspaceRoot}/*`,
       `${workspaceRoot}/${containerName}.code-workspace`,
-      `${workspaceRoot}/logs/*`,
-      // The briefing itself. Every path in `instructions` above sits at the
-      // workspace root, so an agent launched from a project subdir is outside
-      // its own briefing and gets prompted for the files this same function
-      // told it to read. `AGENTS.md` plus `.monoceros/*` covers the managed
-      // set and the chapters a builder adds later; `CLAUDE.md` because
-      // Claude Code reads the same tree and a mixed-agent container should
-      // not differ. Still gated: `home/`, `data/`, `.devcontainer/` and
-      // `.monoceros/git-credentials` — the last one is a file, and the star
-      // here spans `/`, so it is covered by the directory rule and has to be
-      // denied back explicitly below.
-      `${workspaceRoot}/AGENTS.md`,
-      `${workspaceRoot}/CLAUDE.md`,
-      `${workspaceRoot}/.monoceros/*`,
     ]) {
       ext[p] = 'allow';
     }
-    // Last matching rule wins in OpenCode, and `.monoceros/*` above would
-    // otherwise hand out the git credentials with the briefing.
-    ext[`${workspaceRoot}/.monoceros/git-credentials`] = 'deny';
+    // `home/` holds the provider keys and `.claude.json`, `data/` the service
+    // volumes' contents, `.devcontainer/` the generated build inputs (feature
+    // options include tokens), and the git credentials are a password file.
+    // None of them is something an agent needs to read to do its work.
+    for (const p of [
+      `${workspaceRoot}/home/*`,
+      `${workspaceRoot}/data/*`,
+      `${workspaceRoot}/.devcontainer/*`,
+      `${workspaceRoot}/.monoceros/git-credentials`,
+    ]) {
+      ext[p] = 'deny';
+    }
     permission.external_directory = ext;
     config.permission = permission;
   }
