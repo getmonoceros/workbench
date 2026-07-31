@@ -59,7 +59,9 @@ export function generateServersMd(
   lines.push(
     'That covers checking your own work too: start the server, `curl` it,',
     'read `monoceros-ctl logs <app>` if the answer surprises you. You never',
-    'need a background process of your own.',
+    'need a background process of your own. `logs` follows the file on a',
+    'terminal and dumps it when the output is piped or captured, so it ends by',
+    'itself for you; `--no-follow` forces the dump, `--follow` the opposite.',
   );
   lines.push('');
 

@@ -137,4 +137,18 @@ describe('.monoceros/servers.md generator', () => {
     expect(md).toContain('You never');
     expect(md).toContain('monoceros-ctl logs <app>');
   });
+
+  // `logs` followed the file unconditionally, so `monoceros-ctl logs <app> |
+  // tail -3` from an agent's shell tool blocked until the 120s timeout - the
+  // same trap the chapter above warns about, in the command it recommends.
+  // The runtime now follows only into a terminal; the briefing has to say so,
+  // or the next agent avoids the command instead of using it.
+  it('says logs ends by itself when its output is not a terminal', () => {
+    const md = generateServersMd({ containerName: 'demo', ports: [3000] });
+    expect(md).toMatch(
+      /follows the file on a\s+terminal and dumps it when the output is piped/,
+    );
+    expect(md).toContain('--no-follow');
+    expect(md).toContain('--follow');
+  });
 });

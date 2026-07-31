@@ -9,7 +9,7 @@
 #
 #   monoceros-ctl start <app> [--target <t>]
 #   monoceros-ctl stop  <app> [--target <t>]
-#   monoceros-ctl logs  <app> [--target <t>] [--no-follow]
+#   monoceros-ctl logs  <app> [--target <t>] [--follow|--no-follow]
 #   monoceros-ctl list
 #   monoceros-ctl reconcile
 #
@@ -339,7 +339,16 @@ cmd_logs() {
   target="$(resolve_target "$app" "$target")"
   local logf; logf="$(log_dir "$app")/$target.log"
   [ -f "$logf" ] || die "no log for $app/$target at $logf (started yet?)"
-  if [ "$follow" = "1" ]; then
+  # Follow only into a terminal. A human running this wants to watch; anything
+  # reading the output through a pipe wants it to end - and an AI agent is the
+  # common case here, because the briefing sends it to this command to check
+  # its own work. `monoceros-ctl logs <app> | tail -3` from an agent's shell
+  # tool blocked until the tool's 120s timeout, on a server that was fine.
+  # Explicit `--follow` overrides, for `| grep --line-buffered` and friends.
+  if [ "$follow" = "1" ] && [ ! -t 1 ]; then
+    follow="0"
+  fi
+  if [ "$follow" != "0" ]; then
     exec tail -n +1 -F "$logf"
   else
     exec cat "$logf"
@@ -435,6 +444,7 @@ main() {
       --target) target="${2:-}"; shift 2 ;;
       --target=*) target="${1#--target=}"; shift ;;
       --no-follow) follow="0"; shift ;;
+      --follow) follow="2"; shift ;;
       --json) json="1"; shift ;;
       -*) die "unknown flag: $1" ;;
       *) [ -z "$app" ] && app="$1"; shift ;;
@@ -444,7 +454,7 @@ main() {
   case "$sub" in
     start) [ -n "$app" ] || die "usage: monoceros-ctl start <app> [--target <t>]"; cmd_start "$app" "$target" ;;
     stop)  [ -n "$app" ] || die "usage: monoceros-ctl stop <app> [--target <t>]";  cmd_stop "$app" "$target" ;;
-    logs)  [ -n "$app" ] || die "usage: monoceros-ctl logs <app> [--target <t>] [--no-follow]"; cmd_logs "$app" "$target" "$follow" ;;
+    logs)  [ -n "$app" ] || die "usage: monoceros-ctl logs <app> [--target <t>] [--follow|--no-follow]"; cmd_logs "$app" "$target" "$follow" ;;
     list)  cmd_list "$json" ;;
     reconcile) cmd_reconcile ;;
     ""|-h|--help|help)
@@ -453,7 +463,9 @@ monoceros-ctl — start/stop long-running app servers inside the container
 
   monoceros-ctl start <app> [--target <t>]   start an app's server (detached)
   monoceros-ctl stop  <app> [--target <t>]   stop it (kills the process group)
-  monoceros-ctl logs  <app> [--target <t>]   tail its log (--no-follow to dump)
+  monoceros-ctl logs  <app> [--target <t>]   follow its log on a terminal, dump
+                                            it when piped (--follow/--no-follow
+                                            to force either way)
   monoceros-ctl list [--json]                list apps, targets and run state
                                              (--json: NDJSON for `monoceros status`)
   monoceros-ctl reconcile                    restart every "wanted" target (one
