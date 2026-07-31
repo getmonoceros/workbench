@@ -32,6 +32,13 @@ options:
     surface: silent
 feature:
   version: 1.0.0
-  persistentHomePaths: [.config/opencode, .local/share/opencode]
+  # `.config` holds opencode.json and the agents/commands, `.local/share` the
+  # session database and auth, `.local/state` the XDG state dir - which is
+  # where opencode keeps the model picker's recent/favourite list and its
+  # per-model variant choice. Without the third one every apply resets the
+  # model picker to empty. `.cache/opencode` is deliberately NOT here: it is
+  # the models.json download and a binary, both re-fetched on demand.
+  persistentHomePaths:
+    [.config/opencode, .local/share/opencode, .local/state/opencode]
 briefing:
   - text: 'OpenCode (`opencode`) — open-source, provider-agnostic AI coding agent. Reads this AGENTS.md as project instructions. Model + provider key (when set in the yml) live in `~/.config/opencode/opencode.json`; otherwise authenticate once with `opencode auth login`.'
