@@ -22,5 +22,6 @@ the work open, grill me one question at a time before you write anything, each
 with the answer you would assume. If it is already unambiguous, say so and go
 straight to the plan.
 
-Stop once the plan file is written. Show me the plan summary and the slug I can
-pass to `/monoceros-ship`. Do not delegate yet.
+Stop once the plan file is written. Show me the plan summary, the two commands
+for the next steps with the plan as `<app>/<slug>`, and anything I have to do on
+the host myself. Do not implement and do not delegate: I run the steps.

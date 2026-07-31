@@ -58,11 +58,9 @@ describe('writeOpencodeRoles', () => {
         expect(f.startsWith('monoceros-'), f).toBe(true);
       }
     }
-    // …and the delegation targets match the prefixed agent names, or the
-    // planner would call subagents that do not exist.
+    // …and the task permission names the prefixed agents, so the capability
+    // matches the names even though the planner is told not to use it.
     const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
-    expect(planner).toContain('subagent_type: "monoceros-implement"');
-    expect(planner).toContain('subagent_type: "monoceros-review"');
     expect(planner).toContain(
       "task: { '*': deny, 'monoceros-implement': allow, 'monoceros-review': allow }",
     );
@@ -336,6 +334,34 @@ describe('writeOpencodeRoles', () => {
     expect(impl).toContain('/monoceros-review todo-app/dark-mode-toggle');
     // …and it hands over a URL rather than the fact that tests passed.
     expect(impl).toContain('localhost');
+  });
+
+  // The prompt used to contradict its own command: `/monoceros-plan` said "stop,
+  // do not delegate" while sections 5 to 8 explained how to drive the chain with
+  // `task(...)`. The user runs the steps - one command each - so the planner
+  // hands over and stops.
+  it('has the planner hand over instead of driving the chain', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
+
+    expect(planner).toContain('## 5. Hand over and stop');
+    // No instructions to call the other roles.
+    expect(planner).not.toContain('subagent_type:');
+    expect(planner).not.toContain('task_id');
+    // It hands over both commands, in order, in the form that resolves anywhere.
+    expect(planner).toContain('/monoceros-ship <app>/<slug>');
+    expect(planner).toContain('/monoceros-review <app>/<slug>');
+    // And the reason, so the model does not "help" by finishing the work.
+    expect(planner).toMatch(
+      /quietly turned\s+into a finished change is not reviewable/,
+    );
+    // A failure that comes back is information about the plan, not a repair job.
+    expect(planner).toMatch(/adjust the plan/);
+
+    // The command agrees with the prompt now.
+    const cmd = await read(path.join(commandsDir(), 'monoceros-plan.md'));
+    expect(cmd).toContain('I run the steps');
+    expect(cmd).not.toContain('Do not delegate yet');
   });
 
   it('overwrites its own files on a second apply', async () => {
