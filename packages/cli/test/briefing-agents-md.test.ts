@@ -55,6 +55,12 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain(
       '- Start and stop servers with `monoceros-ctl start|stop|logs <app>`',
     );
+    // The short form carries the two traps as well: an agent that reads only
+    // AGENTS.md must not learn the rule as a mere style preference. A real run
+    // burned 598 of 617 tool-seconds on `node server.js &` and `pkill -f`.
+    expect(md).toContain('never');
+    expect(md).toContain('holds your stdout open until your tool call');
+    expect(md).toContain('`pkill -f` kills the shell running it');
     expect(md).toContain('- Nothing you install from inside survives the next');
     expect(md).toContain("- `monoceros …` commands are the user's to run");
   });

@@ -30,6 +30,38 @@ export function generateServersMd(
     'normal case. The long form of the server rules in `AGENTS.md`.',
   );
   lines.push('');
+  lines.push(
+    '**Start and stop every server with `monoceros-ctl`, never from your own',
+    'shell.** This is not a style rule, it is the difference between a',
+    'command that returns in a second and one that blocks you for minutes:',
+  );
+  lines.push('');
+  lines.push(
+    '- `node server.js &` (or any background start) keeps YOUR stdout and',
+    '  stderr open for as long as the server lives, so your shell tool waits',
+    '  for streams that never close and gives up on its timeout - two lost',
+    '  minutes per attempt, even though the server came up instantly.',
+    '- `pkill -f <pattern>` matches full command lines, including the one of',
+    '  the shell that is running your `pkill`. `pkill -f server.js` inside',
+    '  `sh -c "... server.js ..."` kills that shell, your tool call loses its',
+    '  process, and you wait out the timeout again.',
+  );
+  lines.push('');
+  lines.push(
+    '`monoceros-ctl` has neither problem by construction: `start` detaches the',
+    'server with its own session and redirects its output to a log file, so',
+    'your streams stay free and the call returns as soon as the port listens.',
+    '`stop` signals the recorded process group, so there is no pattern to',
+    'match and nothing of yours to hit. `logs` shows the output without',
+    'holding anything open.',
+  );
+  lines.push('');
+  lines.push(
+    'That covers checking your own work too: start the server, `curl` it,',
+    'read `monoceros-ctl logs <app>` if the answer surprises you. You never',
+    'need a background process of your own.',
+  );
+  lines.push('');
 
   lines.push('## Keep it running');
   lines.push('');

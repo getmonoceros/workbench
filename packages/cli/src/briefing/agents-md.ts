@@ -153,8 +153,11 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     '- A server needs three things: a port exposed on the container, an entry',
     '  in `projects/<app>/.monoceros/launch.json`, and a process that listens',
     '  on `0.0.0.0` (not `127.0.0.1`).',
-    '- Start and stop servers with `monoceros-ctl start|stop|logs <app>`. A',
-    '  foreground start dies with this session.',
+    '- Start and stop servers with `monoceros-ctl start|stop|logs <app>`, never',
+    '  from your own shell. A foreground start dies with this session, a',
+    '  backgrounded one (`… &`) holds your stdout open until your tool call',
+    '  times out, and `pkill -f` kills the shell running it. `monoceros-ctl`',
+    '  has none of those problems and waits until the port listens.',
     ...(deploy
       ? [
           '- Take a compose file for the pipeline from `.monoceros/deploy.md`, block',

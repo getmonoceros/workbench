@@ -100,4 +100,41 @@ describe('.monoceros/servers.md generator', () => {
     expect(default80).toContain('`demo.localhost` returns 502 Bad Gateway');
     expect(default80).not.toContain('demo.localhost:80');
   });
+
+  // A real agent run lost 598 of its 617 tool-seconds to five calls: three
+  // `node server.js &` starts and two `pkill -f server.js` stops, each killed
+  // by the 120s tool timeout. The briefing named monoceros-ctl but justified
+  // it only with "survives your session", so working around it looked free.
+  it('names the two traps that make a shell-started server cost minutes', () => {
+    const md = generateServersMd({ containerName: 'demo', ports: [3000] });
+
+    // The rule has to be findable before the launch-config JSON, because that
+    // is where an agent in a hurry stops reading.
+    const rulePos = md.indexOf('never from your own');
+    const jsonPos = md.indexOf('"targets"');
+    expect(rulePos).toBeGreaterThan(-1);
+    expect(rulePos).toBeLessThan(jsonPos);
+
+    // Trap 1: the backgrounded start holds the agent's own streams open.
+    expect(md).toContain('node server.js &');
+    expect(md).toMatch(/keeps YOUR stdout and\s+stderr open/);
+    expect(md).toContain('timeout');
+
+    // Trap 2: pkill -f matches the command line of the shell running it.
+    expect(md).toContain('pkill -f');
+    expect(md).toMatch(/kills that shell/);
+
+    // And why monoceros-ctl is immune, so the rule reads as a solution
+    // rather than a prohibition.
+    expect(md).toMatch(/detaches the\s+server/);
+    expect(md).toContain('redirects its output to a log file');
+    expect(md).toContain('signals the recorded process group');
+  });
+
+  it('tells the agent it can verify its own work without a background process', () => {
+    const md = generateServersMd({ containerName: 'demo', ports: [3000] });
+    expect(md).toMatch(/start the server, `curl` it/);
+    expect(md).toContain('You never');
+    expect(md).toContain('monoceros-ctl logs <app>');
+  });
 });
