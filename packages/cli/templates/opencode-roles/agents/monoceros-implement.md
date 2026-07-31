@@ -102,3 +102,8 @@ The last one has bitten a real run: a plan named `monoceros add-port <name>
 3000` as a host step, the implementer read that plan, and then reported only
 the three sections above. The tests passed, the app was invisible in the
 browser, and nobody knew why.
+
+## Language
+
+Report to the user in the language they write in. Code, comments, commit
+messages and the plan itself stay English, as the briefing requires.

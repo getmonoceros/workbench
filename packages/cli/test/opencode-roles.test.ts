@@ -275,6 +275,30 @@ describe('writeOpencodeRoles', () => {
     ).toBe(false);
   });
 
+  // The workbench briefing already says it ("Chat with the user in their
+  // language", AGENTS.md), but a several-hundred-line English system prompt
+  // outweighs a briefing chapter: the planner answered a German prompt in
+  // English. Each role repeats the rule where the model actually looks, with
+  // the boundary that keeps it stable - artifacts stay English.
+  it('tells every role to answer in the user language and keep artifacts English', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    for (const f of await readdir(agentsDir())) {
+      const body = await read(path.join(agentsDir(), f));
+      expect(body, f).toContain('## Language');
+      expect(body, f).toMatch(/language they write in/);
+      expect(body, f).toContain('English');
+    }
+    // The planner keeps the plan file English, because the two roles that read
+    // it work from English prompts.
+    const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
+    expect(planner).toMatch(/plan \*\*file\*\* stays English/);
+    // The reviewer must not translate what the planner matches on.
+    const review = await read(path.join(agentsDir(), 'monoceros-review.md'));
+    expect(review).toContain('`PASS`');
+    expect(review).toContain('`CHANGES_REQUIRED`');
+    expect(review).toMatch(/stay literal/);
+  });
+
   it('overwrites its own files on a second apply', async () => {
     await writeOpencodeRoles(dir, {
       [OPENCODE]: {},

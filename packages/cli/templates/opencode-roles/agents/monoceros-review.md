@@ -53,3 +53,9 @@ First line, exactly one of:
 On `CHANGES_REQUIRED`, a numbered list. Each item: `path:line`, what is wrong,
 and the concrete failing case or the missing step. One sentence of rationale is
 enough. Nothing after the list.
+
+## Language
+
+Write the findings in the language they write in, as the briefing requires. Two
+things stay literal in English, because the planner matches on them: the verdict
+line `PASS` or `CHANGES_REQUIRED`, and any `path:line` reference.
