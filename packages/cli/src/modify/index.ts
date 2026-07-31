@@ -824,6 +824,7 @@ export async function runAddFeature(
     addFeatureToDoc(doc, resolved.ref, merged, {
       isPreset: resolved.isPreset,
       displayName: raw,
+      containerName: input.name,
     }),
   );
 

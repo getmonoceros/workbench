@@ -506,8 +506,10 @@ describe('add-*/remove-* against the yml', () => {
         options: { rovodev: false }, // different from catalog default
         monocerosHome: home,
       }),
+      // The hint has to be a command that works when pasted: `remove-feature`
+      // takes the container name first, and the message used to omit it.
     ).rejects.toThrow(
-      /Feature atlassian is already configured[\s\S]*monoceros remove-feature atlassian/,
+      /Feature atlassian is already configured[\s\S]*monoceros remove-feature demo atlassian/,
     );
   });
 

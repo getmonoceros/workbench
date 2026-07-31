@@ -524,7 +524,10 @@ export function addInstallUrlToDoc(doc: Document, url: string): boolean {
  *
  * `displayName` is the form the builder typed (short-name or full ref),
  * echoed in the conflict error so the `monoceros remove-feature <X>` hint
- * matches what they ran. Defaults to `ref`.
+ * matches what they ran. Defaults to `ref`. `containerName` completes that
+ * hint: `remove-feature` takes the container first, so a message without it
+ * is a command that fails when pasted. Falls back to `<name>`, which at
+ * least reads as a placeholder.
  *
  * Credential option hints (`surface: env`) are filled as ACTIVE `${VAR}`
  * placeholders on whichever options block is written, so an empty/missing
@@ -537,7 +540,11 @@ export function addFeatureToDoc(
   doc: Document,
   ref: string,
   options: FeatureOptions = {},
-  opts: { isPreset?: boolean; displayName?: string } = {},
+  opts: {
+    isPreset?: boolean;
+    displayName?: string;
+    containerName?: string;
+  } = {},
 ): boolean {
   const seq = ensureSeq(doc, 'features');
   const label = opts.displayName ?? ref;
@@ -576,7 +583,7 @@ export function addFeatureToDoc(
       return false;
     }
     throw new Error(
-      `Feature ${label} is already configured with different options. Remove it first (\`monoceros remove-feature ${label}\`) before re-adding.`,
+      `Feature ${label} is already configured with different options. Remove it first (\`monoceros remove-feature ${opts.containerName ?? '<name>'} ${label}\`) before re-adding.`,
     );
   }
   const mergedOptions = withHints(options);
