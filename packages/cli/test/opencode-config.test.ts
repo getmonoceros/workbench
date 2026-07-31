@@ -213,11 +213,55 @@ describe('writeOpencodeConfig', () => {
       [`/workspaces/${NAME}/projects/*`]: 'allow',
       [`/workspaces/${NAME}/${NAME}.code-workspace`]: 'allow',
       [`/workspaces/${NAME}/logs/*`]: 'allow',
+      [`/workspaces/${NAME}/AGENTS.md`]: 'allow',
+      [`/workspaces/${NAME}/CLAUDE.md`]: 'allow',
+      [`/workspaces/${NAME}/.monoceros/*`]: 'allow',
+      [`/workspaces/${NAME}/.monoceros/git-credentials`]: 'deny',
     });
     // No blanket workspace allow, nothing under home/ or data/.
     expect(ext[`/workspaces/${NAME}/*`]).toBeUndefined();
     expect(ext[`/workspaces/${NAME}/home/*`]).toBeUndefined();
     expect(ext[`/workspaces/${NAME}/data/*`]).toBeUndefined();
+  });
+
+  // The bug this closes: every path in `instructions` sits at the workspace
+  // root, so an agent started in a project subdir was outside its own briefing
+  // and got an access prompt for the files this function had just told it to
+  // read. It asked for `.monoceros/servers.md` on the way to learning how to
+  // start a server.
+  it('allows every file it lists in instructions', async () => {
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: {} }, [
+      resolveService({ name: 'postgres', image: 'postgres:18' }),
+    ]);
+    const cfg = await read();
+    const ext = (cfg.permission as Record<string, Record<string, unknown>>)
+      .external_directory!;
+    const allowed = Object.entries(ext)
+      .filter(([, v]) => v === 'allow')
+      .map(([k]) => k);
+    const covers = (file: string): boolean =>
+      allowed.some((rule) =>
+        rule.endsWith('/*')
+          ? file.startsWith(rule.slice(0, -1))
+          : rule === file,
+      );
+    for (const file of cfg.instructions as string[]) {
+      expect(covers(file), `${file} is not pre-allowed`).toBe(true);
+    }
+  });
+
+  it('keeps the git credentials denied even though .monoceros/* is allowed', async () => {
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: {} });
+    const cfg = await read();
+    const ext = (cfg.permission as Record<string, Record<string, unknown>>)
+      .external_directory!;
+    // Last matching rule wins in OpenCode, so the deny has to come after the
+    // directory allow it carves out of.
+    const keys = Object.keys(ext);
+    expect(ext[`/workspaces/${NAME}/.monoceros/git-credentials`]).toBe('deny');
+    expect(
+      keys.indexOf(`/workspaces/${NAME}/.monoceros/git-credentials`),
+    ).toBeGreaterThan(keys.indexOf(`/workspaces/${NAME}/.monoceros/*`));
   });
 
   it('leaves a string-valued permission policy untouched', async () => {
