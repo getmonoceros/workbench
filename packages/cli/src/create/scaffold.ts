@@ -8,6 +8,7 @@ import type { Descriptor, WorkspaceEnvBlock } from '../catalog/descriptor.js';
 import { writeClaudePermissionMode } from './claude-settings.js';
 import { isWsl, windowsSshPort } from '../devcontainer/ssh-attach.js';
 import { writeOpencodeConfig } from './opencode-config.js';
+import { writeOpencodeRoles } from './opencode-roles.js';
 import {
   BUILTIN_LANGUAGES,
   curatedServiceTools,
@@ -2240,6 +2241,10 @@ export async function writeScaffold(
   // apply-time-merge rationale as the claude write above. No-op without
   // the opencode feature.
   await writeOpencodeConfig(targetDir, opts.name, opts.features, opts.services);
+
+  // The opencode-roles feature's agents and commands, into the same
+  // persistent `~/.config/opencode/` tree. No-op without that feature.
+  await writeOpencodeRoles(targetDir, opts.features);
 
   await writePostCreateScript(devcontainerDir, opts);
 

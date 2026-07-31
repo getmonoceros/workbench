@@ -405,6 +405,36 @@
       ],
       "documentationURL": "https://opencode.ai/docs/",
       "presets": []
+    },
+    {
+      "name": "opencode-roles",
+      "displayName": "OpenCode roles (plan / implement / review)",
+      "description": "Three OpenCode agents that split a task: a planner writes a plan file, an implementer executes it, a reviewer checks the result against it. Adds `/monoceros-plan`, `/monoceros-ship` and `/monoceros-review`. Requires the `opencode` feature.",
+      "options": [
+        {
+          "key": "implementModel",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Model for the implementing role. This is the role that runs most often, so a cheaper model belongs here - but it must call tools reliably, or it burns more in retries than it saves. Empty: same fallback as `plannerModel`."
+        },
+        {
+          "key": "plannerModel",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Model for the planning role as `provider/model-id`. Planning carries the reasoning: a strong model here pays for itself, because the plan decides how small the implementing model can be. Empty: fall back to the `opencode` feature's `model`, and to whatever OpenCode would pick when that is empty too."
+        },
+        {
+          "key": "reviewModel",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Model for the reviewing role. Reviewing needs the same class of model as planning: it has to notice a step that was skipped, not just read a diff. Empty: same fallback as `plannerModel`."
+        }
+      ],
+      "documentationURL": "https://getmonoceros.build/docs/concepts/opencode-roles/",
+      "presets": []
     }
   ]
 }

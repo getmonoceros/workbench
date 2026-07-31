@@ -1,0 +1,26 @@
+id: opencode-roles
+name: opencode-roles
+category: feature
+displayName: OpenCode roles (plan / implement / review)
+description: 'Three OpenCode agents that split a task: a planner writes a plan file, an implementer executes it, a reviewer checks the result against it. Adds `/monoceros-plan`, `/monoceros-ship` and `/monoceros-review`. Requires the `opencode` feature.'
+documentationURL: https://getmonoceros.build/docs/concepts/opencode-roles/
+options:
+  plannerModel:
+    type: string
+    default: ''
+    description: "Model for the planning role as `provider/model-id`. Planning carries the reasoning: a strong model here pays for itself, because the plan decides how small the implementing model can be. Empty: fall back to the `opencode` feature's `model`, and to whatever OpenCode would pick when that is empty too."
+    surface: yml
+  implementModel:
+    type: string
+    default: ''
+    description: 'Model for the implementing role. This is the role that runs most often, so a cheaper model belongs here - but it must call tools reliably, or it burns more in retries than it saves. Empty: same fallback as `plannerModel`.'
+    surface: yml
+  reviewModel:
+    type: string
+    default: ''
+    description: 'Model for the reviewing role. Reviewing needs the same class of model as planning: it has to notice a step that was skipped, not just read a diff. Empty: same fallback as `plannerModel`.'
+    surface: yml
+feature:
+  version: 1.0.0
+briefing:
+  - text: 'OpenCode roles — `/monoceros-plan <task>` writes a plan to `~/.local/share/opencode/plans/<slug>.md`, `/monoceros-ship <plan>` implements it, `/monoceros-review <plan>` checks the result against it. The planner writes no source and the implementer cannot edit the plan it is measured against.'

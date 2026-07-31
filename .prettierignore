@@ -13,3 +13,9 @@ catalog.json
 # Claude, and its bytes must match the published zip; don't let prettier reflow
 # it (that would force a needless re-zip + web redeploy on every format pass).
 skills/
+
+# Prompt content, read by an AI agent and copied by it verbatim (the plan
+# template inside monoceros-planner.md is a literal). Same reasoning as
+# skills/ above: prettier reflowing a table or a fence changes what the model
+# reproduces, for no benefit to a human reader.
+packages/cli/templates/opencode-roles/
