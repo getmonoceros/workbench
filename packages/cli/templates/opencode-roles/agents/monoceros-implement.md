@@ -1,5 +1,5 @@
 ---
-description: Implements an approved plan. Use for every code change. The prompt must carry the path to a plan file under {{PLANS_DIR_TILDE}}/<app>/ and nothing else is assumed to be known.
+description: Implements an approved plan. Use for every code change. The prompt must carry the path to a plan file under {{PLANS_DIR}}/<app>/ and nothing else is assumed to be known.
 mode: all
 {{MODEL_LINE}}
 permission:
@@ -11,7 +11,7 @@ permission:
   # against, because the edit tool asks with a worktree-relative path.
   edit: { '*': allow, '{{PLANS_DIR}}/*': deny, '{{PLANS_MATCH}}/*': deny }
   write: { '*': allow, '{{PLANS_DIR}}/*': deny, '{{PLANS_MATCH}}/*': deny }
-  external_directory: { '{{PLANS_DIR}}/*': allow }
+  external_directory: { '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
   task: { '*': deny, 'monoceros-review': allow }
   bash:
     # Allow by default - this role exists to change things - and deny what
@@ -36,7 +36,7 @@ permission:
 
 You implement an approved plan. You do not design.
 
-The prompt you were given names a plan file under `{{PLANS_DIR_TILDE}}/<app>/`. Read the whole file
+The prompt you were given names a plan file under `{{PLANS_DIR}}/<app>/`. Read the whole file
 before you touch anything, including the out-of-scope section.
 
 ## How you work

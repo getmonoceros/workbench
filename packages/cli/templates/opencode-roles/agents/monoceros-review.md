@@ -22,7 +22,7 @@ permission:
     '*> *': deny
     '*>>*': deny
   # The plan lives in opencode's data dir, outside the workspace.
-  external_directory: { '{{PLANS_DIR}}/*': allow }
+  external_directory: { '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
   task: { '*': deny }
 ---
 

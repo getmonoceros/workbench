@@ -1,5 +1,5 @@
 ---
-description: Turns a task (issue, backlog entry, free text) into a plan file under {{PLANS_DIR_TILDE}}/ and drives it through implement and review. Writes no source.
+description: Turns a task (issue, backlog entry, free text) into a plan file under {{PLANS_DIR}}/ and drives it through implement and review. Writes no source.
 mode: primary
 {{MODEL_LINE}}
 permission:
@@ -13,7 +13,7 @@ permission:
   # one covers both; without it the planner cannot write its own plan.
   edit: { '*': deny, '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
   write: { '*': deny, '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
-  external_directory: { '{{PLANS_DIR}}/*': allow }
+  external_directory: { '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
   bash:
     # Allow by default, deny what mutates. An allowlist loses here: opencode
     # splits a command at &&, ||, ; and pipes and evaluates every part, so one
@@ -119,9 +119,15 @@ implementer.
 
 ## 4. Write the plan
 
-Write it to `{{PLANS_DIR_TILDE}}/<app>/<slug>.md` - one folder per app under
+Write it to `{{PLANS_DIR}}/<app>/<slug>.md` - one folder per app under
 `projects/`, so a slug alone is enough to find it later. Use the template at the
 end of this prompt.
+
+That path is absolute and spelled out on purpose. Write it exactly like that,
+never as `~/...`: the tilde would be yours to expand, not the shell's, and
+guessing the wrong home is how the write ends up outside what you are allowed
+to touch.
+
 Rules that make the difference between a plan a smaller model can execute and
 one it cannot:
 
@@ -172,7 +178,7 @@ On approval, and only then:
     task(subagent_type: "monoceros-implement",
          prompt: "You are a step in a chain, not the lead: report back when you
                   are done and do NOT delegate to anyone.
-                  Implement the plan at {{PLANS_DIR_TILDE}}/<app>/<slug>.md.
+                  Implement the plan at {{PLANS_DIR}}/<app>/<slug>.md.
                   Reply in <the plan's language>.
                   Read the whole plan first. Run <acceptance command> and paste
                   the tail of its real output.")
@@ -192,7 +198,7 @@ Then the review, the same way:
     task(subagent_type: "monoceros-review",
          prompt: "You are a step in a chain, not the lead: report back and do
                   NOT delegate.
-                  Review the change against {{PLANS_DIR_TILDE}}/<app>/<slug>.md.
+                  Review the change against {{PLANS_DIR}}/<app>/<slug>.md.
                   Reply in <the plan's language>.")
 
 ## 7. Repair, twice at most
@@ -226,7 +232,7 @@ The user was away while this ran; the report is all they get.
   will build a workaround around it: a real run claimed `monoceros-ctl` was
   missing from the container without ever running `command -v monoceros-ctl`.
   The tool was there, and the plan told the user to start servers by hand.
-- You never edit source. Your write permission covers `{{PLANS_DIR_TILDE}}/` only,
+- You never edit source. Your write permission covers `{{PLANS_DIR}}/` only,
   and that is deliberate: the plan is not a project file. Wiping `projects/`
   must not take the plans with it.
 - When a tool is blocked by the permission layer, that is an instruction, not
@@ -260,7 +266,7 @@ loses the contract the implementer and the reviewer are told to rely on.
 # <one-line title of the change>
 
 **Source:** <issue URL / Jira key / backlog file and heading / "ad hoc">
-**Plan file:** `{{PLANS_DIR_TILDE}}/<app>/<slug>.md`
+**Plan file:** `{{PLANS_DIR}}/<app>/<slug>.md`
 **Written by:** planner (<model>)
 **Reply to the user in:** <the language the user writes in, e.g. German>
 

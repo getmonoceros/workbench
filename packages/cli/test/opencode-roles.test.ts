@@ -11,6 +11,13 @@ const OPENCODE = 'ghcr.io/getmonoceros/monoceros-features/opencode:1';
 const ROLES = 'ghcr.io/getmonoceros/monoceros-features/opencode-roles:1';
 
 const PLANS = '/home/node/.local/share/opencode/plans';
+/**
+ * The same directory as the permission layer spells it for `edit`: with the
+ * leading slash stripped. That is not a guess - the container log shows
+ * `permission=edit pattern=home/node/.local/share/opencode/plans/x.md` denied
+ * while `external_directory` allowed the absolute form in the same second.
+ */
+const PLANS_MATCH = '*/.local/share/opencode/plans';
 
 let dir: string;
 
@@ -118,11 +125,20 @@ describe('writeOpencodeRoles', () => {
   it('renders the plans directory in both spellings, and leaves no placeholder', async () => {
     await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
     const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
-    // external_directory is asked with the canonical absolute path, so that
-    // rule keeps the absolute spelling; the prose reads better with ~. The
-    // edit/write pair needs both spellings and has its own test below.
-    expect(planner).toContain(`external_directory: { '${PLANS}/*': allow }`);
-    expect(planner).toContain('~/.local/share/opencode/plans/<app>/<slug>.md');
+    // Every rule carries both spellings, external_directory included: it is
+    // asked with the canonical absolute path today, and the one rule that was
+    // left absolute-only is the one that locked the planner out.
+    expect(planner).toContain(
+      `external_directory: { '${PLANS}/*': allow, '${PLANS_MATCH}/*': allow }`,
+    );
+    // No tilde in anything that yields a path. The model, not the shell, would
+    // expand it, and it guesses /root in a container that runs as node.
+    expect(planner).toContain(`${PLANS}/<app>/<slug>.md`);
+    for (const f of ['monoceros-planner.md', 'monoceros-implement.md']) {
+      expect(await read(path.join(agentsDir(), f)), f).not.toContain(
+        '~/.local/share/opencode/plans',
+      );
+    }
     for (const d of [agentsDir(), commandsDir()]) {
       for (const f of await readdir(d)) {
         expect(await read(path.join(d, f)), f).not.toContain('{{');
@@ -218,7 +234,7 @@ describe('writeOpencodeRoles', () => {
   it('scopes plans per app, in the planner and in the plan command', async () => {
     await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
     const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
-    expect(planner).toContain('~/.local/share/opencode/plans/<app>/<slug>.md');
+    expect(planner).toContain(`${PLANS}/<app>/<slug>.md`);
     const cmd = await read(path.join(commandsDir(), 'monoceros-plan.md'));
     // The app comes from the working directory, resolved in shell…
     expect(cmd).toMatch(/!`pwd \| sed[^`]*projects[^`]*`/);
