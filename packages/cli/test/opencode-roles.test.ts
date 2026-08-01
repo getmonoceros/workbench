@@ -342,56 +342,83 @@ describe('writeOpencodeRoles', () => {
     expect(impl).toContain('localhost');
   });
 
-  // The prompt used to contradict its own command: `/monoceros-plan` said "stop,
-  // do not delegate" while sections 5 to 8 explained how to drive the chain with
-  // `task(...)`. The user runs the steps - one command each - so the planner
-  // hands over and stops.
-  it('has the planner hand over instead of driving the chain', async () => {
+  // Three entry points, one rule: whoever is called leads, and a role invoked
+  // as a subagent never delegates further. That also keeps the chain at
+  // subagent depth 1, which is the default limit.
+  it('gives each role its leadership rule', async () => {
     await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
     const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
-
-    expect(planner).toContain('## 5. Hand over and stop');
-    // No instructions to call the other roles.
-    expect(planner).not.toContain('subagent_type:');
-    expect(planner).not.toContain('task_id');
-    // It hands over both commands, in order, in the form that resolves anywhere.
-    expect(planner).toContain('/monoceros-ship <app>/<slug>');
-    expect(planner).toContain('/monoceros-review <app>/<slug>');
-    // And the reason, so the model does not "help" by finishing the work.
-    expect(planner).toMatch(
-      /quietly turned\s+into a finished change is not reviewable/,
-    );
-    // A failure that comes back is information about the plan, not a repair job.
-    expect(planner).toMatch(/adjust the plan/);
-
-    // The command agrees with the prompt now.
-    const cmd = await read(path.join(commandsDir(), 'monoceros-plan.md'));
-    expect(cmd).toContain('I run the steps');
-    expect(cmd).not.toContain('Do not delegate yet');
-  });
-
-  // A PASS after 30 seconds, without running the tests and without reading the
-  // diff, is a claim rather than a review. The old prompt told it the tests had
-  // already passed - true when the planner gated, false now that the user runs
-  // the steps himself.
-  it('makes the reviewer produce evidence before a verdict', async () => {
-    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const impl = await read(path.join(agentsDir(), 'monoceros-implement.md'));
     const review = await read(path.join(agentsDir(), 'monoceros-review.md'));
 
-    // It runs the acceptance command itself, and reads the real change.
-    expect(review).toContain("Run the plan's acceptance command");
-    expect(review).toMatch(/`git diff --stat` is\s+not reading the change/);
-    expect(review).toMatch(/untracked files/);
-    // The stale premise is gone.
-    expect(review).not.toContain(
-      'The tests already passed before you were called',
+    // Planner leads the full chain, but only after a real stop.
+    expect(planner).toContain('## 5. Ask before you run anything');
+    expect(planner).toMatch(/This is a real stop, not a rhetorical question/);
+    expect(planner).toContain('subagent_type: "monoceros-implement"');
+    expect(planner).toContain('subagent_type: "monoceros-review"');
+    expect(planner).toMatch(/You are a step in a chain, not the lead/);
+    // Gate between implement and review, and a bounded repair loop.
+    expect(planner).toMatch(/must have run green/);
+    expect(planner).toContain('## 7. Repair, twice at most');
+    expect(planner).toMatch(
+      /if\s+a finding survives a round, stop immediately/,
     );
 
-    // The verdict is first, and the evidence is mandatory on PASS too.
-    expect(review).toMatch(/very first line is the verdict/);
-    expect(review).toContain('Nothing before it');
-    expect(review).toMatch(/on PASS as much as on CHANGES_REQUIRED/);
-    expect(review).toMatch(/step 4 → server\.js:112/);
+    // The implementer reads its own prompt to know which mode it is in.
+    expect(impl).toContain('## Who runs next');
+    expect(impl).toMatch(/a step in a chain\*\*,\s+you are a subagent/);
+    expect(impl).toContain('subagent_type: "monoceros-review"');
+    // The reviewer never delegates, in either mode.
+    expect(review).toMatch(/You also never delegate/);
+
+    // …and the commands say which entry point they are.
+    const plan = await read(path.join(commandsDir(), 'monoceros-plan.md'));
+    const ship = await read(path.join(commandsDir(), 'monoceros-ship.md'));
+    const rev = await read(path.join(commandsDir(), 'monoceros-review.md'));
+    expect(plan).toMatch(/You are the lead for this task/);
+    expect(ship).toMatch(/You are the lead for this run, not a step/);
+    expect(rev).toMatch(/the only role running/);
+    // Ship never re-opens the plan: it is approved by the time it runs.
+    expect(ship).toMatch(/already approved/);
+  });
+
+  // With auto-approve on, the denylist is the only thing between a green test
+  // run and a push. The implementer had no bash rules at all.
+  it('lets the implementer commit but never publish', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const impl = await read(path.join(agentsDir(), 'monoceros-implement.md'));
+    const review = await read(path.join(agentsDir(), 'monoceros-review.md'));
+
+    for (const denied of [
+      "'git push*': deny",
+      "'gh pr create*': deny",
+      "'npm publish*': deny",
+      "'docker push*': deny",
+    ]) {
+      expect(impl, denied).toContain(denied);
+      expect(review, denied).toContain(denied);
+    }
+    // Committing is the point of the exception: it gives the reviewer a diff.
+    expect(impl).not.toContain("'git commit*': deny");
+    expect(impl).toContain('## Commit your work');
+    expect(impl).toMatch(/real diff instead of guessing/);
+    // The reviewer stays read-only.
+    expect(review).toContain("'git commit*': deny");
+  });
+
+  // A review that only checks the plan misses what the plan never mentioned.
+  it('extends the review to security, fit and defect-level quality', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const review = await read(path.join(agentsDir(), 'monoceros-review.md'));
+    expect(review).toContain('**Security, as defects.**');
+    expect(review).toMatch(
+      /`CHANGES_REQUIRED`\s+even when everything else is clean/,
+    );
+    expect(review).toContain('**Does it fit what is already there.**');
+    expect(review).toContain('**Quality, but only as a defect.**');
+    // The one test that separates a defect from taste.
+    expect(review).toMatch(/X\s+happens when Y/);
+    expect(review).toMatch(/Out of scope: naming, formatting/);
   });
 
   it('overwrites its own files on a second apply', async () => {

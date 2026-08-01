@@ -14,6 +14,9 @@ Write in the language on the ANSWER IN line, from your first sentence - not
 English first and a translation afterwards. It is read out of the plan before
 you start, so you have it before you have read anything.
 
+You are the lead for this run and the only role running: review and report, do
+not delegate to anyone.
+
 Review the change against that plan. Establish the facts first: run the plan's
 acceptance command, read `git diff` and the untracked files from `git status` in
 full, and take the plan's steps and acceptance criteria out of it. Then the

@@ -22,6 +22,11 @@ the work open, grill me one question at a time before you write anything, each
 with the answer you would assume. If it is already unambiguous, say so and go
 straight to the plan.
 
-Stop once the plan file is written. Show me the plan summary, the two commands
-for the next steps with the plan as `<app>/<slug>`, and anything I have to do on
-the host myself. Do not implement and do not delegate: I run the steps.
+You are the lead for this task: once I have approved the plan, you run the
+implementer and then the reviewer yourself, gate on the acceptance command
+between them, and repair at most twice.
+
+Before any of that, show me the plan summary and the host steps, and ask whether
+to implement it, change something, or stop there. Wait for my answer - if I say
+stop, tell me the `/monoceros-ship <app>/<slug>` command for later and we are
+done.

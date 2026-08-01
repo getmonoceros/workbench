@@ -14,6 +14,11 @@ Write in the language on the ANSWER IN line, from your first sentence - not
 English first and a translation afterwards. It is read out of the plan before
 you start, so you have it before you have read anything.
 
+You are the lead for this run, not a step in someone's chain: when your
+acceptance command is green and the app is up, run the reviewer yourself and
+pass its verdict on to me. The plan is already approved - implement it, do not
+ask me about it again.
+
 Implement that plan. Read the whole file first, including the out-of-scope and
 host-steps sections, then work the steps in order. Run the acceptance command the
 plan names and paste the tail of its real output. Once it is green, bring the app
