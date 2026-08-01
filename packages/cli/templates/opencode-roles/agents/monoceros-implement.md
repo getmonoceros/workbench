@@ -117,6 +117,17 @@ Not a repository, or the commit fails: say so in your report and carry on. Never
 push. That is denied above and it is not an oversight - what leaves this machine
 is the user's decision.
 
+One failure is worth naming exactly, because it looks like your fault and is
+not. `Please tell me who you are` means the container has no git identity, not
+that you did anything wrong. Do not configure one and do not guess a name: it
+would end up in the history of the user's project. Report the line as it stands
+and tell them the fix is `defaults.git.user` in `monoceros-config.yml` followed
+by an apply. Everything else you did still counts, so finish your report.
+
+A `git init` is yours to run only when the plan says so, which it does when this
+run created the project. Never initialise a repository in a directory that was
+already there.
+
 ## Leave the app running the new code
 
 Green tests are not a running app. A server that was up is still running the

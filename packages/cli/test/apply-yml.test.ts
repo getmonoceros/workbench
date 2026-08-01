@@ -1147,6 +1147,41 @@ describe('runApply', () => {
     expect(promptedKeys).toEqual([]);
   });
 
+  // The bug: post-create points the container's ~/.gitconfig at
+  // .monoceros/gitconfig for every container, but the file was only
+  // written when a repo, a container `git.user` or global defaults
+  // asked for an identity. A workbench with an AI agent and no repos
+  // got a dangling include, and the agent's first commit died with
+  // "Please tell me who you are".
+  it('writes .monoceros/gitconfig even when nothing asks for an identity, and stays silent', async () => {
+    await writeYml(
+      'no-git-at-all',
+      ['schemaVersion: 1', 'name: no-git-at-all', ''].join('\n'),
+    );
+    const promptedKeys: string[] = [];
+    const warnings: string[] = [];
+    await runApply({
+      ...baseRunOpts,
+      name: 'no-git-at-all',
+      monocerosHome: home,
+      logger: { ...silentLogger, warn: (m: string) => warnings.push(m) },
+      identityPrompt: async (key: string) => {
+        promptedKeys.push(key);
+        return undefined;
+      },
+    });
+    // The include target exists, so git has something to read.
+    const gitconfig = await readFile(
+      path.join(home, 'container', 'no-git-at-all', '.monoceros', 'gitconfig'),
+      'utf8',
+    );
+    expect(gitconfig).toContain('[user]');
+    // Nothing resolved here, so the builder is told once, by name.
+    expect(warnings.some((w) => w.includes('No git identity'))).toBe(true);
+    // A container that never mentioned git is not interrogated about it.
+    expect(promptedKeys).toEqual([]);
+  });
+
   it('does NOT prompt when the container git.user placeholders resolve to blank and every repo self-identifies', async () => {
     // Regression: `init` always emits `git.user: ${GIT_USER_NAME}/…`, so
     // the block textually exists on nearly every yml. With the env vars

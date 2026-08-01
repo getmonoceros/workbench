@@ -14,6 +14,7 @@ import {
   containerEnvPath,
   monocerosHome as defaultMonocerosHome,
   globalEnvPath,
+  monocerosConfigPath,
   prettyPath,
 } from '../config/paths.js';
 import {
@@ -515,37 +516,60 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     info: logger.info,
     warn: logger.warn ?? logger.info,
   };
-  if (
+  // Those three decide whether we may ASK, not whether we collect.
+  // Collection is unconditional: post-create points the container's
+  // `~/.gitconfig` at `.monoceros/gitconfig` for every container, so
+  // skipping the write leaves a dangling include and a container whose
+  // first commit dies with "Please tell me who you are". A workbench
+  // with an AI agent and no repos used to land exactly there.
+  //
+  // What the conditions still gate is the interaction. Without one of
+  // them we resolve in silence: the container override, the global
+  // defaults, the host git config and a previously persisted value all
+  // still apply, we just never open a prompt for a container that may
+  // have no interest in git.
+  const mayPromptForIdentity =
     reposNeedingContainerIdentity ||
     hasResolvedContainerGitUser ||
-    hasDefaultGitUser
-  ) {
-    const identity = await collectGitIdentity(targetDir, {
-      ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
-      ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),
-      ...(opts.identityScopePrompt
-        ? { scopePrompt: opts.identityScopePrompt }
-        : {}),
-      ...(containerGitOverride
-        ? { containerOverride: containerGitOverride }
-        : {}),
-      ...(globalConfig?.defaults?.git?.user
-        ? { defaults: globalConfig.defaults.git.user }
-        : {}),
-      logger: idLogger,
-    });
+    hasDefaultGitUser;
+  const silentPrompt = async () => undefined;
+  const identity = await collectGitIdentity(targetDir, {
+    ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
+    ...(mayPromptForIdentity
+      ? {
+          ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),
+          ...(opts.identityScopePrompt
+            ? { scopePrompt: opts.identityScopePrompt }
+            : {}),
+        }
+      : { prompt: silentPrompt, scopePrompt: silentPrompt }),
+    ...(containerGitOverride
+      ? { containerOverride: containerGitOverride }
+      : {}),
+    ...(globalConfig?.defaults?.git?.user
+      ? { defaults: globalConfig.defaults.git.user }
+      : {}),
+    logger: idLogger,
+  });
 
-    // Persist a freshly-prompted identity to whichever scope the
-    // builder picked. Scope `g` writes monoceros-config.yml's
-    // `defaults.git.user`; `c` writes this container yml's
-    // `git.user`; `b` does both. The `.monoceros/gitconfig` file
-    // collectGitIdentity already wrote stays the in-container
-    // mechanism — these writes are about making the value
-    // recoverable on the next apply / next container without
-    // re-prompting.
-    if (identity.prompted) {
-      await persistPromptedIdentity(identity.prompted, ymlPath, home, logger);
-    }
+  // Persist a freshly-prompted identity to whichever scope the
+  // builder picked. Scope `g` writes monoceros-config.yml's
+  // `defaults.git.user`; `c` writes this container yml's
+  // `git.user`; `b` does both. The `.monoceros/gitconfig` file
+  // collectGitIdentity already wrote stays the in-container
+  // mechanism — these writes are about making the value
+  // recoverable on the next apply / next container without
+  // re-prompting.
+  if (identity.prompted) {
+    await persistPromptedIdentity(identity.prompted, ymlPath, home, logger);
+  }
+  // An identity that resolved to nothing is worth one line, because
+  // everything downstream looks healthy: the container starts, git
+  // works, and only the first commit fails. Name the one-time fix.
+  if (identity.name === undefined || identity.email === undefined) {
+    idLogger.warn(
+      `No git identity for this container: a commit inside it will fail. Set it once for every workbench in ${prettyPath(monocerosConfigPath(home))} under \`defaults.git.user\`, or per container with \`git.user\` in the yml.`,
+    );
   }
   // Pre-fetch HTTPS credentials for every unique host derived from
   // the declared repos. Pre-flight: if any host returns no credentials,

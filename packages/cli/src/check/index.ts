@@ -76,6 +76,7 @@ export type CheckRule =
   | 'launch-config'
   | 'service-config'
   | 'ports'
+  | 'git-identity'
   | 'briefing-markers';
 
 export interface Finding {
@@ -199,6 +200,7 @@ export async function runCheck(
   findings.push(
     ...(await checkProxyAttachment(name, root, declaredPorts, opts)),
   );
+  findings.push(...(await checkGitIdentity(root, name)));
   findings.push(...(await checkBriefingMarkers(root)));
 
   return {
@@ -210,6 +212,40 @@ export async function runCheck(
       apps: apps.length,
     },
   };
+}
+
+/**
+ * A container that cannot commit. The container's `~/.gitconfig`
+ * includes `.monoceros/gitconfig`, so that file is where `user.name`
+ * and `user.email` come from. Empty or missing, everything still looks
+ * healthy: the container starts, git runs, and only the first commit
+ * fails with "Please tell me who you are" - typically inside an agent,
+ * halfway through a task, where the message is easy to misread as a
+ * problem with the agent.
+ */
+async function checkGitIdentity(
+  root: string,
+  name: string,
+): Promise<Finding[]> {
+  const rel = path.join('.monoceros', 'gitconfig');
+  let content: string;
+  try {
+    content = await fs.readFile(path.join(root, rel), 'utf8');
+  } catch {
+    content = '';
+  }
+  const has = (key: 'name' | 'email') =>
+    new RegExp(`^\\s*${key}\\s*=\\s*\\S`, 'm').test(content);
+  const missing = (['name', 'email'] as const).filter((k) => !has(k));
+  if (missing.length === 0) return [];
+  return [
+    {
+      rule: 'git-identity',
+      where: rel,
+      what: `No git ${missing.map((m) => `user.${m}`).join(' and ')} for this container, so a commit inside it fails.`,
+      fix: `Set \`defaults.git.user\` in monoceros-config.yml once for every workbench, or \`git.user\` in ${name}.yml for this one, then apply again.`,
+    },
+  ];
 }
 
 /** Directory names directly under `projects/` (dotted entries skipped). */
@@ -1121,6 +1157,7 @@ const RULE_LABEL: Record<CheckRule, string> = {
   'service-config': 'Service config nothing mounts',
   'launch-config': 'Launch config',
   ports: 'Ports',
+  'git-identity': 'Git identity',
   'briefing-markers': 'Briefing markers',
 };
 

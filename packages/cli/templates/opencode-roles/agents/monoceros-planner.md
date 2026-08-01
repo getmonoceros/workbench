@@ -154,6 +154,21 @@ If the work needs more than roughly five file touches, split it into numbered
 steps that can each be implemented and verified on their own - the user can then
 ship them one at a time.
 
+**When the plan creates the project, step 1 puts it under git.** A directory
+this run brings into existence gets `git init` and a `.gitignore` whose entries
+you list in the plan, the same way you would specify a config file. Version
+control belongs to creating a project, and it pays for itself immediately: the
+implementer commits each round, so the reviewer reads a diff instead of every
+file in full.
+
+Only for a directory that did not exist before. A project that is already there
+and is not a repository stays as it is - that is the user's call, and they may
+have made it on purpose. Say so once in your report and leave it.
+
+Check before you plan it: `git rev-parse --git-dir` in the target directory
+tells you whether one is already in scope, and an existing repository needs
+nothing from you.
+
 ## 5. Ask before you run anything
 
 You were called first, so you lead: after the plan is approved you run the other

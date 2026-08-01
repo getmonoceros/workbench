@@ -66,6 +66,13 @@ async function scaffold(
   await writeYml(yml);
   await mkdir(path.join(containerRoot(), 'projects'), { recursive: true });
   await workspace([{ path: '.', name: 'workspace' }]);
+  // Every apply writes this file, so a fixture without one is not a
+  // clean container - it is the broken state the git-identity rule
+  // exists to report. Tests that want that state clear it themselves.
+  await file(
+    path.join('.monoceros', 'gitconfig'),
+    '[user]\n\tname = Test Builder\n\temail = builder@example.com\n',
+  );
 }
 
 const rulesOf = (findings: readonly Finding[]): CheckRule[] =>
@@ -85,6 +92,36 @@ describe('runCheck', () => {
     await expect(runCheck(NAME, checkOpts())).rejects.toThrow(
       /No materialized container/,
     );
+  });
+
+  // The container includes `.monoceros/gitconfig` from its ~/.gitconfig,
+  // so an empty or missing file means no identity. Nothing else shows it:
+  // the container starts, git runs, and only the first commit fails.
+  it('reports a container that has no git identity, missing file or empty one', async () => {
+    for (const content of [undefined, '[user]\n', '[user]\n\tname = \n']) {
+      await scaffold();
+      if (content === undefined) {
+        await rm(path.join(containerRoot(), '.monoceros', 'gitconfig'));
+      } else {
+        await file(path.join('.monoceros', 'gitconfig'), content);
+      }
+      const report = await runCheck(NAME, { home });
+      const finding = report.findings.find((f) => f.rule === 'git-identity');
+      expect(finding, `content: ${String(content)}`).toBeDefined();
+      expect(finding?.fix).toContain('defaults.git.user');
+    }
+  });
+
+  it('names only the half that is missing', async () => {
+    await scaffold();
+    await file(
+      path.join('.monoceros', 'gitconfig'),
+      '[user]\n\tname = Test Builder\n',
+    );
+    const report = await runCheck(NAME, { home });
+    const finding = report.findings.find((f) => f.rule === 'git-identity');
+    expect(finding?.what).toContain('user.email');
+    expect(finding?.what).not.toContain('user.name');
   });
 
   it('reports nothing for a clean container and says what it looked at', async () => {

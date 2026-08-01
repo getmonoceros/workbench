@@ -422,6 +422,29 @@ describe('writeOpencodeRoles', () => {
     expect(review).toContain("'git commit*': deny");
   });
 
+  // A run that scaffolds a project should leave it under version control:
+  // the reviewer then works from a diff, which is where the cost sits. A
+  // project that was already there is the user's to decide about.
+  it('initialises a repository only for a project the run creates itself', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
+    expect(planner).toMatch(
+      /When the plan creates the project, step 1 puts it/,
+    );
+    expect(planner).toContain('git rev-parse --git-dir');
+    expect(planner).toMatch(/did not exist before/);
+    // The implementer must not take the initiative on its own.
+    const impl = await read(path.join(agentsDir(), 'monoceros-implement.md'));
+    expect(impl).toMatch(/only when the plan says so/);
+    expect(impl).toMatch(
+      /Never\s+initialise a repository in a directory that was\s+already there/,
+    );
+    // A missing identity is a container problem, not the agent's, and it
+    // must not be papered over with a guessed name in the user's history.
+    expect(impl).toContain('Please tell me who you are');
+    expect(impl).toContain('defaults.git.user');
+  });
+
   // A review that only checks the plan misses what the plan never mentioned.
   it('extends the review to security, fit and defect-level quality', async () => {
     await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
