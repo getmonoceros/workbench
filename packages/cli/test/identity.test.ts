@@ -127,8 +127,10 @@ describe('collectGitIdentity', () => {
     expect(result.email).toBe('prompted@example.com');
   });
 
-  it('skips prompt and reuses persisted file when host returns nothing', async () => {
-    // Seed an existing gitconfig from a previous run.
+  // A file we write on every apply must not also be an input, or an
+  // identity outlives the source that produced it: remove it from the
+  // env, apply, and the container keeps committing under the old name.
+  it('asks rather than reusing what an earlier apply wrote', async () => {
     await fs.mkdir(path.join(cwd, '.monoceros'), { recursive: true });
     await fs.writeFile(
       path.join(cwd, '.monoceros', 'gitconfig'),
@@ -140,16 +142,16 @@ describe('collectGitIdentity', () => {
       spawn: async () => ({ value: '', exitCode: 1 }),
       prompt: async () => {
         promptCalls += 1;
-        return 'should-not-be-called';
+        return undefined;
       },
     });
 
-    expect(promptCalls).toBe(0);
-    expect(result.name).toBe('Persisted Builder');
-    expect(result.email).toBe('persisted@example.com');
+    expect(promptCalls).toBe(2);
+    expect(result.name).toBeUndefined();
+    expect(result.email).toBeUndefined();
   });
 
-  it('host value wins over persisted value', async () => {
+  it('the host value replaces what an earlier apply wrote', async () => {
     await fs.mkdir(path.join(cwd, '.monoceros'), { recursive: true });
     await fs.writeFile(
       path.join(cwd, '.monoceros', 'gitconfig'),

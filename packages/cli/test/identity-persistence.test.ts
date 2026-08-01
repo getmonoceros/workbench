@@ -7,13 +7,13 @@ import {
   writeDescriptor,
   nodeLanguageDescriptor,
 } from './helpers/fake-workbench.js';
-import {
-  readMonocerosConfig,
-  writeGlobalDefaultGitUser,
-} from '../src/config/global.js';
+import { readMonocerosConfig } from '../src/config/global.js';
 import { parseConfig } from '../src/config/io.js';
 import { setContainerGitUserInDoc } from '../src/modify/yml.js';
-import { resolveIdentityWithPrompt } from '../src/devcontainer/identity.js';
+import {
+  collectGitIdentity,
+  resolveIdentityWithPrompt,
+} from '../src/devcontainer/identity.js';
 
 /**
  * Persistence flow for an identity that came from the apply / init
@@ -111,205 +111,6 @@ describe('setContainerGitUserInDoc', () => {
   });
 });
 
-describe('writeGlobalDefaultGitUser', () => {
-  let home: string;
-  beforeEach(async () => {
-    home = await mkdtemp(path.join(tmpdir(), 'monoceros-global-write-'));
-  });
-  afterEach(async () => {
-    await rm(home, { recursive: true, force: true });
-  });
-
-  it('creates monoceros-config.yml from scratch when none exists', async () => {
-    const result = await writeGlobalDefaultGitUser(
-      { name: 'Alice', email: 'a@example.com' },
-      { monocerosHome: home },
-    );
-    expect(result.created).toBe(true);
-    expect(result.alreadySet).toBe(false);
-    // Verify via the real reader, not a string match — catches schema
-    // typos in the freshly-written file.
-    const parsed = await readMonocerosConfig({ monocerosHome: home });
-    expect(parsed?.defaults?.git?.user).toEqual({
-      name: 'Alice',
-      email: 'a@example.com',
-    });
-  });
-
-  it('fills in defaults.git.user when the file exists but the user is unset', async () => {
-    // Common case: builder created monoceros-config for feature defaults
-    // and then later runs apply for the first time → identity prompt.
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      [
-        'schemaVersion: 1',
-        'defaults:',
-        '  features:',
-        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
-        '      apiKey: sk-existing',
-        '',
-      ].join('\n'),
-    );
-    const result = await writeGlobalDefaultGitUser(
-      { name: 'Alice', email: 'a@example.com' },
-      { monocerosHome: home },
-    );
-    expect(result.created).toBe(false);
-    expect(result.alreadySet).toBe(false);
-    const parsed = await readMonocerosConfig({ monocerosHome: home });
-    expect(parsed?.defaults?.git?.user).toEqual({
-      name: 'Alice',
-      email: 'a@example.com',
-    });
-    // The unrelated features default must survive the AST edit.
-    expect(
-      parsed?.defaults?.features?.[
-        'ghcr.io/getmonoceros/monoceros-features/claude-code:1'
-      ]?.apiKey,
-    ).toBe('sk-existing');
-  });
-
-  it('does NOT clobber an existing defaults.git.user — reports alreadySet', async () => {
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      [
-        'schemaVersion: 1',
-        'defaults:',
-        '  git:',
-        '    user:',
-        '      name: Existing',
-        '      email: existing@example.com',
-        '',
-      ].join('\n'),
-    );
-    const result = await writeGlobalDefaultGitUser(
-      { name: 'New', email: 'new@example.com' },
-      { monocerosHome: home },
-    );
-    expect(result.alreadySet).toBe(true);
-    const parsed = await readMonocerosConfig({ monocerosHome: home });
-    expect(parsed?.defaults?.git?.user).toEqual({
-      name: 'Existing',
-      email: 'existing@example.com',
-    });
-  });
-
-  it('fills in name + email at the canonical shipped-sample placeholder shape', async () => {
-    // Shipped sample exposes `defaults.git.user.name`/`email` as
-    // active keys with null values (yml `name:` parses to null).
-    // Writer must set the scalars in place — no duplicate block,
-    // no comment surgery on the surrounding prose.
-    const sample = [
-      '# Optional — global defaults for monoceros containers.',
-      '',
-      'schemaVersion: 1',
-      '',
-      'defaults:',
-      '  # Git committer identity. apply asks once if name/email are empty.',
-      '  git:',
-      '    user:',
-      '      name:',
-      '      email:',
-      '',
-      '  # Feature credentials & options.',
-      '  features:',
-      '    # ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
-      '    #   apiKey:',
-      '',
-      'routing:',
-      '  hostPort: 80',
-      '',
-    ].join('\n');
-    await writeFile(path.join(home, 'monoceros-config.yml'), sample);
-    await writeGlobalDefaultGitUser(
-      { name: 'Alice', email: 'a@example.com' },
-      { monocerosHome: home },
-    );
-    const after = await readFile(
-      path.join(home, 'monoceros-config.yml'),
-      'utf8',
-    );
-    // Exactly one `git:` line, one `defaults:` line — no duplicates.
-    expect(after.match(/^\s+git:\s*$/gm) ?? []).toHaveLength(1);
-    expect(after.match(/^defaults:\s*$/gm) ?? []).toHaveLength(1);
-    // Values landed at the existing keys.
-    expect(after).toMatch(/^\s+name: Alice\s*$/m);
-    expect(after).toMatch(/^\s+email: a@example\.com\s*$/m);
-    // Surrounding prose + features + routing untouched.
-    expect(after).toContain(
-      '# Git committer identity. apply asks once if name/email are empty.',
-    );
-    expect(after).toContain('# Feature credentials & options.');
-    expect(after).toContain(
-      '# ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
-    );
-    expect(after).toContain('hostPort: 80');
-    // Real-schema round-trip — the relaxed nullable GitUserSchema
-    // accepts the placeholder form before write, and returns the
-    // filled-in values after.
-    const parsed = await readMonocerosConfig({ monocerosHome: home });
-    expect(parsed?.defaults?.git?.user).toEqual({
-      name: 'Alice',
-      email: 'a@example.com',
-    });
-  });
-
-  it('appends git.user without touching active features when the user-keys are missing', async () => {
-    // A builder may have wegeditiert the placeholder altogether (no
-    // git/user keys at all under defaults) but still have an active
-    // features entry. ensureMap creates the missing maps and sets
-    // the values; the features entry must NOT be moved or rewritten.
-    const sample = [
-      'schemaVersion: 1',
-      '',
-      'defaults:',
-      '  features:',
-      '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
-      '      apiKey: sk-live-value',
-      '',
-      'routing:',
-      '  hostPort: 80',
-      '',
-    ].join('\n');
-    await writeFile(path.join(home, 'monoceros-config.yml'), sample);
-    await writeGlobalDefaultGitUser(
-      { name: 'Alice', email: 'a@example.com' },
-      { monocerosHome: home },
-    );
-    const parsed = await readMonocerosConfig({ monocerosHome: home });
-    expect(parsed?.defaults?.git?.user?.name).toBe('Alice');
-    expect(
-      parsed?.defaults?.features?.[
-        'ghcr.io/getmonoceros/monoceros-features/claude-code:1'
-      ]?.apiKey,
-    ).toBe('sk-live-value');
-    expect(parsed?.routing?.hostPort).toBe(80);
-  });
-
-  it('handles the shipped-sample "defaults: null" shape', async () => {
-    // The shipped sample has `defaults:` uncommented with every
-    // sub-block commented out — that parses as `defaults: null`. The
-    // writer has to recover by replacing null with an empty map and
-    // setting git.user under it.
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      [
-        'schemaVersion: 1',
-        'defaults:',
-        '  # everything below is commented out',
-        '',
-      ].join('\n'),
-    );
-    const result = await writeGlobalDefaultGitUser(
-      { name: 'Alice', email: 'a@example.com' },
-      { monocerosHome: home },
-    );
-    expect(result.alreadySet).toBe(false);
-    const parsed = await readMonocerosConfig({ monocerosHome: home });
-    expect(parsed?.defaults?.git?.user?.name).toBe('Alice');
-  });
-});
-
 describe('resolveIdentityWithPrompt — scope prompt only when both keys come from prompt', () => {
   it('returns prompted=undefined when host provides both name and email', async () => {
     const result = await resolveIdentityWithPrompt({
@@ -349,49 +150,47 @@ describe('resolveIdentityWithPrompt — scope prompt only when both keys come fr
     });
   });
 
-  it('triggers the scope prompt when both keys come from .monoceros/gitconfig and no defaults are set', async () => {
-    // Regression for the case the builder hit: monoceros-config
-    // identity removed, but `.monoceros/gitconfig` still carries the
-    // values from an earlier apply. Without this prompt, apply would
-    // silently use the persisted values and never re-offer to write
-    // them to monoceros-config.
-    let scopeCtx: { reason: string; name: string; email: string } | undefined;
-    const result = await resolveIdentityWithPrompt({
-      spawn: async () => ({ value: '', exitCode: 1 }),
-      prompt: async () => {
-        throw new Error('prompt should not be called — persisted has values');
-      },
-      persistedValues: {
-        name: 'Persisted Name',
-        email: 'persisted@example.com',
-      },
-      scopePrompt: async (ctx) => {
-        scopeCtx = ctx;
-        return 'g';
-      },
-      logger: { info: () => {}, warn: () => {} },
-    });
-    expect(scopeCtx?.reason).toBe('persisted');
-    expect(scopeCtx?.name).toBe('Persisted Name');
-    expect(result.prompted?.scope).toBe('g');
-  });
-
-  it('returns prompted=undefined when the builder picks `n` (keep as-is)', async () => {
-    // `n` is the "skip persistence" option — the values are valid
-    // for this apply (via .monoceros/gitconfig), but the builder
-    // explicitly chose not to write them anywhere new. Result.prompted
-    // stays undefined so the caller doesn't try to persist.
-    const result = await resolveIdentityWithPrompt({
+  // The inverse of what this file used to pin. `.monoceros/gitconfig`
+  // is written by every apply, so treating it as a source made the
+  // identity outlive the thing that produced it: comment the env out,
+  // apply, and the container still committed under the old name. The
+  // yml and the env are the source of truth, and that only holds if
+  // deriving can take something away again.
+  it('does not read the generated gitconfig back in as a source', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'identity-'));
+    await mkdir(path.join(dir, '.monoceros'), { recursive: true });
+    const file = path.join(dir, '.monoceros', 'gitconfig');
+    await writeFile(
+      file,
+      '[user]\n\tname = From An Earlier Apply\n\temail = old@example.com\n',
+    );
+    const result = await collectGitIdentity(dir, {
       spawn: async () => ({ value: '', exitCode: 1 }),
       prompt: async () => undefined,
-      persistedValues: {
-        name: 'Persisted',
-        email: 'persisted@example.com',
-      },
+      scopePrompt: async () => undefined,
+      logger: { info: () => {}, warn: () => {} },
+    });
+    expect(result.name).toBeUndefined();
+    expect(result.email).toBeUndefined();
+    // And the stale values are gone from the file, so the container
+    // does not keep committing under a name nothing declares.
+    const after = await readFile(file, 'utf8');
+    expect(after).not.toContain('From An Earlier Apply');
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('returns prompted=undefined when the builder declines to save', async () => {
+    // `n` means "use it for this apply, write it nowhere". The value is
+    // still the one the builder just typed; it simply is not persisted,
+    // so the question comes back next time.
+    const result = await resolveIdentityWithPrompt({
+      spawn: async () => ({ value: '', exitCode: 1 }),
+      prompt: async (key) =>
+        key === 'user.name' ? 'Typed Name' : 'typed@example.com',
       scopePrompt: async () => 'n',
       logger: { info: () => {}, warn: () => {} },
     });
-    expect(result.name).toBe('Persisted');
+    expect(result.name).toBe('Typed Name');
     expect(result.prompted).toBeUndefined();
   });
 

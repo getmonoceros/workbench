@@ -6,7 +6,7 @@ import {
   proxyHostPort,
   readMonocerosConfig,
 } from '../config/global.js';
-import { parseConfig, readConfig, stringifyConfig } from '../config/io.js';
+import { readConfig } from '../config/io.js';
 import {
   containerConfigPath,
   containerConfigsDir,
@@ -109,8 +109,6 @@ import {
   type IdentityScopePrompt,
   type IdentitySpawn,
 } from '../devcontainer/identity.js';
-import { writeGlobalDefaultGitUser } from '../config/global.js';
-import { setContainerGitUserInDoc } from '../modify/yml.js';
 import {
   type FailedCloneRepo,
   type FeatureTokenPrompt,
@@ -576,7 +574,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // recoverable on the next apply / next container without
   // re-prompting.
   if (identity.prompted) {
-    await persistPromptedIdentity(identity.prompted, ymlPath, home, logger);
+    await persistPromptedIdentity(identity.prompted, opts.name, home, logger);
   }
   // An identity that resolved to nothing is worth one line, because
   // everything downstream looks healthy: the container starts, git
@@ -1210,71 +1208,67 @@ function warnOnDeprecatedFeatureRefs(
 }
 
 /**
- * Persist an identity that came from the interactive prompt. Called
- * with the builder's scope pick (`g`/`c`/`b`); logs to the apply
- * stream where the values landed (or why they couldn't, e.g. global
- * default was already set and we left it alone).
+ * Persist an identity that came from the interactive prompt, into the
+ * env: `GIT_USER_NAME` / `GIT_USER_EMAIL` in the global
+ * `monoceros-config.env` (`g`), the container's own `<name>.env` (`c`),
+ * or both.
  *
- * Pulled out of runApply for readability — runApply already carries
- * a lot of pre-flight ceremony, and this is a self-contained
- * persistence step.
+ * The env and not the yml, for two reasons. A name and an address are
+ * personal data and the env files are the gitignored half, while the
+ * yml is the part a builder shares. And `.monoceros/gitconfig` is no
+ * longer read back as a source, so an answer that is not written to a
+ * declared place would be gone on the next apply - the prompt has to
+ * land somewhere real.
+ *
+ * `setEnvVarRef` never clobbers a value the builder already put there;
+ * a non-empty key stays as it is and we say so.
  */
 async function persistPromptedIdentity(
   prompted: { name: string; email: string; scope: 'g' | 'c' | 'b' },
-  ymlPath: string,
+  containerName: string,
   home: string,
   logger: {
     info: (msg: string) => void;
     warn?: (msg: string) => void;
   },
 ): Promise<void> {
-  const wantGlobal = prompted.scope === 'g' || prompted.scope === 'b';
-  const wantContainer = prompted.scope === 'c' || prompted.scope === 'b';
-
-  if (wantGlobal) {
-    try {
-      const result = await writeGlobalDefaultGitUser(
-        { name: prompted.name, email: prompted.email },
-        { monocerosHome: home },
-      );
-      if (result.alreadySet) {
-        logger.warn?.(
-          `monoceros-config.yml already has a defaults.git.user — left it alone. To replace, edit ${prettyPath(result.filePath)} by hand.`,
-        );
-      } else if (result.created) {
-        logger.info(
-          `Saved identity globally — created ${prettyPath(result.filePath)} with defaults.git.user.`,
-        );
-      } else {
-        logger.info(
-          `Saved identity globally — wrote defaults.git.user into ${prettyPath(result.filePath)}.`,
-        );
-      }
-    } catch (err) {
-      logger.warn?.(
-        `Could not persist identity to monoceros-config.yml: ${err instanceof Error ? err.message : String(err)}. The values are still active for this apply via .monoceros/gitconfig.`,
-      );
-    }
+  const targets: Array<{ path: string; label: string }> = [];
+  if (prompted.scope === 'g' || prompted.scope === 'b') {
+    targets.push({ path: globalEnvPath(home), label: 'every workbench' });
+  }
+  if (prompted.scope === 'c' || prompted.scope === 'b') {
+    targets.push({
+      path: containerEnvPath(containerName, home),
+      label: `${containerName} only`,
+    });
   }
 
-  if (wantContainer) {
+  for (const target of targets) {
     try {
-      const text = await fs.readFile(ymlPath, 'utf8');
-      const parsed = parseConfig(text, ymlPath);
-      const changed = setContainerGitUserInDoc(parsed.doc, {
-        name: prompted.name,
-        email: prompted.email,
-      });
-      if (changed) {
-        const out = stringifyConfig(parsed.doc);
-        await fs.writeFile(ymlPath, out, 'utf8');
+      const wroteName = await setEnvVarRef(
+        target.path,
+        containerName,
+        GIT_IDENTITY_VAR.name,
+        prompted.name,
+      );
+      const wroteEmail = await setEnvVarRef(
+        target.path,
+        containerName,
+        GIT_IDENTITY_VAR.email,
+        prompted.email,
+      );
+      if (wroteName || wroteEmail) {
         logger.info(
-          `Saved identity in this container — wrote git.user into ${prettyPath(ymlPath)}.`,
+          `Saved the identity for ${target.label} in ${prettyPath(target.path)}.`,
+        );
+      } else {
+        logger.warn?.(
+          `${prettyPath(target.path)} already has ${GIT_IDENTITY_VAR.name} / ${GIT_IDENTITY_VAR.email} set - left them alone.`,
         );
       }
     } catch (err) {
       logger.warn?.(
-        `Could not persist identity to ${prettyPath(ymlPath)}: ${err instanceof Error ? err.message : String(err)}. The values are still active for this apply via .monoceros/gitconfig.`,
+        `Could not save the identity in ${prettyPath(target.path)}: ${err instanceof Error ? err.message : String(err)}. It applies to this container now, but you will be asked again on the next apply.`,
       );
     }
   }

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { Writable } from 'node:stream';
@@ -1211,6 +1212,48 @@ describe('runApply', () => {
     expect(gitconfig).toContain('email = tk@example.com');
     // Resolved means resolved: no complaint about a missing identity.
     expect(warnings.some((w) => w.includes('No git identity'))).toBe(false);
+  });
+
+  // A prompted answer has to land in a declared place. `.monoceros/
+  // gitconfig` is no longer read back as a source, so writing it there
+  // and nowhere else would mean the same question on the next apply.
+  it('saves a prompted identity into the env, not the yml', async () => {
+    await writeYml(
+      'prompted-id',
+      [
+        'schemaVersion: 1',
+        'name: prompted-id',
+        'repos:',
+        '  - url: https://github.com/work/api.git',
+        '',
+      ].join('\n'),
+    );
+    await runApply({
+      ...baseRunOpts,
+      name: 'prompted-id',
+      monocerosHome: home,
+      identityPrompt: async (key: string) =>
+        key === 'user.name' ? 'Prompted Builder' : 'prompted@example.com',
+      identityScopePrompt: async () => 'g' as const,
+    });
+    const globalEnv = await readFile(
+      path.join(home, 'monoceros-config.env'),
+      'utf8',
+    );
+    expect(globalEnv).toContain('GIT_USER_NAME=Prompted Builder');
+    expect(globalEnv).toContain('GIT_USER_EMAIL=prompted@example.com');
+    // The yml stays free of personal data.
+    const yml = await readFile(
+      path.join(home, 'container-configs', 'prompted-id.yml'),
+      'utf8',
+    );
+    expect(yml).not.toContain('Prompted Builder');
+    const globalConfig = path.join(home, 'monoceros-config.yml');
+    if (existsSync(globalConfig)) {
+      expect(await readFile(globalConfig, 'utf8')).not.toContain(
+        'Prompted Builder',
+      );
+    }
   });
 
   it('does NOT prompt when the container git.user placeholders resolve to blank and every repo self-identifies', async () => {
