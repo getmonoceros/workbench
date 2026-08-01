@@ -12,7 +12,9 @@ Plan this task: $ARGUMENTS
 
 The app of the working directory is: !`pwd | sed -n 's|.*/projects/\([^/]*\).*|\1|p'`
 
-Write the plan to `~/.local/share/opencode/plans/<that app>/<slug>.md`. If the
+Write the plan to `{{PLANS_DIR}}/<that app>/<slug>.md`, spelled out exactly like
+that and never as `~/...`: the tilde would be yours to expand, not the shell's,
+and guessing the wrong home is how the write ends up refused. If the
 line above is empty you are not inside a project directory: then use the app the
 plan is about - the directory under `projects/` you will create or change - as
 the folder name, and say which one you picked.
