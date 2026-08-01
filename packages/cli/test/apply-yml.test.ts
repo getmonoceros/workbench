@@ -1182,6 +1182,37 @@ describe('runApply', () => {
     expect(promptedKeys).toEqual([]);
   });
 
+  // The env is the identity's home: personal data belongs in the
+  // gitignored env file, not in the yml. It used to work only through a
+  // `git.user: ${GIT_USER_NAME}` line that `init` writes for
+  // `--with-repos` and nowhere else, so a builder who set the variables
+  // globally saw no effect in a workbench without repos.
+  it('takes the identity from the env with no git block in the yml and no repos', async () => {
+    await writeYml(
+      'env-identity',
+      ['schemaVersion: 1', 'name: env-identity', ''].join('\n'),
+    );
+    await writeFile(
+      path.join(home, 'monoceros-config.env'),
+      'GIT_USER_NAME=Thorsten Kamann\nGIT_USER_EMAIL=tk@example.com\n',
+    );
+    const warnings: string[] = [];
+    await runApply({
+      ...baseRunOpts,
+      name: 'env-identity',
+      monocerosHome: home,
+      logger: { ...silentLogger, warn: (m: string) => warnings.push(m) },
+    });
+    const gitconfig = await readFile(
+      path.join(home, 'container', 'env-identity', '.monoceros', 'gitconfig'),
+      'utf8',
+    );
+    expect(gitconfig).toContain('name = Thorsten Kamann');
+    expect(gitconfig).toContain('email = tk@example.com');
+    // Resolved means resolved: no complaint about a missing identity.
+    expect(warnings.some((w) => w.includes('No git identity'))).toBe(false);
+  });
+
   it('does NOT prompt when the container git.user placeholders resolve to blank and every repo self-identifies', async () => {
     // Regression: `init` always emits `git.user: ${GIT_USER_NAME}/…`, so
     // the block textually exists on nearly every yml. With the env vars

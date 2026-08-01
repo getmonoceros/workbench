@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
+import { GIT_IDENTITY_VAR } from '../config/env-file.js';
 
 /**
  * Spawn signature for `git config --global --get <key>`: takes the
@@ -150,11 +151,22 @@ export interface CollectIdentityOptions {
    */
   containerOverride?: { name?: string; email?: string };
   /**
+   * `GIT_USER_NAME` / `GIT_USER_EMAIL` from the merged env (global
+   * `monoceros-config.env` plus the container's own `<name>.env`).
+   *
+   * A first-class source, not a yml placeholder: a name and an address
+   * are personal data, the env file is where those belong, and it is
+   * gitignored. Requiring a `git.user: ${GIT_USER_NAME}` line in the yml
+   * to activate them made the env inert for every workbench that had no
+   * repos, because only `init --with-repos` ever wrote that line.
+   */
+  env?: { name?: string; email?: string };
+  /**
    * Workbench-wide defaults from `<MONOCEROS_HOME>/monoceros-config.yml`
    * `defaults.git.user`. Wins over host global git config (the
    * monoceros-config.yml is an explicit builder choice for Monoceros
    * containers; host global is the catch-all default), loses to the
-   * per-container override.
+   * per-container override and to the env.
    */
   defaults?: { name?: string; email?: string };
   logger?: { info: (msg: string) => void; warn: (msg: string) => void };
@@ -225,6 +237,7 @@ export async function resolveIdentityWithPrompt(
 
   const name = await resolveKey('user.name', {
     override: options.containerOverride?.name,
+    envValue: options.env?.name,
     defaultValue: options.defaults?.name,
     spawnFn,
     persistedValue: persisted.name,
@@ -233,6 +246,7 @@ export async function resolveIdentityWithPrompt(
   });
   const email = await resolveKey('user.email', {
     override: options.containerOverride?.email,
+    envValue: options.env?.email,
     defaultValue: options.defaults?.email,
     spawnFn,
     persistedValue: persisted.email,
@@ -329,6 +343,7 @@ export async function collectGitIdentity(
 
 interface ResolveKeyOpts {
   override?: string;
+  envValue?: string;
   defaultValue?: string;
   spawnFn: IdentitySpawn;
   persistedValue?: string;
@@ -338,6 +353,7 @@ interface ResolveKeyOpts {
 
 type IdentitySource =
   | 'container'
+  | 'env'
   | 'defaults'
   | 'host'
   | 'persisted'
@@ -355,6 +371,10 @@ async function resolveKey(
   if (opts.override !== undefined && opts.override.length > 0) {
     return { value: opts.override, source: 'container' };
   }
+  const envValue = opts.envValue?.trim();
+  if (envValue !== undefined && envValue.length > 0) {
+    return { value: envValue, source: 'env' };
+  }
   if (opts.defaultValue !== undefined && opts.defaultValue.length > 0) {
     return { value: opts.defaultValue, source: 'defaults' };
   }
@@ -366,7 +386,7 @@ async function resolveKey(
   const prompted = await opts.promptFn(key);
   if (prompted !== undefined) return { value: prompted, source: 'prompt' };
   opts.logger.warn(
-    `No ${key} resolvable (yml override, monoceros-config.yml defaults, host \`git config --global\`, persisted .monoceros/gitconfig, prompt). Container git will have no ${key} until set explicitly.`,
+    `No ${key} resolvable (env ${key === 'user.name' ? GIT_IDENTITY_VAR.name : GIT_IDENTITY_VAR.email}, yml override, monoceros-config.yml defaults, host \`git config --global\`, persisted .monoceros/gitconfig, prompt). Container git will have no ${key} until set explicitly.`,
   );
   return undefined;
 }

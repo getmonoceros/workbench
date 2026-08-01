@@ -14,7 +14,6 @@ import {
   containerEnvPath,
   monocerosHome as defaultMonocerosHome,
   globalEnvPath,
-  monocerosConfigPath,
   prettyPath,
 } from '../config/paths.js';
 import {
@@ -27,6 +26,7 @@ import {
   ensureEnvGitignored,
   setEnvVarRef,
   resolveGitUserFields,
+  GIT_IDENTITY_VAR,
 } from '../config/env-file.js';
 import { PROVIDER_LABEL, REGEX, isValidEmail } from '../config/schema.js';
 import {
@@ -528,6 +528,20 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // defaults, the host git config and a previously persisted value all
   // still apply, we just never open a prompt for a container that may
   // have no interest in git.
+  //
+  // The env is read straight from the merged layers, with no `${VAR}` in
+  // any yml required. A name and an address are personal data, the env
+  // file is where those belong, and tying them to a yml placeholder made
+  // them inert for every workbench without repos - only
+  // `init --with-repos` ever wrote that line.
+  const envIdentity = {
+    ...(envVars[GIT_IDENTITY_VAR.name]?.trim()
+      ? { name: envVars[GIT_IDENTITY_VAR.name]!.trim() }
+      : {}),
+    ...(envVars[GIT_IDENTITY_VAR.email]?.trim()
+      ? { email: envVars[GIT_IDENTITY_VAR.email]!.trim() }
+      : {}),
+  };
   const mayPromptForIdentity =
     reposNeedingContainerIdentity ||
     hasResolvedContainerGitUser ||
@@ -535,6 +549,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   const silentPrompt = async () => undefined;
   const identity = await collectGitIdentity(targetDir, {
     ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
+    ...(Object.keys(envIdentity).length > 0 ? { env: envIdentity } : {}),
     ...(mayPromptForIdentity
       ? {
           ...(opts.identityPrompt ? { prompt: opts.identityPrompt } : {}),
@@ -568,7 +583,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // works, and only the first commit fails. Name the one-time fix.
   if (identity.name === undefined || identity.email === undefined) {
     idLogger.warn(
-      `No git identity for this container: a commit inside it will fail. Set it once for every workbench in ${prettyPath(monocerosConfigPath(home))} under \`defaults.git.user\`, or per container with \`git.user\` in the yml.`,
+      `No git identity for this container: a commit inside it will fail. Set ${GIT_IDENTITY_VAR.name} and ${GIT_IDENTITY_VAR.email} in ${prettyPath(globalEnvPath(home))} once, and every workbench picks them up.`,
     );
   }
   // Pre-fetch HTTPS credentials for every unique host derived from

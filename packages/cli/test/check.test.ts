@@ -108,7 +108,10 @@ describe('runCheck', () => {
       const report = await runCheck(NAME, { home });
       const finding = report.findings.find((f) => f.rule === 'git-identity');
       expect(finding, `content: ${String(content)}`).toBeDefined();
-      expect(finding?.fix).toContain('defaults.git.user');
+      // The fix names the env, because a name and an address are personal
+      // data and the env file is where those live.
+      expect(finding?.fix).toContain('GIT_USER_NAME');
+      expect(finding?.fix).toContain('monoceros-config.env');
     }
   });
 
