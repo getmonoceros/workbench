@@ -243,7 +243,7 @@ async function checkGitIdentity(
       rule: 'git-identity',
       where: rel,
       what: `No git ${missing.map((m) => `user.${m}`).join(' and ')} for this container, so a commit inside it fails.`,
-      fix: `Set GIT_USER_NAME and GIT_USER_EMAIL in monoceros-config.env once, then \`monoceros apply ${name}\`. Every workbench picks them up from there.`,
+      fix: `Set GIT_USER_NAME and GIT_USER_EMAIL in monoceros-config.env for every workbench, or in ${name}.env for this one, then \`monoceros apply ${name}\`.`,
     },
   ];
 }

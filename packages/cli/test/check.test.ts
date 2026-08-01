@@ -109,9 +109,11 @@ describe('runCheck', () => {
       const finding = report.findings.find((f) => f.rule === 'git-identity');
       expect(finding, `content: ${String(content)}`).toBeDefined();
       // The fix names the env, because a name and an address are personal
-      // data and the env file is where those live.
+      // data and the env file is where those live - both of them, since
+      // the container's own env overrides the global one.
       expect(finding?.fix).toContain('GIT_USER_NAME');
       expect(finding?.fix).toContain('monoceros-config.env');
+      expect(finding?.fix).toContain(`${NAME}.env`);
     }
   });
 

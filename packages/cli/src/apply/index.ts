@@ -583,7 +583,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // works, and only the first commit fails. Name the one-time fix.
   if (identity.name === undefined || identity.email === undefined) {
     idLogger.warn(
-      `No git identity for this container: a commit inside it will fail. Set ${GIT_IDENTITY_VAR.name} and ${GIT_IDENTITY_VAR.email} in ${prettyPath(globalEnvPath(home))} once, and every workbench picks them up.`,
+      `No git identity for this container: a commit inside it will fail. Set ${GIT_IDENTITY_VAR.name} and ${GIT_IDENTITY_VAR.email} in ${prettyPath(globalEnvPath(home))} for every workbench, or in ${prettyPath(envPath)} for this one.`,
     );
   }
   // Pre-fetch HTTPS credentials for every unique host derived from
