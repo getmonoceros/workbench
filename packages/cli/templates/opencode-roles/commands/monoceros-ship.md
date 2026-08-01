@@ -8,9 +8,11 @@ agent: monoceros-implement
      `.opencode/agents/` (or `.opencode/commands/`), which wins over the
      global one and is yours to keep. -->
 
-The plan to implement resolved to:
+!`p="$ARGUMENTS"; root="$HOME/.local/share/opencode/plans"; app=$(pwd | sed -n 's|.*/projects/\([^/]*\).*|\1|p'); out=""; if [ -z "$p" ]; then out="NO ARGUMENT GIVEN. Plans for ${app:-(no app in the working directory)}: $(ls "$root/$app" 2>/dev/null | tr '\n' ' ')"; else for c in "$p" "$root/$app/$p" "$root/$app/$p.md" "$root/$p" "$root/$p.md"; do [ -f "$c" ] && { out="$c"; break; }; done; fi; if [ -z "$out" ] && [ -n "$p" ]; then m=$(find "$root" -name "$p" -o -name "$p.md" 2>/dev/null); n=$(printf '%s' "$m" | grep -c .); if [ "$n" = 1 ]; then out="$m"; elif [ "$n" = 0 ]; then out="NOT FOUND: no plan matching '$p' under $root"; else out="AMBIGUOUS: $(printf '%s' "$m" | tr '\n' ' ')"; fi; fi; lang=""; [ -f "$out" ] && lang=$(sed -n 's/^\*\*Reply to the user in:\*\* *//p' "$out" | head -1); printf 'PLAN: %s\nANSWER IN: %s' "$out" "${lang:-English}"`
 
-!`p="$ARGUMENTS"; root="$HOME/.local/share/opencode/plans"; app=$(pwd | sed -n 's|.*/projects/\([^/]*\).*|\1|p'); out=""; if [ -z "$p" ]; then out="NO ARGUMENT GIVEN. Plans for ${app:-(no app in the working directory)}: $(ls "$root/$app" 2>/dev/null | tr '\n' ' ')"; else for c in "$p" "$root/$app/$p" "$root/$app/$p.md" "$root/$p" "$root/$p.md"; do [ -f "$c" ] && { out="$c"; break; }; done; fi; if [ -z "$out" ] && [ -n "$p" ]; then m=$(find "$root" -name "$p" -o -name "$p.md" 2>/dev/null); n=$(printf '%s' "$m" | grep -c .); if [ "$n" = 1 ]; then out="$m"; elif [ "$n" = 0 ]; then out="NOT FOUND: no plan matching '$p' under $root"; else out="AMBIGUOUS: $(printf '%s' "$m" | tr '\n' ' ')"; fi; fi; printf '%s' "$out"`
+Write in the language on the ANSWER IN line, from your first sentence - not
+English first and a translation afterwards. It is read out of the plan before
+you start, so you have it before you have read anything.
 
 Implement that plan. Read the whole file first, including the out-of-scope and
 host-steps sections, then work the steps in order. Run the acceptance command the
@@ -20,6 +22,6 @@ up on the new code if it has a launch target.
 Report changed files, acceptance output, deviations, host steps, what is running
 and where to see it, and the `/monoceros-review` command to run next.
 
-If that line is not a path but starts with NOT FOUND, AMBIGUOUS or NO ARGUMENT
-GIVEN, stop there. Do not go looking for a plan yourself and do not touch any
-files: show the line and ask which plan is meant.
+If the PLAN line is not a path but starts with NOT FOUND, AMBIGUOUS or NO
+ARGUMENT GIVEN, stop there. Do not go looking for a plan yourself and do not
+touch any files: show the line and ask which plan is meant.

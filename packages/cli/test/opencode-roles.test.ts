@@ -196,6 +196,11 @@ describe('writeOpencodeRoles', () => {
       expect(sh).toContain('$ARGUMENTS');
       // A real path wins, then the app folder, then a unique match anywhere.
       expect(sh).toContain('projects/');
+      // …and it reads the answer language out of the resolved plan, so the
+      // model has it before its first token instead of after reading the file.
+      expect(sh).toContain('Reply to the user in');
+      expect(sh).toContain('PLAN: %s');
+      expect(sh).toContain('ANSWER IN: %s');
       expect(sh).toContain('$root/$app/$p');
       expect(sh).toContain('find');
       // Every unhappy outcome is named, so the agent can refuse instead of
@@ -204,8 +209,9 @@ describe('writeOpencodeRoles', () => {
       expect(sh).toContain('AMBIGUOUS');
       expect(sh).toContain('NO ARGUMENT GIVEN');
       // …and the prompt tells it to refuse on exactly those.
-      expect(cmd).toContain('NOT FOUND, AMBIGUOUS or NO ARGUMENT');
-      expect(cmd).toMatch(/do not touch any\s+files/);
+      expect(cmd).toMatch(/NOT FOUND, AMBIGUOUS or NO\s+ARGUMENT/);
+      expect(cmd).toMatch(/from your first sentence/);
+      expect(cmd).toMatch(/do not\s+touch any files/);
     }
   });
 
@@ -362,6 +368,30 @@ describe('writeOpencodeRoles', () => {
     const cmd = await read(path.join(commandsDir(), 'monoceros-plan.md'));
     expect(cmd).toContain('I run the steps');
     expect(cmd).not.toContain('Do not delegate yet');
+  });
+
+  // A PASS after 30 seconds, without running the tests and without reading the
+  // diff, is a claim rather than a review. The old prompt told it the tests had
+  // already passed - true when the planner gated, false now that the user runs
+  // the steps himself.
+  it('makes the reviewer produce evidence before a verdict', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const review = await read(path.join(agentsDir(), 'monoceros-review.md'));
+
+    // It runs the acceptance command itself, and reads the real change.
+    expect(review).toContain("Run the plan's acceptance command");
+    expect(review).toMatch(/`git diff --stat` is\s+not reading the change/);
+    expect(review).toMatch(/untracked files/);
+    // The stale premise is gone.
+    expect(review).not.toContain(
+      'The tests already passed before you were called',
+    );
+
+    // The verdict is first, and the evidence is mandatory on PASS too.
+    expect(review).toMatch(/very first line is the verdict/);
+    expect(review).toContain('Nothing before it');
+    expect(review).toMatch(/on PASS as much as on CHANGES_REQUIRED/);
+    expect(review).toMatch(/step 4 → server\.js:112/);
   });
 
   it('overwrites its own files on a second apply', async () => {
