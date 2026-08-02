@@ -1,5 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -59,6 +60,46 @@ describe('writeOpencodeConfig', () => {
   });
   afterEach(async () => {
     await fsp.rm(dir, { recursive: true, force: true });
+  });
+
+  // Two options that exist so a new workbench looks and behaves like the
+  // last one, instead of being reconfigured by hand every time.
+  it('writes the theme into tui.json and takes it out again when cleared', async () => {
+    const tui = path.join(dir, 'home', '.config', 'opencode', 'tui.json');
+    await writeOpencodeConfig(dir, NAME, {
+      [OPENCODE_REF]: { theme: 'tokyonight' },
+    });
+    const cfg = JSON.parse(await fsp.readFile(tui, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(cfg.theme).toBe('tokyonight');
+    expect(cfg.$schema).toBe('https://opencode.ai/tui.json');
+    // The yml owns the key, so emptying the option removes it. Anything
+    // else would repeat the bug where a value outlived its source.
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: { theme: '' } });
+    expect(existsSync(tui)).toBe(false);
+  });
+
+  it('leaves the rest of tui.json alone', async () => {
+    const tuiDir = path.join(dir, 'home', '.config', 'opencode');
+    const tui = path.join(tuiDir, 'tui.json');
+    await fsp.mkdir(tuiDir, { recursive: true });
+    await fsp.writeFile(tui, JSON.stringify({ mouse: false, theme: 'old' }));
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: { theme: '' } });
+    const cfg = JSON.parse(await fsp.readFile(tui, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(cfg.theme).toBeUndefined();
+    expect(cfg.mouse).toBe(false);
+  });
+
+  it('switches the language servers on and off again', async () => {
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: { lsp: true } });
+    expect((await read()).lsp).toBe(true);
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: { lsp: false } });
+    expect('lsp' in (await read())).toBe(false);
   });
 
   it('writes model + derived provider key + instructions', async () => {

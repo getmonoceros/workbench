@@ -113,6 +113,8 @@ export async function writeOpencodeConfig(
   const apiToken = str('apiToken');
   const npm = str('npm');
   const baseUrl = str('baseUrl');
+  const theme = str('theme');
+  const lsp = options.lsp === true || options.lsp === 'true';
 
   const file = path.join(
     targetDir,
@@ -270,6 +272,61 @@ export async function writeOpencodeConfig(
     }
   }
 
+  // Language servers feed diagnostics back to the agent after an edit,
+  // instead of it finding out when the acceptance command runs. Off
+  // upstream, so the option carries the switch - and clears it again when
+  // it goes back to false, or turning it off would not turn it off.
+  if (lsp) {
+    config.lsp = true;
+  } else {
+    delete config.lsp;
+  }
+
+  await fsp.writeFile(file, `${JSON.stringify(config, null, 2)}\n`);
+  await writeTuiConfig(path.dirname(file), theme);
+}
+
+/**
+ * The TUI half of the config, `tui.json`, which is where OpenCode reads
+ * the theme from. Only the `theme` key is ours: the file also carries
+ * the sidebar, the diff style and the notification settings, and those
+ * stay whatever the builder made them.
+ *
+ * An empty option removes the key rather than leaving the last value in
+ * place, so the yml stays the source of truth for it. The `/theme`
+ * picker is unaffected either way: it writes the live choice to
+ * `~/.local/state/opencode/kv.json`, which is state and not config.
+ */
+async function writeTuiConfig(dir: string, theme: string): Promise<void> {
+  const file = path.join(dir, 'tui.json');
+  let config: Record<string, unknown> = {};
+  if (existsSync(file)) {
+    try {
+      const txt = await fsp.readFile(file, 'utf8');
+      if (txt.trim()) {
+        const parsed: unknown = JSON.parse(txt);
+        if (typeof parsed === 'object' && parsed !== null) {
+          config = parsed as Record<string, unknown>;
+        }
+      }
+    } catch {
+      // Unreadable or invalid JSON: same rule as opencode.json, start
+      // from scratch rather than refusing to apply.
+      config = {};
+    }
+  }
+  if (theme) {
+    config.$schema = 'https://opencode.ai/tui.json';
+    config.theme = theme;
+  } else {
+    delete config.theme;
+    // Nothing of ours left and nothing of the builder's either: do not
+    // leave an empty file behind.
+    if (Object.keys(config).filter((k) => k !== '$schema').length === 0) {
+      if (existsSync(file)) await fsp.rm(file);
+      return;
+    }
+  }
   await fsp.writeFile(file, `${JSON.stringify(config, null, 2)}\n`);
 }
 

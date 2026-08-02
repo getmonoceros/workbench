@@ -30,8 +30,18 @@ options:
     default: ''
     description: 'Custom/local providers only: the endpoint URL, e.g. `http://ollama:11434/v1` (a service on the Docker network). Used together with `npm`.'
     surface: silent
+  theme:
+    type: string
+    default: ''
+    description: 'TUI theme, e.g. `system` (follows your terminal), `tokyonight`, `catppuccin`. Written to `~/.config/opencode/tui.json`, so a new workbench looks like the last one. Empty: whatever you pick with `/theme` in the TUI.'
+    surface: yml
+  lsp:
+    type: boolean
+    default: false
+    description: "Start OpenCode's built-in language servers, so the agent sees type errors and unresolved imports right after an edit instead of when the tests run. Off by default, as upstream. A server whose toolchain is missing does not start."
+    surface: yml
 feature:
-  version: 1.0.0
+  version: 1.1.0
   # `.config` holds opencode.json and the agents/commands, `.local/share` the
   # session database and auth, `.local/state` the XDG state dir - which is
   # where opencode keeps the model picker's recent/favourite list and its
