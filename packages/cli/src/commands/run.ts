@@ -21,7 +21,14 @@ export const runCommand = defineCommand({
     in: {
       type: 'string',
       description:
-        'Run the inner command in this directory inside the container (relative to the workspace folder, or absolute). The directory must already exist.',
+        'Run the inner command in this directory inside the container (relative to the workspace folder, or absolute). Offers to create it when it does not exist yet.',
+    },
+    yes: {
+      type: 'boolean',
+      alias: 'y',
+      description:
+        'Answer the create-the-directory question with yes. For CI and scripts.',
+      default: false,
     },
   },
   async run({ args }) {
@@ -38,6 +45,7 @@ export const runCommand = defineCommand({
         name: args.name,
         command,
         ...(args.in ? { cwd: args.in } : {}),
+        ...(args.yes ? { yes: true } : {}),
       });
       process.exit(exitCode);
     } catch (err) {

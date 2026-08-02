@@ -781,7 +781,10 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   open: { positionals: [containerName, openToolValues] },
   run: {
     positionals: [containerName],
-    flags: { '--in': { type: 'value', values: runInDirs } },
+    flags: {
+      '--in': { type: 'value', values: runInDirs },
+      '--yes': { type: 'boolean', aliases: ['-y'] },
+    },
   },
   logs: {
     positionals: [containerName, appCandidates],
