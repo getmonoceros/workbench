@@ -1,0 +1,26 @@
+id: claude-code-roles
+name: claude-code-roles
+category: feature
+displayName: Claude Code roles (plan / implement / review)
+description: 'Three Claude Code roles that split a task: a planner writes a plan file, an implementer executes it, a reviewer checks the result against it. Adds `/monoceros-plan`, `/monoceros-ship` and `/monoceros-review`. Requires the `claude-code` feature.'
+documentationURL: https://getmonoceros.build/docs/features/claude-code-roles/
+options:
+  plannerModel:
+    type: string
+    default: ''
+    description: 'Model for the planning role: `opus`, `sonnet`, `haiku`, `fable`, or a full model id. Planning carries the reasoning: a strong model here pays for itself, because the plan decides how small the implementing model can be. Empty: the role runs on whatever the session runs on.'
+    surface: yml
+  implementModel:
+    type: string
+    default: ''
+    description: 'Model for the implementing role. This is the role that runs most often, so a cheaper model belongs here - but it must call tools reliably, or it burns more in retries than it saves. Empty: same fallback as `plannerModel`.'
+    surface: yml
+  reviewModel:
+    type: string
+    default: ''
+    description: 'Model for the reviewing role. Reviewing needs the same class of model as planning: it has to notice a step that was skipped, not just read a diff. Empty: same fallback as `plannerModel`.'
+    surface: yml
+feature:
+  version: 1.0.0
+briefing:
+  - text: 'Claude Code roles — `/monoceros-plan <task>` grills the task and writes a plan to `~/.claude/plans/<app>/<slug>.md`, `/monoceros-ship <plan>` implements it and reviews the result, `/monoceros-review <plan>` reviews on its own. The planner writes no source, the implementer cannot edit the plan it is measured against, and the reviewer is read-only.'

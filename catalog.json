@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "cliVersion": "1.48.7",
+  "cliVersion": "1.49.0",
   "languages": [
     {
       "name": "dotnet",
@@ -342,6 +342,36 @@
         }
       ],
       "documentationURL": "https://docs.anthropic.com/en/docs/claude-code",
+      "presets": []
+    },
+    {
+      "name": "claude-code-roles",
+      "displayName": "Claude Code roles (plan / implement / review)",
+      "description": "Three Claude Code roles that split a task: a planner writes a plan file, an implementer executes it, a reviewer checks the result against it. Adds `/monoceros-plan`, `/monoceros-ship` and `/monoceros-review`. Requires the `claude-code` feature.",
+      "options": [
+        {
+          "key": "implementModel",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Model for the implementing role. This is the role that runs most often, so a cheaper model belongs here - but it must call tools reliably, or it burns more in retries than it saves. Empty: same fallback as `plannerModel`."
+        },
+        {
+          "key": "plannerModel",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Model for the planning role: `opus`, `sonnet`, `haiku`, `fable`, or a full model id. Planning carries the reasoning: a strong model here pays for itself, because the plan decides how small the implementing model can be. Empty: the role runs on whatever the session runs on."
+        },
+        {
+          "key": "reviewModel",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Model for the reviewing role. Reviewing needs the same class of model as planning: it has to notice a step that was skipped, not just read a diff. Empty: same fallback as `plannerModel`."
+        }
+      ],
+      "documentationURL": "https://getmonoceros.build/docs/features/claude-code-roles/",
       "presets": []
     },
     {

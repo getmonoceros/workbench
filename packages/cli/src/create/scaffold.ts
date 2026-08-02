@@ -9,6 +9,7 @@ import { writeClaudePermissionMode } from './claude-settings.js';
 import { isWsl, windowsSshPort } from '../devcontainer/ssh-attach.js';
 import { writeOpencodeConfig } from './opencode-config.js';
 import { writeOpencodeRoles } from './opencode-roles.js';
+import { writeClaudeCodeRoles } from './claude-code-roles.js';
 import {
   BUILTIN_LANGUAGES,
   curatedServiceTools,
@@ -2245,6 +2246,11 @@ export async function writeScaffold(
   // The opencode-roles feature's agents and commands, into the same
   // persistent `~/.config/opencode/` tree. No-op without that feature.
   await writeOpencodeRoles(targetDir, opts.features);
+
+  // The claude-code-roles feature's subagents, skills and permission hook,
+  // into the persistent `~/.claude/` tree. Same apply-time rationale. No-op
+  // without that feature.
+  await writeClaudeCodeRoles(targetDir, opts.features);
 
   await writePostCreateScript(devcontainerDir, opts);
 
