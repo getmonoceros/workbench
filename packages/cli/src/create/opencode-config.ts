@@ -272,18 +272,61 @@ export async function writeOpencodeConfig(
     }
   }
 
-  // Language servers feed diagnostics back to the agent after an edit,
-  // instead of it finding out when the acceptance command runs. Off
-  // upstream, so the option carries the switch - and clears it again when
-  // it goes back to false, or turning it off would not turn it off.
-  if (lsp) {
-    config.lsp = true;
-  } else {
-    delete config.lsp;
-  }
+  writeLspServers(config, lsp);
 
   await fsp.writeFile(file, `${JSON.stringify(config, null, 2)}\n`);
   await writeTuiConfig(path.dirname(file), theme);
+}
+
+/**
+ * Language servers feed diagnostics back to the agent right after an edit,
+ * instead of it finding out when the acceptance command runs. OpenCode
+ * ships them off, so the option carries the switch.
+ *
+ * The switch alone would do nothing for TypeScript and JavaScript, which is
+ * most of what people write here. OpenCode's built-in `typescript` server
+ * needs `typescript/lib/tsserver.js`, and the runtime image's base
+ * (`devcontainers/typescript-node`) brings TypeScript 7, the native port,
+ * which has no `tsserver.js` at all - `tsc` is a shim around a binary. The
+ * server then fails to start, silently, and `lsp: true` looks broken.
+ *
+ * So the switch also registers that binary as a server of its own: TS 7
+ * speaks LSP directly via `tsc --lsp --stdio`. The command is bare, not a
+ * path, because `tsc` resolves to the image's global TypeScript in every
+ * container.
+ *
+ * The built-in one is disabled at the same time, and that part is not
+ * belt-and-braces: in a project that pins TypeScript 5 both would run, the
+ * built-in on the project's own version and ours on the image's, and the
+ * same file would be diagnosed twice by two checkers. A project that wants
+ * its own version instead can say so in its `.opencode/opencode.json`,
+ * which wins over this one.
+ *
+ * All of it goes away when OpenCode supports the TS 7 layout: delete the
+ * two keys and the plain `lsp: true` is enough.
+ *
+ * Only those two keys are ours. Anything else a builder put under `lsp`
+ * stays, and switching the option off removes ours again rather than
+ * leaving a config nothing declares.
+ */
+function writeLspServers(config: Record<string, unknown>, enabled: boolean) {
+  const existing =
+    typeof config.lsp === 'object' && config.lsp !== null
+      ? (config.lsp as Record<string, unknown>)
+      : {};
+  if (!enabled) {
+    delete existing.typescript;
+    delete existing.tsgo;
+    if (Object.keys(existing).length > 0) config.lsp = existing;
+    else delete config.lsp;
+    return;
+  }
+  existing.typescript = { disabled: true };
+  existing.tsgo = {
+    command: ['tsc', '--lsp', '--stdio'],
+    extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'],
+  };
+  config.lsp = existing;
 }
 
 /**

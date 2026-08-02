@@ -37,6 +37,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 USER root
 
+# shellcheck is not ours to use: it is what OpenCode's bash language
+# server shells out to for diagnostics. Without it the server starts,
+# reports nothing, and the silence looks like the feature being off.
+# Every container has shell scripts, and the package is small.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       iptables \
@@ -45,6 +49,7 @@ RUN apt-get update \
       gosu \
       openssh-server \
       socat \
+      shellcheck \
  && rm -rf /var/lib/apt/lists/*
 
 # Harden sshd for the IDE attach point (ADR 0022). A drop-in under

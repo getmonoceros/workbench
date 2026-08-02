@@ -95,11 +95,34 @@ describe('writeOpencodeConfig', () => {
     expect(cfg.mouse).toBe(false);
   });
 
-  it('switches the language servers on and off again', async () => {
+  // The plain switch does nothing for TypeScript here: the image's base
+  // ships TypeScript 7, which has no tsserver.js, so OpenCode's built-in
+  // server cannot start. The TS 7 binary speaks LSP itself, so the switch
+  // registers it and takes the built-in out of the way, because in a
+  // TypeScript 5 project both would diagnose the same file.
+  it('registers the TypeScript 7 server and removes it again', async () => {
     await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: { lsp: true } });
-    expect((await read()).lsp).toBe(true);
+    const lsp = (await read()).lsp as Record<string, Record<string, unknown>>;
+    expect(lsp.typescript).toEqual({ disabled: true });
+    expect(lsp.tsgo?.command).toEqual(['tsc', '--lsp', '--stdio']);
+    expect(lsp.tsgo?.extensions).toContain('.ts');
+    expect(lsp.tsgo?.extensions).toContain('.js');
     await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: { lsp: false } });
     expect('lsp' in (await read())).toBe(false);
+  });
+
+  it('leaves entries a builder added under lsp alone', async () => {
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: { lsp: true } });
+    const file = cfgPath();
+    const cfg = JSON.parse(await fsp.readFile(file, 'utf8')) as {
+      lsp: Record<string, unknown>;
+    };
+    cfg.lsp.bash = { disabled: true };
+    await fsp.writeFile(file, JSON.stringify(cfg, null, 2));
+    // Switching off takes ours out and leaves theirs standing.
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: { lsp: false } });
+    const after = (await read()).lsp as Record<string, unknown>;
+    expect(after).toEqual({ bash: { disabled: true } });
   });
 
   it('writes model + derived provider key + instructions', async () => {

@@ -94,19 +94,20 @@ describe('descriptorToFeatureManifest', () => {
     );
   });
 
-  // opencode keeps state in three XDG locations and each one has to survive an
+  // opencode keeps state in four locations and each one has to survive an
   // apply: the config (opencode.json plus the agents and commands), the data
-  // (session database and auth), and the state dir - which holds the model
-  // picker's recent list. `.cache/opencode` is deliberately absent: models.json
-  // and a binary, both re-fetched.
-  it("persists all three of opencode's state locations, and not its cache", async () => {
+  // (session database and auth), the state dir with the model picker's recent
+  // list, and the cache. The cache was left out while it held only models.json
+  // and a binary; with `lsp` it also holds the language servers opencode
+  // downloads on first contact, which came back on every apply.
+  it("persists opencode's state locations including its cache", async () => {
     const m = await generate('opencode');
     const x = m['x-monoceros'] as Record<string, unknown>;
     expect(x.persistentHomePaths).toEqual([
       '.config/opencode',
       '.local/share/opencode',
       '.local/state/opencode',
+      '.cache/opencode',
     ]);
-    expect(x.persistentHomePaths).not.toContain('.cache/opencode');
   });
 });
