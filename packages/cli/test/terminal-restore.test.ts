@@ -36,7 +36,7 @@ describe('restoreTerminalModes', () => {
     expect(out).toContain('\u001b[?1004l');
     expect(out).toContain('\u001b[?2004l');
     // Back to the normal screen, cursor visible, attributes reset.
-    expect(out).toContain('\u001b[?1049l');
+    expect(out).toContain('\u001b[?1047l');
     expect(out).toContain('\u001b[?25h');
     expect(out).toContain('\u001b[0m');
   });
@@ -46,10 +46,10 @@ describe('restoreTerminalModes', () => {
     restoreTerminalModes(stream);
     const out = writes.join('');
     expect(out.indexOf('\u001b[?1003l')).toBeLessThan(
-      out.indexOf('\u001b[?1049l'),
+      out.indexOf('\u001b[?1047l'),
     );
     // Cursor and attribute resets land on the screen the builder keeps.
-    expect(out.indexOf('\u001b[?1049l')).toBeLessThan(
+    expect(out.indexOf('\u001b[?1047l')).toBeLessThan(
       out.indexOf('\u001b[?25h'),
     );
   });

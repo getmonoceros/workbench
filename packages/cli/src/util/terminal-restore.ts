@@ -27,6 +27,15 @@
  * paste, leave the alternate screen, show the cursor, reset attributes. Sent
  * in that order so the cursor and attribute resets land on the screen the
  * builder ends up looking at.
+ *
+ * The alternate screen is left with 1047, not 1049. 1049 is 1047 plus a cursor
+ * restore (DECRC), and xterm does that restore unconditionally - even when the
+ * terminal was never in the alternate screen at all. Terminals that follow
+ * xterm here (Ghostty does since 1.2.0) then move the cursor back to a stale
+ * saved position, and the shell prompt redraws over output that was already
+ * printed: a plain `monoceros run <name> -- ls -la` lost its listing that way.
+ * 1047 is a true no-op on the primary screen and still gets a TUI that died
+ * mid-flight out of the alternate one, which is all this has to do.
  */
 const RESTORE_SEQUENCE = [
   '\u001b[?1000l', // X10 / normal mouse tracking
@@ -35,7 +44,7 @@ const RESTORE_SEQUENCE = [
   '\u001b[?1006l', // SGR extended coordinates
   '\u001b[?1004l', // focus in/out reporting
   '\u001b[?2004l', // bracketed paste
-  '\u001b[?1049l', // leave alternate screen
+  '\u001b[?1047l', // leave alternate screen (no cursor restore, see above)
   '\u001b[?25h', // show cursor
   '\u001b[0m', // reset attributes
 ].join('');
