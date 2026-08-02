@@ -37,13 +37,23 @@ const EGRESS = [
 ];
 
 /**
+ * A redirect that writes a file. Deliberately not `>>?\s*\S`: that also
+ * matches `2>&1` and `2>/dev/null`, neither of which writes anything, and a
+ * first real run denied sixteen of the planner's probes for exactly that
+ * reason (`ls -la … 2>&1`, `npm view express 2>&1 | tail -3`). Redirecting
+ * stderr onto stdout or into the void is how a careful reader runs a command,
+ * so both are let through and everything else with a target is not.
+ */
+const WRITING_REDIRECT = /(?<!&)>>?\s*(?!&)(?!\/dev\/null\b)\S/;
+
+/**
  * Mutating verbs denied for the planner. The planner's real guard is the
  * write rule below; this list exists because a shell redirect, a heredoc or
  * `sed -i` would otherwise route straight around it. Same reasoning as the
  * OpenCode denylist, which this mirrors.
  */
 const MUTATING = [
-  />>?\s*\S/,
+  WRITING_REDIRECT,
   /<</,
   /\btee\b/,
   /\b(rm|mv|cp|truncate|chmod|chown|sudo)\s/,
@@ -85,7 +95,13 @@ const RULES = {
     // about what Bash can do.
     writes: () =>
       'The reviewer is read-only. Report the finding instead of fixing it.',
-    bash: [...EGRESS, ...WRITING_GIT, />>?\s*\S/, /\bsed\s+-i/, /\btee\b/],
+    bash: [
+      ...EGRESS,
+      ...WRITING_GIT,
+      WRITING_REDIRECT,
+      /\bsed\s+-i/,
+      /\btee\b/,
+    ],
     bashReason:
       'The reviewer must not change the thing it is judging. Run the acceptance command, read the diff, and report.',
   },

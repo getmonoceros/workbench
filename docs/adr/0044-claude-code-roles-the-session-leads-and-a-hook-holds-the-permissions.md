@@ -107,6 +107,17 @@ project, for the same reason as on the OpenCode side.
   exercised as a real process against real hook JSON, one case per rule, rather
   than asserted on as a string. It is the part most likely to be wrong, and on
   OpenCode the equivalent took three attempts and a container log to get right.
+  It took one here too: the first real run denied sixteen of the planner's
+  probes, because the redirect rule was copied across as `>>?\s*\S` and that
+  also matches `2>&1` and `2>/dev/null`. Redirecting stderr writes nothing. The
+  rule now excludes both, and the sixteen commands are a test.
+- **Only `/monoceros-plan` blocks model invocation.** The same run ended with
+  the user saying "let's implement it" and the session unable to reach
+  `/monoceros-ship`, because every skill carried
+  `disable-model-invocation: true`. The entry point keeps it, so a planning
+  dialogue is never started unasked. The two steps after an approved plan do
+  not: by then the user has read the plan and said yes, and that approval is
+  the gate, not the invocation mechanism.
 - The roles depend on the `claude-code` feature being in the same container. The
   component warns when it is not and writes the files anyway: a feature in the
   yml with nothing on disk is the worse failure.

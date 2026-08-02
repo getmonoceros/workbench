@@ -59,6 +59,24 @@ describe('writeClaudeCodeRoles', () => {
     ).resolves.toContain('PreToolUse');
   });
 
+  // Regression from the first real run: `/monoceros-plan` ended with the user
+  // saying "let's implement it", and the session could not reach
+  // `/monoceros-ship` because the skill blocked model invocation. Only the
+  // entry point stays blocked, so a planning dialogue is never started
+  // unasked; the two steps after an approved plan have to be callable.
+  it('lets the session carry on from an approved plan', async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+    expect(await skill('monoceros-plan')).toContain(
+      'disable-model-invocation: true',
+    );
+    expect(await skill('monoceros-ship')).not.toContain(
+      'disable-model-invocation',
+    );
+    expect(await skill('monoceros-review')).not.toContain(
+      'disable-model-invocation',
+    );
+  });
+
   // Claude Code withholds AskUserQuestion from every subagent, so phase 0
   // cannot run inside one. The planner is told it cannot ask, and the plan
   // skill does the asking in the session instead. If either half goes missing

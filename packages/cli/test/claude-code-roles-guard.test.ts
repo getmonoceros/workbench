@@ -86,6 +86,27 @@ describe('claude-code-roles guard', () => {
       expect(await decide('planner', bash('cat foo | tee server.js'))).toBe(
         'deny',
       );
+      // A redirect that names a file is still a write, whichever fd it uses.
+      expect(await decide('planner', bash('node x.js 2> log.txt'))).toBe(
+        'deny',
+      );
+    });
+
+    // Regression from the first real run: a `>>?\s*\S` redirect rule also
+    // matched `2>&1` and `2>/dev/null` and denied sixteen of the planner's
+    // probes in a row. Redirecting stderr writes nothing, and a planner that
+    // cannot run `ls … 2>&1` spends its round fighting its own guard.
+    it('may redirect stderr, which writes nothing', async () => {
+      for (const c of [
+        'ls -la /home/node/.claude/plans 2>&1',
+        'npm view express version 2>&1 | tail -3',
+        'node --test /workspaces/app 2>&1 | tail -12',
+        'cat /home/node/.gitconfig 2>/dev/null',
+        'monoceros-ctl --help 2>&1 | head -40',
+        'git -C /workspaces/app rev-parse --git-dir 2>&1',
+      ]) {
+        expect(await decide('planner', bash(c)), c).toBe(null);
+      }
     });
 
     it('may still read and probe', async () => {
