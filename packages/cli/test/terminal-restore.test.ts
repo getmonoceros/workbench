@@ -54,6 +54,24 @@ describe('restoreTerminalModes', () => {
     );
   });
 
+  /**
+   * 1049 is 1047 plus an unconditional cursor restore (DECRC). A terminal that
+   * follows xterm there (Ghostty does since 1.2.0) performs that restore even
+   * when nothing ever entered the alternate screen: the cursor jumps back to a
+   * stale saved position and the shell prompt redraws over output that was
+   * already printed. `monoceros run <name> -- ls -la` showed its listing and
+   * then lost it. Nothing in the sequence may move the cursor.
+   */
+  it('does not restore the cursor position, which would swallow output', () => {
+    const { stream, writes } = fakeTty(true);
+    restoreTerminalModes(stream);
+    const out = writes.join('');
+    expect(out).not.toContain('[?1049l'); // 1047 plus a cursor restore
+    expect(out).not.toContain('[?1048l'); // the cursor restore on its own
+    expect(out).not.toContain('[u'); // SCORC
+    expect(out).not.toContain('[H'); // cursor home
+  });
+
   it('is not a full reset — it must not clear the screen or the scrollback', () => {
     const { stream, writes } = fakeTty(true);
     restoreTerminalModes(stream);
