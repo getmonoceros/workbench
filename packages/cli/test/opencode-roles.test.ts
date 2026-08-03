@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -476,6 +483,47 @@ describe('writeOpencodeRoles', () => {
     for (const body of [planner, implement, review]) {
       expect(body).toMatch(/content type/);
     }
+  });
+
+  // OpenCode documents `variant` for the JSON config, not for a markdown
+  // agent's frontmatter, so writing it into the .md would be a silent no-op.
+  // It has to land in opencode.json, merged next to whatever the opencode
+  // feature already wrote there.
+  it('writes each role variant into opencode.json, not the frontmatter', async () => {
+    const cfgDir = path.join(dir, 'home', '.config', 'opencode');
+    await mkdir(cfgDir, { recursive: true });
+    await writeFile(
+      path.join(cfgDir, 'opencode.json'),
+      JSON.stringify({ model: 'openrouter/x/y', instructions: ['keep me'] }),
+    );
+    await writeOpencodeRoles(dir, {
+      [OPENCODE]: {},
+      [ROLES]: { plannerEffort: 'high', implementEffort: 'low' },
+    });
+    const cfg = JSON.parse(await read(path.join(cfgDir, 'opencode.json')));
+    expect(cfg.agent['monoceros-planner']).toEqual({ variant: 'high' });
+    expect(cfg.agent['monoceros-implement']).toEqual({ variant: 'low' });
+    // No level for the reviewer -> no entry at all, not an empty object.
+    expect(cfg.agent['monoceros-review']).toBeUndefined();
+    // Everything the opencode feature owns survives the merge.
+    expect(cfg.model).toBe('openrouter/x/y');
+    expect(cfg.instructions).toEqual(['keep me']);
+    // And the frontmatter stays clean, since `variant` does nothing there.
+    expect(
+      await read(path.join(agentsDir(), 'monoceros-planner.md')),
+    ).not.toContain('variant:');
+  });
+
+  it('clears a variant that was removed from the yml', async () => {
+    const cfgDir = path.join(dir, 'home', '.config', 'opencode');
+    await mkdir(cfgDir, { recursive: true });
+    await writeFile(
+      path.join(cfgDir, 'opencode.json'),
+      JSON.stringify({ agent: { 'monoceros-planner': { variant: 'max' } } }),
+    );
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const cfg = JSON.parse(await read(path.join(cfgDir, 'opencode.json')));
+    expect(cfg.agent).toBeUndefined();
   });
 
   it('overwrites its own files on a second apply', async () => {

@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs';
+import { existsSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
 import { matchMonocerosFeature } from '../util/ref.js';
@@ -60,6 +60,16 @@ const COMMANDS = [
   'monoceros-ship',
   'monoceros-review',
 ] as const;
+
+/** Which option supplies each agent's model variant (OpenCode's word for
+ *  reasoning effort). Unlike the model, this cannot go into the agent's
+ *  frontmatter: OpenCode documents `variant` for the JSON config only, so it
+ *  is merged into `opencode.json` further down. */
+const EFFORT_OPTION: Record<(typeof AGENTS)[number], string> = {
+  'monoceros-planner': 'plannerEffort',
+  'monoceros-implement': 'implementEffort',
+  'monoceros-review': 'reviewEffort',
+};
 
 /** Which option on the roles feature supplies each agent's model. */
 const MODEL_OPTION: Record<(typeof AGENTS)[number], string> = {
@@ -131,6 +141,70 @@ export async function writeOpencodeRoles(
       await fsp.writeFile(path.join(outDir, `${name}.md`), body);
     }
   }
+
+  await writeAgentVariants(targetDir, roles);
+}
+
+/**
+ * Merge each role's variant into `opencode.json`'s `agent` block.
+ *
+ * Not the frontmatter: OpenCode's markdown agents document `description`,
+ * `mode`, `model`, `temperature` and `permission`, and `variant` is not among
+ * them - it lives in the JSON `AgentConfig`. Writing it into the markdown
+ * would be a silent no-op, which is worse than not offering the option.
+ *
+ * The merge preserves everything else in the file (`writeOpencodeConfig` runs
+ * before this and owns the model, the provider key and the instructions), and
+ * it removes the key again when the option is cleared, so dropping a value
+ * from the yml really drops it from the container.
+ */
+async function writeAgentVariants(
+  targetDir: string,
+  roles: Record<string, unknown>,
+): Promise<void> {
+  const file = path.join(
+    targetDir,
+    'home',
+    '.config',
+    'opencode',
+    'opencode.json',
+  );
+  let config: Record<string, unknown> = {};
+  if (existsSync(file)) {
+    try {
+      const txt = await fsp.readFile(file, 'utf8');
+      if (txt.trim()) {
+        const parsed: unknown = JSON.parse(txt);
+        if (typeof parsed === 'object' && parsed !== null) {
+          config = parsed as Record<string, unknown>;
+        }
+      }
+    } catch {
+      // Malformed opencode.json - leave it alone rather than clobbering a file
+      // the builder may be in the middle of editing.
+      return;
+    }
+  }
+
+  const agents =
+    typeof config.agent === 'object' && config.agent !== null
+      ? (config.agent as Record<string, Record<string, unknown>>)
+      : {};
+
+  for (const name of AGENTS) {
+    const variant = str(roles, EFFORT_OPTION[name]);
+    const entry = agents[name] ?? {};
+    if (variant) entry.variant = variant;
+    else delete entry.variant;
+    if (Object.keys(entry).length > 0) agents[name] = entry;
+    else delete agents[name];
+  }
+
+  if (Object.keys(agents).length > 0) config.agent = agents;
+  else delete config.agent;
+
+  await fsp.mkdir(path.dirname(file), { recursive: true });
+  await fsp.writeFile(file, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 /**

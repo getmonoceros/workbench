@@ -20,6 +20,21 @@ options:
     default: ''
     description: 'Model for the reviewing role. Reviewing needs the same class of model as planning: it has to notice a step that was skipped, not just read a diff. Empty: same fallback as `plannerModel`.'
     surface: yml
+  plannerEffort:
+    type: string
+    default: ''
+    description: 'Model variant for the planning role, which is how OpenCode exposes reasoning effort. The accepted values come from the model, not from Monoceros: Kimi K3 takes `low`, `high` and `max`, other models differ. Empty: whatever the model does on its own.'
+    surface: yml
+  implementEffort:
+    type: string
+    default: ''
+    description: 'Model variant for the implementing role. It follows a plan that already names the files and the acceptance command, so it needs less deliberation than the other two. Empty: same as `plannerEffort`.'
+    surface: yml
+  reviewEffort:
+    type: string
+    default: ''
+    description: 'Model variant for the reviewing role. It has to notice a step that was skipped and a security hole nobody asked about, which is thinking work. Empty: same as `plannerEffort`.'
+    surface: yml
 feature:
   version: 1.0.0
 briefing:

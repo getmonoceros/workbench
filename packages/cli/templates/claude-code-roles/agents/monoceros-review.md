@@ -2,6 +2,7 @@
 name: monoceros-review
 description: Reviews an implemented change against its plan file. Read-only. Returns PASS or CHANGES_REQUIRED with a numbered list.
 {{MODEL_LINE}}
+{{EFFORT_LINE}}
 tools: Read, Grep, Glob, Bash, TodoWrite
 hooks:
   PreToolUse:

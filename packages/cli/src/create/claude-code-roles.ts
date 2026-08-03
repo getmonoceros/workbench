@@ -41,6 +41,9 @@ import type { CreateOptions } from './types.js';
  *     Empty means Claude Code's own default, which is `inherit`: the role runs
  *     on whatever the session runs on. Deliberately no baked-in defaults,
  *     model ids age faster than releases.
+ *   - `{{EFFORT_LINE}}` — the agent's `effort:` line, or nothing. Empty means
+ *     the role inherits the session's effort, which is what Claude Code does
+ *     without the field. Same no-default reasoning as the model.
  *   - `{{PLANS_DIR}}` / `{{PLANS_DIR_TILDE}}` — where plans are written, under
  *     the persisted `~/.claude`, so a plan survives an apply and survives
  *     wiping `projects/`.
@@ -70,6 +73,13 @@ const MODEL_OPTION: Record<(typeof AGENTS)[number], string> = {
   'monoceros-planner': 'plannerModel',
   'monoceros-implement': 'implementModel',
   'monoceros-review': 'reviewModel',
+};
+
+/** Which option supplies each agent's effort level. Same shape as the models. */
+const EFFORT_OPTION: Record<(typeof AGENTS)[number], string> = {
+  'monoceros-planner': 'plannerEffort',
+  'monoceros-implement': 'implementEffort',
+  'monoceros-review': 'reviewEffort',
 };
 
 function featureOptions(
@@ -121,7 +131,11 @@ export async function writeClaudeCodeRoles(
     if (body === undefined) continue;
     await fsp.writeFile(
       path.join(agentsDir, `${name}.md`),
-      renderRoleTemplate(body, str(roles, MODEL_OPTION[name])),
+      renderRoleTemplate(
+        body,
+        str(roles, MODEL_OPTION[name]),
+        str(roles, EFFORT_OPTION[name]),
+      ),
     );
   }
 
@@ -173,15 +187,31 @@ async function readTemplate(file: string): Promise<string | undefined> {
  * Fill the template placeholders. Exported for the tests, which assert the
  * rendering rules rather than the prose.
  */
-export function renderRoleTemplate(body: string, model: string): string {
+export function renderRoleTemplate(
+  body: string,
+  model: string,
+  effort = '',
+): string {
   const out = body
     .replaceAll('{{PLANS_DIR_TILDE}}', PLANS_DIR_TILDE)
     .replaceAll('{{PLANS_DIR}}', PLANS_DIR)
     .replaceAll('{{GUARD}}', GUARD);
-  if (!model) {
-    // Drop the whole line, including its newline: an agent without a `model`
-    // defaults to `inherit`, which is what "unset" has to mean.
-    return out.replace(/^\{\{MODEL_LINE\}\}\n/m, '');
-  }
-  return out.replace('{{MODEL_LINE}}', `model: ${model}`);
+  return fillLine(
+    fillLine(out, 'MODEL_LINE', model && `model: ${model}`),
+    'EFFORT_LINE',
+    effort && `effort: ${effort}`,
+  );
+}
+
+/**
+ * Replace a `{{NAME}}` placeholder line with `value`, or drop the line
+ * entirely when there is no value. Dropping matters: an agent without a
+ * `model` defaults to `inherit` and one without an `effort` inherits the
+ * session's, which is what "unset" has to mean. An empty `model:` is not the
+ * same thing and would be a parse error.
+ */
+function fillLine(body: string, name: string, value: string): string {
+  if (!value)
+    return body.replace(new RegExp(`^\\{\\{${name}\\}\\}\\n`, 'm'), '');
+  return body.replace(`{{${name}}}`, value);
 }

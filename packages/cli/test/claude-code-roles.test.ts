@@ -174,6 +174,35 @@ describe('writeClaudeCodeRoles', () => {
     expect((await readdir(agentsDir())).length).toBe(3);
   });
 
+  // Effort is a real frontmatter field on a Claude Code subagent, so it goes
+  // next to the model. Unset has to drop the whole line: an empty `effort:`
+  // is not the same as inheriting the session's, and would be a parse error.
+  it('puts each role on its own effort level', async () => {
+    await writeClaudeCodeRoles(dir, {
+      [CLAUDE]: {},
+      [ROLES]: {
+        plannerEffort: 'xhigh',
+        implementEffort: 'medium',
+        reviewEffort: 'high',
+      },
+    });
+    expect(await agent('monoceros-planner')).toContain('\neffort: xhigh\n');
+    expect(await agent('monoceros-implement')).toContain('\neffort: medium\n');
+    expect(await agent('monoceros-review')).toContain('\neffort: high\n');
+  });
+
+  it('drops the effort line when no level is set', async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+    for (const name of [
+      'monoceros-planner',
+      'monoceros-implement',
+      'monoceros-review',
+    ]) {
+      expect(await agent(name)).not.toContain('effort:');
+      expect(await agent(name)).not.toContain('{{EFFORT_LINE}}');
+    }
+  });
+
   describe('renderRoleTemplate', () => {
     it('drops the model line entirely when no model is set', () => {
       const out = renderRoleTemplate('a\n{{MODEL_LINE}}\nb\n', '');

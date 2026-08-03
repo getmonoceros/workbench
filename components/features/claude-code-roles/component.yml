@@ -20,6 +20,21 @@ options:
     default: ''
     description: 'Model for the reviewing role. Reviewing needs the same class of model as planning: it has to notice a step that was skipped, not just read a diff. Empty: same fallback as `plannerModel`.'
     surface: yml
+  plannerEffort:
+    type: string
+    default: ''
+    description: 'Effort level for the planning role: `low`, `medium`, `high`, `xhigh` or `max`. Higher means the role thinks longer before it acts, and costs more. Planning is where thinking pays, so this is the last one to turn down. Empty: the role inherits whatever effort the session runs on.'
+    surface: yml
+  implementEffort:
+    type: string
+    default: ''
+    description: 'Effort level for the implementing role. It follows a plan that already names the files and the acceptance command, so it needs less deliberation than the other two: a good place to save. Empty: same fallback as `plannerEffort`.'
+    surface: yml
+  reviewEffort:
+    type: string
+    default: ''
+    description: 'Effort level for the reviewing role. It has to notice a step that was skipped and a security hole nobody asked about, which is thinking work. Empty: same fallback as `plannerEffort`.'
+    surface: yml
 feature:
   version: 1.0.0
 briefing:

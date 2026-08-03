@@ -2,6 +2,7 @@
 name: monoceros-planner
 description: Turns a task plus the answers already gathered from the user into a plan file under {{PLANS_DIR}}/. Writes no source code and asks no questions.
 {{MODEL_LINE}}
+{{EFFORT_LINE}}
 disallowedTools: Agent
 hooks:
   PreToolUse:

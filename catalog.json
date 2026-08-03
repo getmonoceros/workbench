@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "cliVersion": "1.49.1",
+  "cliVersion": "1.50.0",
   "languages": [
     {
       "name": "dotnet",
@@ -350,6 +350,13 @@
       "description": "Three Claude Code roles that split a task: a planner writes a plan file, an implementer executes it, a reviewer checks the result against it. Adds `/monoceros-plan`, `/monoceros-ship` and `/monoceros-review`. Requires the `claude-code` feature.",
       "options": [
         {
+          "key": "implementEffort",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Effort level for the implementing role. It follows a plan that already names the files and the acceptance command, so it needs less deliberation than the other two: a good place to save. Empty: same fallback as `plannerEffort`."
+        },
+        {
           "key": "implementModel",
           "type": "string",
           "surface": "yml",
@@ -357,11 +364,25 @@
           "description": "Model for the implementing role. This is the role that runs most often, so a cheaper model belongs here - but it must call tools reliably, or it burns more in retries than it saves. Empty: same fallback as `plannerModel`."
         },
         {
+          "key": "plannerEffort",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Effort level for the planning role: `low`, `medium`, `high`, `xhigh` or `max`. Higher means the role thinks longer before it acts, and costs more. Planning is where thinking pays, so this is the last one to turn down. Empty: the role inherits whatever effort the session runs on."
+        },
+        {
           "key": "plannerModel",
           "type": "string",
           "surface": "yml",
           "default": "",
           "description": "Model for the planning role: `opus`, `sonnet`, `haiku`, `fable`, or a full model id. Planning carries the reasoning: a strong model here pays for itself, because the plan decides how small the implementing model can be. Empty: the role runs on whatever the session runs on."
+        },
+        {
+          "key": "reviewEffort",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Effort level for the reviewing role. It has to notice a step that was skipped and a security hole nobody asked about, which is thinking work. Empty: same fallback as `plannerEffort`."
         },
         {
           "key": "reviewModel",
@@ -456,6 +477,13 @@
       "description": "Three OpenCode agents that split a task: a planner writes a plan file, an implementer executes it, a reviewer checks the result against it. Adds `/monoceros-plan`, `/monoceros-ship` and `/monoceros-review`. Requires the `opencode` feature.",
       "options": [
         {
+          "key": "implementEffort",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Model variant for the implementing role. It follows a plan that already names the files and the acceptance command, so it needs less deliberation than the other two. Empty: same as `plannerEffort`."
+        },
+        {
           "key": "implementModel",
           "type": "string",
           "surface": "yml",
@@ -463,11 +491,25 @@
           "description": "Model for the implementing role. This is the role that runs most often, so a cheaper model belongs here - but it must call tools reliably, or it burns more in retries than it saves. Empty: same fallback as `plannerModel`."
         },
         {
+          "key": "plannerEffort",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Model variant for the planning role, which is how OpenCode exposes reasoning effort. The accepted values come from the model, not from Monoceros: Kimi K3 takes `low`, `high` and `max`, other models differ. Empty: whatever the model does on its own."
+        },
+        {
           "key": "plannerModel",
           "type": "string",
           "surface": "yml",
           "default": "",
           "description": "Model for the planning role as `provider/model-id`. Planning carries the reasoning: a strong model here pays for itself, because the plan decides how small the implementing model can be. Empty: fall back to the `opencode` feature's `model`, and to whatever OpenCode would pick when that is empty too."
+        },
+        {
+          "key": "reviewEffort",
+          "type": "string",
+          "surface": "yml",
+          "default": "",
+          "description": "Model variant for the reviewing role. It has to notice a step that was skipped and a security hole nobody asked about, which is thinking work. Empty: same as `plannerEffort`."
         },
         {
           "key": "reviewModel",

@@ -2,6 +2,7 @@
 name: monoceros-implement
 description: Implements an approved plan. Use for every code change. The prompt must carry the path to a plan file under {{PLANS_DIR}}/<app>/ and nothing else is assumed to be known.
 {{MODEL_LINE}}
+{{EFFORT_LINE}}
 permissionMode: acceptEdits
 disallowedTools: Agent
 hooks:
