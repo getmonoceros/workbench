@@ -157,6 +157,18 @@ cwd is irrelevant — everything goes through convention.
   list, but flags and value sources are not auto-checked. A new dynamic
   `kind` also needs a matching host-side resolver in the pwsh script in
   [`packages/cli/src/commands/completion.ts`](packages/cli/src/commands/completion.ts).
+- **A rule a real run teaches goes into both role sets.**
+  `packages/cli/templates/claude-code-roles/` and
+  `packages/cli/templates/opencode-roles/` are deliberate copies
+  ([ADR 0043](docs/adr/0043-opencode-roles-as-its-own-component.md)): they share
+  the prompt substance but not a template, and nothing enforces the overlap.
+  They are supposed to differ where the agents differ (permissions, delegation
+  syntax, where plans live) and to agree on everything a run taught us. Two have
+  come out of real runs so far: the guard that denied `2>&1` on a read-only
+  probe, and an acceptance command that checked `/` for a 200 and therefore
+  could never fail. Fix that class of thing in both sets in the same change and
+  pin it with a test in each suite, or the next session fixes one and ships the
+  other broken.
 
 ## Working an issue (board workflow)
 
