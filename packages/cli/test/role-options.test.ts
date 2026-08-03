@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { validateRoleOptions } from '../src/create/role-options.js';
 
@@ -95,4 +96,36 @@ describe('validateRoleOptions', () => {
       ).not.toThrow();
     });
   });
+});
+
+// The option ORDER is part of the interface: `monoceros init` writes them into
+// the yml in descriptor order, and a builder fills the values in by reading
+// down. Grouped by kind (three models, then three efforts) that means six
+// values in two blocks, and a real yml came back with `implementModel: xhigh`
+// and `implementEffort: opus` swapped into each other. Grouped by role, each
+// value sits under the label it belongs to.
+describe('option order in the descriptors', () => {
+  const EXPECTED = [
+    'plannerModel',
+    'plannerEffort',
+    'implementModel',
+    'implementEffort',
+    'reviewModel',
+    'reviewEffort',
+  ];
+
+  it.each(['claude-code-roles', 'opencode-roles'])(
+    'pairs each role model with its effort in %s',
+    async (component) => {
+      const yml = await readFile(
+        new URL(
+          `../../../components/features/${component}/component.yml`,
+          import.meta.url,
+        ),
+        'utf8',
+      );
+      const found = [...yml.matchAll(/^ {2}(\w+):$/gm)].map((m) => m[1]!);
+      expect(found.filter((n) => EXPECTED.includes(n))).toEqual(EXPECTED);
+    },
+  );
 });

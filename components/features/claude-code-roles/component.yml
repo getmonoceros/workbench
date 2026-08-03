@@ -10,25 +10,25 @@ options:
     default: ''
     description: 'Model for the planning role: `opus`, `sonnet`, `haiku`, `fable`, or a full model id. Planning carries the reasoning: a strong model here pays for itself, because the plan decides how small the implementing model can be. Empty: the role runs on whatever the session runs on.'
     surface: yml
-  implementModel:
-    type: string
-    default: ''
-    description: 'Model for the implementing role. This is the role that runs most often, so a cheaper model belongs here - but it must call tools reliably, or it burns more in retries than it saves. Empty: same fallback as `plannerModel`.'
-    surface: yml
-  reviewModel:
-    type: string
-    default: ''
-    description: 'Model for the reviewing role. Reviewing needs the same class of model as planning: it has to notice a step that was skipped, not just read a diff. Empty: same fallback as `plannerModel`.'
-    surface: yml
   plannerEffort:
     type: string
     default: ''
     description: 'Effort level for the planning role: `low`, `medium`, `high`, `xhigh` or `max`. Higher means the role thinks longer before it acts, and costs more. Planning is where thinking pays, so this is the last one to turn down. Empty: the role inherits whatever effort the session runs on.'
     surface: yml
+  implementModel:
+    type: string
+    default: ''
+    description: 'Model for the implementing role. This is the role that runs most often, so a cheaper model belongs here - but it must call tools reliably, or it burns more in retries than it saves. Empty: same fallback as `plannerModel`.'
+    surface: yml
   implementEffort:
     type: string
     default: ''
     description: 'Effort level for the implementing role. It follows a plan that already names the files and the acceptance command, so it needs less deliberation than the other two: a good place to save. Empty: same fallback as `plannerEffort`.'
+    surface: yml
+  reviewModel:
+    type: string
+    default: ''
+    description: 'Model for the reviewing role. Reviewing needs the same class of model as planning: it has to notice a step that was skipped, not just read a diff. Empty: same fallback as `plannerModel`.'
     surface: yml
   reviewEffort:
     type: string
