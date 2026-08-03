@@ -86,7 +86,21 @@ does between runs.
   worse failure.
 - A second AI agent (Claude Code, Codex) does not get these roles. If the same
   split proves itself there, it is a sibling component, not an option on this
-  one.
+  one. That happened: `claude-code-roles` is that sibling
+  ([ADR 0044](0044-claude-code-roles-the-session-leads-and-a-hook-holds-the-permissions.md)),
+  and rules learned on one side are now carried to both.
+- **An acceptance command that cannot fail is worse than none**, and this
+  workflow makes that failure easy to reach: the planner writes the command, the
+  implementer runs it, and the reviewer runs it again, so all three inherit
+  whatever the first one got wrong. A real run asked for a web app, and every
+  check for "the app is reachable" was a 200 on `/`. A dev server returns the
+  page shell whether the app loads or not, so the command was green while the
+  browser showed a white page. Fifteen tests, a plan that even probed the API
+  proxy, and a reviewer that read all 27 files did not catch it, because none of
+  them fetched what the page referenced. All three roles now carry the rule that
+  a served page is checked by following its references, and the planner is told
+  to put that into the command rather than only into the criteria - the command
+  outlives the run.
 - The concept document stays as it is. This ADR is the record that the boundary
   was tested and where it was drawn: a workflow may ship **as a component**,
   and the workbench itself still has no opinion on how you work.

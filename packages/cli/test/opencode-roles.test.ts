@@ -460,6 +460,24 @@ describe('writeOpencodeRoles', () => {
     expect(review).toMatch(/Out of scope: naming, formatting/);
   });
 
+  // Same rule, same reason as on the Claude side: `/` returns the page shell
+  // whether the app loads or not, so following the references is the only check
+  // that can fail. A real run shipped a white page behind fifteen green tests.
+  it('makes all three roles follow the page references, not just its status', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
+    const implement = await read(
+      path.join(agentsDir(), 'monoceros-implement.md'),
+    );
+    const review = await read(path.join(agentsDir(), 'monoceros-review.md'));
+    expect(planner).toContain("follow the\n  page's references");
+    expect(implement).toContain('A 200 on `/` proves nothing');
+    expect(review).toContain('a 200 on `/` does not settle it');
+    for (const body of [planner, implement, review]) {
+      expect(body).toMatch(/content type/);
+    }
+  });
+
   it('overwrites its own files on a second apply', async () => {
     await writeOpencodeRoles(dir, {
       [OPENCODE]: {},

@@ -150,6 +150,21 @@ If there is no launch config, do not invent one and do not start a server by
 hand: say in your report that the app has no launch target, so nothing was
 started.
 
+### A 200 on `/` proves nothing
+
+A dev server answers `/` with the page shell whether the app loads or not, so a
+status check there cannot fail. Fetch the served HTML, then fetch every resource
+it references - `<script src>`, `<link href>` - and check the status **and** the
+content type of each. A 404, or `text/html` where JavaScript belongs, is the
+difference between a running app and a white page.
+
+One real run shows why it has to be the references and not the page: a
+`web/api.js` sat next to a Vite proxy keyed on `'/api'`, which matches by
+prefix, so the module was proxied to the API and came back 404. Fifteen tests
+were green, the acceptance command checked the HTML, the manifest, the service
+worker and the icons, and nothing fetched the one file the page could not start
+without. The user got a white page.
+
 ## When the plan is wrong
 
 It happens: a step is impossible, a named file does not exist, two steps

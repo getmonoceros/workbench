@@ -63,6 +63,11 @@ a review.
 3. **Substance over green.** The acceptance command passing is not the same as
    the acceptance criteria being met. Take the criteria one at a time and say
    which code satisfies each - a criterion you cannot point at is not met.
+   When a criterion says the app is reachable, a 200 on `/` does not settle it:
+   a dev server returns the page shell whether the app loads or not. Fetch the
+   served HTML and then every resource it references, and check the status and
+   the content type of each. That is where a white page hides, and a real run
+   hid one there behind fifteen green tests.
 4. **Correctness in the diff.** Error paths, boundary values, an await that is
    missing, a resource that is not released, a check that is now unreachable.
    Name a concrete failing input, not a worry.

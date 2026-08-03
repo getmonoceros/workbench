@@ -57,6 +57,14 @@ one it cannot:
 - Name functions, types and config keys exactly as they appear in the code.
 - Give one acceptance command that decides pass or fail, and say what green
   looks like. `pnpm test path/to/file.test.ts`, not "the tests pass".
+- **When the app serves a page a browser loads, that command has to follow the
+  page's references.** Fetching `/` and checking for 200 is a test that cannot
+  fail: a dev server returns the shell whether the app works or not. The command
+  fetches the served HTML, then every resource it references, and checks status
+  and content type. Put it in the command, not only in the criteria - the
+  command stays in the project and guards the runs after this one. A real run
+  shipped a white page with fifteen green tests because nothing fetched the one
+  module the page imported.
 - Write the steps in the order they must happen, one change per step.
 - Fill "out of scope" honestly. It is the fence that keeps the implementer from
   improving neighbouring code.

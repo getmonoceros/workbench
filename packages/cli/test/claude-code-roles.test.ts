@@ -89,6 +89,24 @@ describe('writeClaudeCodeRoles', () => {
     expect(await skill('monoceros-plan')).toContain('One question at a time');
   });
 
+  // A dev server answers `/` with the page shell whether the app loads or not,
+  // so a status check there cannot fail. A real run shipped a white page behind
+  // fifteen green tests: a `web/api.js` collided with a Vite proxy keyed on
+  // `'/api'`, and nothing fetched the module the page imported. All three roles
+  // carry the rule now, because each of them could have caught it.
+  it('makes all three roles follow the page references, not just its status', async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+    const planner = await agent('monoceros-planner');
+    const implement = await agent('monoceros-implement');
+    const review = await agent('monoceros-review');
+    expect(planner).toContain("follow the\n  page's references");
+    expect(implement).toContain('A 200 on `/` proves nothing');
+    expect(review).toContain('a 200 on `/` does not settle it');
+    for (const body of [planner, implement, review]) {
+      expect(body).toMatch(/content type/);
+    }
+  });
+
   // Every role wires the guard, because it is the only permission layer that
   // survives Auto Mode - where a subagent's `permissionMode` is ignored.
   it('wires the guard hook into all three agents', async () => {
