@@ -10,6 +10,7 @@ import { isWsl, windowsSshPort } from '../devcontainer/ssh-attach.js';
 import { writeOpencodeConfig } from './opencode-config.js';
 import { writeOpencodeRoles } from './opencode-roles.js';
 import { writeClaudeCodeRoles } from './claude-code-roles.js';
+import { validateRoleOptions } from './role-options.js';
 import {
   BUILTIN_LANGUAGES,
   curatedServiceTools,
@@ -107,6 +108,10 @@ export function cloneUrl(url: string): string {
 }
 
 export function validateOptions(opts: CreateOptions): void {
+  // A role's model and effort land verbatim in an agent definition, and
+  // nothing between here and the running agent looks at them again. A typo
+  // therefore surfaces mid-chain, on the user's clock and bill.
+  validateRoleOptions(opts.features);
   if (!opts.name || !/^[a-zA-Z0-9._-]+$/.test(opts.name)) {
     throw new Error(
       `Invalid solution name: ${JSON.stringify(opts.name)}. Use letters, digits, '.', '_' or '-'.`,
