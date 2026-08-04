@@ -109,6 +109,33 @@ describe('claude-code-roles guard', () => {
       }
     });
 
+    // Regression from a review run: the reviewer had a read-only probe refused
+    // because the arrow in its curl format string looked like a redirect. A
+    // `>` inside a quoted argument is an argument.
+    it('may carry a > inside a quoted argument', async () => {
+      for (const c of [
+        `curl -s -X DELETE http://localhost:3000/api/todos/abc -w ' -> %{http_code}\\n'`,
+        `node -e "console.log(1 > 0)"`,
+        `psql "$POSTGRES_URL" -c 'select 1 where 2 > 1'`,
+      ]) {
+        expect(await decide('planner', bash(c)), c).toBe(null);
+        expect(await decide('review', bash(c)), c).toBe(null);
+      }
+    });
+
+    // Fixing the arrow must not open the redirect it was hiding behind, and
+    // `&>` writes just as much as `>` does.
+    it('still sees a redirect next to a quoted argument', async () => {
+      for (const c of [
+        `curl -s http://x -w ' -> %{http_code}' > out.txt`,
+        `node -e "console.log(1)" > out.txt`,
+        `node x.js &> log.txt`,
+        `node x.js &>> log.txt`,
+      ]) {
+        expect(await decide('planner', bash(c)), c).toBe('deny');
+      }
+    });
+
     it('may still read and probe', async () => {
       expect(await decide('planner', bash('grep -rn foo src'))).toBe(null);
       expect(await decide('planner', bash('command -v monoceros-ctl'))).toBe(

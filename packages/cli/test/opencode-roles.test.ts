@@ -467,6 +467,56 @@ describe('writeOpencodeRoles', () => {
     expect(review).toMatch(/Out of scope: naming, formatting/);
   });
 
+  // Same defect as the Claude guard's `2>&1`, found in a real review run: the
+  // old `*> *` matched the arrow in `curl … -w ' -> %{http_code}'` and refused
+  // a read-only probe. Resolved the way opencode resolves it - `*` and `?` are
+  // the only wildcards, and the last matching rule wins - so this pins the
+  // behaviour and not the lines.
+  it('denies a writing redirect without denying an arrow', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const rulesOf = (body: string) =>
+      [
+        ...body
+          .slice(body.indexOf('  bash:'), body.indexOf('\n---', 1))
+          .matchAll(/^ {4}'(.+?)': (allow|deny)$/gm),
+      ].map(([, pattern, action]) => ({
+        re: new RegExp(
+          '^' +
+            pattern!
+              .replace(/[.+^${}()|[\]\\]/g, (c) => '\\' + c)
+              .replace(/\*/g, '.*')
+              .replace(/\?/g, '.') +
+            '$',
+        ),
+        action: action!,
+      }));
+    const decide = (rules: ReturnType<typeof rulesOf>, command: string) =>
+      rules.filter((r) => r.re.test(command)).at(-1)?.action ?? 'allow';
+
+    for (const role of ['monoceros-planner', 'monoceros-review']) {
+      const rules = rulesOf(await read(path.join(agentsDir(), `${role}.md`)));
+      // The probe that was refused, plus the reads that must stay open.
+      for (const c of [
+        `curl -s http://localhost:3000/api/todos/abc -w ' -> %{http_code}\\n'`,
+        'ls -la /workspaces/app 2>&1',
+        'cat package.json 2>/dev/null',
+        'npm view express version 2>&1 | tail -3',
+        'node --test 2>&1 > /dev/null',
+      ]) {
+        expect(decide(rules, c), `${role}: ${c}`).toBe('allow');
+      }
+      // And the writes it was there for.
+      for (const c of [
+        'echo x > src/server.js',
+        'echo x >src/server.js',
+        'cat a >> src/server.js',
+        'echo x >/workspaces/app/server.js',
+      ]) {
+        expect(decide(rules, c), `${role}: ${c}`).toBe('deny');
+      }
+    }
+  });
+
   // Same rule, same reason: the technical either/or in the old wording read as
   // the question to ask, and a real Kimi run asked about the tech stack instead
   // of the scope.

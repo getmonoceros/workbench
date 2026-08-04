@@ -101,6 +101,18 @@ does between runs.
   a served page is checked by following its references, and the planner is told
   to put that into the command rather than only into the criteria - the command
   outlives the run.
+- **A permission rule that reads shell syntax will read it wrong**, and the
+  cost lands on the role that probes the most. Both sets denied a writing
+  redirect by looking for `>`, and both got it wrong twice on real runs: first
+  `2>&1` and `2>/dev/null`, which write nothing and cost the planner sixteen
+  refused probes in a row, then the arrow in `curl … -w ' -> %{http_code}'`,
+  which refused a read-only probe in a review. A denied read looks to the role
+  exactly like a denied write, and it spends the rest of its round working
+  around its own guard. So the rules are written against the shape a redirect
+  actually has: the Claude guard blanks quoted arguments before it looks, and
+  the OpenCode rules key on the space in front of a redirect, because that
+  syntax has only `*` and `?` to work with. Both keep `&>` and a plain `>` to a
+  file denied, and both let `/dev/null` through.
 - The concept document stays as it is. This ADR is the record that the boundary
   was tested and where it was drawn: a workflow may ship **as a component**,
   and the workbench itself still has no opinion on how you work.

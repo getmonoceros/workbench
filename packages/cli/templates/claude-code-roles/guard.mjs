@@ -37,14 +37,34 @@ const EGRESS = [
 ];
 
 /**
- * A redirect that writes a file. Deliberately not `>>?\s*\S`: that also
- * matches `2>&1` and `2>/dev/null`, neither of which writes anything, and a
- * first real run denied sixteen of the planner's probes for exactly that
- * reason (`ls -la … 2>&1`, `npm view express 2>&1 | tail -3`). Redirecting
- * stderr onto stdout or into the void is how a careful reader runs a command,
- * so both are let through and everything else with a target is not.
+ * Quoted runs, replaced by a space before the redirect rule looks at a
+ * command. A `>` inside an argument is an argument.
+ *
+ * The trade: `bash -c 'echo x > f'` gets through. That is deliberate. This
+ * guard stops a role from routing around a write it was just refused, not a
+ * role that has decided to hide one.
  */
-const WRITING_REDIRECT = /(?<!&)>>?\s*(?!&)(?!\/dev\/null\b)\S/;
+const QUOTED = /'[^']*'|"[^"]*"/g;
+
+/**
+ * A redirect that writes a file, once the quoted parts are out of the way.
+ * Three things it has to get right, each of them from a real run:
+ *
+ *   - `2>&1` and `2>/dev/null` write nothing. The first version denied sixteen
+ *     of the planner's probes over them (`ls -la … 2>&1`, `npm view express
+ *     2>&1 | tail -3`).
+ *   - A `>` inside a quoted argument is not a redirect: a review run had
+ *     `curl … -w ' -> %{http_code}'` refused, and `node -e "…1 > 0…"` fails
+ *     the same way. Hence QUOTED above, plus the `-`/`=` lookbehind for an
+ *     arrow that stands unquoted.
+ *   - `&>file` and `&>>file` do write, so the `&` in front must not excuse
+ *     them.
+ */
+const REDIRECT = /(?<![-=])>>?\s*(?!&)(?!\/dev\/null\b)\S/;
+
+/** True when `command` writes a file through a redirect. */
+const writesViaRedirect = (command) =>
+  REDIRECT.test(command.replace(QUOTED, ' '));
 
 /**
  * Mutating verbs denied for the planner. The planner's real guard is the
@@ -53,7 +73,7 @@ const WRITING_REDIRECT = /(?<!&)>>?\s*(?!&)(?!\/dev\/null\b)\S/;
  * OpenCode denylist, which this mirrors.
  */
 const MUTATING = [
-  WRITING_REDIRECT,
+  writesViaRedirect,
   /<</,
   /\btee\b/,
   /\b(rm|mv|cp|truncate|chmod|chown|sudo)\s/,
@@ -98,7 +118,7 @@ const RULES = {
     bash: [
       ...EGRESS,
       ...WRITING_GIT,
-      WRITING_REDIRECT,
+      writesViaRedirect,
       /\bsed\s+-i/,
       /\btee\b/,
     ],
@@ -152,7 +172,9 @@ if (tool === 'Write' || tool === 'Edit' || tool === 'NotebookEdit') {
   if (reason) deny(reason);
 } else if (tool === 'Bash') {
   const command = String(input.command ?? '');
-  if (rules.bash.some((re) => re.test(command))) deny(rules.bashReason);
+  const hit = (rule) =>
+    typeof rule === 'function' ? rule(command) : rule.test(command);
+  if (rules.bash.some(hit)) deny(rules.bashReason);
 }
 
 process.exit(0);

@@ -19,8 +19,18 @@ permission:
     'gh release*': deny
     'npm publish*': deny
     'docker push*': deny
-    '*> *': deny
+    # A writing redirect is denied by the shape a redirect actually has: a
+    # space in front of it. `*> *` used to stand here and matched the arrow in
+    # `curl … -w ' -> %{http_code}'`, which refused one of this role's own
+    # read-only probes in a real run. Patterns here take only `*` and `?`, so
+    # this is as close as the syntax gets. Last match wins, hence the two
+    # /dev/null lines - writing into the void is how a careful reader runs a
+    # command.
+    '* >*': deny
     '*>>*': deny
+    '*>/*': deny
+    '*>/dev/null*': allow
+    '* > /dev/null*': allow
   # The plan lives in opencode's data dir, outside the workspace.
   external_directory: { '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
   task: { '*': deny }

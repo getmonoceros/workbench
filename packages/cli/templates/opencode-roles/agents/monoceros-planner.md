@@ -23,8 +23,17 @@ permission:
     # part. The real guard against writing source stays the edit/write
     # permission above; this is a speed bump, not a sandbox.
     '*': allow
-    '*> *': deny
+    # A writing redirect is denied by the shape a redirect actually has: a
+    # space in front of it. `*> *` used to stand here and matched the arrow in
+    # `curl … -w ' -> %{http_code}'`, which refused a read-only probe in a real
+    # review run. Patterns here take only `*` and `?`, so this is as close as
+    # the syntax gets. Last match wins, hence the two /dev/null lines at the
+    # end - writing into the void is how a careful reader runs a command.
+    '* >*': deny
     '*>>*': deny
+    '*>/*': deny
+    '*>/dev/null*': allow
+    '* > /dev/null*': allow
     '*<<*': deny
     '*tee *': deny
     'rm *': deny
