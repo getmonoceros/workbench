@@ -89,6 +89,26 @@ describe('writeClaudeCodeRoles', () => {
     expect(await skill('monoceros-plan')).toContain('One question at a time');
   });
 
+  // Phase 0 asks in the user's terms and derives the mechanism itself. The old
+  // wording named one technical pair (web app or CLI) as the example of
+  // ambiguity, and a real run showed a planner treating that as the question to
+  // ask: it asked once about the tech stack, decided the scope on its own, and
+  // built a fraction of what the user would have chosen.
+  it('keeps phase 0 functional and lets it follow an answer', async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+    const plan = await skill('monoceros-plan');
+    expect(plan).toContain("Ask in the user's words, never in yours");
+    expect(plan).toContain('Follow the answer');
+    expect(plan).toContain(
+      'Stop when nothing is left that changes what gets built',
+    );
+    // The mechanism is derived, never asked about.
+    expect(plan).toMatch(/Not\s+"which database\?" but/);
+    // And no technical either/or is left standing as the model of a good question.
+    expect(plan).not.toContain('Web app or CLI changes the shape');
+    expect(plan).not.toContain('a web app or a CLI tool');
+  });
+
   // A dev server answers `/` with the page shell whether the app loads or not,
   // so a status check there cannot fail. A real run shipped a white page behind
   // fifteen green tests: a `web/api.js` collided with a Vite proxy keyed on

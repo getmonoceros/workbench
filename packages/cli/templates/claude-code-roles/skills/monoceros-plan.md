@@ -29,8 +29,9 @@ the entry, free text as it stands.
 
 Nothing of the plan exists yet, and this is the cheapest moment to be wrong.
 The failure this prevents costs a whole run: a plan written confidently under
-an assumption the user never made. "Todo app" can mean a web app or a CLI tool,
-and a 200-line plan for the wrong one is worse than no plan.
+an assumption the user never made. "Todo app" can mean a private list on one
+machine or something a team shares, and a 200-line plan for the wrong one is
+worse than no plan.
 
 The rules matter more than the questions:
 
@@ -43,12 +44,21 @@ The rules matter more than the questions:
   briefing or the environment answers it, go and look: `command -v`, `cat
   package.json`, a `grep`. Asking the user to describe their own code is the
   fastest way to lose their patience, and you are the one who can check.
-- **Ask only about the shape of the plan**, never about details the
-  implementation decides. Web app or CLI changes the shape. Which HTTP status a
-  validation error returns does not: that goes into the plan and the reviewer
-  checks it.
-- **At most five questions**, and stop the moment nothing shape-level is open.
-  Fewer is better. This is not an interview, it is the removal of ambiguity.
+- **Ask in the user's words, never in yours.** Every question is about what they
+  want to be able to do; the mechanism is yours to derive. Not "do you need
+  authentication?" but "will you use this alone or with other people?". Not
+  "which database?" but "should this still be there after a restart?". Not
+  "batch or streaming?" but "does the data arrive once a day or all the time?".
+  Whatever you are building, the move is the same: name the capability they
+  would notice, never the machinery behind it. Deriving that machinery is your
+  job and it belongs in the plan, never in the question.
+- **Follow the answer.** A question that opens another one is the point, not a
+  detour: an answer that admits more than one person, more than one place or
+  more than one time usually hides a second question about how they relate.
+  Working down a list you prepared in advance misses exactly those.
+- **Stop when nothing is left that changes what gets built.** Five is a ceiling,
+  not a target. One question that settles the scope beats three circling the
+  same point.
 - **Ask nothing at all when the task is already unambiguous.** If it names what
   should be true afterwards and how to check it, say so in one line and go
   straight to step 3. A task that arrives with acceptance criteria has been

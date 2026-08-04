@@ -15,6 +15,11 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/coverage/**',
       '.local/**',
+      // Gitignored working notes. `docs/private/octcct/` holds two archived
+      // apps that agents generated, kept so a comparison stays reproducible
+      // after the containers are gone. Linting someone else's service worker
+      // tells us nothing.
+      'docs/private/**',
     ],
   },
   eslint.configs.recommended,

@@ -177,11 +177,11 @@ describe('writeOpencodeRoles', () => {
     expect(planner).toContain('**One question at a time.**');
     expect(planner).toContain('recommended answer');
     expect(planner).toContain('**Never ask what you can read.**');
-    expect(planner).toContain('At most five questions');
+    expect(planner).toMatch(/Five is a ceiling,\s+not a target/);
     // Bounded to what changes the plan, and skipped entirely when the task
     // already carries its own acceptance criteria - otherwise this becomes the
     // next round of pointless prompting.
-    expect(planner).toContain('shape of the plan');
+    expect(planner).toContain('changes what gets built');
     expect(planner).toContain('Ask nothing at all when the task is already');
     // The answers have to survive the dialogue: they land in the plan.
     expect(planner).toMatch(/Assumptions.* section/s);
@@ -465,6 +465,22 @@ describe('writeOpencodeRoles', () => {
     // The one test that separates a defect from taste.
     expect(review).toMatch(/X\s+happens when Y/);
     expect(review).toMatch(/Out of scope: naming, formatting/);
+  });
+
+  // Same rule, same reason: the technical either/or in the old wording read as
+  // the question to ask, and a real Kimi run asked about the tech stack instead
+  // of the scope.
+  it('keeps phase 0 functional and lets it follow an answer', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
+    expect(planner).toContain("Ask in the user's words, never in yours");
+    expect(planner).toContain('Follow the answer');
+    expect(planner).toContain(
+      'Stop when nothing is left that changes what gets built',
+    );
+    expect(planner).toMatch(/Not\s+"which database\?" but/);
+    expect(planner).not.toContain('Web app or CLI changes the shape');
+    expect(planner).not.toContain('a web\napp or a CLI tool');
   });
 
   // Same rule, same reason as on the Claude side: `/` returns the page shell
