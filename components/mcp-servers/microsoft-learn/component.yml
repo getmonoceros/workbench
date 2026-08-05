@@ -1,0 +1,12 @@
+id: microsoft-learn
+category: mcp-server
+displayName: Microsoft Learn
+description: 'First-party .NET and Azure documentation with runnable code samples. Microsoft ground only: for every other library, Context7 is the one to ask.'
+documentationURL: https://learn.microsoft.com/training/support/mcp
+mcpServer:
+  transport: http
+  # Anonymous and read-only; the three tools search, fetch and return code
+  # samples from Microsoft Learn.
+  url: https://learn.microsoft.com/api/mcp
+briefing:
+  - text: 'Microsoft and Azure documentation, first-hand, including code samples per language. Reach for it on .NET and Azure questions and on Microsoft SDKs in any language. It covers nothing else: a question about Django or React comes back with the Azure-flavoured corner of that topic, so use Context7 there.'

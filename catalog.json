@@ -546,6 +546,58 @@
       ],
       "documentationURL": "https://context7.com",
       "transport": "http"
+    },
+    {
+      "name": "figma",
+      "displayName": "Figma",
+      "description": "The design as the agent builds against it: layout, components and design tokens read from the Figma file rather than guessed from a screenshot.",
+      "options": [],
+      "documentationURL": "https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Figma-MCP-server",
+      "transport": "http",
+      "auth": "oauth"
+    },
+    {
+      "name": "forge",
+      "displayName": "Atlassian Forge",
+      "description": "Authoritative Forge guidance: which module fits, what the manifest has to say, and how the UI Kit works, for an agent building a Forge app.",
+      "options": [],
+      "documentationURL": "https://developer.atlassian.com/platform/forge/ai-development-toolkit/forge-mcp/",
+      "transport": "http"
+    },
+    {
+      "name": "linear",
+      "displayName": "Linear",
+      "description": "Linear issues, projects and cycles, so the work an agent picks up is the work the team actually planned.",
+      "options": [],
+      "documentationURL": "https://linear.app/docs/mcp",
+      "transport": "http",
+      "auth": "oauth"
+    },
+    {
+      "name": "microsoft-learn",
+      "displayName": "Microsoft Learn",
+      "description": "First-party .NET and Azure documentation with runnable code samples. Microsoft ground only: for every other library, Context7 is the one to ask.",
+      "options": [],
+      "documentationURL": "https://learn.microsoft.com/training/support/mcp",
+      "transport": "http"
+    },
+    {
+      "name": "notion",
+      "displayName": "Notion",
+      "description": "Notion pages and databases, so requirements written in Notion reach the agent that has to build them.",
+      "options": [],
+      "documentationURL": "https://developers.notion.com/guides/mcp/overview",
+      "transport": "http",
+      "auth": "oauth"
+    },
+    {
+      "name": "rovo",
+      "displayName": "Atlassian Rovo",
+      "description": "Jira issues and Confluence pages, so an agent reads the story it is implementing instead of waiting for someone to paste it in.",
+      "options": [],
+      "documentationURL": "https://www.atlassian.com/platform/rovo-mcp",
+      "transport": "http",
+      "auth": "oauth"
     }
   ]
 }

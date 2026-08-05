@@ -1,0 +1,14 @@
+id: rovo
+category: mcp-server
+displayName: Atlassian Rovo
+description: 'Jira issues and Confluence pages, so an agent reads the story it is implementing instead of waiting for someone to paste it in.'
+documentationURL: https://www.atlassian.com/platform/rovo-mcp
+mcpServer:
+  transport: http
+  url: https://mcp.atlassian.com/v1/mcp
+  # No token option on purpose: the API token route belongs to the `atlassian`
+  # feature, where `twg` and `forge` already use one. A workbench that may not
+  # use OAuth takes that CLI instead of this connector.
+  auth: oauth
+briefing:
+  - text: 'Jira and Confluence, reachable directly. Read the issue or specification you are working from rather than asking for it to be pasted in, and put your result where the team looks for it. It can also write, so create or comment only where the task calls for it. If a call reports no authentication, the interactive sign-in has not happened yet: ask the user to complete it once, and it is kept from then on.'

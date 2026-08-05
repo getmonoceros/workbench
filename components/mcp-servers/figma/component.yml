@@ -1,0 +1,14 @@
+id: figma
+category: mcp-server
+displayName: Figma
+description: 'The design as the agent builds against it: layout, components and design tokens read from the Figma file rather than guessed from a screenshot.'
+documentationURL: https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Figma-MCP-server
+mcpServer:
+  transport: http
+  # Figma's remote server, not the one inside the desktop app: a container
+  # cannot reach the host's 127.0.0.1:3845, and the remote one is the wider of
+  # the two anyway and works on every seat and plan.
+  url: https://mcp.figma.com/mcp
+  auth: oauth
+briefing:
+  - text: 'Figma, reachable directly. When you build a screen that exists as a design, read the frame for its layout, its components and its design tokens instead of approximating from a picture. It can also write to the canvas, which changes a file the whole team shares: do that only when you were asked to. If a call reports no authentication, the interactive sign-in has not happened yet: ask the user to complete it once, and it is kept from then on.'

@@ -1,0 +1,12 @@
+id: forge
+category: mcp-server
+displayName: Atlassian Forge
+description: 'Authoritative Forge guidance: which module fits, what the manifest has to say, and how the UI Kit works, for an agent building a Forge app.'
+documentationURL: https://developer.atlassian.com/platform/forge/ai-development-toolkit/forge-mcp/
+mcpServer:
+  transport: http
+  # Public documentation only, so no credential and no sign-in. The `atlassian`
+  # feature's token is for the `forge` CLI, which deploys; this server explains.
+  url: https://mcp.atlassian.com/v1/forge/mcp
+briefing:
+  - text: 'Forge and Atlassian Cloud documentation, first-hand. Read the manifest guide before you touch a `manifest.yml`, and look up the module list rather than inferring an extension point from memory. It pairs with the `forge` CLI: this server tells you what to build, the CLI deploys it.'

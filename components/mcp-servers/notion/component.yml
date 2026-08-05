@@ -1,0 +1,11 @@
+id: notion
+category: mcp-server
+displayName: Notion
+description: 'Notion pages and databases, so requirements written in Notion reach the agent that has to build them.'
+documentationURL: https://developers.notion.com/guides/mcp/overview
+mcpServer:
+  transport: http
+  url: https://mcp.notion.com/mcp
+  auth: oauth
+briefing:
+  - text: 'Notion, reachable directly. Search for the page that specifies what you are building and read it before you start. It can also write, so create or edit pages only where the task calls for it. If a call reports no authentication, the interactive sign-in has not happened yet: ask the user to complete it once, and it is kept from then on.'

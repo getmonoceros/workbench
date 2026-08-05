@@ -1,0 +1,11 @@
+id: linear
+category: mcp-server
+displayName: Linear
+description: 'Linear issues, projects and cycles, so the work an agent picks up is the work the team actually planned.'
+documentationURL: https://linear.app/docs/mcp
+mcpServer:
+  transport: http
+  url: https://mcp.linear.app/mcp
+  auth: oauth
+briefing:
+  - text: 'Linear, reachable directly. Read the issue you are implementing, including its comments, before you start, and update it when the work lands. It can also write, so create or change issues only where the task calls for it. If a call reports no authentication, the interactive sign-in has not happened yet: ask the user to complete it once, and it is kept from then on.'
