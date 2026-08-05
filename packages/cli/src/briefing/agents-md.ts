@@ -9,6 +9,7 @@ import {
   serviceConnectionEnv,
   curatedServiceBriefing,
 } from '../create/catalog.js';
+import type { ResolvedMcpServer } from '../catalog/mcp.js';
 import { hasDeployBriefing } from './deploy-md.js';
 import type { FeatureManifestSummary } from '../init/manifest.js';
 
@@ -50,6 +51,13 @@ export interface AgentsMdInput {
   /** Feature ref → display name from the components catalog. */
   features: readonly FeatureDisplay[];
   repos: readonly RepoEntry[];
+  /**
+   * MCP servers registered for the agents in this container (ADR 0045).
+   * Named in the briefing because a server the agent does not know about is
+   * one it re-derives by hand every session. Optional so direct callers and
+   * tests can leave it out, same as `hostPort`.
+   */
+  mcp?: readonly ResolvedMcpServer[];
   ports: readonly number[];
   /**
    * Host port the Traefik proxy binds (`routing.hostPort`, default 80).
@@ -260,6 +268,29 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     lines.push('');
   }
 
+  const mcpServers = input.mcp ?? [];
+  if (mcpServers.length > 0) {
+    lines.push('### MCP servers');
+    lines.push('');
+    lines.push(
+      'Registered for you already, so use them instead of rediscovering what',
+      'they cover:',
+    );
+    lines.push('');
+    for (const server of mcpServers) {
+      const desc = server.description ? ` - ${server.description}` : '';
+      lines.push(`- \`${server.name}\`${desc}`);
+      // Per-connector guidance from the descriptor's `briefing:`, indented
+      // under its server — the same shape the services section uses.
+      for (const brief of server.briefing ?? []) {
+        for (const sub of brief.split('\n')) {
+          lines.push(sub ? `  ${sub}` : '');
+        }
+      }
+    }
+    lines.push('');
+  }
+
   if (input.repos.length > 0) {
     lines.push('### Cloned repos');
     lines.push('');
@@ -343,6 +374,7 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   lines.push(`monoceros add-language ${input.containerName} <lang>`);
   lines.push(`monoceros add-service ${input.containerName} <service>`);
   lines.push(`monoceros add-feature ${input.containerName} <feature>`);
+  lines.push(`monoceros add-mcp-server ${input.containerName} <connector>`);
   lines.push(`monoceros add-port ${input.containerName} <port>`);
   lines.push(`monoceros add-repo ${input.containerName} <repo-url>`);
   lines.push(`monoceros apply ${input.containerName}`);
@@ -554,6 +586,7 @@ export function agentsMdInputFromCreateOptions(
     services: opts.services,
     features,
     repos: opts.repos ?? [],
+    mcp: opts.mcpServers ?? [],
     ports: opts.ports ?? [],
     hostPort,
   };

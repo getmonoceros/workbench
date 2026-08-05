@@ -20,13 +20,21 @@ import {
  *     languages/<id>/component.yml
  *     services/<id>/component.yml
  *     features/<id>/component.yml   (+ install.sh, generated json)
+ *     mcp-servers/<id>/component.yml (registration only, nothing installed)
  */
 
-const CATEGORY_DIRS: Readonly<Record<string, DescriptorCategory>> = {
+export const CATEGORY_DIRS: Readonly<Record<string, DescriptorCategory>> = {
   languages: 'language',
   services: 'service',
   features: 'feature',
+  'mcp-servers': 'mcp-server',
 };
+
+/** Directory a category's descriptors live in, for error messages. */
+const DIR_FOR_CATEGORY: Readonly<Record<DescriptorCategory, string>> =
+  Object.fromEntries(
+    Object.entries(CATEGORY_DIRS).map(([dir, category]) => [category, dir]),
+  ) as Record<DescriptorCategory, string>;
 
 export interface CatalogComponent {
   id: string;
@@ -120,7 +128,7 @@ export function parseDescriptorFile(
   }
   if (descriptor.category !== expectedCategory) {
     throw new Error(
-      `Descriptor '${descriptor.id}' has category '${descriptor.category}' but sits under '${expectedCategory}s/' (${sourcePath}).`,
+      `Descriptor '${descriptor.id}' has category '${descriptor.category}' but sits under '${DIR_FOR_CATEGORY[expectedCategory]}/' (${sourcePath}).`,
     );
   }
   return {

@@ -20,13 +20,23 @@ import {
   REGEX,
   type RepoProvider,
 } from '../config/schema.js';
-import { loadComponentCatalog, mergeFeatureOptions } from './components.js';
+import { buildComponentCatalog, mergeFeatureOptions } from './components.js';
 import type { Component } from './components.js';
+import {
+  loadDescriptorCatalog,
+  type CatalogComponent,
+} from '../catalog/load.js';
+import {
+  buildMcpConnectorDoc,
+  findMcpConnector,
+  mcpConnectorNames,
+} from './mcp-doc.js';
 import {
   generateComposedYml,
   type ComposedInit,
   type InitService,
   type LanguageRender,
+  type RenderableMcp,
 } from './generator.js';
 import { loadFeatureManifestSummary } from './manifest.js';
 import {
@@ -81,6 +91,13 @@ export interface RunInitOptions {
   features?: string[];
   services?: string[];
   aptPackages?: string[];
+  /**
+   * MCP servers to register with the container's agents (`--with-mcp-servers`).
+   * Curated catalog names only; a server the catalog does not carry is a
+   * hand-written `mcpServers:` entry, because init has no syntax for a full
+   * definition.
+   */
+  mcpServers?: string[];
   /**
    * Git URLs to clone into `projects/` on the first apply. Each URL
    * lands at `projects/<URL-derived-leaf>/` (e.g.
@@ -137,7 +154,11 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   const componentsRoot = opts.workbenchRoot
     ? path.join(opts.workbenchRoot, 'components')
     : componentsRootDir();
-  const catalog = await loadComponentCatalog(componentsRoot);
+  // Two views of the same tree: the selectable `Component` map the composed
+  // resolution has always used, and the raw descriptors, which MCP servers
+  // need because their whole definition lives in the descriptor.
+  const descriptors = await loadDescriptorCatalog(componentsRoot);
+  const catalog = buildComponentCatalog(descriptors);
   if (catalog.size === 0) {
     throw new Error(
       `No components found under ${componentsRoot}. The workbench checkout is incomplete.`,
@@ -244,11 +265,12 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     .filter((sel) => catalog.has(sel))
     .filter((sel) => !explicitFeatures.includes(sel));
 
-  const composed = resolveComposedInit(catalog, {
+  const composed = resolveComposedInit(catalog, descriptors, {
     languages: opts.languages ?? [],
     features: [...explicitFeatures, ...repoFeatures],
     services: opts.services ?? [],
     aptPackages: opts.aptPackages ?? [],
+    mcpServers: opts.mcpServers ?? [],
   });
   // Always lean: name + runtimeVersion, plus only the sections the
   // builder actually asked for (--with-* entries, repos, ports). No
@@ -282,6 +304,17 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   for (const svc of composed.services) {
     if (svc.kind === 'curated') {
       Object.assign(seedVars, curatedServiceEnvDefaults(svc.name));
+    }
+  }
+  // MCP server credentials, blank for the builder to fill. Not optional
+  // politeness: apply refuses a connector whose credential resolves empty
+  // rather than registering a server that fails on first use, so the key has
+  // to be waiting in the env file.
+  for (const server of composed.mcpServers) {
+    for (const value of Object.values(server.options)) {
+      if (typeof value !== 'string') continue;
+      const match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+      if (match && !(match[1]! in seedVars)) seedVars[match[1]!] = '';
     }
   }
   // When repos are present, the yml carries a container-level
@@ -320,11 +353,13 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
  */
 function resolveComposedInit(
   catalog: Map<string, Component>,
+  descriptors: Map<string, CatalogComponent>,
   raw: {
     languages: string[];
     features: string[];
     services: string[];
     aptPackages: string[];
+    mcpServers: string[];
   },
 ): ComposedInit {
   return {
@@ -332,7 +367,46 @@ function resolveComposedInit(
     aptPackages: resolveInitAptPackages(raw.aptPackages),
     services: resolveInitServices(raw.services),
     features: resolveInitFeatures(catalog, raw.features),
+    mcpServers: resolveInitMcpServers(descriptors, raw.mcpServers),
   };
+}
+
+/**
+ * `--with-mcp-servers` names → renderable entries. Curated connectors only: init has
+ * no syntax for a full server definition, and a pasted one is a hand-edit or a
+ * later `--from-json`. Unknown names are reported together, with the catalog.
+ */
+function resolveInitMcpServers(
+  descriptors: Map<string, CatalogComponent>,
+  entries: string[],
+): RenderableMcp[] {
+  const out: RenderableMcp[] = [];
+  const seen = new Set<string>();
+  const unknown: string[] = [];
+  for (const raw of entries) {
+    const name = raw.trim();
+    if (!name || seen.has(name)) continue;
+    const descriptor = findMcpConnector(descriptors, name);
+    if (!descriptor) {
+      unknown.push(name);
+      continue;
+    }
+    seen.add(name);
+    const doc = buildMcpConnectorDoc(descriptor);
+    out.push({
+      name: doc.name,
+      options: doc.options,
+      headerLines: doc.headerLines,
+    });
+  }
+  if (unknown.length > 0) {
+    const known = mcpConnectorNames(descriptors).join(', ') || '(none)';
+    throw new Error(
+      `Unknown MCP server${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}. ` +
+        `Catalog connectors: ${known}.`,
+    );
+  }
+  return out;
 }
 
 function resolveInitLanguages(entries: string[]): LanguageRender[] {

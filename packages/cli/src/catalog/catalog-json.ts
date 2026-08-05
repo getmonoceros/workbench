@@ -55,6 +55,16 @@ export interface CatalogJsonFeature extends CatalogJsonBase {
   presets: string[];
 }
 
+export interface CatalogJsonMcpServer extends CatalogJsonBase {
+  /**
+   * `stdio` runs in the container, `http`/`sse` reach a remote endpoint.
+   * Carried because it is the one thing a builder should weigh before
+   * adding a connector: only stdio stays behind the container boundary.
+   * The command / url itself stays internal, like a service's image.
+   */
+  transport: 'stdio' | 'http' | 'sse';
+}
+
 export interface CatalogJson {
   /** Bumped when this projection's shape changes incompatibly. */
   schemaVersion: number;
@@ -63,6 +73,8 @@ export interface CatalogJson {
   languages: CatalogJsonLanguage[];
   services: CatalogJsonService[];
   features: CatalogJsonFeature[];
+  /** MCP servers, added additively in CLI 1.52 — may be absent in older snapshots. */
+  mcpServers: CatalogJsonMcpServer[];
 }
 
 /** Current shape version of the published `catalog.json`. */
@@ -114,6 +126,7 @@ export function buildCatalogJson(
   const languages: CatalogJsonLanguage[] = [];
   const services: CatalogJsonService[] = [];
   const features: CatalogJsonFeature[] = [];
+  const mcpServers: CatalogJsonMcpServer[] = [];
 
   for (const { descriptor: d } of catalog.values()) {
     const base: CatalogJsonBase = {
@@ -143,6 +156,8 @@ export function buildCatalogJson(
       services.push(svc);
     } else if (d.category === 'feature') {
       features.push({ ...base, presets: Object.keys(d.presets ?? {}).sort() });
+    } else if (d.category === 'mcp-server' && d.mcpServer) {
+      mcpServers.push({ ...base, transport: d.mcpServer.transport });
     }
   }
 
@@ -152,5 +167,6 @@ export function buildCatalogJson(
     languages: languages.sort(byName),
     services: services.sort(byName),
     features: features.sort(byName),
+    mcpServers: mcpServers.sort(byName),
   };
 }

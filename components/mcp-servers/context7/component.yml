@@ -1,0 +1,19 @@
+id: context7
+category: mcp-server
+displayName: Context7
+description: 'Current documentation for the libraries a project uses, so the agent stops writing APIs from memory.'
+documentationURL: https://context7.com
+options:
+  apiKey:
+    type: string
+    default: ''
+    description: 'Context7 API key from context7.com. The public endpoint is heavily rate limited without one, so Monoceros requires it rather than registering a server that fails partway through a run.'
+    surface: env
+mcpServer:
+  transport: http
+  url: https://mcp.context7.com/mcp
+  # Context7 reads the key from its own header, not from `Authorization`.
+  headers:
+    CONTEXT7_API_KEY: '${apiKey}'
+briefing:
+  - text: "Look up a library's current documentation before you write against it. Covers versioned API surfaces, config and migration notes. Reach for it whenever a version matters: your own knowledge of a fast-moving library is older than this container."

@@ -8,7 +8,8 @@ import path from 'node:path';
  */
 export async function writeDescriptor(
   workbench: string,
-  category: 'languages' | 'services' | 'features',
+  // Directory names as the loader maps them, so plural throughout.
+  category: 'languages' | 'services' | 'features' | 'mcp-servers',
   id: string,
   body: string,
 ): Promise<void> {

@@ -392,6 +392,163 @@ export const ServiceObjectSchema = z.object({
   connectionEnv: z.record(z.string(), z.string()).optional(),
 });
 
+// ── MCP servers ─────────────────────────────────────────────────────
+//
+// `mcpServers:` lists the servers the agents in this container can reach. Two
+// forms in ONE array, and what tells them apart is not the name but
+// whether the entry carries a definition (ADR 0045):
+//
+//   mcpServers:
+//     - name: context7            ← resolved against the catalog/overlay
+//       options:
+//         apiKey: ${CONTEXT7_API_KEY}
+//     - name: notion              ← stands for itself, nothing resolved
+//       transport: stdio
+//       command: npx
+//       args: ['-y', '@notionhq/notion-mcp-server']
+//       env:
+//         NOTION_TOKEN: ${NOTION_TOKEN}
+//
+// The second form is how the long tail gets in: the catalog will only
+// ever curate a handful, and everything else is pasted from the config
+// its provider publishes. `options:` is meaningless there (there is no
+// descriptor to validate an option against), so the two are exclusive.
+//
+// A name is NOT checked against the catalog here — that happens at apply,
+// like every other catalog validation. Which also means an inline entry
+// keeps standing for itself even after a curated connector of the same
+// name ships, so a working yml never changes meaning under the builder.
+
+// MCP server name: becomes the key in each agent's config. Wider charset
+// than a component id because these names come from other people's
+// READMEs (`chrome-devtools`, `sentry_v2`, `atlassian.mcp`).
+const MCP_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * How an MCP server is reached. `stdio` runs it as a process INSIDE the
+ * workspace container, so it stays behind the container boundary; `http`
+ * and `sse` talk to a remote endpoint, so it does not.
+ *
+ * Lives here rather than in the catalog descriptor because both shapes need
+ * it: a curated connector's `mcpServer:` block and an inline entry in a container
+ * yml are the same thing said in two places — and the descriptor already
+ * imports from this module.
+ */
+export const MCP_TRANSPORTS = ['stdio', 'http', 'sse'] as const;
+export const McpTransportSchema = z.enum(MCP_TRANSPORTS);
+export type McpTransport = z.infer<typeof McpTransportSchema>;
+
+/**
+ * A transport dictates which fields carry meaning, and a field belonging to
+ * the other transport is a silent no-op rather than a typo you find out
+ * about. So: require what the transport needs, reject what it cannot use.
+ */
+export function validateMcpTransportFields(
+  data: {
+    transport: McpTransport;
+    command?: string | undefined;
+    args?: readonly string[] | undefined;
+    env?: Record<string, string> | undefined;
+    url?: string | undefined;
+    headers?: Record<string, string> | undefined;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const stdioOnly = ['command', 'args', 'env'] as const;
+  const remoteOnly = ['url', 'headers'] as const;
+  if (data.transport === 'stdio') {
+    if (data.command === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['command'],
+        message: "transport 'stdio' requires `command`",
+      });
+    }
+    for (const field of remoteOnly) {
+      if (data[field] !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `\`${field}\` has no meaning for transport 'stdio'`,
+        });
+      }
+    }
+    return;
+  }
+  if (data.url === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['url'],
+      message: `transport '${data.transport}' requires \`url\``,
+    });
+  }
+  for (const field of stdioOnly) {
+    if (data[field] !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `\`${field}\` has no meaning for transport '${data.transport}'`,
+      });
+    }
+  }
+}
+
+const MCP_DEFINITION_FIELDS = [
+  'transport',
+  'command',
+  'args',
+  'env',
+  'url',
+  'headers',
+] as const;
+
+const McpStringMapSchema = z.record(
+  z.string(),
+  z
+    .union([z.string(), z.number(), z.boolean(), z.null()])
+    .transform((v) => (v === null ? '' : String(v))),
+);
+
+export const McpEntrySchema = z
+  .object({
+    name: z
+      .string()
+      .regex(
+        MCP_NAME_RE,
+        "Invalid MCP server name. Use letters, digits, '.', '_' or '-' (must start with a letter or digit).",
+      ),
+    options: z.record(z.string(), FeatureOptionValueSchema).optional(),
+    transport: McpTransportSchema.optional(),
+    command: z.string().min(1).optional(),
+    args: z.array(z.string()).optional(),
+    env: McpStringMapSchema.optional(),
+    url: z.string().min(1).optional(),
+    headers: McpStringMapSchema.optional(),
+  })
+  .superRefine((entry, ctx) => {
+    const inline = MCP_DEFINITION_FIELDS.some(
+      (field) => entry[field] !== undefined,
+    );
+    if (!inline) return; // a bare reference — apply resolves it
+    if (entry.options !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['options'],
+        message:
+          '`options` belongs to a catalog connector; an inline server has no descriptor to validate them against. Drop `options:` or drop the definition fields and keep just the name.',
+      });
+    }
+    if (entry.transport === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['transport'],
+        message: `An inline MCP server needs \`transport\` (one of: ${MCP_TRANSPORTS.join(', ')}).`,
+      });
+      return;
+    }
+    validateMcpTransportFields({ ...entry, transport: entry.transport }, ctx);
+  });
+
 // A language entry is either the bare/`:version` string form (`node`,
 // `java:17`) or an object form that surfaces feature options in the yml:
 //   - java:
@@ -462,6 +619,7 @@ export const SolutionConfigSchema = z
       )
       .default([]),
     services: z.array(ServiceObjectSchema).default([]),
+    mcpServers: z.array(McpEntrySchema).default([]),
     repos: z.array(RepoEntrySchema).default([]),
     routing: RoutingSchema.optional(),
     git: z
@@ -485,10 +643,26 @@ export const SolutionConfigSchema = z
       }
       seen.add(svc.name);
     });
+
+    // MCP names must be unique: each becomes one key in the agent's config,
+    // so a duplicate would quietly overwrite the other and the builder would
+    // be looking at a yml that says something the container does not do.
+    const seenMcp = new Set<string>();
+    cfg.mcpServers.forEach((entry, i) => {
+      if (seenMcp.has(entry.name)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['mcpServers', i, 'name'],
+          message: `Duplicate MCP server name '${entry.name}'. Each server is registered once, under its name.`,
+        });
+      }
+      seenMcp.add(entry.name);
+    });
   });
 
 export type SolutionConfig = z.infer<typeof SolutionConfigSchema>;
 export type FeatureEntry = z.infer<typeof FeatureEntrySchema>;
+export type McpEntry = z.infer<typeof McpEntrySchema>;
 export type ServiceObject = z.infer<typeof ServiceObjectSchema>;
 export type ServiceHealthcheck = z.infer<typeof ServiceHealthcheckSchema>;
 export type RepoEntry = z.infer<typeof RepoEntrySchema>;

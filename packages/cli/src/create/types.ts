@@ -1,3 +1,5 @@
+import type { ResolvedMcpServer } from '../catalog/mcp.js';
+
 /**
  * Free-form devcontainer feature options (the value object of the
  * `features: { ... }` map in devcontainer.json). Values are typically
@@ -128,6 +130,13 @@ export interface CreateOptions {
    * the feature's option hash.
    */
   features?: Record<string, FeatureOptions>;
+  /**
+   * MCP servers to register with the agents in this container, already
+   * resolved against the catalog and with `${VAR}` / `${option}` filled in
+   * (ADR 0045). Resolution needs the descriptor catalog, so unlike the rest of
+   * CreateOptions this is filled by `apply` rather than by the yml transform.
+   */
+  mcpServers?: ResolvedMcpServer[];
   /**
    * URLs to install scripts that get piped to `bash` during post-create
    * (`bash <(curl -fsSL <url>)`). Run in insertion order, so installs

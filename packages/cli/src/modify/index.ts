@@ -16,8 +16,22 @@ import {
   hasVarPlaceholder,
   GIT_IDENTITY_VAR,
 } from '../config/env-file.js';
-import { featureOptionHints } from '../init/feature-doc.js';
+import {
+  featureOptionHints,
+  featureOptionVarName,
+} from '../init/feature-doc.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
+import {
+  buildMcpConnectorDoc,
+  findMcpConnector,
+  mcpConnectorNames,
+  mcpHeaderCommentBefore,
+} from '../init/mcp-doc.js';
+import {
+  loadDescriptorCatalog,
+  type CatalogComponent,
+} from '../catalog/load.js';
+import type { Descriptor } from '../catalog/descriptor.js';
 import {
   collectGitCredentials,
   resolveProvider,
@@ -87,6 +101,7 @@ import {
   addFeatureToDoc,
   addInstallUrlToDoc,
   addLanguageToDoc,
+  addMcpToDoc,
   addPortsToDoc,
   addRepoToDoc,
   addServiceEntryToDoc,
@@ -96,6 +111,7 @@ import {
   removeFeatureFromDoc,
   removeInstallUrlFromDoc,
   removeLanguageFromDoc,
+  removeMcpFromDoc,
   removePortsFromDoc,
   removeRepoFromDoc,
   removeServiceFromDoc,
@@ -150,6 +166,11 @@ export interface AddFeatureInput extends ModifyOptions {
 export interface AddFromUrlInput extends ModifyOptions {
   url: string;
 }
+export interface AddMcpServerInput extends ModifyOptions {
+  /** Catalog connector selector, e.g. `context7`. */
+  connector: string;
+  options?: FeatureOptions;
+}
 export interface AddRepoInput extends ModifyOptions {
   url: string;
   /**
@@ -195,6 +216,9 @@ export interface RemoveFeatureInput extends ModifyOptions {
 }
 export interface RemoveFromUrlInput extends ModifyOptions {
   url: string;
+}
+export interface RemoveMcpServerInput extends ModifyOptions {
+  connector: string;
 }
 export interface RemoveRepoInput extends ModifyOptions {
   /** url or (effective) name — `monoceros remove-repo` accepts either. */
@@ -859,6 +883,84 @@ export async function runAddFeature(
 }
 
 /**
+ * `monoceros add-mcp-server <container> <connector>` — register a catalog MCP
+ * server with the agents in this container (ADR 0045).
+ *
+ * Writes a bare `name:` entry plus its options, and seeds the `${VAR}`
+ * placeholders behind its credential options into `<name>.env`. That seeding
+ * is not cosmetic: apply refuses a connector whose credential resolves empty
+ * rather than registering a server that fails on first use, so the builder
+ * needs the key waiting for them in the env file.
+ */
+export async function runAddMcpServer(
+  input: AddMcpServerInput,
+): Promise<ModifyResult> {
+  const raw = input.connector.trim();
+  if (raw.length === 0) {
+    throw new Error(
+      'Missing connector. Usage: monoceros add-mcp-server <containername> <connector>.',
+    );
+  }
+  const catalog = await loadDescriptorCatalog();
+  const descriptor = findMcpConnector(catalog, raw);
+  if (!descriptor) {
+    throw new Error(unknownMcpConnectorMessage(raw, catalog));
+  }
+  const doc = buildMcpConnectorDoc(descriptor);
+  const options: FeatureOptions = { ...doc.options, ...(input.options ?? {}) };
+  const result = await mutate(input, (d) =>
+    addMcpToDoc(d, doc.name, options, {
+      header: mcpHeaderCommentBefore(descriptor),
+      containerName: input.name,
+    }),
+  );
+
+  if (result.status === 'updated' && doc.envVars.length > 0) {
+    // Only seed keys the caller did not just set with an explicit value.
+    const explicit = new Set(Object.keys(input.options ?? {}));
+    const vars = doc.envVars.filter(
+      (v) => !explicit.has(varOptionKey(descriptor, v)),
+    );
+    if (vars.length > 0) {
+      const home = input.monocerosHome ?? defaultMonocerosHome();
+      await ensureEnvGitignored(containerConfigsDir(home));
+      const seeded = await ensureEnvVars(
+        containerEnvPath(input.name, home),
+        input.name,
+        vars,
+      );
+      if (seeded.added.length > 0) {
+        (input.logger ?? defaultLogger()).info(
+          `Seeded ${seeded.added.join(', ')} into ${input.name}.env — fill in the values before the next apply.`,
+        );
+      }
+    }
+  }
+  return result;
+}
+
+/** The option key an mcp connector's derived env var came from. */
+function varOptionKey(descriptor: Descriptor, envVar: string): string {
+  const name = descriptor.name ?? descriptor.id;
+  for (const key of Object.keys(descriptor.options)) {
+    if (featureOptionVarName(name, key) === envVar) return key;
+  }
+  return envVar;
+}
+
+function unknownMcpConnectorMessage(
+  name: string,
+  catalog: Map<string, CatalogComponent>,
+): string {
+  const known = mcpConnectorNames(catalog).join(', ') || '(none)';
+  return (
+    `Unknown MCP server: ${JSON.stringify(name)}. Catalog connectors: ${known}.\n` +
+    `A server the catalog does not carry goes into the yml's \`mcpServers:\` block with its own ` +
+    `definition (the config its provider publishes: transport, command/url, env/headers).`
+  );
+}
+
+/**
  * Accept either a full OCI feature ref (`ghcr.io/.../foo:1`) or a
  * catalog short-name (`atlassian`, `atlassian/twg`, `claude`, …).
  *
@@ -969,6 +1071,22 @@ export async function runRemoveFeature(
   // elsewhere wouldn't actually work, only the full OCI form.
   const resolved = await resolveFeatureRefOrShortname(raw);
   return mutate(input, (doc) => removeFeatureFromDoc(doc, resolved.ref));
+}
+
+/**
+ * Remove an `mcpServers:` entry. Takes the name as it stands in the yml, so it works
+ * for an inline server too — not just a catalog connector.
+ */
+export function runRemoveMcpServer(
+  input: RemoveMcpServerInput,
+): Promise<ModifyResult> {
+  const name = input.connector.trim();
+  if (name.length === 0) {
+    throw new Error(
+      'Missing connector. Usage: monoceros remove-mcp-server <containername> <connector>.',
+    );
+  }
+  return mutate(input, (doc) => removeMcpFromDoc(doc, name));
 }
 
 export function runRemoveFromUrl(

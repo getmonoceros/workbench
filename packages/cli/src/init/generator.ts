@@ -74,12 +74,24 @@ export interface LanguageRender {
   options?: Readonly<Record<string, string | number | boolean>>;
 }
 
+/**
+ * One `mcpServers:` entry for the composed generator: the catalog selector, the
+ * options block (yml defaults plus `${VAR}` placeholders) and the header prose,
+ * all resolved from the connector's descriptor by `buildMcpConnectorDoc`.
+ */
+export interface RenderableMcp {
+  name: string;
+  options: Readonly<Record<string, string | number | boolean>>;
+  headerLines: readonly string[];
+}
+
 /** Resolved, categorized inputs for the composed-mode generator. */
 export interface ComposedInit {
   languages: readonly LanguageRender[];
   aptPackages: readonly string[];
   services: readonly InitService[];
   features: readonly RenderableFeature[];
+  mcpServers: readonly RenderableMcp[];
 }
 
 export function generateComposedYml(
@@ -149,6 +161,29 @@ export function generateComposedYml(
         lookupManifest(f.ref),
         /* commented */ false,
       );
+    }
+    lines.push('');
+  }
+  if (composed.mcpServers.length > 0) {
+    // Right after the features, because the agent that uses these servers is
+    // itself a feature and the two belong in one eyeful.
+    pushSectionHeader(lines, MCP_HEADER, /* commented */ false);
+    lines.push('mcpServers:');
+    for (const server of composed.mcpServers) {
+      lines.push('');
+      // Header at column 0, like a feature's: it is documentation about the
+      // entry, not part of it.
+      for (const header of server.headerLines) {
+        lines.push(`# ${header}`.trimEnd());
+      }
+      lines.push(`  - name: ${server.name}`);
+      const entries = Object.entries(server.options);
+      if (entries.length > 0) {
+        lines.push('    options:');
+        for (const [key, value] of entries) {
+          lines.push(`      ${key}: ${String(value)}`);
+        }
+      }
     }
     lines.push('');
   }
@@ -226,6 +261,9 @@ function pushServiceEntry(out: string[], svc: InitService): void {
 
 const FEATURES_HEADER_ACTIVE =
   'A Monoceros dev-container is shaped by features — pluggable units that drop tooling (AI assistants, language CLIs, cloud SDKs, …) into the container and bring their own options. The features active for this container are listed below; adjust their options as needed. Shared credentials used across containers belong in monoceros-config.yml under `defaults.features.<ref>` rather than here. Full catalog: `monoceros list-components`.';
+
+const MCP_HEADER =
+  'MCP servers the agents in this container can reach. A catalog connector is one line plus its options (`monoceros add-mcp-server <name> <connector>`, see `monoceros list-components`). A server the catalog does not carry goes in with the config its provider publishes (`name:` plus `transport:` and `command:`/`url:`), and is then just as reproducible. Credentials belong in <name>.env behind the ${VAR} placeholders, never here.';
 
 const REPOS_HEADER =
   'Git repositories cloned into `projects/` on container start-up. HTTPS URLs only. The provider is auto-detected for github.com / gitlab.com / bitbucket.org; for any other host (self-hosted GitLab, GitHub Enterprise, …) declare `provider:` explicitly. Add more later with `monoceros add-repo`.';

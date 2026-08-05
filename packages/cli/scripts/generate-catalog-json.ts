@@ -38,5 +38,6 @@ await writeFile(dest, JSON.stringify(doc, null, 2) + '\n', 'utf8');
 console.log(
   `[generate-catalog-json] ${path.relative(checkoutRoot, dest)} ` +
     `(cliVersion ${doc.cliVersion}; ${doc.languages.length} languages, ` +
-    `${doc.services.length} services, ${doc.features.length} features)`,
+    `${doc.services.length} services, ${doc.features.length} features, ` +
+    `${doc.mcpServers.length} mcp servers)`,
 );

@@ -91,6 +91,30 @@ async function buildFakeWorkbench(root: string): Promise<void> {
       '',
     ].join('\n'),
   );
+  await writeDescriptor(
+    root,
+    'mcp-servers',
+    'context7',
+    [
+      'id: context7',
+      'category: mcp-server',
+      'displayName: Context7',
+      'description: Current library docs.',
+      'documentationURL: https://context7.com',
+      'options:',
+      '  apiKey:',
+      '    type: string',
+      "    default: ''",
+      '    description: Context7 API key from context7.com.',
+      '    surface: env',
+      'mcpServer:',
+      '  transport: http',
+      '  url: https://mcp.context7.com/mcp',
+      '  headers:',
+      "    CONTEXT7_API_KEY: '${apiKey}'",
+      '',
+    ].join('\n'),
+  );
 }
 
 describe('runInit', () => {
@@ -148,6 +172,51 @@ describe('runInit', () => {
     // node is builtin; init surfaces its base-image version inline (node:22),
     // which stays builtin at apply (no upstream feature install).
     expect(parsed.config.languages).toEqual(['node:22']);
+  });
+
+  it('--with-mcp-servers writes an mcpServers: entry and seeds its credential blank', async () => {
+    const result = await runInit({
+      name: 'mcpbox',
+      features: ['claude'],
+      mcpServers: ['context7'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    expect(text).toContain('mcpServers:');
+    expect(text).toContain('  - name: context7');
+    expect(text).toMatch(/^\s+apiKey: \$\{CONTEXT7_API_KEY\}\s*$/m);
+    // Header prose above the entry, at column 0 like a feature's, and it says
+    // which side of the container boundary the server sits on.
+    expect(text).toMatch(/^# Context7: Current library docs\./m);
+    expect(text).toMatch(/^# Reached over the network/m);
+    expect(text).not.toMatch(/^[# \t]*#[ \t]+#/m); // no two-`#` per line
+    const parsed = parseConfig(text);
+    expect(parsed.config.mcpServers).toEqual([
+      { name: 'context7', options: { apiKey: '${CONTEXT7_API_KEY}' } },
+    ]);
+    // Blank seed, because apply refuses an empty credential rather than
+    // registering a server that fails on first use.
+    const env = await readFile(
+      path.join(monocerosHome, 'container-configs', 'mcpbox.env'),
+      'utf8',
+    );
+    expect(env).toContain('CONTEXT7_API_KEY=');
+  });
+
+  it('rejects an unknown --with-mcp-servers name and lists the catalog', async () => {
+    await expect(
+      runInit({
+        name: 'badmcp',
+        mcpServers: ['ghost'],
+        workbenchRoot: root,
+        monocerosHome,
+        logger: silentLogger,
+      }),
+    ).rejects.toThrow(
+      /Unknown MCP server: ghost\. Catalog connectors: context7/,
+    );
   });
 
   it('surfaces a language’s yml options as the object form (java → Maven/Gradle)', async () => {

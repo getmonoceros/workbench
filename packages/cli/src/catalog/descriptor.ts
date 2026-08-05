@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { parse as parseYaml } from 'yaml';
-import { REGEX } from '../config/schema.js';
+import {
+  McpTransportSchema,
+  REGEX,
+  validateMcpTransportFields,
+} from '../config/schema.js';
 
 /**
  * Unified component descriptor (`component.yml`) — the single source of
@@ -20,8 +24,25 @@ import { REGEX } from '../config/schema.js';
 /** Component identifier: lowercase, e.g. `java`, `postgres`, `claude-code`. */
 export const DESCRIPTOR_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 
-export const CategorySchema = z.enum(['language', 'service', 'feature']);
+export const CategorySchema = z.enum([
+  'language',
+  'service',
+  'feature',
+  'mcp-server',
+]);
 export type DescriptorCategory = z.infer<typeof CategorySchema>;
+
+/**
+ * Descriptor field holding each category's own block. Identical to the category
+ * name except for `mcp-server`, whose field stays camelCase like every other
+ * descriptor field.
+ */
+const BLOCK_KEY: Readonly<Record<DescriptorCategory, string>> = {
+  language: 'language',
+  service: 'service',
+  feature: 'feature',
+  'mcp-server': 'mcpServer',
+};
 
 const OptionTypeSchema = z.enum(['string', 'boolean', 'number']);
 
@@ -304,15 +325,64 @@ export const FeatureBlockSchema = z.object({
 });
 export type FeatureBlock = z.infer<typeof FeatureBlockSchema>;
 
-/** Pull the `${option}` tokens referenced by a workspaceEnv template set. */
-function workspaceEnvTokens(vars: Record<string, string>): string[] {
+/**
+ * `category: mcp-server` block — one MCP server an agent in the container can
+ * reach. This is the whole definition, in ONE canonical shape; apply
+ * translates it into the config format of each agent that is actually
+ * present (ADR 0045). Nothing is installed: a connector contributes a
+ * registration, not a devcontainer feature, which is why it needs no OCI
+ * ref and no GHCR publish.
+ *
+ * String fields take `${optionName}` tokens, filled at apply from the
+ * component's resolved options — the same convention a feature's
+ * `workspaceEnv` uses, so a credential stays an `env`-surfaced option and
+ * never a literal in a descriptor.
+ */
+export const McpBlockSchema = z
+  .object({
+    transport: McpTransportSchema,
+    /** `stdio`: the executable to run in the container (e.g. `npx`). */
+    command: z.string().min(1).optional(),
+    /** `stdio`: argv after `command`. */
+    args: z.array(z.string()).optional(),
+    /** `stdio`: env for the server process. */
+    env: z.record(z.string(), z.string()).optional(),
+    /** `http` / `sse`: the endpoint. */
+    url: z.string().min(1).optional(),
+    /** `http` / `sse`: request headers, where a bearer token goes. */
+    headers: z.record(z.string(), z.string()).optional(),
+  })
+  .superRefine((data, ctx) => {
+    validateMcpTransportFields(data, ctx);
+  });
+export type McpBlock = z.infer<typeof McpBlockSchema>;
+
+/** Pull the `${option}` tokens referenced by a set of templates. */
+function optionTokens(templates: readonly string[]): string[] {
   const tokens: string[] = [];
-  for (const template of Object.values(vars)) {
+  for (const template of templates) {
     for (const m of template.matchAll(/\$\{([A-Za-z0-9_]+)\}/g)) {
       tokens.push(m[1]!);
     }
   }
   return tokens;
+}
+
+/** Every `${option}`-carrying template of an mcpServer block, with its path. */
+function mcpTemplates(block: McpBlock): Array<{ path: string; value: string }> {
+  const out: Array<{ path: string; value: string }> = [];
+  if (block.command !== undefined) {
+    out.push({ path: 'command', value: block.command });
+  }
+  block.args?.forEach((arg, i) => out.push({ path: `args[${i}]`, value: arg }));
+  for (const [key, value] of Object.entries(block.env ?? {})) {
+    out.push({ path: `env.${key}`, value });
+  }
+  if (block.url !== undefined) out.push({ path: 'url', value: block.url });
+  for (const [key, value] of Object.entries(block.headers ?? {})) {
+    out.push({ path: `headers.${key}`, value });
+  }
+  return out;
 }
 
 export const DescriptorSchema = z
@@ -341,6 +411,7 @@ export const DescriptorSchema = z
     language: LanguageBlockSchema.optional(),
     service: ServiceBlockSchema.optional(),
     feature: FeatureBlockSchema.optional(),
+    mcpServer: McpBlockSchema.optional(),
     /**
      * Named option-override presets. Each becomes a selectable
      * `<name>/<presetKey>` component (e.g. `atlassian/twg`); the bare
@@ -360,6 +431,7 @@ export const DescriptorSchema = z
         data.language ? 'language' : null,
         data.service ? 'service' : null,
         data.feature ? 'feature' : null,
+        data.mcpServer ? 'mcp-server' : null,
       ].filter(Boolean) as DescriptorCategory[]
     ).sort();
     if (present.length === 0) {
@@ -370,12 +442,12 @@ export const DescriptorSchema = z
     } else if (present.length > 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `exactly one of language/service/feature is allowed, got: ${present.join(', ')}`,
+        message: `exactly one of language/service/feature/mcpServer is allowed, got: ${present.join(', ')}`,
       });
     } else if (present[0] !== data.category) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `category '${data.category}' requires a '${data.category}' block, found '${present[0]}'`,
+        message: `category '${data.category}' requires a '${BLOCK_KEY[data.category]}' block, found '${BLOCK_KEY[present[0]!]}'`,
       });
     }
 
@@ -448,7 +520,7 @@ export const DescriptorSchema = z
           message: `whenOption '${block.whenOption}' is not a declared option`,
         });
       }
-      for (const token of workspaceEnvTokens(block.vars)) {
+      for (const token of optionTokens(Object.values(block.vars))) {
         if (!optionKeys.has(token)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -458,6 +530,23 @@ export const DescriptorSchema = z
         }
       }
     });
+
+    // Same rule for an mcpServer block's templates: an unknown `${token}` would
+    // render empty, which for a header or an env var means the server is
+    // registered and silently unauthenticated.
+    if (data.mcpServer) {
+      for (const { path: field, value } of mcpTemplates(data.mcpServer)) {
+        for (const token of optionTokens([value])) {
+          if (!optionKeys.has(token)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['mcpServer', field],
+              message: `mcpServer template references '\${${token}}', which is not a declared option`,
+            });
+          }
+        }
+      }
+    }
 
     // Presets are feature-only, and each override must target a declared option.
     if (data.presets) {

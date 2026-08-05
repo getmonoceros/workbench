@@ -47,6 +47,9 @@ function checkOpts(extra: Partial<CheckOptions> = {}): CheckOptions {
       stderr: '',
       exitCode: 0,
     }),
+    // No network from the test suite. Fixtures without an agent config produce
+    // no probes anyway; this keeps that true when one gains an agent.
+    probeMcp: false,
     ...extra,
   };
 }
@@ -689,6 +692,7 @@ describe('renderCheckReport', () => {
         name: 'acme',
         findings: [],
         scanned: { projects: 2, composeFiles: 1, apps: 1 },
+        mcpServers: [],
       },
       plain,
     );
@@ -717,6 +721,7 @@ describe('renderCheckReport', () => {
           },
         ],
         scanned: { projects: 1, composeFiles: 1, apps: 0 },
+        mcpServers: [],
       },
       plain,
     );

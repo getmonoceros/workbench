@@ -1,21 +1,19 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { componentsRootDir } from '../config/paths.js';
-import type { DescriptorCategory } from './descriptor.js';
-import { parseDescriptorFile, type CatalogComponent } from './load.js';
+import {
+  CATEGORY_DIRS,
+  parseDescriptorFile,
+  type CatalogComponent,
+} from './load.js';
 
 /**
  * Synchronous twin of `loadDescriptorCatalog`. Needed by `catalog.ts`, which
  * derives the eagerly-exported LANGUAGE_CATALOG / SERVICE_CATALOG consts from
  * the descriptors at import time and therefore cannot await. Shares the same
- * parse + validation via `parseDescriptorFile`.
+ * parse + validation via `parseDescriptorFile`, and the same category→dir map
+ * so a new category cannot land in one loader and be missing from the other.
  */
-
-const CATEGORY_DIRS: Readonly<Record<string, DescriptorCategory>> = {
-  languages: 'language',
-  services: 'service',
-  features: 'feature',
-};
 
 export function loadDescriptorCatalogSync(
   rootDir: string = componentsRootDir(),

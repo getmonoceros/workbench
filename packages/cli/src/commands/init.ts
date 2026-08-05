@@ -7,7 +7,7 @@ export const initCommand = defineCommand({
     name: 'init',
     group: 'lifecycle',
     description:
-      'Create a fresh container-config yml at <MONOCEROS_HOME>/container-configs/<name>.yml. Without any --with-* flag, the file is a documented default with every component commented out. With --with-languages / --with-features / --with-services / --with-apt-packages, the named pieces are composed into an active, immediately-applyable yml. Then run `monoceros apply <name>`.',
+      'Create a fresh container-config yml at <MONOCEROS_HOME>/container-configs/<name>.yml. Without any --with-* flag, the file is a documented default with every component commented out. With --with-languages / --with-features / --with-services / --with-mcp-servers / --with-apt-packages, the named pieces are composed into an active, immediately-applyable yml. Then run `monoceros apply <name>`.',
   },
   args: {
     name: {
@@ -34,6 +34,12 @@ export const initCommand = defineCommand({
         'Backing services, comma-separated or repeated. Curated name (postgres, mysql, redis) → full editable block; any other image (rustfs/rustfs:latest) → name + image + commented scaffold.',
       required: false,
     },
+    'with-mcp-servers': {
+      type: 'string',
+      description:
+        'MCP servers to register with the agents in this container, comma-separated or repeated, e.g. --with-mcp-servers=context7. Curated connectors only - see `monoceros list-components`.',
+      required: false,
+    },
     'with-apt-packages': {
       type: 'string',
       description:
@@ -58,6 +64,7 @@ export const initCommand = defineCommand({
       const languages = collectListFlag('--with-languages', rawArgs);
       const features = collectListFlag('--with-features', rawArgs);
       const services = collectListFlag('--with-services', rawArgs);
+      const mcpServers = collectListFlag('--with-mcp-servers', rawArgs);
       const aptPackages = collectListFlag('--with-apt-packages', rawArgs);
       const repos = collectListFlag('--with-repos', rawArgs);
       const ports = collectWithPortsList(args['with-ports'], rawArgs);
@@ -66,6 +73,7 @@ export const initCommand = defineCommand({
         ...(languages.length > 0 ? { languages } : {}),
         ...(features.length > 0 ? { features } : {}),
         ...(services.length > 0 ? { services } : {}),
+        ...(mcpServers.length > 0 ? { mcpServers } : {}),
         ...(aptPackages.length > 0 ? { aptPackages } : {}),
         ...(repos.length > 0 ? { withRepo: repos } : {}),
         ...(ports && ports.length > 0 ? { withPorts: ports } : {}),

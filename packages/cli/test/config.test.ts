@@ -372,6 +372,7 @@ describe('createDoc', () => {
       features: [],
       installUrls: [],
       services: [],
+      mcpServers: [],
       repos: [],
     });
     const out = stringifyConfig(doc);
@@ -400,6 +401,7 @@ describe('createDoc', () => {
       ],
       installUrls: [],
       services: [{ name: 'postgres', image: 'postgres:18' }],
+      mcpServers: [],
       repos: [],
     };
     const doc = createDoc(config);
@@ -430,6 +432,7 @@ describe('readConfig / writeConfig', () => {
       features: [],
       installUrls: [],
       services: [],
+      mcpServers: [],
       repos: [],
     });
     await writeConfig(file, doc);
@@ -455,6 +458,7 @@ describe('readConfig / writeConfig', () => {
         features: [],
         installUrls: [],
         services: [],
+        mcpServers: [],
         repos: [],
       }),
     );

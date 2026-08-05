@@ -568,6 +568,14 @@ async function listFeatureComponents(): Promise<string[]> {
     .sort();
 }
 
+async function listMcpServers(): Promise<string[]> {
+  const catalog = await loadComponentCatalog();
+  return [...catalog.values()]
+    .filter((c) => c.file.category === 'mcp-server')
+    .map((c) => c.name)
+    .sort();
+}
+
 function listLanguageNames(): string[] {
   return knownLanguages().sort();
 }
@@ -700,6 +708,7 @@ const ALL_COMMANDS = [
   'add-language',
   'add-apt-packages',
   'add-feature',
+  'add-mcp-server',
   'add-from-url',
   'add-repo',
   'add-port',
@@ -707,6 +716,7 @@ const ALL_COMMANDS = [
   'remove-language',
   'remove-apt-packages',
   'remove-feature',
+  'remove-mcp-server',
   'remove-from-url',
   'remove-repo',
   'remove-port',
@@ -737,6 +747,7 @@ const runInDirs = dynamicSource('runInDir', (ctx) => listRunInDirs(ctx));
 const languageValues = staticSource(() => listLanguageNames());
 const serviceValues = staticSource(() => listServiceNames());
 const featureValues = staticSource(() => listFeatureComponents());
+const mcpValues = staticSource(() => listMcpServers());
 const providerValues = staticSource(() => listProviders());
 const shellValues = staticSource(() => listShellNames());
 const openToolValues = staticSource(() => [...OPEN_TOOLS]);
@@ -752,6 +763,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
       '--with-languages': { type: 'value', values: languageValues },
       '--with-features': { type: 'value', values: featureValues },
       '--with-services': { type: 'value', values: serviceValues },
+      '--with-mcp-servers': { type: 'value', values: mcpValues },
       '--with-apt-packages': { type: 'value' },
       '--with-repos': { type: 'value' },
       '--with-ports': { type: 'value' },
@@ -824,6 +836,13 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     positionals: [containerName, featureValues],
     innerArgs: (ctx) => listFeatureOptionInnerArgs(ctx),
   },
+  'add-mcp-server': {
+    // Second positional is the catalog connector; `-- key=value` inner args
+    // are the connector's own options, which have no manifest to read (a
+    // connector publishes no devcontainer feature), so no suggestions there.
+    positionals: [containerName, mcpValues],
+    innerArgs: () => [],
+  },
   'add-from-url': {
     positionals: [containerName],
     flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
@@ -856,6 +875,11 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   },
   'remove-feature': {
     positionals: [containerName, featureValues],
+  },
+  'remove-mcp-server': {
+    // Catalog connectors as suggestions; a hand-written inline server has a
+    // name only the yml knows, so it is typed out.
+    positionals: [containerName, mcpValues],
   },
   'remove-from-url': { positionals: [containerName] },
   'remove-repo': { positionals: [containerName] },

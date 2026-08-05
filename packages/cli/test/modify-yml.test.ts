@@ -8,6 +8,7 @@ import {
   runAddFeature,
   runAddFromUrl,
   runAddLanguage,
+  runAddMcpServer,
   runAddPort,
   runAddRepo,
   runAddService,
@@ -15,6 +16,7 @@ import {
   runRemoveFeature,
   runRemoveFromUrl,
   runRemoveLanguage,
+  runRemoveMcpServer,
   runRemovePort,
   runRemoveRepo,
   runRemoveService,
@@ -86,6 +88,139 @@ describe('add-*/remove-* against the yml', () => {
   }
 
   // ─── add-* ────────────────────────────────────────────────────────
+
+  it('runAddMcpServer writes the connector entry and seeds its credential', async () => {
+    await writeYml('mcpd', 'schemaVersion: 1\nname: mcpd\n');
+    const result = await runAddMcpServer({
+      ...baseOpts,
+      name: 'mcpd',
+      connector: 'context7',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const parsed = parseConfig(await ymlOf('mcpd'));
+    expect(parsed.config.mcpServers).toEqual([
+      { name: 'context7', options: { apiKey: '${CONTEXT7_API_KEY}' } },
+    ]);
+    const env = await fs.readFile(
+      path.join(home, 'container-configs', 'mcpd.env'),
+      'utf8',
+    );
+    expect(env).toContain('CONTEXT7_API_KEY=');
+  });
+
+  it('runAddMcpServer keeps the builder’s notes and is idempotent', async () => {
+    await writeYml('mcpd', '# my notes\nschemaVersion: 1\nname: mcpd\n');
+    await runAddMcpServer({
+      ...baseOpts,
+      name: 'mcpd',
+      connector: 'context7',
+      monocerosHome: home,
+    });
+    const again = await runAddMcpServer({
+      ...baseOpts,
+      name: 'mcpd',
+      connector: 'context7',
+      monocerosHome: home,
+    });
+    expect(again.status).toBe('no-change');
+    expect(await ymlOf('mcpd')).toContain('# my notes');
+  });
+
+  it('runAddMcpServer refuses to silently rewrite different options', async () => {
+    await writeYml(
+      'mcpd',
+      [
+        'schemaVersion: 1',
+        'name: mcpd',
+        'mcpServers:',
+        '  - name: context7',
+        '    options:',
+        '      apiKey: mine-by-hand',
+        '',
+      ].join('\n'),
+    );
+    await expect(
+      runAddMcpServer({
+        ...baseOpts,
+        name: 'mcpd',
+        connector: 'context7',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/already configured with different options/);
+  });
+
+  it('runAddMcpServer rejects an unknown connector and points at the inline form', async () => {
+    await writeYml('mcpd', 'schemaVersion: 1\nname: mcpd\n');
+    await expect(
+      runAddMcpServer({
+        ...baseOpts,
+        name: 'mcpd',
+        connector: 'ghost',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(/Unknown MCP server[\s\S]*its own definition/);
+  });
+
+  it('runRemoveMcpServer drops an entry and prunes the key', async () => {
+    await writeYml(
+      'mcpd',
+      [
+        'schemaVersion: 1',
+        'name: mcpd',
+        'mcpServers:',
+        '  - name: context7',
+        '',
+      ].join('\n'),
+    );
+    const result = await runRemoveMcpServer({
+      ...baseOpts,
+      name: 'mcpd',
+      connector: 'context7',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    const yml = await ymlOf('mcpd');
+    expect(yml).not.toContain('mcpServers:');
+    expect(parseConfig(yml).config.mcpServers).toEqual([]);
+  });
+
+  it('runRemoveMcpServer removes a hand-written inline server too', async () => {
+    await writeYml(
+      'mcpd',
+      [
+        'schemaVersion: 1',
+        'name: mcpd',
+        'mcpServers:',
+        '  - name: notion',
+        '    transport: stdio',
+        '    command: npx',
+        '  - name: context7',
+        '',
+      ].join('\n'),
+    );
+    const result = await runRemoveMcpServer({
+      ...baseOpts,
+      name: 'mcpd',
+      connector: 'notion',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('updated');
+    expect(parseConfig(await ymlOf('mcpd')).config.mcpServers).toEqual([
+      { name: 'context7' },
+    ]);
+  });
+
+  it('runRemoveMcpServer on an absent entry is a no-op', async () => {
+    await writeYml('mcpd', 'schemaVersion: 1\nname: mcpd\n');
+    const result = await runRemoveMcpServer({
+      ...baseOpts,
+      name: 'mcpd',
+      connector: 'context7',
+      monocerosHome: home,
+    });
+    expect(result.status).toBe('no-change');
+  });
 
   it('runAddLanguage appends and preserves the comment block', async () => {
     await writeYml('demo', '# my notes\nschemaVersion: 1\nname: demo\n');

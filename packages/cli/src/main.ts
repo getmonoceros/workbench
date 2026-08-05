@@ -4,6 +4,7 @@ import { addFeatureCommand } from './commands/add-feature.js';
 import { addFromUrlCommand } from './commands/add-from-url.js';
 import { addRepoCommand } from './commands/add-repo.js';
 import { addLanguageCommand } from './commands/add-language.js';
+import { addMcpServerCommand } from './commands/add-mcp-server.js';
 import { addPortCommand } from './commands/add-port.js';
 import { addServiceCommand } from './commands/add-service.js';
 import { applyCommand } from './commands/apply.js';
@@ -24,6 +25,7 @@ import { removeCommand } from './commands/remove.js';
 import { restoreCommand } from './commands/restore.js';
 import { removeFromUrlCommand } from './commands/remove-from-url.js';
 import { removeLanguageCommand } from './commands/remove-language.js';
+import { removeMcpServerCommand } from './commands/remove-mcp-server.js';
 import { removePortCommand } from './commands/remove-port.js';
 import { removeRepoCommand } from './commands/remove-repo.js';
 import { removeServiceCommand } from './commands/remove-service.js';
@@ -64,6 +66,7 @@ export const main = defineCommand({
     'add-language': addLanguageCommand,
     'add-apt-packages': addAptPackagesCommand,
     'add-feature': addFeatureCommand,
+    'add-mcp-server': addMcpServerCommand,
     'add-from-url': addFromUrlCommand,
     'add-repo': addRepoCommand,
     'add-port': addPortCommand,
@@ -71,6 +74,7 @@ export const main = defineCommand({
     'remove-language': removeLanguageCommand,
     'remove-apt-packages': removeAptPackagesCommand,
     'remove-feature': removeFeatureCommand,
+    'remove-mcp-server': removeMcpServerCommand,
     'remove-from-url': removeFromUrlCommand,
     'remove-repo': removeRepoCommand,
     'remove-port': removePortCommand,

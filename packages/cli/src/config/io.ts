@@ -88,6 +88,9 @@ const KEY_ORDER = [
   'features',
   'installUrls',
   'services',
+  // After `services:` and before `repos:`: an MCP server is closer to what the
+  // container is made of than to what it clones.
+  'mcpServers',
   'repos',
   'routing',
   'git',

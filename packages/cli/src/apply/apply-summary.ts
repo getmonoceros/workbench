@@ -57,6 +57,12 @@ export function buildApplySummary(opts: CreateOptions): SummaryLine[] {
       values: Object.keys(opts.features).map(shortFeatureName),
     });
   }
+  if (opts.mcpServers && opts.mcpServers.length > 0) {
+    lines.push({
+      label: 'MCP servers',
+      values: opts.mcpServers.map((s) => s.name),
+    });
+  }
   if (opts.repos && opts.repos.length > 0) {
     lines.push({
       label: 'Repositories',

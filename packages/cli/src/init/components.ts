@@ -16,7 +16,11 @@ import type { Descriptor } from '../catalog/descriptor.js';
  * options from the `surface: yml` defaults merged with any preset overrides.
  */
 
-export type ComponentCategory = 'language' | 'service' | 'feature';
+export type ComponentCategory =
+  | 'language'
+  | 'service'
+  | 'feature'
+  | 'mcp-server';
 
 export interface FeatureContribution {
   ref: string;
@@ -27,6 +31,8 @@ export interface ComponentContributes {
   languages?: string[];
   services?: string[];
   features?: FeatureContribution[];
+  /** MCP server selectors, written into the yml's `mcpServers:` as bare names. */
+  mcpServers?: string[];
 }
 
 export interface ComponentFile {
@@ -79,6 +85,14 @@ function baseComponentFile(d: Descriptor): ComponentFile {
       description: d.description,
       category: 'service',
       contributes: { services: [selector] },
+    };
+  }
+  if (d.category === 'mcp-server') {
+    return {
+      displayName: d.displayName,
+      description: d.description,
+      category: 'mcp-server',
+      contributes: { mcpServers: [selector] },
     };
   }
   return {
@@ -151,6 +165,8 @@ export interface MergedComponents {
     ref: string;
     options: Record<string, string | number | boolean>;
   }>;
+  /** MCP server selectors, deduped in insertion order. */
+  mcpServers: string[];
 }
 
 /**
@@ -193,6 +209,7 @@ export function mergeComponents(
 ): MergedComponents {
   const languages: string[] = [];
   const services: string[] = [];
+  const mcpServers: string[] = [];
   const featureByRef = new Map<
     string,
     { ref: string; options: Record<string, string | number | boolean> }
@@ -213,6 +230,9 @@ export function mergeComponents(
     for (const svc of ct.services ?? []) {
       if (!services.includes(svc)) services.push(svc);
     }
+    for (const connector of ct.mcpServers ?? []) {
+      if (!mcpServers.includes(connector)) mcpServers.push(connector);
+    }
     for (const f of ct.features ?? []) {
       const existing = featureByRef.get(f.ref);
       if (!existing) {
@@ -230,6 +250,7 @@ export function mergeComponents(
     languages,
     services,
     features: [...featureByRef.values()],
+    mcpServers,
   };
 }
 

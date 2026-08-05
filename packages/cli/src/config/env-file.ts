@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type { ResolvedService } from '../create/types.js';
+import type { McpEntry } from './schema.js';
 
 /**
  * Per-container secret/value source. Lives beside the yml profile as
@@ -315,6 +316,72 @@ export function interpolateFeatureOptions<T extends FeatureLike>(
     }
     return { ...f, options: opts };
   });
+}
+
+export interface InterpolateMcpResult {
+  entries: McpEntry[];
+  missing: MissingVar[];
+}
+
+/**
+ * Resolve `${VAR}` across the `mcpServers:` entries, with the two halves of an
+ * entry treated differently on purpose:
+ *
+ *   - **`options`** (a catalog connector) follow the feature rule: a missing
+ *     var or an empty resolution becomes `''`, so the connector's own default
+ *     applies. The resolver then errors if a template actually needed it, and
+ *     it can name which option and which field.
+ *   - **definition fields** (an inline server's command/args/env/url/headers)
+ *     are a hard error when unresolved, like a service's: there is no default
+ *     to fall back to, and a literal `${TOKEN}` in an argv or an
+ *     `Authorization` header registers a server that fails on first use.
+ */
+export function interpolateMcpEntries(
+  entries: readonly McpEntry[],
+  vars: Record<string, string>,
+): InterpolateMcpResult {
+  const missing: MissingVar[] = [];
+  const out = entries.map((entry) => {
+    const strict = (raw: string, field: string): string => {
+      const r = interpolate(raw, vars);
+      for (const name of r.missing) {
+        missing.push({ location: `mcpServers.${entry.name}.${field}`, name });
+      }
+      return r.value;
+    };
+    const next: McpEntry = { ...entry };
+    if (entry.options !== undefined) {
+      next.options = Object.fromEntries(
+        Object.entries(entry.options).map(([key, value]) => {
+          if (typeof value !== 'string') return [key, value];
+          const r = interpolate(value, vars);
+          return [key, r.missing.length > 0 ? '' : r.value.trim()];
+        }),
+      );
+    }
+    if (entry.command !== undefined) {
+      next.command = strict(entry.command, 'command');
+    }
+    if (entry.args !== undefined) {
+      next.args = entry.args.map((arg, i) => strict(arg, `args[${i}]`));
+    }
+    if (entry.env !== undefined) {
+      next.env = Object.fromEntries(
+        Object.entries(entry.env).map(([k, v]) => [k, strict(v, `env.${k}`)]),
+      );
+    }
+    if (entry.url !== undefined) next.url = strict(entry.url, 'url');
+    if (entry.headers !== undefined) {
+      next.headers = Object.fromEntries(
+        Object.entries(entry.headers).map(([k, v]) => [
+          k,
+          strict(v, `headers.${k}`),
+        ]),
+      );
+    }
+    return next;
+  });
+  return { entries: out, missing };
 }
 
 /**

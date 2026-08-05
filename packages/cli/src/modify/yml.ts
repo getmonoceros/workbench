@@ -619,6 +619,71 @@ export function addFeatureToDoc(
 }
 
 /**
+ * Add (or no-op) an MCP server to the `mcpServers:` sequence, as a bare
+ * `name:` plus its `surface: yml` / `surface: env` options (ADR 0045).
+ *
+ * Only the catalog form is written here. An inline server (a definition
+ * pasted from its provider) is a hand-edit for now; the schema accepts it,
+ * nothing generates it.
+ *
+ * Overwrite-protected like a plain feature: re-adding with the same options
+ * is a no-op, re-adding with different ones is an error rather than a silent
+ * rewrite of a value the builder may have edited on purpose.
+ */
+export function addMcpToDoc(
+  doc: Document,
+  name: string,
+  options: FeatureOptions = {},
+  opts: { header?: string; containerName?: string } = {},
+): boolean {
+  const seq = ensureSeq(doc, 'mcpServers');
+  for (const item of seq.items) {
+    if (!isMap(item)) continue;
+    if (item.get('name') !== name) continue;
+    const itemJs = item.toJS(doc) as { options?: FeatureOptions };
+    const existing = itemJs.options ?? {};
+    if (JSON.stringify(existing) === JSON.stringify(options)) return false;
+    throw new Error(
+      `MCP server ${name} is already configured with different options. Remove it first (\`monoceros remove-mcp-server ${opts.containerName ?? '<name>'} ${name}\`) before re-adding.`,
+    );
+  }
+  const entry = new YAMLMap();
+  entry.set('name', name);
+  if (Object.keys(options).length > 0) entry.set('options', options);
+  if (opts.header && opts.header.length > 0) {
+    // Same placement as a feature's header: on the sequence ITEM, so the
+    // prose renders above the dash rather than inside it.
+    (entry as { commentBefore?: string }).commentBefore = opts.header;
+    (entry as { spaceBefore?: boolean }).spaceBefore = true;
+  }
+  seq.add(entry);
+  return true;
+}
+
+/** Remove an `mcpServers:` entry by name. Prunes the key when it empties out. */
+export function removeMcpFromDoc(doc: Document, name: string): boolean {
+  const seq = doc.get('mcpServers', true);
+  if (!seq || !isSeq(seq)) return false;
+  const idx = seq.items.findIndex((i) => isMap(i) && i.get('name') === name);
+  if (idx < 0) return false;
+  // Same trailing-comment cleanup as removeFeatureFromDoc: yaml-lib parks the
+  // header block that visually precedes entry[idx] on the PREVIOUS item, so
+  // splicing alone would leave orphaned prose behind.
+  if (idx > 0) {
+    const prev = seq.items[idx - 1] as { comment?: string | null } | null;
+    if (prev && typeof prev.comment === 'string' && prev.comment.length > 0) {
+      const blank = prev.comment.match(/\n[ \t]*\n/);
+      if (blank && blank.index !== undefined) {
+        prev.comment = prev.comment.slice(0, blank.index);
+      }
+    }
+  }
+  seq.items.splice(idx, 1);
+  pruneEmptySeq(doc, 'mcpServers');
+  return true;
+}
+
+/**
  * Add (or no-op) a repo entry to the `repos:` sequence.
  *
  * Idempotency: if an existing entry has the same URL AND the same

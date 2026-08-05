@@ -7,6 +7,7 @@ import { descriptorToFeatureManifest } from '../catalog/generate-manifest.js';
 import type { Descriptor, WorkspaceEnvBlock } from '../catalog/descriptor.js';
 import { writeClaudePermissionMode } from './claude-settings.js';
 import { notesDirInContainer } from './feature-notes.js';
+import { writeMcpRegistrations } from './mcp-registration.js';
 import { isWsl, windowsSshPort } from '../devcontainer/ssh-attach.js';
 import { writeOpencodeConfig } from './opencode-config.js';
 import { writeOpencodeRoles } from './opencode-roles.js';
@@ -2273,6 +2274,16 @@ export async function writeScaffold(
   // into the persistent `~/.claude/` tree. Same apply-time rationale. No-op
   // without that feature.
   await writeClaudeCodeRoles(targetDir, opts.features);
+
+  // The `mcpServers:` block's servers, merged into each present agent's own
+  // config (ADR 0045). Merge and not write: those files belong to the agents.
+  // Runs after the agent-config writers above so it sees what they wrote.
+  await writeMcpRegistrations(
+    targetDir,
+    opts.features,
+    opts.mcpServers ?? [],
+    opts.name,
+  );
 
   await writePostCreateScript(devcontainerDir, opts);
 

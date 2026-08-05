@@ -51,8 +51,12 @@ export const addFeatureCommand = defineCommand({
  * Parse `key=value` tokens (one per arg) into a feature options hash.
  * Coerces `true`/`false` to booleans and pure-integer strings to
  * numbers; everything else stays a string.
+ *
+ * Shared with `add-mcp`, whose `-- key=value` surface is the same.
  */
-function parseOptionsAfterDashes(tokens: readonly string[]): FeatureOptions {
+export function parseOptionsAfterDashes(
+  tokens: readonly string[],
+): FeatureOptions {
   const result: FeatureOptions = {};
   for (const token of tokens) {
     const eqIdx = token.indexOf('=');

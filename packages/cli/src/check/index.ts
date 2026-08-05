@@ -24,6 +24,7 @@ import {
   type DockerExec as ProxyDockerExec,
 } from '../proxy/index.js';
 import { MARKER_BEGIN, MARKER_END } from '../briefing/markers.js';
+import { checkMcpServers, type McpProbe } from './mcp.js';
 import type { ResolvedService } from '../create/types.js';
 import type { Palette } from '../util/format.js';
 
@@ -77,6 +78,7 @@ export type CheckRule =
   | 'service-config'
   | 'ports'
   | 'git-identity'
+  | 'mcp-servers'
   | 'briefing-markers';
 
 export interface Finding {
@@ -94,6 +96,13 @@ export interface CheckReport {
   findings: Finding[];
   /** What the run actually looked at, for the summary line. */
   scanned: { projects: number; composeFiles: number; apps: number };
+  /**
+   * One entry per registered MCP server, with the tool names the server
+   * actually serves (ADR 0045). Rendered even when nothing is wrong: the
+   * question "is my MCP server configured" is only answered by seeing its
+   * tools, and an agent's own claim about its tool list is not evidence.
+   */
+  mcpServers: McpProbe[];
 }
 
 export interface CheckOptions {
@@ -104,6 +113,12 @@ export interface CheckOptions {
    */
   containerLookupDocker?: DockerLookupExec;
   proxyDocker?: ProxyDockerExec;
+  /**
+   * Ask each registered remote MCP server for its tool list. On by default;
+   * tests and offline runs pass `false`, which keeps the config checks and
+   * skips the network.
+   */
+  probeMcp?: boolean;
 }
 
 /**
@@ -201,6 +216,14 @@ export async function runCheck(
     ...(await checkProxyAttachment(name, root, declaredPorts, opts)),
   );
   findings.push(...(await checkGitIdentity(root, name)));
+  const mcp = await checkMcpServers(
+    root,
+    name,
+    parsed.config,
+    createOpts.features,
+    { probe: opts.probeMcp !== false },
+  );
+  findings.push(...mcp.findings);
   findings.push(...(await checkBriefingMarkers(root)));
 
   return {
@@ -211,6 +234,7 @@ export async function runCheck(
       composeFiles: composeFiles.length,
       apps: apps.length,
     },
+    mcpServers: mcp.probes,
   };
 }
 
@@ -1158,6 +1182,7 @@ const RULE_LABEL: Record<CheckRule, string> = {
   'launch-config': 'Launch config',
   ports: 'Ports',
   'git-identity': 'Git identity',
+  'mcp-servers': 'MCP servers',
   'briefing-markers': 'Briefing markers',
 };
 
@@ -1170,15 +1195,22 @@ export function renderCheckReport(report: CheckReport, p: Palette): string {
   const { projects, composeFiles, apps } = report.scanned;
   const scanned = `${count(projects, 'project')}, ${count(composeFiles, 'compose file')}, ${count(apps, 'launch config')}`;
 
+  const mcpBlock = renderMcpServers(report.mcpServers, p);
+
   if (report.findings.length === 0) {
     return [
       p.sectionLine(`Briefing check: ${report.name}`),
       '',
+      ...mcpBlock,
       `${p.green('✓')} Nothing to report. ${p.dim(`Checked ${scanned}.`)}`,
     ].join('\n');
   }
 
-  const out = [p.sectionLine(`Briefing check: ${report.name}`), ''];
+  const out = [
+    p.sectionLine(`Briefing check: ${report.name}`),
+    '',
+    ...mcpBlock,
+  ];
   for (const rule of Object.keys(RULE_LABEL) as CheckRule[]) {
     const group = report.findings.filter((f) => f.rule === rule);
     if (group.length === 0) continue;
@@ -1204,4 +1236,30 @@ export function renderCheckReport(report: CheckReport, p: Palette): string {
 
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * The registered MCP servers with the tools each one serves. Printed whether or
+ * not anything is wrong, because the tool names ARE the answer to "is this
+ * configured" — and they are what the builder holds against an agent that
+ * claims it has no such tool.
+ */
+function renderMcpServers(probes: readonly McpProbe[], p: Palette): string[] {
+  if (probes.length === 0) return [];
+  const out = [p.bold('MCP servers')];
+  for (const probe of probes) {
+    const agents = probe.registeredFor.join(', ') || 'no agent';
+    out.push(`  ${p.cyan(probe.name)} ${p.dim(`→ ${agents}`)}`);
+    if (probe.error !== undefined) {
+      out.push(`      ${p.yellow('⚠')} ${probe.error}`);
+    } else if (probe.tools) {
+      out.push(`      tools: ${probe.tools.join(', ')}`);
+    } else if (probe.transport === 'stdio') {
+      out.push(
+        `      ${p.dim('runs in the container; config verified, tools not probed')}`,
+      );
+    }
+  }
+  out.push('');
+  return out;
 }

@@ -341,6 +341,82 @@ describe('runApply', () => {
     expect(after).toBe('{"fake":"token"}');
   });
 
+  it('registers an mcpServers: entry in the agent config, from the env file', async () => {
+    await writeYml(
+      'mcp',
+      [
+        'schemaVersion: 1',
+        'name: mcp',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        'mcpServers:',
+        '  - name: context7',
+        '    options:',
+        '      apiKey: ${CONTEXT7_API_KEY}',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      path.join(home, 'container-configs', 'mcp.env'),
+      'CONTEXT7_API_KEY=ctx7sk-test\n',
+    );
+    await runApply({ ...baseRunOpts, name: 'mcp', monocerosHome: home });
+    const config = JSON.parse(
+      await readFile(
+        path.join(home, 'container', 'mcp', 'home', '.claude.json'),
+        'utf8',
+      ),
+    ) as { mcpServers: Record<string, { headers?: Record<string, string> }> };
+    expect(config.mcpServers.context7?.headers).toEqual({
+      CONTEXT7_API_KEY: 'ctx7sk-test',
+    });
+    // And the agent is told the server exists, so it stops rediscovering it.
+    const briefing = await readFile(
+      path.join(home, 'container', 'mcp', 'AGENTS.md'),
+      'utf8',
+    );
+    expect(briefing).toContain('### MCP servers');
+    expect(briefing).toContain('- `context7`');
+  });
+
+  it('refuses a connector whose credential resolves empty', async () => {
+    await writeYml(
+      'mcpblank',
+      [
+        'schemaVersion: 1',
+        'name: mcpblank',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        'mcpServers:',
+        '  - name: context7',
+        '    options:',
+        '      apiKey: ${CONTEXT7_API_KEY}',
+        '',
+      ].join('\n'),
+    );
+    await expect(
+      runApply({ ...baseRunOpts, name: 'mcpblank', monocerosHome: home }),
+    ).rejects.toThrow(/option 'apiKey' is empty/);
+  });
+
+  it('refuses mcp: entries when no agent is installed', async () => {
+    await writeYml(
+      'mcpnoagent',
+      [
+        'schemaVersion: 1',
+        'name: mcpnoagent',
+        'mcpServers:',
+        '  - name: notion',
+        '    transport: stdio',
+        '    command: npx',
+        '',
+      ].join('\n'),
+    );
+    await expect(
+      runApply({ ...baseRunOpts, name: 'mcpnoagent', monocerosHome: home }),
+    ).rejects.toThrow(/no agent to register them with/);
+  });
+
   it('prints a feature note in the summary, so a build-log line is not the only channel', async () => {
     await writeYml('noted', 'schemaVersion: 1\nname: noted\n');
     await runApply({ ...baseRunOpts, name: 'noted', monocerosHome: home });

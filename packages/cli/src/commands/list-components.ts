@@ -13,11 +13,13 @@ const CATEGORY_LABELS = {
   language: 'Languages',
   service: 'Services',
   feature: 'Features',
+  'mcp-server': 'MCP servers',
 } as const;
 const CATEGORY_ORDER: ReadonlyArray<keyof typeof CATEGORY_LABELS> = [
   'language',
   'service',
   'feature',
+  'mcp-server',
 ];
 
 export const listComponentsCommand = defineCommand({
@@ -25,7 +27,7 @@ export const listComponentsCommand = defineCommand({
     name: 'list-components',
     group: 'discovery',
     description:
-      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=…`, grouped by category (Languages, Services, Features). Component names render in cyan, descriptions in default colour; when piped, the formatting drops out and lines become `name<TAB>description` for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json.',
+      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=… / --with-mcp-servers=…`, grouped by category (Languages, Services, Features, MCP servers). Component names render in cyan, descriptions in default colour; when piped, the formatting drops out and lines become `name<TAB>description` for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json.',
   },
   args: {
     json: {

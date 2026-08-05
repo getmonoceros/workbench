@@ -22,6 +22,7 @@ import {
   mergeEnvLayers,
   interpolateServices,
   interpolateFeatureOptions,
+  interpolateMcpEntries,
   formatMissingVarsError,
   ensureEnvGitignored,
   setEnvVarRef,
@@ -36,6 +37,12 @@ import {
 } from '../config/state.js';
 import type { SolutionConfig } from '../config/schema.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
+import { loadDescriptorCatalog } from '../catalog/load.js';
+import { resolveMcpServers } from '../catalog/mcp.js';
+import {
+  agentsPresent,
+  formatNoAgentError,
+} from '../create/mcp-registration.js';
 import {
   resolveRuntimeImage,
   runtimeSupportsAppRestart,
@@ -416,6 +423,30 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     );
   }
   createOpts.services = interpServices.services;
+
+  // Resolve the `mcpServers:` block: `${VAR}` from the env file first, then the
+  // catalog lookup that turns a bare `name:` into a full server definition
+  // (ADR 0045). An inline entry keeps its own definition and is not resolved.
+  // Unresolved `${VAR}` in an inline definition is a hard error for the same
+  // reason a service's is: a literal `${TOKEN}` in an argv or an
+  // `Authorization` header registers a server that fails on first use.
+  const interpMcp = interpolateMcpEntries(parsed.config.mcpServers, envVars);
+  if (interpMcp.missing.length > 0) {
+    throw new Error(
+      formatMissingVarsError(interpMcp.missing, prettyPath(envPath)),
+    );
+  }
+  const mcp = resolveMcpServers(
+    interpMcp.entries,
+    await loadDescriptorCatalog(),
+  );
+  for (const note of mcp.notes) (logger.warn ?? logger.info)(note);
+  if (mcp.servers.length > 0) {
+    if (agentsPresent(createOpts.features).length === 0) {
+      throw new Error(formatNoAgentError(mcp.servers, opts.name));
+    }
+    createOpts.mcpServers = mcp.servers;
+  }
 
   // Resolve `${VAR}` in git identities — the container-level `git.user`
   // and each repo's `git.user` — against the same env file. UNLIKE
