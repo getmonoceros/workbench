@@ -263,7 +263,7 @@
           "type": "string",
           "surface": "env",
           "default": "",
-          "description": "Atlassian API token (id.atlassian.com → Security → API tokens)."
+          "description": "Atlassian API token for twg and Forge (id.atlassian.com, Security, API tokens). Rovo Dev does not accept this one, see `rovodevToken`."
         },
         {
           "key": "bitbucketToken",
@@ -299,6 +299,13 @@
           "surface": "yml",
           "default": true,
           "description": "Install acli (with the Rovo Dev agent)."
+        },
+        {
+          "key": "rovodevToken",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "Rovo Dev scoped API token, which is a different token from `apiToken` (id.atlassian.com, Security, create an API token with scopes). acli rejects a classic token with a bare \"authentication failed\", so the two cannot share one variable."
         },
         {
           "key": "twg",
@@ -521,6 +528,24 @@
       ],
       "documentationURL": "https://getmonoceros.build/docs/features/opencode-roles/",
       "presets": []
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "context7",
+      "displayName": "Context7",
+      "description": "Current documentation for the libraries a project uses, so the agent stops writing APIs from memory.",
+      "options": [
+        {
+          "key": "apiKey",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "Context7 API key from context7.com. The public endpoint is heavily rate limited without one, so Monoceros requires it rather than registering a server that fails partway through a run."
+        }
+      ],
+      "documentationURL": "https://context7.com",
+      "transport": "http"
     }
   ]
 }

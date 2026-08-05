@@ -6,6 +6,7 @@ import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { descriptorToFeatureManifest } from '../catalog/generate-manifest.js';
 import type { Descriptor, WorkspaceEnvBlock } from '../catalog/descriptor.js';
 import { writeClaudePermissionMode } from './claude-settings.js';
+import { notesDirInContainer } from './feature-notes.js';
 import { isWsl, windowsSshPort } from '../devcontainer/ssh-attach.js';
 import { writeOpencodeConfig } from './opencode-config.js';
 import { writeOpencodeRoles } from './opencode-roles.js';
@@ -1898,6 +1899,22 @@ export function buildPostCreateScript(opts: CreateOptions): string {
     '    [ -f "$hook" ] || continue',
     '    echo "→ post-create hook: $(basename "$hook")"',
     '    bash "$hook"',
+    '  done',
+    'fi',
+    '',
+    "# Feature notes: a feature's install.sh may leave a line under",
+    '# /usr/local/share/monoceros/notes.d/ when it made a decision the builder',
+    '# should know about (a version it could not install, a credential it did',
+    '# not get). Copy them into the workspace, where they are host-visible, so',
+    '# `apply` can print them in its summary. The build log is not a channel:',
+    '# it scrolls past behind the spinner, and on a cached rebuild the install',
+    '# does not run at all while the condition still holds.',
+    `mkdir -p "${notesDirInContainer(opts.name)}"`,
+    `rm -f "${notesDirInContainer(opts.name)}"/*.txt 2>/dev/null || true`,
+    'if [ -d /usr/local/share/monoceros/notes.d ]; then',
+    '  for note in /usr/local/share/monoceros/notes.d/*.txt; do',
+    '    [ -f "$note" ] || continue',
+    `    cp "$note" "${notesDirInContainer(opts.name)}/" 2>/dev/null || true`,
     '  done',
     'fi',
     '',

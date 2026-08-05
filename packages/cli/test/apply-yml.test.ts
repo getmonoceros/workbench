@@ -341,6 +341,57 @@ describe('runApply', () => {
     expect(after).toBe('{"fake":"token"}');
   });
 
+  it('prints a feature note in the summary, so a build-log line is not the only channel', async () => {
+    await writeYml('noted', 'schemaVersion: 1\nname: noted\n');
+    await runApply({ ...baseRunOpts, name: 'noted', monocerosHome: home });
+    // What post-create copies out of the image lands here; write it directly so
+    // the test does not need a real container.
+    const notesDir = path.join(
+      home,
+      'container',
+      'noted',
+      '.monoceros',
+      'notes',
+    );
+    await mkdir(notesDir, { recursive: true });
+    await writeFile(
+      path.join(notesDir, 'forge.txt'),
+      'forge is 13.0.0, not the latest 13.3.0\n',
+    );
+    const progressOut = new Writable({ write: () => true });
+    const seen: string[] = [];
+    (progressOut as unknown as { write: (c: string) => boolean }).write = (
+      chunk: string,
+    ) => {
+      seen.push(String(chunk));
+      return true;
+    };
+    await runApply({
+      ...baseRunOpts,
+      name: 'noted',
+      monocerosHome: home,
+      progressOut: progressOut as unknown as NodeJS.WriteStream,
+    });
+    const out = seen.join('');
+    expect(out).toContain('Feature notes');
+    expect(out).toContain('forge is 13.0.0, not the latest 13.3.0');
+    // Same warning glyph the repo-access block uses.
+    expect(out).toContain('⚠');
+  });
+
+  it('copies feature notes out of the image in post-create', async () => {
+    await writeYml('noted2', 'schemaVersion: 1\nname: noted2\n');
+    await runApply({ ...baseRunOpts, name: 'noted2', monocerosHome: home });
+    const postCreate = await readFile(
+      path.join(home, 'container', 'noted2', '.devcontainer', 'post-create.sh'),
+      'utf8',
+    );
+    expect(postCreate).toContain('/usr/local/share/monoceros/notes.d');
+    expect(postCreate).toContain('/workspaces/noted2/.monoceros/notes');
+    // Cleared first, so a condition that has gone away stops being reported.
+    expect(postCreate).toMatch(/rm -f .*\.monoceros\/notes"\/\*\.txt/);
+  });
+
   it('emits the post-create hook-runner block', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runApply({ ...baseRunOpts, name: 'demo', monocerosHome: home });

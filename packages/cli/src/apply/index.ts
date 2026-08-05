@@ -70,6 +70,10 @@ import {
   progressTeeLogger,
 } from './apply-progress.js';
 import { buildApplySummary, formatApplySummary } from './apply-summary.js';
+import {
+  formatFeatureNotes,
+  readFeatureNotes,
+} from '../create/feature-notes.js';
 import { writeBriefing } from '../briefing/index.js';
 import { loadComponentCatalog } from '../init/components.js';
 import {
@@ -1012,6 +1016,19 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         const formatted = formatApplySummary(summaryLines);
         progressOut.write(`\n${formatted}\n`);
         applyLog.stream.write(`\n${stripAnsi(formatted)}\n`);
+      }
+
+      // Notes a feature left during install: a version it could not install, a
+      // credential it did not get. Written on disk rather than logged, because
+      // the build log scrolls past behind the spinner and a cached rebuild
+      // produces none of it while the condition still holds. Rendered in the
+      // same warning vocabulary as the repo-access block: nothing is broken,
+      // something wants the builder's attention.
+      const notes = await readFeatureNotes(targetDir);
+      if (notes.length > 0) {
+        const block = formatFeatureNotes(notes);
+        progressOut.write(`\n${block}\n`);
+        applyLog.stream.write(`\n${stripAnsi(block)}\n`);
       }
 
       // Faithful reporting: the summary lists declared repos, but the clone

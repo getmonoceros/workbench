@@ -14,7 +14,7 @@ import {
   globalEnvPath,
 } from '../config/paths.js';
 import { resolveProvider } from '../devcontainer/credentials.js';
-import { bold, cyan, yellow } from '../util/format.js';
+import { bold, cyan, warnHeading, yellow } from '../util/format.js';
 import type { Component } from './../init/components.js';
 
 /**
@@ -306,10 +306,6 @@ export function formatTokenUse(use: RepoTokenUse): string {
  * of block. Bold-yellow so it stands out from the grey status output; in
  * a non-TTY (piped / log file) the palette no-ops to plain text.
  */
-function warnBlockHeading(title: string): string[] {
-  return [bold(yellow(`⚠  ${title}`)), ''];
-}
-
 /** Shared footer pointing at the repo-access docs. */
 function detailsFooter(): string {
   return `   Details: ${cyan(REPO_DOCS_URL)}`;
@@ -326,7 +322,7 @@ export function formatUnauthenticatedRepos(
   containerName: string,
 ): string {
   const lines: string[] = [
-    ...warnBlockHeading('Repo access — action needed'),
+    ...warnHeading('Repo access — action needed'),
     yellow('   Some repositories are UNAUTHENTICATED:'),
   ];
   for (const m of missing) {
@@ -388,7 +384,7 @@ export function formatFailedClones(
   containerName: string,
 ): string {
   const lines: string[] = [
-    ...warnBlockHeading('Repositories not cloned'),
+    ...warnHeading('Repositories not cloned'),
     yellow('   Declared, but no checkout after apply:'),
   ];
   for (const f of failed) {

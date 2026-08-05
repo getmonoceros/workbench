@@ -32,7 +32,12 @@ options:
   apiToken:
     type: string
     default: ''
-    description: 'Atlassian API token (id.atlassian.com → Security → API tokens).'
+    description: 'Atlassian API token for twg and Forge (id.atlassian.com, Security, API tokens). Rovo Dev does not accept this one, see `rovodevToken`.'
+    surface: env
+  rovodevToken:
+    type: string
+    default: ''
+    description: 'Rovo Dev scoped API token, which is a different token from `apiToken` (id.atlassian.com, Security, create an API token with scopes). acli rejects a classic token with a bare "authentication failed", so the two cannot share one variable.'
     surface: env
   bitbucketToken:
     type: string
@@ -41,7 +46,11 @@ options:
     surface: env
 feature:
   version: 1.2.2
-  persistentHomePaths: [.config/acli, .rovodev, .config/twg, .agents]
+  # `.config/@forge` carries the Forge CLI's own settings, including the
+  # analytics consent. Without it the consent prompt returns after every apply,
+  # and a prompt on stdin is where an agent's `forge` call stops dead.
+  persistentHomePaths:
+    [.config/acli, .rovodev, .config/twg, .config/@forge, .agents]
   vscodeExtensions: [Atlassian.atlascode]
   # Forge and twg are both keychain-free in a container: instead of a
   # `login` step (which needs libsecret, or a TTY for twg's OAuth),
@@ -54,6 +63,11 @@ feature:
   #     TWG_BBC_TOKEN for Bitbucket). Recent twg makes `twg login`
   #     OAuth-only and it aborts without a TTY, so these env vars are the
   #     only non-interactive auth path; there is no login hook.
+  #   - Rovo Dev DOES have a login step (acli keeps its own credentials), but
+  #     the token reaches it through the environment rather than being baked
+  #     into the feature layer: the layer is cached, so a baked token would
+  #     survive a rotation and `apply` would keep logging in with the old one
+  #     (ADR 0018). The post-create hook reads this var at container start.
   workspaceEnv:
     - whenOption: forge
       vars:
@@ -65,9 +79,17 @@ feature:
         TWG_SITE: '${instance}'
         TWG_TOKEN: '${apiToken}'
         TWG_BBC_TOKEN: '${bitbucketToken}'
+    - whenOption: rovodev
+      vars:
+        ATLASSIAN_ROVODEV_EMAIL: '${email}'
+        ATLASSIAN_ROVODEV_TOKEN: '${rovodevToken}'
+        # The site Rovo Dev bills against. Same `instance` twg gets as
+        # TWG_SITE; without it the first `acli rovodev run` asks for it on
+        # stdin, which is where an agent's first Rovo Dev call stops.
+        ATLASSIAN_ROVODEV_SITE: '${instance}'
 briefing:
   - whenOption: rovodev
-    text: 'Atlassian Rovo Dev — invoke via `acli rovodev`. Pre-authenticated against the Atlassian account configured in the feature options (shared with twg).'
+    text: 'Atlassian Rovo Dev, invoked via `acli rovodev`. Logged in at container start from its own scoped token (ATLASSIAN_ROVODEV_TOKEN), which is a different token from the one twg and Forge use. If a command reports no authentication, the token needs replacing on the host; you cannot fix it from in here.'
   - whenOption: twg
     text: 'Atlassian Teamwork Graph CLI (`twg`) — work-data access across Jira, Confluence, Bitbucket, JSM and Assets. Pre-authenticated. Sub-skills cover status rollups, engineering work, ops health and context discovery.'
   - whenOption: forge

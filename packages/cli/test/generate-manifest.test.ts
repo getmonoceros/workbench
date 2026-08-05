@@ -62,12 +62,14 @@ describe('descriptorToFeatureManifest', () => {
   it('atlassian: optionHints follow declaration order; briefing keeps whenOption', async () => {
     const m = await generate('atlassian');
     const x = m['x-monoceros'] as Record<string, unknown>;
-    // rovodev/twg/forge are surface:yml (not hints); the four credentials
-    // are env. workspaceEnv is CLI-side only and never reaches the manifest.
+    // rovodev/twg/forge are surface:yml (not hints); the five credentials
+    // are env. Rovo Dev carries its own token because acli only accepts a
+    // scoped one. workspaceEnv is CLI-side only and never reaches the manifest.
     expect(x.optionHints).toEqual([
       'instance',
       'email',
       'apiToken',
+      'rovodevToken',
       'bitbucketToken',
     ]);
     expect(x.workspaceEnv).toBeUndefined();

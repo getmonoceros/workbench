@@ -103,3 +103,14 @@ export const yellow = stderrPalette.yellow;
 export const red = stderrPalette.red;
 export const dim = stderrPalette.dim;
 export const sectionLine = stderrPalette.sectionLine;
+
+/**
+ * Heading for a prominent end-of-apply warning block: `⚠  Title` in bold
+ * yellow, followed by a blank line. One definition so every such block reads
+ * the same — the repo-access warning set this vocabulary and feature notes
+ * follow it, because a builder should not have to learn two shapes for "look
+ * at this, nothing is broken but something needs your attention".
+ */
+export function warnHeading(title: string): string[] {
+  return [bold(yellow(`⚠  ${title}`)), ''];
+}

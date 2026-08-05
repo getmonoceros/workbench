@@ -42,10 +42,11 @@ defaults:
     #   apiToken:
 
     # Atlassian (Rovo Dev / twg / Forge, and Bitbucket) authenticates
-    # from env, not here — set ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN /
-    # ATLASSIAN_INSTANCE (+ ATLASSIAN_BITBUCKET_TOKEN) in
-    # monoceros-config.env or a per-container <name>.env. See
-    # https://getmonoceros.build/docs/concepts/git-and-repos/.
+    # from env, not here — set ATLASSIAN_EMAIL / ATLASSIAN_INSTANCE plus the
+    # tokens you need in monoceros-config.env or a per-container <name>.env.
+    # Three of them, one per app: ATLASSIAN_API_TOKEN for twg and Forge,
+    # ATLASSIAN_ROVODEV_TOKEN for acli, ATLASSIAN_BITBUCKET_TOKEN for clone
+    # and push. See https://getmonoceros.build/docs/features/atlassian/.
 
 routing:
   # Host port the shared Traefik singleton binds. Default 80 →
