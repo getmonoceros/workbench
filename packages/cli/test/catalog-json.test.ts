@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadDescriptorCatalog } from '../src/catalog/load.js';
+import {
+  loadDescriptorCatalog,
+  parseDescriptorFile,
+} from '../src/catalog/load.js';
+import type { CatalogComponent } from '../src/catalog/load.js';
 import {
   buildCatalogJson,
   CATALOG_JSON_SCHEMA_VERSION,
@@ -47,6 +51,46 @@ describe('buildCatalogJson', () => {
     expect(atlassian?.presets).toEqual([...(atlassian?.presets ?? [])].sort());
     expect(atlassian?.presets).toContain('twg');
     expect(atlassian?.presets).toContain('rovodev');
+  });
+
+  /**
+   * The published catalog says how a connector is authenticated, so adding an
+   * OAuth one later is a `component.yml` and nothing else.
+   */
+  it('carries the interactive sign-in marker of an mcp connector', () => {
+    const catalog = new Map<string, CatalogComponent>();
+    catalog.set(
+      'signin',
+      parseDescriptorFile(
+        `
+id: signin
+category: mcp-server
+displayName: Sign In
+description: 'Signs in rather than taking a key.'
+mcpServer:
+  transport: http
+  auth: oauth
+  url: https://mcp.example.test/mcp
+`,
+        '/fake/signin/component.yml',
+        'signin',
+        'mcp-server',
+      ),
+    );
+    expect(buildCatalogJson(catalog, 'dev').mcpServers[0]).toMatchObject({
+      name: 'signin',
+      transport: 'http',
+      auth: 'oauth',
+    });
+  });
+
+  it('leaves the marker off a connector that takes a key', async () => {
+    const catalog = await loadDescriptorCatalog(componentsRoot);
+    const context7 = buildCatalogJson(catalog, 'dev').mcpServers.find(
+      (s) => s.name === 'context7',
+    );
+    expect(context7).toBeDefined();
+    expect(context7).not.toHaveProperty('auth');
   });
 
   it('emits sorted, deterministic output', async () => {

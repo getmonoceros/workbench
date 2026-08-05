@@ -36,6 +36,11 @@ export interface McpProbe {
   registeredFor: string[];
   /** Tool names the server advertises. Absent for stdio (not probed). */
   tools?: string[];
+  /**
+   * The server wants an interactive sign-in, so an unauthenticated probe
+   * cannot list its tools. Not a failure: see `needsSignIn`.
+   */
+  needsAuth?: boolean;
   /** Why the probe did not produce a tool list. */
   error?: string;
 }
@@ -180,6 +185,7 @@ async function buildProbes(
     const headers = plainStringMap(config.headers);
     const result = await probeRemoteServer(url, headers);
     if (result.tools) probe.tools = result.tools;
+    if (result.needsAuth) probe.needsAuth = true;
     if (result.error !== undefined) probe.error = result.error;
     probes.push(probe);
   }
@@ -203,7 +209,11 @@ function plainStringMap(value: unknown): Record<string, string> {
 async function probeRemoteServer(
   url: string,
   headers: Record<string, string>,
-): Promise<{ tools?: string[]; error?: string }> {
+): Promise<{ tools?: string[]; needsAuth?: boolean; error?: string }> {
+  // Whether the registration carries a credential at all. It decides how a
+  // 401 reads: with a credential it is a bad one, without it the server is
+  // simply asking for the sign-in this probe can never perform.
+  const carriesCredential = Object.keys(headers).length > 0;
   const base = {
     'content-type': 'application/json',
     // Both, because a server may answer either as JSON or as an SSE stream.
@@ -226,7 +236,10 @@ async function probeRemoteServer(
       }),
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
-    if (!init.ok) return { error: `HTTP ${init.status} on initialize` };
+    if (!init.ok) {
+      if (needsSignIn(init, carriesCredential)) return { needsAuth: true };
+      return { error: `HTTP ${init.status} on initialize` };
+    }
     const initBody = parseRpc(await init.text());
     if (initBody?.error) return { error: rpcError(initBody.error) };
     const session = init.headers.get('mcp-session-id');
@@ -246,7 +259,10 @@ async function probeRemoteServer(
       }),
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
-    if (!list.ok) return { error: `HTTP ${list.status} on tools/list` };
+    if (!list.ok) {
+      if (needsSignIn(list, carriesCredential)) return { needsAuth: true };
+      return { error: `HTTP ${list.status} on tools/list` };
+    }
     const listBody = parseRpc(await list.text());
     if (listBody?.error) return { error: rpcError(listBody.error) };
     const tools = listBody?.result?.tools;
@@ -262,6 +278,33 @@ async function probeRemoteServer(
     const message = err instanceof Error ? err.message : String(err);
     return { error: message.includes('timeout') ? 'timed out' : message };
   }
+}
+
+/**
+ * Whether a refused response means "sign in first" rather than "this is
+ * broken". Three conditions, and each one earns its place:
+ *
+ *   - `401`/`403`, because that is what an unauthenticated MCP request gets.
+ *   - a `WWW-Authenticate` header, because that is the server naming a way in.
+ *     Without it a `401` is just a refusal and stays a failure, or the
+ *     tolerance would swallow real breakage.
+ *   - no credential in the registration. A server we DO send a token to and
+ *     that still refuses us has a bad token, which is exactly the finding a
+ *     builder needs. Only a registration with nothing to send can be waiting
+ *     for the interactive sign-in.
+ *
+ * What this deliberately does not do is ask whether the sign-in has already
+ * happened. It cannot: the probe holds no grant either way, so the answer is
+ * `401` in a freshly built container and in one whose agents have been signed
+ * in for weeks. Reading each agent's credential store to tell them apart would
+ * mean tracking three private file formats and a fourth on the day a new agent
+ * lands. So the report states what is true in both cases — this one signs in
+ * interactively — and leaves the doing to the builder.
+ */
+function needsSignIn(response: Response, carriesCredential: boolean): boolean {
+  if (carriesCredential) return false;
+  if (response.status !== 401 && response.status !== 403) return false;
+  return response.headers.get('www-authenticate') !== null;
 }
 
 interface RpcBody {

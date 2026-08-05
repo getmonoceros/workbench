@@ -351,6 +351,16 @@ export const McpBlockSchema = z
     url: z.string().min(1).optional(),
     /** `http` / `sse`: request headers, where a bearer token goes. */
     headers: z.record(z.string(), z.string()).optional(),
+    /**
+     * `oauth`: the server authenticates interactively. There is no credential
+     * to put in the env file; the builder signs in once inside the container
+     * and the agent keeps the grant. Two things follow from the marker: the
+     * yml header says so instead of leaving a credential-less entry
+     * unexplained, and a `${option}` that resolves empty drops its header or
+     * env key rather than failing the apply — which is what lets a connector
+     * offer a token as the alternative route to the same server.
+     */
+    auth: z.literal('oauth').optional(),
   })
   .superRefine((data, ctx) => {
     validateMcpTransportFields(data, ctx);

@@ -1252,6 +1252,10 @@ function renderMcpServers(probes: readonly McpProbe[], p: Palette): string[] {
     out.push(`  ${p.cyan(probe.name)} ${p.dim(`→ ${agents}`)}`);
     if (probe.error !== undefined) {
       out.push(`      ${p.yellow('⚠')} ${probe.error}`);
+    } else if (probe.needsAuth) {
+      out.push(
+        `      ${p.dim('signs in interactively; authenticate once inside the container')}`,
+      );
     } else if (probe.tools) {
       out.push(`      tools: ${probe.tools.join(', ')}`);
     } else if (probe.transport === 'stdio') {

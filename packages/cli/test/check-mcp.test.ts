@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { checkMcpServers } from '../src/check/mcp.js';
 import { validateConfig } from '../src/config/schema.js';
 
@@ -135,5 +135,81 @@ describe('checkMcpServers', () => {
       },
     );
     expect(result).toEqual({ findings: [], probes: [] });
+  });
+
+  /**
+   * A server that authenticates interactively refuses the probe, because the
+   * probe holds no grant. That must read as "sign in", but only where a
+   * sign-in is what is actually missing — a refused request that carried a
+   * token is a bad token and has to stay a finding.
+   */
+  describe('a refused probe', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    /** Answer every probe request with one status and set of headers. */
+    const stubFetch = (status: number, headers: Record<string, string>) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response('', { status, headers })),
+      );
+    };
+
+    const probeLinear = async (config: Record<string, unknown>) => {
+      await writeClaudeConfig({ linear: config });
+      return checkMcpServers(
+        root,
+        'acme',
+        validateConfig({
+          schemaVersion: 1,
+          name: 'acme',
+          mcpServers: [
+            {
+              name: 'linear',
+              transport: 'http',
+              url: 'https://mcp.linear.app/mcp',
+            },
+          ],
+        }),
+        { [CLAUDE_REF]: {} },
+        {},
+      );
+    };
+
+    it('reads as a pending sign-in when nothing was sent to authenticate with', async () => {
+      stubFetch(401, { 'www-authenticate': 'Bearer realm="OAuth"' });
+      const { findings, probes } = await probeLinear({
+        type: 'http',
+        url: 'https://mcp.linear.app/mcp',
+      });
+      expect(probes[0]!.needsAuth).toBe(true);
+      expect(probes[0]!.error).toBeUndefined();
+      expect(findings).toEqual([]);
+    });
+
+    it('stays a failure when the server names no way in', async () => {
+      stubFetch(401, {});
+      const { findings, probes } = await probeLinear({
+        type: 'http',
+        url: 'https://mcp.linear.app/mcp',
+      });
+      expect(probes[0]!.needsAuth).toBeUndefined();
+      expect(probes[0]!.error).toBe('HTTP 401 on initialize');
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.what).toMatch(/did not answer/);
+    });
+
+    it('stays a failure when a credential was sent and refused', async () => {
+      stubFetch(401, { 'www-authenticate': 'Bearer realm="OAuth"' });
+      const { findings, probes } = await probeLinear({
+        type: 'http',
+        url: 'https://mcp.linear.app/mcp',
+        headers: { Authorization: 'Bearer stale-token' },
+      });
+      expect(probes[0]!.needsAuth).toBeUndefined();
+      expect(probes[0]!.error).toBe('HTTP 401 on initialize');
+      expect(findings).toHaveLength(1);
+    });
   });
 });

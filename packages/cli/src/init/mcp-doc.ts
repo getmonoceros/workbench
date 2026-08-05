@@ -92,6 +92,15 @@ export function buildMcpHeaderLines(
       ? 'Runs inside the container.'
       : 'Reached over the network, so this one leaves the container boundary.',
   );
+  if (descriptor.mcpServer?.auth === 'oauth') {
+    // Without this, an entry with no credential reads like an entry someone
+    // forgot to finish. Say where the sign-in happens instead.
+    paragraphs.push(
+      'Signs in interactively, so there is no key to fill here. Start an agent ' +
+        'inside the container once and complete the sign-in in the browser; it ' +
+        'is kept from then on.',
+    );
+  }
   for (const note of descriptor.usageNotes) {
     const trimmed = note.trim();
     if (trimmed.length > 0) paragraphs.push(trimmed);

@@ -41,6 +41,29 @@ mcpServer:
   args: ['-y', 'local-thing', '--mode=\${mode}']
 `;
 
+/**
+ * An OAuth connector that also accepts a token, which is the case the marker
+ * exists for: the header is rendered when a token is there and dropped when it
+ * is not, instead of failing the apply.
+ */
+const OAUTH_YML = `
+id: linear
+category: mcp-server
+displayName: Linear
+description: 'Issues and projects.'
+options:
+  apiKey:
+    type: string
+    default: ''
+    surface: env
+mcpServer:
+  transport: http
+  auth: oauth
+  url: https://mcp.linear.app/mcp
+  headers:
+    Authorization: 'Bearer \${apiKey}'
+`;
+
 function catalogOf(...ymls: string[]): Map<string, CatalogComponent> {
   const out = new Map<string, CatalogComponent>();
   for (const yml of ymls) {
@@ -229,6 +252,23 @@ describe('resolveMcpServers', () => {
     ).toThrow(
       /option 'apiKey' is empty, but headers.CONTEXT7_API_KEY needs it/,
     );
+  });
+
+  it('registers an oauth connector with no credential at all', () => {
+    const { servers } = resolveMcpServers(
+      [entry({ name: 'linear' })],
+      catalogOf(OAUTH_YML),
+    );
+    expect(servers[0]!.url).toBe('https://mcp.linear.app/mcp');
+    expect(servers[0]!.headers).toBeUndefined();
+  });
+
+  it('still renders the oauth connector header when a token is given', () => {
+    const { servers } = resolveMcpServers(
+      [entry({ name: 'linear', options: { apiKey: 'lin_api_1' } })],
+      catalogOf(OAUTH_YML),
+    );
+    expect(servers[0]!.headers).toEqual({ Authorization: 'Bearer lin_api_1' });
   });
 
   it('reports an unknown option against the connector', () => {

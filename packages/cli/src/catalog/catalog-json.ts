@@ -63,6 +63,12 @@ export interface CatalogJsonMcpServer extends CatalogJsonBase {
    * The command / url itself stays internal, like a service's image.
    */
   transport: 'stdio' | 'http' | 'sse';
+  /**
+   * Present when the server authenticates interactively. Carried for the same
+   * reason as `transport`: it changes what a builder has to have ready before
+   * adding the connector, from a key to a browser sign-in inside the container.
+   */
+  auth?: 'oauth';
 }
 
 export interface CatalogJson {
@@ -157,7 +163,12 @@ export function buildCatalogJson(
     } else if (d.category === 'feature') {
       features.push({ ...base, presets: Object.keys(d.presets ?? {}).sort() });
     } else if (d.category === 'mcp-server' && d.mcpServer) {
-      mcpServers.push({ ...base, transport: d.mcpServer.transport });
+      const server: CatalogJsonMcpServer = {
+        ...base,
+        transport: d.mcpServer.transport,
+      };
+      if (d.mcpServer.auth !== undefined) server.auth = d.mcpServer.auth;
+      mcpServers.push(server);
     }
   }
 

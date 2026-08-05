@@ -155,12 +155,30 @@ function resolveFromDescriptor(
   if (block.args !== undefined) {
     out.args = block.args.map((arg, i) => render(arg, `args[${i}]`));
   }
+  // On an OAuth connector a credential is optional by definition, so a key
+  // whose option is empty is dropped instead of failing the apply. Only
+  // headers and env can be dropped; a url or a command has nowhere to go.
+  const optional = block.auth === 'oauth';
+  const renderEntries = (
+    input: Record<string, string>,
+    prefix: string,
+  ): Record<string, string> => {
+    const rendered: Record<string, string> = {};
+    for (const [key, value] of Object.entries(input)) {
+      if (optional && hasEmptyOption(value, options)) continue;
+      rendered[key] = render(value, `${prefix}.${key}`);
+    }
+    return rendered;
+  };
+
   if (block.env !== undefined) {
-    out.env = mapValues(block.env, (v, k) => render(v, `env.${k}`));
+    const env = renderEntries(block.env, 'env');
+    if (Object.keys(env).length > 0) out.env = env;
   }
   if (block.url !== undefined) out.url = render(block.url, 'url');
   if (block.headers !== undefined) {
-    out.headers = mapValues(block.headers, (v, k) => render(v, `headers.${k}`));
+    const headers = renderEntries(block.headers, 'headers');
+    if (Object.keys(headers).length > 0) out.headers = headers;
   }
   return problems.length === before ? out : null;
 }
@@ -207,12 +225,24 @@ function isTruthyOption(value: string | undefined): boolean {
   return v !== '' && v !== 'false' && v !== '0';
 }
 
+/** Whether a template references an option that resolved to nothing. */
+function hasEmptyOption(raw: string, options: Record<string, string>): boolean {
+  for (const match of raw.matchAll(/\$\{([A-Za-z0-9_]+)\}/g)) {
+    if (options[match[1]!] === '') return true;
+  }
+  return false;
+}
+
 /**
  * Fill `${option}` tokens. An option that resolves empty is a hard error and
  * not an empty string in the output: a connector registered with a blank
  * `Authorization` header is present in the agent's tool list and fails on
  * first use, which is the failure mode that looks like a working container
  * (see #82). Better to name the missing value while the builder is right here.
+ *
+ * An `auth: oauth` connector is the exception, and its caller keeps those
+ * fields away from here: there the credential is optional, because the sign-in
+ * inside the container is the other way in.
  */
 function renderTemplate(
   raw: string,
@@ -240,15 +270,6 @@ function renderTemplate(
     }
     return value;
   });
-}
-
-function mapValues(
-  input: Record<string, string>,
-  fn: (value: string, key: string) => string,
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(input).map(([k, v]) => [k, fn(v, k)]),
-  );
 }
 
 function unknownConnectorMessage(
