@@ -311,6 +311,19 @@ export type WorkspaceEnvBlock = z.infer<typeof WorkspaceEnvBlockSchema>;
 export const FeatureBlockSchema = z.object({
   /** Publishable feature version (devcontainer-feature.json `version`). */
   version: z.string().min(1),
+  /**
+   * devcontainer `installsAfter`: features this one must not run before. Only
+   * has an effect when the other feature is in the same container, so it is a
+   * hint and never a requirement.
+   *
+   * Every feature that installs a global npm package needs
+   * `ghcr.io/devcontainers/features/node` here. Without it the install runs
+   * against the Node baked into the runtime image while the yml pins another
+   * one, and npm resolves the version for a Node that is about to be replaced:
+   * a workbench on `node:26` got `@forge/cli` 13.0.0, the newest release that
+   * the base image's 22.23.1 satisfies, and then ran it on 26.
+   */
+  installsAfter: z.array(z.string().min(1)).optional(),
   persistentHomePaths: z.array(z.string().min(1)).optional(),
   persistentHomeFiles: z.array(PersistentHomeFileSchema).optional(),
   vscodeExtensions: z.array(z.string()).optional(),

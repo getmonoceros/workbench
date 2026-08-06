@@ -67,6 +67,9 @@ export function descriptorToFeatureManifest(
     version: feat.version,
     description: descriptor.description,
   };
+  if (feat.installsAfter && feat.installsAfter.length > 0) {
+    manifest.installsAfter = feat.installsAfter;
+  }
   if (descriptor.documentationURL !== undefined) {
     manifest.documentationURL = descriptor.documentationURL;
   }

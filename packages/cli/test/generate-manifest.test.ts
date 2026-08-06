@@ -31,7 +31,11 @@ describe('descriptorToFeatureManifest', () => {
     expect(m.$schema).toMatch(/devContainerFeature\.schema\.json$/);
     expect(m.id).toBe('claude-code');
     expect(m.name).toBe('Claude Code');
-    expect(m.version).toBe('1.2.0');
+    expect(m.version).toBe('1.2.1');
+    // Installs `@anthropic-ai/claude-code` globally, so it must not run before
+    // the node feature replaces the runtime image's Node (a pinned
+    // `node:<major>` would otherwise resolve the package for the wrong one).
+    expect(m.installsAfter).toEqual(['ghcr.io/devcontainers/features/node']);
     expect(m.documentationURL).toBe(
       'https://docs.anthropic.com/en/docs/claude-code',
     );

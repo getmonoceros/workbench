@@ -333,17 +333,29 @@ if [ "${FORGE}" = "true" ]; then
     echo "[atlassian/forge] ERROR: install completed but \`forge\` is not on PATH" >&2
     exit 1
   }
-  FORGE_INSTALLED="$(forge --version 2>/dev/null | head -1 | tr -d '[:space:]')"
+  # `forge --version` is not one line. On a Node it considers unsupported it
+  # prints two warning lines first, and piping that into `head -1` closes the
+  # pipe early: under `pipefail` the assignment fails, `set -e` takes the whole
+  # feature down, and the build says "failed to install" with nothing above it.
+  # So capture the output whole and pick the version out of it. The first line
+  # is not the version either, which is the other half of the same bug: it used
+  # to end up in the note as the installed "version".
+  FORGE_VERSION_OUT="$(forge --version 2>/dev/null || true)"
+  FORGE_INSTALLED=""
+  if [[ "${FORGE_VERSION_OUT}" =~ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+    FORGE_INSTALLED="${BASH_REMATCH[1]}"
+  fi
   FORGE_LATEST="$(npm view @forge/cli version 2>/dev/null | tr -d '[:space:]' || true)"
-  if [ -n "${FORGE_LATEST}" ] && [ "${FORGE_INSTALLED}" != "${FORGE_LATEST}" ]; then
+  if [ -n "${FORGE_INSTALLED}" ] && [ -n "${FORGE_LATEST}" ] &&
+    [ "${FORGE_INSTALLED}" != "${FORGE_LATEST}" ]; then
     echo "[atlassian/forge] installed ${FORGE_INSTALLED}, not ${FORGE_LATEST}: that version declares a Node range this container's $(node --version) does not satisfy, so npm kept the newest compatible one."
     # And again as a feature note, so it reaches the end of `monoceros apply`.
     # The build log is not a channel: it scrolls past behind the spinner, and a
     # cached rebuild does not produce it at all while this still holds.
     mkdir -p /usr/local/share/monoceros/notes.d
     cat >/usr/local/share/monoceros/notes.d/atlassian-forge.txt <<NOTE
-forge is ${FORGE_INSTALLED}, not the latest ${FORGE_LATEST}: that release excludes this container's Node ($(node --version)) in its engines field, so npm installed the newest compatible one. \`forge\` will say it is out of date.
-To get the newer one, pin a different Node for this workbench (\`languages: [node:<version>]\`) and re-apply.
+forge is ${FORGE_INSTALLED}, not the latest ${FORGE_LATEST}: this container runs Node $(node --version), which ${FORGE_LATEST} excludes in its engines field, so npm installed the newest one that fits. \`forge\` will say it is out of date.
+Pinning a different Node major for this workbench (\`monoceros add-language <container> node:<major>\`, then re-apply) gets the newer forge.
 NOTE
   else
     rm -f /usr/local/share/monoceros/notes.d/atlassian-forge.txt 2>/dev/null || true
