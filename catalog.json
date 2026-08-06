@@ -33,7 +33,7 @@
     {
       "name": "java",
       "displayName": "Java",
-      "description": "A JDK plus Maven and Gradle by default, where the upstream feature installs only the JDK, so this is build-ready as it stands. The JDK major is the `version:` below (`latest`, 21, 17, 11, 8); on the command line it is `java:21`.",
+      "description": "A JDK plus Maven and Gradle by default, where the upstream feature installs only the JDK, so this is build-ready as it stands. The JDK major is the `version:` field in the yml (`latest`, 21, 17, 11, 8); on the command line it is `java:21`.",
       "options": [
         {
           "key": "installGradle",

@@ -27,7 +27,7 @@ export const listComponentsCommand = defineCommand({
     name: 'list-components',
     group: 'discovery',
     description:
-      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=… / --with-mcp-servers=…`, grouped by category (Languages, Services, Features, MCP servers). Component names render in cyan, descriptions in default colour; when piped, the formatting drops out and lines become `name<TAB>description` for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json.',
+      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=… / --with-mcp-servers=…`, grouped by category (Languages, Services, Features, MCP servers). On a terminal the names render in cyan against a short label, in aligned columns; when piped, the formatting drops out and lines become `name<TAB>description`, the full sentence, for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json.',
   },
   args: {
     json: {
@@ -60,13 +60,17 @@ export const listComponentsCommand = defineCommand({
       const isTty = process.stdout.isTTY ?? false;
 
       // Group entries by category for sectioned rendering.
+      // Two columns, because the two consumers want different things: a
+      // terminal wants a short label it can align, a pipe wants the sentence
+      // that says what the component is (`dotnet<TAB>.NET` tells a grep
+      // nothing).
       const byCategory = new Map<
         string,
-        Array<{ name: string; desc: string }>
+        Array<{ name: string; label: string; desc: string }>
       >();
       for (const c of catalog.values()) {
         const list = byCategory.get(c.category) ?? [];
-        list.push({ name: c.name, desc: c.displayName });
+        list.push({ name: c.name, label: c.displayName, desc: c.description });
         byCategory.set(c.category, list);
       }
       for (const list of byCategory.values()) {
@@ -106,9 +110,9 @@ export const listComponentsCommand = defineCommand({
         process.stdout.write(`${fmt.sectionLine(CATEGORY_LABELS[cat])}\n\n`);
         const nameWidth = Math.max(...items.map((i) => i.name.length));
         const gutter = 2;
-        for (const { name, desc } of items) {
+        for (const { name, label } of items) {
           const pad = ' '.repeat(nameWidth - name.length + gutter);
-          process.stdout.write(`  ${fmt.cyan(name)}${pad}${desc}\n`);
+          process.stdout.write(`  ${fmt.cyan(name)}${pad}${label}\n`);
         }
       }
       process.exit(0);
