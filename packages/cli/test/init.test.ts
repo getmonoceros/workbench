@@ -187,10 +187,12 @@ describe('runInit', () => {
     expect(text).toContain('mcpServers:');
     expect(text).toContain('  - name: context7');
     expect(text).toMatch(/^\s+apiKey: \$\{CONTEXT7_API_KEY\}\s*$/m);
-    // Header prose above the entry, at column 0 like a feature's, and it says
-    // which side of the container boundary the server sits on.
+    // Header prose above the entry, at column 0 like a feature's: what it is,
+    // then the page that documents it. Not a summary of that page.
     expect(text).toMatch(/^# Context7: Current library docs\./m);
-    expect(text).toMatch(/^# Reached over the network/m);
+    expect(text).toMatch(
+      /^# https:\/\/getmonoceros\.build\/docs\/mcp-servers\/context7\/$/m,
+    );
     expect(text).not.toMatch(/^[# \t]*#[ \t]+#/m); // no two-`#` per line
     const parsed = parseConfig(text);
     expect(parsed.config.mcpServers).toEqual([

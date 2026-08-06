@@ -1,7 +1,7 @@
 id: forge
 category: mcp-server
 displayName: Atlassian Forge
-description: 'Authoritative Forge guidance: which module fits, what the manifest has to say, and how the UI Kit works, for an agent building a Forge app.'
+description: "Atlassian's own Forge guidance: which module fits, what the manifest needs, how the UI Kit works."
 documentationURL: https://developer.atlassian.com/platform/forge/ai-development-toolkit/forge-mcp/
 mcpServer:
   transport: http

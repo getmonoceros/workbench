@@ -76,51 +76,32 @@ export function buildMcpConnectorDoc(descriptor: Descriptor): McpConnectorDoc {
 }
 
 /**
- * The prose above an `mcpServers:` entry, same shape as a feature's: what it is, what
- * its options are, where to read more. Plus the transport, because whether the
- * server runs in the container or is reached over the network is the one thing
- * a builder should not have to look up elsewhere.
+ * The prose above an `mcpServers:` entry: what the server is, and where the
+ * page that documents it lives. Deliberately not a summary of that page. The
+ * transport, the option table and the sign-in procedure all used to be written
+ * out here, which cost nine comment lines above a one-line entry and went stale
+ * separately from the docs.
+ *
+ * The one exception is the sign-in marker. An entry with no credential
+ * otherwise reads like an entry someone forgot to finish, and that confusion
+ * happens while looking at the yml, not while reading a page.
  */
 export function buildMcpHeaderLines(
   descriptor: Descriptor,
   width: number,
 ): string[] {
   const paragraphs: string[] = [];
-  paragraphs.push(`${descriptor.displayName}: ${descriptor.description}`);
+  const what = `${descriptor.displayName}: ${descriptor.description}`;
   paragraphs.push(
-    descriptor.mcpServer?.transport === 'stdio'
-      ? 'Runs inside the container.'
-      : 'Reached over the network, so this one leaves the container boundary.',
+    descriptor.mcpServer?.auth === 'oauth'
+      ? `${what} Signs in interactively, so there is no key to fill.`
+      : what,
   );
-  if (descriptor.mcpServer?.auth === 'oauth') {
-    // Without this, an entry with no credential reads like an entry someone
-    // forgot to finish. Say where the sign-in happens instead.
-    paragraphs.push(
-      'Signs in interactively, so there is no key to fill here. Start an agent ' +
-        'inside the container once and complete the sign-in in the browser; it ' +
-        'is kept from then on.',
-    );
-  }
   for (const note of descriptor.usageNotes) {
     const trimmed = note.trim();
     if (trimmed.length > 0) paragraphs.push(trimmed);
   }
-  const optionParts = Object.entries(descriptor.options)
-    .filter(([, spec]) => spec.surface !== 'silent')
-    .map(([key, spec]) => {
-      const short = spec.description
-        ? shortenDescription(spec.description)
-        : undefined;
-      return short ? `${key} (${short})` : key;
-    });
-  if (optionParts.length > 0) {
-    paragraphs.push(`Options: ${optionParts.join(', ')}.`);
-  }
-  if (descriptor.documentationURL) {
-    paragraphs.push(
-      `See ${descriptor.documentationURL} for further information.`,
-    );
-  }
+  paragraphs.push(mcpServerDocsURL(descriptor.name ?? descriptor.id));
   const out: string[] = [];
   for (const para of paragraphs) {
     for (const line of wrapToComment(para, width)) out.push(line);
@@ -128,10 +109,15 @@ export function buildMcpHeaderLines(
   return out;
 }
 
-/** First sentence of an option description, punctuation stripped. */
-function shortenDescription(desc: string): string {
-  const first = desc.split(/(?<=[.!?])\s+/)[0]?.trim() ?? desc.trim();
-  return first.replace(/[.!?]+$/, '').trim();
+/**
+ * The connector's own page in the user docs. Every curated connector has one,
+ * added in the same change as its descriptor, so this is derived rather than
+ * carried per component. The provider's own URL stays in `documentationURL`,
+ * where the catalog and the website read it; the page linked here is the one
+ * that covers the connector as Monoceros ships it.
+ */
+export function mcpServerDocsURL(name: string): string {
+  return `https://getmonoceros.build/docs/mcp-servers/${name}/`;
 }
 
 /** yaml-lib `commentBefore` form: one leading space per line. */

@@ -550,7 +550,7 @@
     {
       "name": "figma",
       "displayName": "Figma",
-      "description": "The design as the agent builds against it: layout, components and design tokens read from the Figma file rather than guessed from a screenshot.",
+      "description": "The design read from the Figma file: layout, components and design tokens, instead of a screenshot to guess from.",
       "options": [],
       "documentationURL": "https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Figma-MCP-server",
       "transport": "http",
@@ -559,7 +559,7 @@
     {
       "name": "forge",
       "displayName": "Atlassian Forge",
-      "description": "Authoritative Forge guidance: which module fits, what the manifest has to say, and how the UI Kit works, for an agent building a Forge app.",
+      "description": "Atlassian's own Forge guidance: which module fits, what the manifest needs, how the UI Kit works.",
       "options": [],
       "documentationURL": "https://developer.atlassian.com/platform/forge/ai-development-toolkit/forge-mcp/",
       "transport": "http"
