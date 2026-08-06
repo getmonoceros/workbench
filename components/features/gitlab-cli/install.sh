@@ -49,8 +49,15 @@ TMP="$(mktemp -d)"
 curl -fsSL -o "${TMP}/glab.tar.gz" "${URL}"
 tar -xzf "${TMP}/glab.tar.gz" -C "${TMP}"
 
-# Locate the binary in the tarball rather than assuming its layout.
-BIN="$(find "${TMP}" -type f -name glab | head -n1)"
+# Locate the binary in the tarball rather than assuming its layout. `-quit`
+# rather than `| head -n1`, which stops the walk at the first hit instead of
+# relying on `head` to close the pipe: under `pipefail` the exit status of a
+# producer that loses that race would fail the assignment, and `set -e` would
+# take the feature down with no output. Not a bug you can trigger here (find
+# dies of SIGPIPE, and even 4000 matches finish writing before head exits), but
+# the same shape that did take the atlassian feature down, where the producer
+# was a Node CLI and Node reports the closed pipe as exit 1.
+BIN="$(find "${TMP}" -type f -name glab -print -quit)"
 if [ -z "${BIN}" ]; then
   echo "[gitlab-cli] ERROR: glab binary not found in the release tarball" >&2
   exit 1

@@ -21,7 +21,7 @@ options:
     description: 'Self-managed/Dedicated GitLab host (e.g. `gitlab.example.com`); empty targets gitlab.com. Exported as GITLAB_HOST, so every `glab` command uses it without `--hostname`.'
     surface: yml
 feature:
-  version: 1.0.0
+  version: 1.0.1
   persistentHomePaths: [.config/glab-cli]
   vscodeExtensions: [GitLab.gitlab-workflow]
   # glab reads GITLAB_TOKEN / GITLAB_HOST from the environment. Handing
