@@ -19,8 +19,14 @@ import {
 import {
   featureOptionHints,
   featureOptionVarName,
+  FEATURE_HEADER_WIDTH,
 } from '../init/feature-doc.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
+import {
+  buildLanguageHeaderLines,
+  buildServiceHeaderLines,
+  substituteName,
+} from '../init/catalog-header.js';
 import {
   buildMcpConnectorDoc,
   findMcpConnector,
@@ -278,6 +284,12 @@ export function runAddLanguage(input: AddLanguageInput): Promise<ModifyResult> {
     addLanguageToDoc(doc, spec.name, {
       ...(version !== undefined ? { version } : {}),
       ...(options && Object.keys(options).length > 0 ? { options } : {}),
+      // Same header `init` writes: one page per language, whatever version
+      // this entry pins.
+      headerLines: buildLanguageHeaderLines(
+        spec.name,
+        FEATURE_HEADER_WIDTH,
+      ).map((l) => substituteName(l, input.name)),
     }),
   );
 }
@@ -306,6 +318,8 @@ export async function runAddService(
   // Render the block under the resolved name. For curated services the
   // expansion carries the catalog name, so override it before rendering.
   const custom = curated ? null : renderCustomService(name, arg);
+  // The scaffold's `values resolved from <name>.env` names this container.
+  if (custom) custom.comment = substituteName(custom.comment, input.name);
   const bodyLines = curated
     ? renderServiceObjectBody({ ...expandCuratedService(arg), name })
     : custom!.bodyLines;
@@ -323,6 +337,14 @@ export async function runAddService(
       image,
       bodyLines,
       scaffoldComment,
+      // Built from the catalog name, not `--as`: two postgres services under
+      // different names are documented by the one postgres page, and the
+      // product name in the header is what explains that to whoever renamed it.
+      curated
+        ? buildServiceHeaderLines(arg, FEATURE_HEADER_WIDTH).map((l) =>
+            substituteName(l, input.name),
+          )
+        : undefined,
     );
     if (r.outcome === 'conflict') {
       throw new Error(

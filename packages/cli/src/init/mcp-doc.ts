@@ -1,5 +1,6 @@
 import type { Descriptor } from '../catalog/descriptor.js';
 import type { CatalogComponent } from '../catalog/load.js';
+import { componentDocsURL } from './docs-url.js';
 import {
   FEATURE_HEADER_WIDTH,
   featureOptionVarName,
@@ -101,23 +102,14 @@ export function buildMcpHeaderLines(
     const trimmed = note.trim();
     if (trimmed.length > 0) paragraphs.push(trimmed);
   }
-  paragraphs.push(mcpServerDocsURL(descriptor.name ?? descriptor.id));
+  paragraphs.push(
+    componentDocsURL('mcp-server', descriptor.name ?? descriptor.id),
+  );
   const out: string[] = [];
   for (const para of paragraphs) {
     for (const line of wrapToComment(para, width)) out.push(line);
   }
   return out;
-}
-
-/**
- * The connector's own page in the user docs. Every curated connector has one,
- * added in the same change as its descriptor, so this is derived rather than
- * carried per component. The provider's own URL stays in `documentationURL`,
- * where the catalog and the website read it; the page linked here is the one
- * that covers the connector as Monoceros ships it.
- */
-export function mcpServerDocsURL(name: string): string {
-  return `https://getmonoceros.build/docs/mcp-servers/${name}/`;
 }
 
 /** yaml-lib `commentBefore` form: one leading space per line. */

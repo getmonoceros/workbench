@@ -232,6 +232,10 @@ export function runtimeSupportsReadyTimeout(version?: string): boolean {
 
 export interface LanguageEntry {
   id: string;
+  /** Product name for the yml header, e.g. `Node.js` for `node`. */
+  displayName: string;
+  /** One-or-two-sentence descriptor prose for the yml header. */
+  description: string;
   feature: string;
   /**
    * Feature options always applied for this language, on top of which
@@ -339,6 +343,8 @@ export const LANGUAGE_CATALOG: Readonly<Record<string, LanguageEntry>> =
         const ymlOptions = descriptorYmlOptionDefaults(c.descriptor.options);
         const entry: LanguageEntry = {
           id: key,
+          displayName: c.descriptor.displayName,
+          description: c.descriptor.description,
           feature: c.descriptor.language!.feature,
           ...(Object.keys(defaults).length > 0
             ? { defaultOptions: defaults }
@@ -393,6 +399,10 @@ export function parseLanguageSpec(spec: string): LanguageSpec | null {
 
 export interface ServiceEntry {
   id: string;
+  /** Product name for the yml header, e.g. `PostgreSQL` for `postgres`. */
+  displayName: string;
+  /** One-or-two-sentence descriptor prose for the yml header. */
+  description: string;
   image: string;
   /**
    * Literal dev-default values for the service's env vars. These are
@@ -542,6 +552,8 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
             : {}),
           ...(svc.dataMount ? { dataMount: svc.dataMount } : {}),
           ...(svc.user ? { user: svc.user } : {}),
+          displayName: c.descriptor.displayName,
+          description: c.descriptor.description,
           defaultPort: svc.defaultPort,
           ...(svc.vscodeExtensions
             ? { vscodeExtensions: svc.vscodeExtensions }
@@ -603,6 +615,30 @@ export function serviceDefersStart(name: string): boolean {
  */
 export function curatedServiceExampleVolumes(name: string): readonly string[] {
   return SERVICE_CATALOG[name]?.exampleVolumes ?? [];
+}
+
+/**
+ * Product name and prose of a curated language, for the header above its entry.
+ * Undefined for a name the catalog does not carry.
+ */
+export function curatedLanguageHeader(
+  name: string,
+): { displayName: string; description: string } | undefined {
+  const entry = LANGUAGE_CATALOG[name];
+  if (!entry) return undefined;
+  return { displayName: entry.displayName, description: entry.description };
+}
+
+/**
+ * Product name and prose of a curated service, for the header above its block.
+ * Undefined for a custom image, which has neither.
+ */
+export function curatedServiceHeader(
+  name: string,
+): { displayName: string; description: string } | undefined {
+  const entry = SERVICE_CATALOG[name];
+  if (!entry) return undefined;
+  return { displayName: entry.displayName, description: entry.description };
 }
 
 /**

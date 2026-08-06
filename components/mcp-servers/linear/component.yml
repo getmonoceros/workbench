@@ -1,7 +1,7 @@
 id: linear
 category: mcp-server
 displayName: Linear
-description: 'Linear issues, projects and cycles, so the work an agent picks up is the work the team actually planned.'
+description: 'Issues, projects and cycles, so the work an agent picks up is the work the team actually planned.'
 documentationURL: https://linear.app/docs/mcp
 mcpServer:
   transport: http

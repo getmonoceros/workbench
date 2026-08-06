@@ -163,10 +163,24 @@ describe('runInit', () => {
     expect(text).toMatch(/^\s+options:\s*$/m);
     expect(text).toMatch(/^\s+apiKey: \$\{CLAUDE_CODE_API_KEY\}\s*$/m);
     expect(text).not.toMatch(/^[# \t]*#[ \t]+#/m); // no two-`#` per line anywhere
-    // Header comment block above the `- ref:` line carries the
-    // feature's manifest description verbatim and lists its options
-    // synthesized from `optionDescriptions`.
-    expect(text).toMatch(/^# Options: apiKey \(/m);
+    // Header comment block above the `- ref:` line carries the feature's
+    // manifest description verbatim and then its page. Not the option table:
+    // the options are right below with their values, and what they mean is on
+    // the page.
+    expect(text).toMatch(
+      /^# https:\/\/getmonoceros\.build\/docs\/features\/claude\/$/m,
+    );
+    expect(text).not.toMatch(/^# Options: /m);
+    expect(text).not.toMatch(/for further information/);
+    // A curated service gets the same two-part header, above a block that runs
+    // to twenty lines of env, volumes and healthcheck.
+    // From the real SERVICE_CATALOG, like the block below it: the fake
+    // workbench's descriptors drive the feature/mcp paths, services come from
+    // the shipped catalog either way.
+    expect(text).toMatch(/^# PostgreSQL: Relational database with seeded dev/m);
+    expect(text).toMatch(
+      /^# https:\/\/getmonoceros\.build\/docs\/services\/postgres\/$/m,
+    );
     const parsed = parseConfig(text);
     expect(parsed.config.name).toBe('sandbox');
     // node is builtin; init surfaces its base-image version inline (node:22),
@@ -232,8 +246,20 @@ describe('runInit', () => {
     const text = await readFile(result.configPath, 'utf8');
     // java surfaces its surface:yml defaults as the object form; the version
     // moves inside. node has no surface:yml options → stays a bare string.
+    // Each entry carries its header and a blank line, so the assertion pins
+    // the yaml shape rather than the exact prose above it.
     expect(text).toMatch(
-      /languages:\n {2}- java:\n {6}version: 21\n {6}installMaven: true\n {6}installGradle: true\n {2}- node:22\n/,
+      / {2}- java:\n {6}version: 21\n {6}installMaven: true\n {6}installGradle: true\n/,
+    );
+    expect(text).toMatch(/^ {2}- node:22$/m);
+    expect(text).toMatch(/^# Java: A JDK plus Maven and Gradle by default/m);
+    // Every `<name>` in the prose is this container: the comments carry
+    // commands, and a command with a placeholder in it has to be edited before
+    // it runs.
+    expect(text).not.toContain('<name>');
+    expect(text).toMatch(/^# `monoceros upgrade jbox` refreshes/m);
+    expect(text).toMatch(
+      /^# https:\/\/getmonoceros\.build\/docs\/languages\/java\/$/m,
     );
     // Round-trips through the schema into the object form.
     const parsed = parseConfig(text);

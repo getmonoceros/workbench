@@ -1,3 +1,4 @@
+import { componentDocsURL } from './docs-url.js';
 import type { FeatureManifestSummary } from './manifest.js';
 
 /**
@@ -11,11 +12,15 @@ import type { FeatureManifestSummary } from './manifest.js';
  * space — the consumer adds whichever convention applies (`# Foo` for
  * the generator, ` Foo` for yaml-lib's stored-after-`#` form).
  *
- * Format mirrors `monoceros-config.sample.yml`'s per-feature blocks:
- *   - `<Name> — <description>` (one paragraph, wrapped)
+ * Format:
+ *   - `<Name>: <description>` (one paragraph, wrapped)
  *   - `<usageNote>` (one paragraph per note, wrapped)
- *   - `Options: <key> (<short-desc>), …` (wrapped)
- *   - `See <documentationURL> for further information.`
+ *   - the feature's page on getmonoceros.build
+ *
+ * The option table and the vendor's own URL used to sit between the two, which
+ * put a paragraph of documentation above every entry, maintained separately
+ * from the page that documents the same thing properly. The options are visible
+ * in the block below with their values; what they mean belongs on the page.
  *
  * An empty / unknown manifest summary returns `[]` — the caller emits
  * just the `- ref:` line without prose. Same fallback shape as the
@@ -57,7 +62,7 @@ function buildHeaderParagraphs(
   const tagline = summary.name?.trim();
   const description = summary.description?.trim();
   if (tagline && description) {
-    out.push(`${tagline} — ${description}`);
+    out.push(`${tagline}: ${description}`);
   } else if (tagline) {
     out.push(tagline);
   } else if (description) {
@@ -67,29 +72,13 @@ function buildHeaderParagraphs(
     const trimmed = note.trim();
     if (trimmed.length > 0) out.push(trimmed);
   }
-  if (summary.optionHints.length > 0) {
-    const parts = summary.optionHints.map((key) => {
-      const desc = summary.optionDescriptions[key];
-      const short = desc ? shortenOptionDescription(desc) : undefined;
-      return short ? `${key} (${short})` : key;
-    });
-    out.push(`Options: ${parts.join(', ')}.`);
-  }
-  if (summary.documentationURL) {
-    out.push(`See ${summary.documentationURL} for further information.`);
+  // Catalog features only. A third-party ref never gets a summary at all, so
+  // there is no case here where a link would point at a page that does not
+  // exist.
+  if (summary.docsSlug.length > 0) {
+    out.push(componentDocsURL('feature', summary.docsSlug));
   }
   return out;
-}
-
-/**
- * Trim a per-option `description` to a parenthetical hint — first
- * sentence, trailing punctuation stripped. Length cap is intentionally
- * absent: feature manifests are expected to keep descriptions terse;
- * the wrap function downstream handles line breaks naturally.
- */
-function shortenOptionDescription(desc: string): string {
-  const firstSentence = desc.split(/(?<=[.!?])\s+/)[0]?.trim() ?? desc.trim();
-  return firstSentence.replace(/[.!?]+$/, '').trim();
 }
 
 /**

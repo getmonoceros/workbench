@@ -1,7 +1,7 @@
 id: pgvector
 category: service
 displayName: pgvector (PostgreSQL + vectors)
-description: 'PostgreSQL with the pgvector extension for embeddings / vector search — a drop-in Postgres. Reachable in-container as host `pgvector`. Enable the extension once with `CREATE EXTENSION vector;` (or in your migration).'
+description: 'Relational database with the pgvector extension for embeddings and vector search, a drop-in Postgres. Reachable in-container as host `pgvector`. Enable the extension once with `CREATE EXTENSION vector;` (or in your migration).'
 service:
   image: pgvector/pgvector:pg18
   defaultPort: 5432

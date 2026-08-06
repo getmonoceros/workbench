@@ -301,6 +301,42 @@ describe('add-*/remove-* against the yml', () => {
     expect(env).toContain('POSTGRES_USER=monoceros');
     expect(env).toContain('POSTGRES_PASSWORD=monoceros');
     expect(env).toContain('POSTGRES_DB=monoceros');
+    // The same header `init` writes above a curated service: what it is, then
+    // the page. Twenty lines of env, volumes and healthcheck follow it, and
+    // none of them say where the options are documented.
+    expect(yml).toMatch(
+      /^\s*# PostgreSQL: Relational database with seeded dev/m,
+    );
+    expect(yml).toMatch(
+      /^\s*# https:\/\/getmonoceros\.build\/docs\/services\/postgres\/$/m,
+    );
+  });
+
+  it('runAddService points a renamed service at its catalog page, and a custom image at none', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddService({
+      ...baseOpts,
+      name: 'demo',
+      service: 'postgres',
+      as: 'pg-analytics',
+      monocerosHome: home,
+    });
+    await runAddService({
+      ...baseOpts,
+      name: 'demo',
+      service: 'rustfs/rustfs:latest',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    // Two postgres services under different names are documented by the one
+    // postgres page, so the link follows the catalog name and not `--as`.
+    expect(yml).toMatch(
+      /^\s*# https:\/\/getmonoceros\.build\/docs\/services\/postgres\/$/m,
+    );
+    expect(yml).not.toMatch(/docs\/services\/pg-analytics/);
+    // A custom image has no page. It carries the field scaffold instead.
+    expect(yml).not.toMatch(/docs\/services\/rustfs/);
+    expect(yml).toContain('image: rustfs/rustfs:latest');
   });
 
   it('runAddService keycloak: deferred command + commented volumes scaffold (ADR 0025)', async () => {
@@ -757,11 +793,13 @@ describe('add-*/remove-* against the yml', () => {
     });
     const yml = await ymlOf('demo');
     // Tagline + first description sentence land as commentBefore.
-    expect(yml).toMatch(/^\s*# Atlassian — /m);
-    // Synthesized "Options: …" summary line.
-    expect(yml).toMatch(/^\s*# Options: instance \(/m);
-    // documentationURL line.
-    expect(yml).toMatch(/^\s*# See https:\/\/developer\.atlassian\.com/m);
+    expect(yml).toMatch(/^\s*# Atlassian: /m);
+    // Then the feature's page, and nothing that restates it.
+    expect(yml).toMatch(
+      /^\s*# https:\/\/getmonoceros\.build\/docs\/features\/atlassian\/$/m,
+    );
+    expect(yml).not.toMatch(/^\s*# Options: /m);
+    expect(yml).not.toMatch(/for further information/);
     // The header sits ABOVE the dash, not interleaved with it
     // (yaml-lib's other emission mode would produce `- # Atlassian`).
     expect(yml).not.toMatch(/-\s+# Atlassian/);

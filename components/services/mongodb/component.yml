@@ -1,7 +1,7 @@
 id: mongodb
 category: service
 displayName: MongoDB
-description: 'MongoDB with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mongodb`.'
+description: 'Document database with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mongodb`.'
 service:
   image: mongo:8
   defaultPort: 27017

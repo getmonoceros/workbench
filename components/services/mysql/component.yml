@@ -1,7 +1,7 @@
 id: mysql
 category: service
 displayName: MySQL
-description: 'MySQL with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mysql`.'
+description: 'Relational database with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mysql`.'
 service:
   image: mysql:8
   defaultPort: 3306

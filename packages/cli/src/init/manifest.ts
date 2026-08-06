@@ -35,9 +35,17 @@ export interface FeatureManifestSummary {
   description: string;
   /**
    * `documentationURL` — only set when it's a real URL. `tbd` / empty / unset
-   * → undefined, so the generator suppresses the "See <url>…" line.
+   * → undefined. The provider's own page: read by the catalog and the website,
+   * no longer written into the yml header (see `docsSlug`).
    */
   documentationURL: string | undefined;
+  /**
+   * The feature's yml selector, which is also the slug of its page under
+   * getmonoceros.build/docs/features/. Empty only in the hand-built summaries
+   * of tests; a real one always comes from a catalog descriptor, because a
+   * third-party ref yields no summary at all.
+   */
+  docsSlug: string;
   /** Names of options to render as commented hints in the init output. */
   optionHints: string[];
   /** `description` from each option, keyed by name. */
@@ -127,6 +135,10 @@ export function loadFeatureManifestSummary(
     name: descriptor.displayName,
     description: descriptor.description,
     documentationURL,
+    // The selector, not the id: `claude-code` publishes as `claude`, and the
+    // docs page follows the name a builder types. A preset (`atlassian/twg`)
+    // resolves to its base feature here, which is also where its page is.
+    docsSlug: descriptor.name ?? descriptor.id,
     optionHints,
     optionDescriptions,
     optionNames,

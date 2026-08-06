@@ -1,7 +1,7 @@
 id: postgres
 category: service
 displayName: PostgreSQL
-description: 'PostgreSQL with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `postgres`.'
+description: 'Relational database with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `postgres`.'
 service:
   image: postgres:18
   defaultPort: 5432

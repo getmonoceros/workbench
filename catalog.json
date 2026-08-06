@@ -33,7 +33,7 @@
     {
       "name": "java",
       "displayName": "Java",
-      "description": "A JDK plus Maven and Gradle by default (the upstream feature ships only the JDK), so a plain `languages: [java]` is build-ready. Pin a JDK major with `java:<version>`.",
+      "description": "A JDK plus Maven and Gradle by default, where the upstream feature installs only the JDK, so this is build-ready as it stands. The JDK major is the `version:` below (`latest`, 21, 17, 11, 8); on the command line it is `java:21`.",
       "options": [
         {
           "key": "installGradle",
@@ -60,7 +60,7 @@
     {
       "name": "node",
       "displayName": "Node.js",
-      "description": "Node.js, built into the runtime image. A bare `node` installs nothing extra; pin a different major with `node:<version>`.",
+      "description": "Built into the runtime image. A bare `node` installs nothing extra; pin a different major with `node:<version>`.",
       "options": [],
       "defaultVersion": "22",
       "versions": [
@@ -101,7 +101,7 @@
     {
       "name": "keycloak",
       "displayName": "Keycloak",
-      "description": "Keycloak identity & access management (OAuth2 / OpenID Connect / SAML) for local dev. Reachable in-container as host `keycloak`. Starts in dev mode and imports realm JSON from a repo you mount; see the usage notes.",
+      "description": "Identity and access management (OAuth2 / OpenID Connect / SAML) for local dev. Reachable in-container as host `keycloak`. Starts in dev mode and imports realm JSON from a repo you mount, through the commented volumes below.",
       "options": [
         {
           "key": "KC_BOOTSTRAP_ADMIN_PASSWORD",
@@ -122,14 +122,14 @@
     {
       "name": "mailpit",
       "displayName": "Mailpit",
-      "description": "SMTP catcher for local dev — apps send mail to it and nothing leaves the machine. SMTP on `mailpit:1025`; web UI + API on 8025 (reach via `monoceros tunnel <name> mailpit:8025`).",
+      "description": "SMTP catcher for local dev, so apps send mail to it and nothing leaves the machine. SMTP on `mailpit:1025`; web UI + API on 8025 (reach via `monoceros tunnel <name> mailpit:8025`).",
       "options": [],
       "defaultPort": 1025
     },
     {
       "name": "mongodb",
       "displayName": "MongoDB",
-      "description": "MongoDB with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mongodb`.",
+      "description": "Document database with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mongodb`.",
       "options": [
         {
           "key": "MONGO_INITDB_DATABASE",
@@ -155,7 +155,7 @@
     {
       "name": "mysql",
       "displayName": "MySQL",
-      "description": "MySQL with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mysql`.",
+      "description": "Relational database with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mysql`.",
       "options": [
         {
           "key": "MYSQL_DATABASE",
@@ -175,7 +175,7 @@
     {
       "name": "pgvector",
       "displayName": "pgvector (PostgreSQL + vectors)",
-      "description": "PostgreSQL with the pgvector extension for embeddings / vector search — a drop-in Postgres. Reachable in-container as host `pgvector`. Enable the extension once with `CREATE EXTENSION vector;` (or in your migration).",
+      "description": "Relational database with the pgvector extension for embeddings and vector search, a drop-in Postgres. Reachable in-container as host `pgvector`. Enable the extension once with `CREATE EXTENSION vector;` (or in your migration).",
       "options": [
         {
           "key": "POSTGRES_DB",
@@ -201,7 +201,7 @@
     {
       "name": "postgres",
       "displayName": "PostgreSQL",
-      "description": "PostgreSQL with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `postgres`.",
+      "description": "Relational database with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `postgres`.",
       "options": [
         {
           "key": "POSTGRES_DB",
@@ -227,7 +227,7 @@
     {
       "name": "redis",
       "displayName": "Redis",
-      "description": "Redis on the default port with a readiness healthcheck. Reachable in-container as host `redis`.",
+      "description": "In-memory key-value store on the default port with a readiness healthcheck. Reachable in-container as host `redis`.",
       "options": [],
       "defaultPort": 6379
     },
@@ -559,7 +559,7 @@
     {
       "name": "forge",
       "displayName": "Atlassian Forge",
-      "description": "Atlassian's own Forge guidance: which module fits, what the manifest needs, how the UI Kit works.",
+      "description": "Which module fits, what the manifest needs, how the UI Kit works, from Atlassian's own guidance: which module fits, what the manifest needs, how the UI Kit works.",
       "options": [],
       "documentationURL": "https://developer.atlassian.com/platform/forge/ai-development-toolkit/forge-mcp/",
       "transport": "http"
@@ -567,7 +567,7 @@
     {
       "name": "linear",
       "displayName": "Linear",
-      "description": "Linear issues, projects and cycles, so the work an agent picks up is the work the team actually planned.",
+      "description": "Issues, projects and cycles, so the work an agent picks up is the work the team actually planned.",
       "options": [],
       "documentationURL": "https://linear.app/docs/mcp",
       "transport": "http",
@@ -584,7 +584,7 @@
     {
       "name": "notion",
       "displayName": "Notion",
-      "description": "Notion pages and databases, so requirements written in Notion reach the agent that has to build them.",
+      "description": "Pages and databases, so requirements written in Notion reach the agent that has to build them.",
       "options": [],
       "documentationURL": "https://developers.notion.com/guides/mcp/overview",
       "transport": "http",

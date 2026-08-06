@@ -1,5 +1,10 @@
 import type { FeatureManifestSummary } from './manifest.js';
 import {
+  buildLanguageHeaderLines,
+  buildServiceHeaderLines,
+  withContainerName,
+} from './catalog-header.js';
+import {
   buildFeatureHeaderLines,
   featureOptionHints,
   wrapToComment as sharedWrapToComment,
@@ -43,8 +48,10 @@ export type ManifestLookup = (
   ref: string,
 ) => FeatureManifestSummary | undefined;
 
+// What the builder reads first, so it says what the file is and where the
+// reference lives. Not what is in it: every section below introduces itself.
 const SCHEMA_HEADER_ACTIVE =
-  '# Solution-config: what should be inside your dev-container.\n# Starts minimal; add languages, features, services, or repos with\n# `monoceros add-feature/add-service/add-repo <name>` (see\n# `monoceros list-components`), then `monoceros apply <name>`.';
+  '# The workbench `<name>`. This file is the source of truth; the container\n# is built from it. Change it here or with `monoceros add-*`, then run\n# `monoceros apply <name>`.\n# https://getmonoceros.build/docs/concepts/configuration/';
 
 // Soft target for wrapped comment lines. Keeps the rendered yml
 // readable in a standard editor without horizontal scrolling.
@@ -120,6 +127,14 @@ export function generateComposedYml(
     pushSectionHeader(lines, LANGUAGES_HEADER, /* commented */ false);
     lines.push('languages:');
     for (const lang of composed.languages) {
+      // Header above each entry, like a feature's: the description is where
+      // `pin a version with java:<version>` and the surfaced options are
+      // explained, and both are what the line below is made of. A blank line
+      // between entries, or the headers run into the entry above them.
+      const bare = lang.spec.split(':')[0]!;
+      const header = buildLanguageHeaderLines(bare, COMMENT_WIDTH - 2);
+      if (header.length > 0) lines.push('');
+      for (const line of header) lines.push(`# ${line}`.trimEnd());
       const opts = lang.options ?? {};
       if (Object.keys(opts).length === 0) {
         lines.push(`  - ${lang.spec}`);
@@ -220,7 +235,9 @@ export function generateComposedYml(
     lines.push('');
   }
 
-  return ensureTrailingNewline(lines.join('\n'));
+  // Last, so every comment above went in with the placeholder and comes out
+  // with this container's name, whichever helper wrote it.
+  return ensureTrailingNewline(withContainerName(lines, name).join('\n'));
 }
 
 // ───── Section header text ────────────────────────────────────────
@@ -232,7 +249,7 @@ const SERVICES_HEADER =
   'Sibling containers that run alongside the dev-container (databases, caches, message queues, …). Each service is reachable from inside the dev-container by its name as hostname (e.g. `postgres://postgres:5432`). Activating any service switches the container to docker-compose mode automatically.';
 
 const APT_PACKAGES_HEADER =
-  'Debian/Ubuntu apt packages installed in the dev-container at build time. No curated list — any apt package name works; an invalid name surfaces as an apt error during build.';
+  'Debian/Ubuntu apt packages installed in the dev-container at build time. No curated list: any apt package name works; an invalid name surfaces as an apt error during build.';
 
 // Render one composed-mode service entry as a `services:` sequence item.
 // Curated services expand to the full catalog block; custom images get
@@ -248,6 +265,11 @@ function pushServiceEntry(out: string[], svc: InitService): void {
     for (const cl of comment.split('\n')) out.push(`    #${cl}`);
     return;
   }
+  // Same header a feature gets, above a block that can run to twenty lines:
+  // what this is, then the page that explains its options and its volumes.
+  const header = buildServiceHeaderLines(svc.name, COMMENT_WIDTH - 2);
+  if (header.length > 0) out.push('');
+  for (const line of header) out.push(`# ${line}`.trimEnd());
   const body = renderServiceObjectBody(expandCuratedService(svc.name));
   out.push(`  - ${body[0]}`);
   for (const line of body.slice(1)) out.push(`    ${line}`);
@@ -260,7 +282,7 @@ function pushServiceEntry(out: string[], svc: InitService): void {
 }
 
 const FEATURES_HEADER_ACTIVE =
-  'A Monoceros dev-container is shaped by features — pluggable units that drop tooling (AI assistants, language CLIs, cloud SDKs, …) into the container and bring their own options. The features active for this container are listed below; adjust their options as needed. Shared credentials used across containers belong in monoceros-config.yml under `defaults.features.<ref>` rather than here. Full catalog: `monoceros list-components`.';
+  'A Monoceros dev-container is shaped by features, pluggable units that drop tooling (AI assistants, language CLIs, cloud SDKs) into the container and bring their own options. The features active for this container are listed below; adjust their options as needed. Shared credentials used across containers belong in monoceros-config.yml under `defaults.features.<ref>` rather than here. Full catalog: `monoceros list-components`.';
 
 const MCP_HEADER =
   'MCP servers the agents in this container can reach. A catalog connector is one line plus its options (`monoceros add-mcp-server <name> <connector>`, see `monoceros list-components`). A server the catalog does not carry goes in with the config its provider publishes (`name:` plus `transport:` and `command:`/`url:`), and is then just as reproducible. Credentials belong in <name>.env behind the ${VAR} placeholders, never here.';
@@ -269,7 +291,7 @@ const REPOS_HEADER =
   'Git repositories cloned into `projects/` on container start-up. HTTPS URLs only. The provider is auto-detected for github.com / gitlab.com / bitbucket.org; for any other host (self-hosted GitLab, GitHub Enterprise, …) declare `provider:` explicitly. Add more later with `monoceros add-repo`.';
 
 const GIT_IDENTITY_HEADER =
-  'Git committer identity for commits made inside the container. The ${VAR} values resolve from <name>.env at apply time — fill them there, or leave them blank to fall back to your global git config (or a one-time prompt). Override per repo under repos[].git.user.';
+  'Git committer identity for commits made inside the container. The ${VAR} values resolve from <name>.env at apply time. Fill them there, or leave them blank to fall back to your global git config (or a one-time prompt). Override per repo under repos[].git.user.';
 
 // Top-level `git.user` block with `${VAR}` placeholders. Rendered
 // whenever the container has repos: the identity then lives in the

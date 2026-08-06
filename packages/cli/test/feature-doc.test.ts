@@ -33,6 +33,7 @@ describe('featureOptionHints', () => {
     optionTypes: {},
     optionDefaults: {},
     usageNotes: [],
+    docsSlug: 'atlassian',
   };
   const ref = 'ghcr.io/getmonoceros/monoceros-features/atlassian:1';
 

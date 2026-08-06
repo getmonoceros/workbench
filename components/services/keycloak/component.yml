@@ -1,7 +1,7 @@
 id: keycloak
 category: service
 displayName: Keycloak
-description: 'Keycloak identity & access management (OAuth2 / OpenID Connect / SAML) for local dev. Reachable in-container as host `keycloak`. Starts in dev mode and imports realm JSON from a repo you mount; see the usage notes.'
+description: 'Identity and access management (OAuth2 / OpenID Connect / SAML) for local dev. Reachable in-container as host `keycloak`. Starts in dev mode and imports realm JSON from a repo you mount, through the commented volumes below.'
 documentationURL: https://www.keycloak.org/
 service:
   image: quay.io/keycloak/keycloak:26.6

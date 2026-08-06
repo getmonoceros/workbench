@@ -1,7 +1,7 @@
 id: redis
 category: service
 displayName: Redis
-description: 'Redis on the default port with a readiness healthcheck. Reachable in-container as host `redis`.'
+description: 'In-memory key-value store on the default port with a readiness healthcheck. Reachable in-container as host `redis`.'
 service:
   image: redis:8
   defaultPort: 6379

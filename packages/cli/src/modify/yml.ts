@@ -86,22 +86,39 @@ export function addLanguageToDoc(
   opts: {
     version?: string;
     options?: Record<string, string | number | boolean>;
+    headerLines?: readonly string[];
   } = {},
 ): boolean {
   const seq = ensureSeq(doc, 'languages');
   if (seq.items.some((i) => languageEntryName(i) === name)) return false;
-  const { version, options } = opts;
+  const { version, options, headerLines } = opts;
+  let node;
   if (options && Object.keys(options).length > 0) {
     const inner = new YAMLMap();
     if (version !== undefined) inner.set('version', version);
     for (const [key, value] of Object.entries(options)) inner.set(key, value);
     const outer = new YAMLMap();
     outer.set(name, inner);
-    seq.add(outer);
+    node = outer;
   } else {
-    seq.add(version !== undefined ? `${name}:${version}` : name);
+    node = new Scalar(version !== undefined ? `${name}:${version}` : name);
   }
+  attachHeader(node, headerLines);
+  seq.add(node);
   return true;
+}
+
+/**
+ * Park the rendered header above a sequence item. On the ITEM rather than on a
+ * key inside it, so yaml-lib renders a block above the dash instead of
+ * `- # Foo` on one line.
+ */
+function attachHeader(node: unknown, headerLines?: readonly string[]): void {
+  if (!headerLines || headerLines.length === 0) return;
+  (node as { commentBefore?: string }).commentBefore = headerLines
+    .map((l) => ` ${l}`)
+    .join('\n');
+  (node as { spaceBefore?: boolean }).spaceBefore = true;
 }
 
 /** Find the services[] item whose `name:` equals `name`. */
@@ -133,6 +150,7 @@ export function addServiceEntryToDoc(
   image: string,
   bodyLines: string[],
   scaffoldComment?: string,
+  headerLines?: readonly string[],
 ): AddServiceOutcome {
   const seq = ensureSeq(doc, 'services');
   const existing = findServiceItem(seq, name);
@@ -147,6 +165,10 @@ export function addServiceEntryToDoc(
   // when the map is moved into the sequence, but a node `.comment`
   // survives and renders each line under the item, prefixed with `#`.
   if (scaffoldComment) node.comment = scaffoldComment;
+  // The same one-line pointer `init` writes above a curated service. Only for
+  // a catalog service: a custom image has no page, and it carries the scaffold
+  // comment instead.
+  attachHeader(node, headerLines);
   seq.add(node);
   return { outcome: 'added' };
 }
