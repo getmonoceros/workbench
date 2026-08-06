@@ -7,7 +7,7 @@ export const removeLanguageCommand = defineCommand({
     name: 'remove-language',
     group: 'edit',
     description:
-      'Remove a language toolchain from the container config. Idempotent, prints a diff before writing.',
+      'Remove a language toolchain from the container config. Idempotent.',
   },
   args: {
     name: {

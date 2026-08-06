@@ -8,7 +8,7 @@ export const removeAptPackagesCommand = defineCommand({
     name: 'remove-apt-packages',
     group: 'edit',
     description:
-      'Remove apt packages from the container config. Pass package names as arguments (e.g. `monoceros remove-apt-packages sandbox make jq`). Idempotent, prints a diff before writing.',
+      'Remove apt packages from the container config. Pass package names as arguments (e.g. `monoceros remove-apt-packages sandbox make jq`). Idempotent.',
   },
   args: {
     name: {

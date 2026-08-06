@@ -7,7 +7,7 @@ export const removeMcpServerCommand = defineCommand({
     name: 'remove-mcp-server',
     group: 'edit',
     description:
-      'Remove an MCP server from the container config. Takes the name as it stands in the yml, so it works for a hand-written entry as well as a catalog connector. Idempotent, prints a diff before writing. The registration disappears from the agent on the next apply.',
+      'Remove an MCP server from the container config. Takes the name as it stands in the yml, so it works for a hand-written entry as well as a catalog connector. Idempotent. The registration disappears from the agent on the next apply.',
   },
   args: {
     name: {

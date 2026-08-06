@@ -7,7 +7,7 @@ export const addServiceCommand = defineCommand({
     name: 'add-service',
     group: 'edit',
     description:
-      'Add a backing service to the container config. A curated name (postgres, mysql, redis) expands to a full editable block; any other image (e.g. rustfs/rustfs:latest) drops in name + image plus a commented scaffold. Idempotent, prints a diff before writing.',
+      'Add a backing service to the container config. A curated name (postgres, mysql, redis) expands to a full editable block; any other image (e.g. rustfs/rustfs:latest) drops in name + image plus a commented scaffold. Idempotent.',
   },
   args: {
     name: {

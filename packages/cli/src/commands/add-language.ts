@@ -7,7 +7,7 @@ export const addLanguageCommand = defineCommand({
     name: 'add-language',
     group: 'edit',
     description:
-      'Add a language toolchain (devcontainer feature) to the container config. Idempotent, prints a diff before writing.',
+      'Add a language toolchain (devcontainer feature) to the container config. Idempotent.',
   },
   args: {
     name: {

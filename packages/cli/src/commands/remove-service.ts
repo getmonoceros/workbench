@@ -7,7 +7,7 @@ export const removeServiceCommand = defineCommand({
     name: 'remove-service',
     group: 'edit',
     description:
-      'Remove a compose service from the container config. Idempotent, prints a diff before writing. Note: data volumes (e.g. postgres-data) are NOT cleaned up automatically.',
+      'Remove a compose service from the container config. Idempotent. Note: data volumes (e.g. postgres-data) are NOT cleaned up automatically.',
   },
   args: {
     name: {

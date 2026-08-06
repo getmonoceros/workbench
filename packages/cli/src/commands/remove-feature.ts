@@ -7,7 +7,7 @@ export const removeFeatureCommand = defineCommand({
     name: 'remove-feature',
     group: 'edit',
     description:
-      'Remove a devcontainer feature from the container config. Accepts either a Monoceros catalog short-name (e.g. `atlassian`, `claude`) or a full OCI ref. Idempotent, prints a diff before writing.',
+      'Remove a devcontainer feature from the container config. Accepts either a Monoceros catalog short-name (e.g. `atlassian`, `claude`) or a full OCI ref. Idempotent.',
   },
   args: {
     name: {
