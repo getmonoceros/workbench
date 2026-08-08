@@ -2,6 +2,8 @@
 
 - Status: accepted
 - Date: 2026-07-30
+- Amended by: [ADR 0048](0048-pasting-reaches-the-host-clipboard-too.md), which
+  adds the paste direction this one left out
 
 ## Context
 
@@ -78,6 +80,12 @@ session type and in every terminal. Pasting back needs nothing new -
 the text is on the host clipboard, so `Cmd`+`V` in the terminal is an
 ordinary paste, which is also why the relay does not implement a paste
 direction: output-mode invocations produce nothing.
+
+> That last conclusion was wrong, and ADR 0048 reverses it. It holds
+> for text only. An image has no characters for a terminal to type, so
+> a screenshot on the host clipboard could not reach a tool inside the
+> container at all - and pasting a screenshot into an AI coding tool is
+> the common case, not an edge case.
 
 A tool that speaks **only** OSC 52 and never calls a clipboard binary
 stays uncovered. Catching those would mean proxying the session through

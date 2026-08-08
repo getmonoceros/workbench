@@ -3,7 +3,7 @@ import { existsSync, promises as fsp, readFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { isWslHost } from '../util/wsl.js';
-import { watchClipboard } from './clipboard-bridge.js';
+import { watchClipboard, watchPasteRequests } from './clipboard-bridge.js';
 import type { DevcontainerSpawn } from './cli.js';
 
 // Dir under the container root (bind-mounted into the workspace) holding the
@@ -183,12 +183,17 @@ export async function startBrowserBridge(opts: {
     spawn: opts.spawn,
   });
   const clipboard = watchClipboard({ clipboardFile });
+  // The paste direction rides the same dir (ADR 0048). Answered by whichever
+  // watcher gets there first — the request is taken by rename, so this one and
+  // the always-on daemon cannot both answer it.
+  const paste = watchPasteRequests({ relayDir: dir });
 
   return {
     relayDirInContainer: `/workspaces/${opts.name}/${RELAY_DIRNAME}`,
     async dispose(): Promise<void> {
       watcher.dispose();
       clipboard.dispose();
+      paste.dispose();
       // Remove what the SESSION owns, not the directory. The always-on bridge
       // daemon keeps its pid file in here and outlives us by design — wiping
       // the dir would delete the pid of a live process, so `apply`/`start`

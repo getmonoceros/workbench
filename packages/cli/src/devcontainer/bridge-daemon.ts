@@ -13,7 +13,7 @@ import {
   relayUrlFile,
   watchRelayUrl,
 } from './browser-bridge.js';
-import { watchClipboard } from './clipboard-bridge.js';
+import { watchClipboard, watchPasteRequests } from './clipboard-bridge.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 import { isWorkspaceRunning, spawnDocker, type DockerExec } from './compose.js';
 
@@ -135,6 +135,8 @@ export async function runBridgeDaemon(opts: {
   lifecheckMs?: number;
   /** Clipboard sink; defaults to the real host clipboard. Tests inject one. */
   writeClipboard?: (text: string) => void;
+  /** Clipboard source for pastes; defaults to the real one. Tests inject one. */
+  readClipboard?: (target: string) => Buffer | null;
 }): Promise<void> {
   const { root } = opts;
   const dockerExec = opts.dockerExec ?? spawnDocker;
@@ -149,6 +151,14 @@ export async function runBridgeDaemon(opts: {
   // Same for a leftover clipboard payload: nobody wants a copy from the last
   // session landing on the host clipboard when the daemon comes up.
   await fsp.rm(relayClipboardFile(root), { force: true });
+  // And for paste traffic: a request nobody answered, or a response nobody
+  // collected, belongs to a shim that is long gone. Left in place, a stale
+  // response would be handed to the next paste as if it were fresh.
+  for (const entry of await fsp.readdir(relayDir(root)).catch(() => [])) {
+    if (entry.startsWith('paste-req.') || entry.startsWith('paste-res.')) {
+      await fsp.rm(path.join(relayDir(root), entry), { force: true });
+    }
+  }
   await fsp.writeFile(bridgePidFile(root), String(process.pid));
 
   const watcher = watchRelayUrl({
@@ -159,6 +169,10 @@ export async function runBridgeDaemon(opts: {
   const clipboard = watchClipboard({
     clipboardFile: relayClipboardFile(root),
     ...(opts.writeClipboard ? { write: opts.writeClipboard } : {}),
+  });
+  const paste = watchPasteRequests({
+    relayDir: relayDir(root),
+    ...(opts.readClipboard ? { read: opts.readClipboard } : {}),
   });
 
   await new Promise<void>((resolve) => {
@@ -190,5 +204,6 @@ export async function runBridgeDaemon(opts: {
 
   watcher.dispose();
   clipboard.dispose();
+  paste.dispose();
   await fsp.rm(bridgePidFile(root), { force: true });
 }

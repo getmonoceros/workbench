@@ -93,18 +93,19 @@ COPY xdg-open-relay.sh /usr/local/bin/xdg-open
 RUN chmod 0755 /usr/local/bin/xdg-open
 ENV BROWSER=/usr/local/bin/xdg-open
 
-# Always-on host-clipboard relay (ADR 0041). The container has no clipboard,
-# and the OSC 52 escape a TUI writes instead is dropped by terminals that do
-# not implement it (Apple Terminal) - so copying inside the container is a
-# silent no-op. One relay script, installed under the names tools probe for,
-# hands the payload to the same bridge daemon through the bind-mounted relay
-# dir. Symlinks, so `${0##*/}` tells the script which tool it is standing in
-# for. /usr/local/bin precedes /usr/bin, so these win over a real xclip an
-# apt-packages feature may have installed - which is what we want: a real one
-# has no X server to talk to either.
+# Always-on host-clipboard relay (ADR 0041, paste direction ADR 0048). The
+# container has no clipboard, and the OSC 52 escape a TUI writes instead is
+# dropped by terminals that do not implement it (Apple Terminal) - so copying
+# inside the container is a silent no-op, and pasting a screenshot into a CLI
+# that shells out to `xclip` finds nothing. One relay script, installed under
+# the names tools probe for, carries both directions over the bind-mounted
+# relay dir to the bridge daemon. Symlinks, so `${0##*/}` tells the script
+# which tool it is standing in for. /usr/local/bin precedes /usr/bin, so these
+# win over a real xclip an apt-packages feature may have installed - which is
+# what we want: a real one has no X server to talk to either.
 COPY clipboard-relay.sh /usr/local/bin/monoceros-clipboard-relay
 RUN chmod 0755 /usr/local/bin/monoceros-clipboard-relay \
- && for name in xclip xsel wl-copy pbcopy; do \
+ && for name in xclip xsel wl-copy wl-paste pbcopy pbpaste; do \
       ln -sf monoceros-clipboard-relay "/usr/local/bin/$name"; \
     done
 
