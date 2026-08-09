@@ -16,7 +16,7 @@
     "url": "git+https://github.com/getmonoceros/workbench.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://github.com/getmonoceros/workbench#readme",
+  "homepage": "https://getmonoceros.build",
   "bugs": {
     "url": "https://github.com/getmonoceros/workbench/issues"
   },
