@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "cliVersion": "1.54.0",
+  "cliVersion": "1.55.0",
   "languages": [
     {
       "name": "dotnet",
@@ -439,6 +439,22 @@
         }
       ],
       "documentationURL": "https://gitlab.com/gitlab-org/cli",
+      "presets": []
+    },
+    {
+      "name": "graphify",
+      "displayName": "graphify",
+      "description": "Turns the workspace into a queryable knowledge graph the agent can ask instead of grepping. Code is parsed locally with tree-sitter, no model and no account involved.",
+      "options": [
+        {
+          "key": "extras",
+          "type": "string",
+          "surface": "yml",
+          "default": "sql,pdf,leiden",
+          "description": "Comma-separated extras installed with the package. The default covers SQL schema extraction, PDF text and the Leiden community labels. Also available: `office`, `svg`, `postgres`, `neo4j`, `falkordb`, `watch`, `terraform`, `chinese`, `pascal`, and the standalone-CLI model backends `gemini`, `openai`, `anthropic`, `bedrock`, `ollama`, `kimi`. Left out on purpose: `video` (pulls faster-whisper plus yt-dlp), `dm` (compiles, needs a C toolchain) and `mcp` (the server duplicates the CLI this feature already installs)."
+        }
+      ],
+      "documentationURL": "https://github.com/Graphify-Labs/graphify",
       "presets": []
     },
     {
