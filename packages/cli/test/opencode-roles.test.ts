@@ -39,6 +39,7 @@ afterEach(async () => {
 const agentsDir = () => path.join(dir, 'home', '.config', 'opencode', 'agents');
 const commandsDir = () =>
   path.join(dir, 'home', '.config', 'opencode', 'commands');
+const pluginDir = () => path.join(dir, 'home', '.config', 'opencode', 'plugin');
 
 const read = (p: string) => readFile(p, 'utf8');
 
@@ -46,6 +47,51 @@ describe('writeOpencodeRoles', () => {
   it('is a no-op without the opencode-roles feature', async () => {
     await writeOpencodeRoles(dir, { [OPENCODE]: { model: 'x/y' } });
     await expect(readdir(agentsDir())).rejects.toThrow();
+  });
+
+  // Dropping the feature from the yml has to take its files with it.
+  // `~/.config/opencode` is a persistent bind mount, so everything an earlier
+  // apply wrote stays there until something deletes it, and the roles keep
+  // working in a container that no longer declares them.
+  it('removes what it wrote when the feature leaves the yml', async () => {
+    await writeOpencodeRoles(dir, {
+      [OPENCODE]: {},
+      [ROLES]: { plannerEffort: 'high' },
+    });
+    const configFile = path.join(
+      dir,
+      'home',
+      '.config',
+      'opencode',
+      'opencode.json',
+    );
+    // An agent of the builder's own, plus a command and a plugin from
+    // elsewhere in the same tree. None of it belongs to this feature.
+    const before = JSON.parse(await read(configFile)) as {
+      agent: Record<string, unknown>;
+    };
+    before.agent.mine = { variant: 'high' };
+    await writeFile(configFile, JSON.stringify(before, null, 2));
+    await writeFile(path.join(commandsDir(), 'my-own.md'), 'mine\n');
+    // Nothing this feature ships lands in `plugin/`, so the directory only
+    // exists when something else put a plugin there. That is the case under
+    // test: a plugin from elsewhere has to survive the cleanup.
+    await mkdir(pluginDir(), { recursive: true });
+    await writeFile(path.join(pluginDir(), 'other.js'), '// mine\n');
+
+    await writeOpencodeRoles(dir, { [OPENCODE]: {} });
+
+    expect(await readdir(agentsDir())).toEqual([]);
+    expect(await readdir(commandsDir())).toEqual(['my-own.md']);
+    expect(await readdir(pluginDir())).toEqual(['other.js']);
+    expect(JSON.parse(await read(configFile))).toMatchObject({
+      agent: { mine: { variant: 'high' } },
+    });
+    expect(
+      Object.keys(
+        (JSON.parse(await read(configFile)) as { agent: object }).agent,
+      ),
+    ).toEqual(['mine']);
   });
 
   it('writes the three agents and the three commands', async () => {

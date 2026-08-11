@@ -2,8 +2,9 @@ import { matchMonocerosFeature } from '../util/ref.js';
 import type { CreateOptions } from './types.js';
 
 /**
- * Validate the model and effort options on the two roles components at APPLY,
- * before anything is built.
+ * Validate the two roles components at APPLY, before anything is built: the
+ * model and effort options each one carries, and that only one of them is in
+ * the yml at all.
  *
  * Why this exists: a role's model lands verbatim in the agent's frontmatter,
  * and nothing between the yml and the running agent looks at it. A real run
@@ -104,6 +105,24 @@ function value(
 
 export function validateRoleOptions(features: CreateOptions['features']): void {
   const claude = optionsFor(features, 'claude-code-roles');
+  const both = claude && optionsFor(features, 'opencode-roles');
+  if (both) {
+    // Not a warning. OpenCode reads `~/.claude/skills/` as well as its own
+    // config, so in a workbench with both features its model can invoke the
+    // Claude Code skills - a headless run did exactly that. Those texts
+    // delegate to subagents and name tools OpenCode does not have, and they
+    // run on the default agent, so the role and its permission guard are both
+    // out of the picture. The run then reaches outside its scope and nothing
+    // in the output says why.
+    throw new Error(
+      'claude-code-roles and opencode-roles cannot share a workbench: both ship the same role names,' +
+        ' and OpenCode reads ~/.claude/skills/ too, so a run picks up the Claude Code skills on its' +
+        ' default agent - without the role and without its permission guard.\n' +
+        'Keep exactly one. Drop the other, then apply again:\n' +
+        '  monoceros remove-feature <name> opencode-roles\n' +
+        '  monoceros remove-feature <name> claude-code-roles',
+    );
+  }
   if (claude) {
     for (const key of CLAUDE_MODEL_OPTIONS) {
       const model = value(claude, key);

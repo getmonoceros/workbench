@@ -106,7 +106,14 @@ export async function writeClaudeCodeRoles(
   features: CreateOptions['features'],
 ): Promise<void> {
   const roles = featureOptions(features, 'claude-code-roles');
-  if (!roles) return; // feature not in the yml → nothing to write
+  if (!roles) {
+    // Absent from the yml, possibly still on disk: `~/.claude` is a persistent
+    // bind mount, so dropping the feature leaves every agent and skill in
+    // place and the roles keep working in a container that no longer declares
+    // them. Removing the feature has to remove its files.
+    await removeClaudeCodeRoles(targetDir);
+    return;
+  }
 
   if (!featureOptions(features, 'claude-code')) {
     consola.warn(
@@ -166,6 +173,45 @@ export async function writeClaudeCodeRoles(
       path.join(outDir, 'guard.mjs'),
       renderRoleTemplate(guard, ''),
     );
+  }
+}
+
+/**
+ * Take the feature's files out of the container tree.
+ *
+ * Only what the feature owns. The same directories hold skills and agents from
+ * elsewhere - `twg` and its siblings arrive with `atlassian`, and a builder's
+ * own live next to them - so the `monoceros-` prefix decides, not a sweep of
+ * the directory. The prefix rather than the AGENTS/SKILLS lists on purpose: a
+ * role this CLI no longer ships still has to be cleaned up, and only the
+ * prefix catches it.
+ */
+async function removeClaudeCodeRoles(targetDir: string): Promise<void> {
+  const claudeDir = path.join(targetDir, 'home', '.claude');
+  await removeNamespacedEntries(path.join(claudeDir, 'agents'));
+  await removeNamespacedEntries(path.join(claudeDir, 'skills'));
+  // The guard directory belongs to this feature outright.
+  await fsp.rm(path.join(claudeDir, 'monoceros-roles'), {
+    recursive: true,
+    force: true,
+  });
+}
+
+/**
+ * Delete every `monoceros-*` entry in a directory, file or directory alike.
+ * A missing directory is the normal case (the feature was never applied here)
+ * and stays missing: creating it would make the no-op case visible on disk.
+ */
+async function removeNamespacedEntries(dir: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith('monoceros-')) continue;
+    await fsp.rm(path.join(dir, entry), { recursive: true, force: true });
   }
 }
 

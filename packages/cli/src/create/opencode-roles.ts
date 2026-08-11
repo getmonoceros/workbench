@@ -102,7 +102,14 @@ export async function writeOpencodeRoles(
   features: CreateOptions['features'],
 ): Promise<void> {
   const roles = featureOptions(features, 'opencode-roles');
-  if (!roles) return; // feature not in the yml → nothing to write
+  if (!roles) {
+    // Absent from the yml, possibly still on disk: `~/.config/opencode` is a
+    // persistent bind mount, so dropping the feature leaves every agent and
+    // command in place and the roles keep working in a container that no longer
+    // declares them. Removing the feature has to remove its files.
+    await removeOpencodeRoles(targetDir);
+    return;
+  }
 
   const opencode = featureOptions(features, 'opencode');
   if (!opencode) {
@@ -143,6 +150,71 @@ export async function writeOpencodeRoles(
   }
 
   await writeAgentVariants(targetDir, roles);
+}
+
+/**
+ * Take the feature's files out of the container tree, including the role
+ * entries merged into `opencode.json`.
+ *
+ * Only what the feature owns. The same directories hold agents, commands and
+ * plugins from elsewhere, so the `monoceros-` prefix decides rather than a
+ * sweep of the directory. The prefix rather than the AGENTS/COMMANDS lists on
+ * purpose: a role this CLI no longer ships still has to be cleaned up, and
+ * only the prefix catches it.
+ */
+async function removeOpencodeRoles(targetDir: string): Promise<void> {
+  const configDir = path.join(targetDir, 'home', '.config', 'opencode');
+  for (const kind of ['agents', 'commands', 'plugin'] as const) {
+    await removeNamespacedEntries(path.join(configDir, kind));
+  }
+  await removeAgentEntries(path.join(configDir, 'opencode.json'));
+}
+
+/**
+ * Delete every `monoceros-*` entry in a directory, file or directory alike.
+ * A missing directory is the normal case (the feature was never applied here)
+ * and stays missing: creating it would make the no-op case visible on disk.
+ */
+async function removeNamespacedEntries(dir: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith('monoceros-')) continue;
+    await fsp.rm(path.join(dir, entry), { recursive: true, force: true });
+  }
+}
+
+/**
+ * Drop the roles out of `opencode.json`'s `agent` block, the counterpart of
+ * `writeAgentVariants`. Everything else in the file stays, including agents the
+ * builder configured themselves; the file is only rewritten when something
+ * actually went.
+ */
+async function removeAgentEntries(file: string): Promise<void> {
+  if (!existsSync(file)) return;
+  let config: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(await fsp.readFile(file, 'utf8'));
+    if (typeof parsed !== 'object' || parsed === null) return;
+    config = parsed as Record<string, unknown>;
+  } catch {
+    // Malformed opencode.json - leave it alone rather than clobbering a file
+    // the builder may be in the middle of editing.
+    return;
+  }
+  if (typeof config.agent !== 'object' || config.agent === null) return;
+  const agents = config.agent as Record<string, unknown>;
+  const stale = Object.keys(agents).filter((name) =>
+    name.startsWith('monoceros-'),
+  );
+  if (stale.length === 0) return;
+  for (const name of stale) delete agents[name];
+  if (Object.keys(agents).length === 0) delete config.agent;
+  await fsp.writeFile(file, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 /**

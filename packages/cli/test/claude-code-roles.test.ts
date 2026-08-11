@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -35,6 +42,28 @@ describe('writeClaudeCodeRoles', () => {
   it('is a no-op without the claude-code-roles feature', async () => {
     await writeClaudeCodeRoles(dir, { [CLAUDE]: {} });
     await expect(readdir(agentsDir())).rejects.toThrow();
+  });
+
+  // Dropping the feature from the yml has to take its files with it. `~/.claude`
+  // is a persistent bind mount, so everything an earlier apply wrote stays there
+  // until something deletes it: after a `remove-feature` plus `apply` all four
+  // agents and all four skills were still in the container's home, and they had
+  // to be deleted by hand.
+  it('removes what it wrote when the feature leaves the yml', async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+    // The same tree holds skills and agents from elsewhere - `twg` and its
+    // siblings arrive with `atlassian` - and those have to survive untouched.
+    await mkdir(path.join(skillsDir(), 'twg'), { recursive: true });
+    await writeFile(path.join(skillsDir(), 'twg', 'SKILL.md'), 'twg\n');
+    await writeFile(path.join(agentsDir(), 'my-own.md'), 'mine\n');
+
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {} });
+
+    expect(await readdir(agentsDir())).toEqual(['my-own.md']);
+    expect(await readdir(skillsDir())).toEqual(['twg']);
+    await expect(
+      readdir(path.join(claudeDir(), 'monoceros-roles')),
+    ).rejects.toThrow();
   });
 
   it('writes the three agents, the three skills and the guard', async () => {

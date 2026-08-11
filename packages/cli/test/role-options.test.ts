@@ -12,7 +12,25 @@ describe('validateRoleOptions', () => {
   });
 
   it('accepts unset options, which mean inherit', () => {
-    expect(() => validateRoleOptions({ [CC]: {}, [OC]: {} })).not.toThrow();
+    expect(() => validateRoleOptions({ [CC]: {} })).not.toThrow();
+    expect(() => validateRoleOptions({ [OC]: {} })).not.toThrow();
+  });
+
+  // OpenCode discovers `~/.claude/skills/` as well as its own config, so with
+  // both features a run invokes a Claude Code skill on the default agent:
+  // instructions written for another tool, without the role and without its
+  // guard. A headless run did exactly that and edited a file outside its scope.
+  it('refuses both role features in one workbench', () => {
+    expect(() => validateRoleOptions({ [CC]: {}, [OC]: {} })).toThrow(
+      /claude-code-roles and opencode-roles cannot share a workbench/,
+    );
+    // Both names and the way out, or the message is a dead end.
+    expect(() => validateRoleOptions({ [CC]: {}, [OC]: {} })).toThrow(
+      /remove-feature <name> opencode-roles/,
+    );
+    expect(() => validateRoleOptions({ [CC]: {}, [OC]: {} })).toThrow(
+      /remove-feature <name> claude-code-roles/,
+    );
   });
 
   describe('claude-code-roles', () => {

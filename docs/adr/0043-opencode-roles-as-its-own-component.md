@@ -113,6 +113,26 @@ does between runs.
   the OpenCode rules key on the space in front of a redirect, because that
   syntax has only `*` and `?` to work with. Both keep `&>` and a plain `>` to a
   file denied, and both let `/dev/null` through.
+- **One role set per workbench, enforced at apply.** The two sets ship the same
+  role names, and OpenCode discovers `~/.claude/skills/` in addition to its own
+  config - the path is in the binary. With both features installed, an OpenCode
+  run invoked `monoceros-design` as a Claude Code skill on its default agent:
+  instructions that delegate to subagents and name tools OpenCode does not have,
+  run without the role and therefore without its permission guard, and the run
+  edited a workspace file outside its scope. A warning is too weak for a failure
+  that reads like nothing at all from the outside, so `validateRoleOptions`
+  fails the apply, names both features and names the command that drops one. (A
+  lesser reason on top: the two keep separate plan stores, so a plan written by
+  one is invisible to the other.)
+- **Dropping a feature takes its files with it.** Both role trees are
+  persistent-home bind mounts, so what an apply wrote stays until something
+  deletes it: after a `remove-feature` plus `apply`, every agent and skill was
+  still in the container and the interference above kept working. Absent from
+  the yml plus present on disk is now the cleanup case, and the `monoceros-`
+  prefix decides what goes - not a sweep of the directory, because the same
+  tree holds skills from other features (`twg` and its siblings arrive with
+  `atlassian`) and agents the builder wrote. The prefix rather than the shipped
+  role list, so a role this CLI no longer ships is still cleaned up.
 - The concept document stays as it is. This ADR is the record that the boundary
   was tested and where it was drawn: a workflow may ship **as a component**,
   and the workbench itself still has no opinion on how you work.
