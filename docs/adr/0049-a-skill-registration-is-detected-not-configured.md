@@ -1,6 +1,6 @@
 # ADR 0049: An agent-side skill registration is detected, not configured
 
-- Status: accepted
+- Status: accepted, amended 2026-08-11 (see [Amendment](#amendment-2026-08-11-the-rule-needs-a-hook-not-a-sentence))
 - Date: 2026-08-09
 - Relates to: [ADR 0019](0019-component-taxonomy-service-feature-dependency.md)
   (what becomes a component at all),
@@ -104,3 +104,47 @@ their own commit.
   because `graph.html` and `GRAPH_REPORT.md` take a second `cluster-only` run
   and are not produced by the build alone. If that canary turns into recurring
   maintenance, dropping the feature is the honest outcome.
+
+## Amendment 2026-08-11: the rule needs a hook, not a sentence
+
+Two of the consequences above were wrong, and three runs on the same repository
+showed it. Same question, same 15,617-node graph over a 938-file Go backend:
+the first answered entirely out of the graph without opening a file, the second
+made two queries and then read 926 lines of source, the third made one query and
+went off on twenty greps. The spread comes from the model, and no wording in a
+briefing line closed it. Two attempts at that wording are in the history of this
+feature; both were mine, and both were the wrong instrument.
+
+What the second look also turned up: graphify already ships the rules we were
+hand-writing. `always_on/claude-md.md` in its own package says to run
+`graphify query` first for codebase questions, to use `path` and `explain`, to
+read `GRAPH_REPORT.md` only for a broad review, and to run `graphify update .`
+after changing code. That block is written by `claude_install()`, which is the
+**project** path. The global path writes `_skill_registration()`, three lines
+that say "when the user types `/graphify`, use the skill". So the decision above
+shipped the trigger and left out every rule for using it, and nobody noticed
+because the first run happened to behave.
+
+**So Monoceros writes the `PreToolUse` hooks itself, into the container's global
+`~/.claude/settings.json`** (`create/claude-settings.ts`, at apply, merged like
+`permissions.defaultMode` next to it). Matchers `Bash|Grep` and `Read|Glob`,
+commands `graphify hook-guard search` and `graphify hook-guard read`, which is
+what `graphify install --project` would have put into a repo.
+
+This does not reopen the objection that kept `--strict` out. That objection was
+about writing into the builder's repository, and the container's home directory
+is not their repository. The hook command is scope-agnostic by construction: it
+keys off `graphify-out/graph.json` in the working directory, prints nothing when
+there is no graph, and always exits 0, so it is inert in a workspace where
+nothing was ever built.
+
+**And `strict` becomes a real option** (`strict: false` by default), for the same
+reason: upstream ties strict mode to a project install only because that is
+where it puts its hooks. With the hook in the container, the mode is one env var
+(`GRAPHIFY_HOOK_STRICT`), delivered through `workspaceEnv`. It denies the first
+raw read of a session once, then falls back to the reminder, so it cannot strand
+an agent.
+
+What still holds from the original decision: the skill registration is detected
+rather than configured, it is global, and nothing Monoceros does lands in the
+builder's git status.

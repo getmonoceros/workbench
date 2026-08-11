@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "cliVersion": "1.55.2",
+  "cliVersion": "1.55.3",
   "languages": [
     {
       "name": "dotnet",
@@ -452,6 +452,13 @@
           "surface": "yml",
           "default": "sql,pdf,leiden",
           "description": "Comma-separated extras installed with the package. The default covers SQL schema extraction, PDF text and the Leiden community labels. Also available: `office`, `svg`, `postgres`, `neo4j`, `falkordb`, `watch`, `terraform`, `chinese`, `pascal`, and the standalone-CLI model backends `gemini`, `openai`, `anthropic`, `bedrock`, `ollama`, `kimi`. Left out on purpose: `video` (pulls faster-whisper plus yt-dlp), `dm` (compiles, needs a C toolchain) and `mcp` (the server duplicates the CLI this feature already installs)."
+        },
+        {
+          "key": "strict",
+          "type": "boolean",
+          "surface": "yml",
+          "default": false,
+          "description": "Block the first raw file read of a Claude Code session until one `graphify query` has run, instead of only reminding. Upstream ties this to a project-scoped install; Monoceros wires the hook into the container instead, so nothing is written to your repository. It fires at most once per session and then falls back to the reminder, so it cannot strand an agent mid-task. Toggle it for a single session with `GRAPHIFY_HOOK_STRICT=0`."
         }
       ],
       "documentationURL": "https://github.com/Graphify-Labs/graphify",

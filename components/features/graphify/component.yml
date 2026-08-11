@@ -15,10 +15,25 @@ options:
     default: sql,pdf,leiden
     description: 'Comma-separated extras installed with the package. The default covers SQL schema extraction, PDF text and the Leiden community labels. Also available: `office`, `svg`, `postgres`, `neo4j`, `falkordb`, `watch`, `terraform`, `chinese`, `pascal`, and the standalone-CLI model backends `gemini`, `openai`, `anthropic`, `bedrock`, `ollama`, `kimi`. Left out on purpose: `video` (pulls faster-whisper plus yt-dlp), `dm` (compiles, needs a C toolchain) and `mcp` (the server duplicates the CLI this feature already installs).'
     surface: yml
+  strict:
+    type: boolean
+    default: false
+    description: 'Block the first raw file read of a Claude Code session until one `graphify query` has run, instead of only reminding. Upstream ties this to a project-scoped install; Monoceros wires the hook into the container instead, so nothing is written to your repository. It fires at most once per session and then falls back to the reminder, so it cannot strand an agent mid-task. Toggle it for a single session with `GRAPHIFY_HOOK_STRICT=0`.'
+    surface: yml
 feature:
-  version: 1.0.0
+  version: 1.0.1
+  # `strict` reaches the hook through the workspace environment, not through
+  # install.sh: the hook itself is written at apply (create/claude-settings.ts),
+  # and the env var is what upstream's `hook-guard` reads at runtime. So a
+  # change to the option takes effect on the next apply rather than being
+  # frozen in the feature's cached layer (ADR 0018).
+  workspaceEnv:
+    - whenOption: strict
+      vars:
+        GRAPHIFY_HOOK_STRICT: '1'
 briefing:
   - text: 'graphify (`graphify`) - the workspace as a knowledge graph. `/graphify .` builds it, `graphify query "<question>"` answers from it with a scoped subgraph. Ask the graph before you read or grep source files; read raw files to change or debug specific lines.'
-  - text: '`graphify query` spends its budget (2000 tokens by default, whatever the graph size) on the node list before it prints one edge, and the `TRUNCATED` notice counts only nodes: it says `0 cut nodes` while holding back nearly every edge. On a 15k-node graph one question returned no edges at the default, 24 at `--budget 6000`, 101 at 9000 and 367 at 20000. So raise `--budget` until the edge count stops growing before concluding the graph cannot answer something, and read the skill''s own `references/query.md` before querying a large graph: it wants the search terms picked from the graph vocabulary rather than invented, and `--dfs` for "how does X reach Y". Reading `graphify-out/graph.json` directly is the fallback after that, not before it.'
+  - text: 'The rules graphify itself states: for codebase questions run `graphify query "<question>"` first whenever `graphify-out/graph.json` exists, `graphify path "<A>" "<B>"` for a relationship between two things, `graphify explain "<concept>"` for a single one. Read `graphify-out/GRAPH_REPORT.md` only for a broad architecture review, or when query, path and explain do not surface enough. After changing code, run `graphify update .` to keep the graph current (AST only, no model, no cost).'
+  - text: 'On a large graph, raise `graphify query --budget` (2000 by default, regardless of graph size) until the number of edges stops growing. The node list is printed before the edges, so a small budget drops exactly the part that carries the answer, and the `TRUNCATED` notice counts only nodes: it reports `0 cut nodes` while withholding almost every edge. Measured on a 15k-node graph: no edges at the default, 24 at 6000, 101 at 9000, 367 at 20000.'
   - text: 'graphify needs no API key. Code is extracted structurally (tree-sitter AST), and for docs, PDFs and images the running agent is the model. Only a standalone CLI run needs either `--code-only` (skips those files) or `GEMINI_API_KEY`; never ask for a key.'
   - text: '`graphify-out/` is build output (graph.json, GRAPH_REPORT.md, graph.html, the cache). It belongs in `.gitignore`, not in a commit.'

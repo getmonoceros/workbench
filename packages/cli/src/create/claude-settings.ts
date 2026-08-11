@@ -70,6 +70,9 @@ export async function writeClaudePermissionMode(
     ([ref]) => matchMonocerosFeature(ref)?.name === 'claude-code',
   );
   if (!entry) return; // no claude-code feature → nothing to configure
+  const hasGraphify = Object.keys(features).some(
+    (ref) => matchMonocerosFeature(ref)?.name === 'graphify',
+  );
 
   const raw = entry[1]?.permissionMode;
   const mode = resolveClaudeDefaultMode(
@@ -125,5 +128,90 @@ export async function writeClaudePermissionMode(
     delete config.skipDangerousModePermissionPrompt;
   }
 
+  applyGraphifyHooks(config, hasGraphify);
+
   await fsp.writeFile(file, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/** A Claude Code `PreToolUse` entry, as it sits in settings.json. */
+interface PreToolUseEntry {
+  matcher?: string;
+  hooks?: Array<{ type?: string; command?: string }>;
+}
+
+/** Every hook command Monoceros owns here is recognised by this marker. */
+const GRAPHIFY_HOOK_MARKER = 'graphify hook-guard';
+
+/**
+ * The two hooks that make the graph the agent's first stop, keyed on the tools
+ * that read the codebase raw. Upstream's own wording, taken from the entries
+ * `graphify install --project` writes.
+ *
+ * `Grep` is in the search matcher because Claude Code routes content search
+ * through its dedicated Grep tool rather than through Bash, so a Bash-only
+ * matcher never fires on the path an agent actually takes.
+ */
+function graphifyHookEntries(): PreToolUseEntry[] {
+  return [
+    {
+      matcher: 'Bash|Grep',
+      hooks: [{ type: 'command', command: `graphify hook-guard search` }],
+    },
+    {
+      matcher: 'Read|Glob',
+      hooks: [{ type: 'command', command: `graphify hook-guard read` }],
+    },
+  ];
+}
+
+/**
+ * Add or remove graphify's `PreToolUse` hooks in the container's **global**
+ * Claude settings, so a session in this workbench is nudged to ask the graph
+ * before it reads or greps source files.
+ *
+ * Why we write them and upstream does not: `graphify install` only wires these
+ * hooks in **project** scope, into a repo's own `.claude/settings.json`. That
+ * would put Monoceros into the builder's repository and their git status, which
+ * ADR 0049 ruled out - and the consequence was that a global install shipped
+ * the `/graphify` trigger and no rule to use it at all. Three runs on the same
+ * repository and the same graph took three different routes, one of them
+ * answering entirely from the graph and another reading 926 lines of source,
+ * because a briefing line is advice and nothing more.
+ *
+ * The hook command itself is scope-agnostic: `graphify hook-guard` keys off
+ * `graphify-out/graph.json` in the working directory, prints nothing when there
+ * is no graph, and always exits 0. So the container-global placement is safe
+ * even in a workspace where no graph was ever built.
+ *
+ * `graphify` unqualified rather than an absolute path: the feature symlinks the
+ * launcher into `/usr/local/bin`, which is on PATH for every shell type, and a
+ * path into the uv tool venv would be a second thing to keep in step.
+ *
+ * Merging cuts both ways. Foreign `PreToolUse` entries are preserved, ours are
+ * replaced rather than duplicated on re-apply, and removing the graphify
+ * feature from the yml removes them again - otherwise every later session in
+ * that container would run a hook command that is no longer installed.
+ */
+function applyGraphifyHooks(
+  config: Record<string, unknown>,
+  hasGraphify: boolean,
+): void {
+  const hooks =
+    typeof config.hooks === 'object' && config.hooks !== null
+      ? (config.hooks as Record<string, unknown>)
+      : {};
+  const existing = Array.isArray(hooks.PreToolUse)
+    ? (hooks.PreToolUse as PreToolUseEntry[])
+    : [];
+  const foreign = existing.filter(
+    (entry) =>
+      !entry?.hooks?.some((h) => h?.command?.includes(GRAPHIFY_HOOK_MARKER)),
+  );
+  const next = hasGraphify ? [...foreign, ...graphifyHookEntries()] : foreign;
+
+  if (next.length > 0) hooks.PreToolUse = next;
+  else delete hooks.PreToolUse;
+
+  if (Object.keys(hooks).length > 0) config.hooks = hooks;
+  else delete config.hooks;
 }
