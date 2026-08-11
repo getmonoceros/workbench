@@ -19,5 +19,6 @@ feature:
   version: 1.0.0
 briefing:
   - text: 'graphify (`graphify`) - the workspace as a knowledge graph. `/graphify .` builds it, `graphify query "<question>"` answers from it with a scoped subgraph. Ask the graph before you read or grep source files; read raw files to change or debug specific lines.'
+  - text: 'A `TRUNCATED` answer from `graphify query` is not an empty graph. The node list is printed before the edges, so a small token budget cuts the edges off completely: a 299-node answer at `--budget 9000` showed no edges at all, and the same question at `--budget 40000` returned 777. So on a truncated answer, raise `--budget` by a lot or narrow the question to two or three terms, and only then fall back to reading `graphify-out/graph.json` yourself.'
   - text: 'graphify needs no API key. Code is extracted structurally (tree-sitter AST), and for docs, PDFs and images the running agent is the model. Only a standalone CLI run needs either `--code-only` (skips those files) or `GEMINI_API_KEY`; never ask for a key.'
   - text: '`graphify-out/` is build output (graph.json, GRAPH_REPORT.md, graph.html, the cache). It belongs in `.gitignore`, not in a commit.'
