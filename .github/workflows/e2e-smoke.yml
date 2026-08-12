@@ -43,12 +43,20 @@ jobs:
   smoke:
     name: e2e --all
     runs-on: ubuntu-latest
-    # `--all` runs seven scenarios end-to-end with real docker
-    # container builds; the first run pulls the runtime image cold
-    # (~1-2 min) plus apt-installs feature layers per scenario. 20
-    # minutes is comfortably above what we've seen on a local Linux
-    # box (~7-8 min) and leaves headroom for slow GH runners.
-    timeout-minutes: 20
+    # `--all` runs every scenario end-to-end with real docker container
+    # builds; the first run pulls the runtime image cold (~1-2 min) plus
+    # apt-installs feature layers per scenario.
+    #
+    # Raised from 20 after the graphify canary landed in `with-features`.
+    # That scenario went from 140s to 421s, the apply inside it from ~100s
+    # to 384s, because graphify's default extras pull scipy, numba,
+    # llvmlite and graspologic into the feature layer - 24s on a local Mac,
+    # ~280s on a runner. The suite then hit 20 minutes at scenario 23 of 25
+    # and the publish was skipped, which is the gate doing its job. Measured
+    # length now is ~25 min, so this keeps real headroom. The alternative was
+    # a cheaper canary without those extras, rejected because the gate
+    # should exercise the configuration builders actually get.
+    timeout-minutes: 35
 
     # Job-level env so $GH_TOKEN is in scope for the credential
     # helper script we install below — that script runs later, in
