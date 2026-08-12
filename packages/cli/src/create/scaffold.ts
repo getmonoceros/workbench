@@ -1868,6 +1868,25 @@ export function mergeVscodeSettings(
 }
 
 /**
+ * Content for `.monoceros/global-gitignore`, git's `core.excludesFile` for
+ * every repo in the container. `.monoceros/` is unconditional; a feature that
+ * writes build output into the analysed repo adds its directory.
+ *
+ * Exported for the test: the point of the file is that nothing lands in a
+ * builder's tracked `.gitignore`, and that is worth pinning.
+ */
+export function globalGitignoreContent(
+  features: CreateOptions['features'],
+): string {
+  const lines = ['.monoceros/'];
+  const hasGraphify = Object.keys(features ?? {}).some(
+    (ref) => matchMonocerosFeature(ref)?.name === 'graphify',
+  );
+  if (hasGraphify) lines.push('graphify-out/');
+  return `${lines.join('\n')}\n`;
+}
+
+/**
  * Generate the `post-create.sh` content for a solution. Base sections
  * (git include + pnpm install) are fixed. The `installUrls` and
  * `repos` sections are appended only when those yml fields are
@@ -2169,9 +2188,21 @@ export async function writeScaffold(
   // default, so it doesn't pollute the builder's app repo. Opting into
   // versioning is per app via the app's own `.gitignore`
   // (`.monoceros/*` + `!.monoceros/launch.json`, or `!.monoceros/`).
+  //
+  // A tool that writes build output into the repo it analyses gets its
+  // directory listed here too, for the same reason and with a sharper edge:
+  // the alternative is a commit in someone's project. graphify writes
+  // `graphify-out/` (graph.json, the report, the HTML view, a cache) next to
+  // the code, and an agent that reads the briefing will helpfully add that
+  // line to the project's own `.gitignore` - which is exactly the commit the
+  // builder did not ask for. Listing it here keeps the working tree clean
+  // without touching a tracked file. It cannot move instead: the output
+  // directory is configurable via `GRAPHIFY_OUT`, but graphify's skill hard-
+  // codes the literal path in 155 places, so the CLI and the skill that
+  // drives it would write to different directories.
   await fs.writeFile(
     path.join(monocerosDir, 'global-gitignore'),
-    '.monoceros/\n',
+    globalGitignoreContent(opts.features),
   );
 
   const devcontainerJson = buildDevcontainerJson(opts, dockerMode);

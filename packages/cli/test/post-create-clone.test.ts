@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildPostCreateScript } from '../src/create/scaffold.js';
+import {
+  buildPostCreateScript,
+  globalGitignoreContent,
+} from '../src/create/scaffold.js';
 import type { CreateOptions } from '../src/create/types.js';
 
 const base: CreateOptions = {
@@ -46,6 +49,31 @@ describe('buildPostCreateScript — repo clone is non-fatal', () => {
     expect(script).toContain('git -C "projects/bar" config user.name "Ada"');
     expect(script).toContain(
       'git -C "projects/bar" config user.email "ada@example.com"',
+    );
+  });
+});
+
+/**
+ * The container-global gitignore, git's `core.excludesFile` for every repo in
+ * the container. It is what keeps a tool's build output out of the builder's
+ * tree without editing a tracked file: graphify writes `graphify-out/` next to
+ * the code it analyses, and an agent told to gitignore that will edit the
+ * project's own `.gitignore` and commit it. Moving the output elsewhere is not
+ * the alternative - `GRAPHIFY_OUT` exists, but graphify's skill hardcodes the
+ * literal path, so the CLI and the skill would part ways.
+ */
+describe('globalGitignoreContent', () => {
+  const GRAPHIFY_REF = 'ghcr.io/getmonoceros/monoceros-features/graphify:1';
+  const GH_REF = 'ghcr.io/getmonoceros/monoceros-features/github-cli:1';
+
+  it('excludes the per-app launch-config dir on its own', () => {
+    expect(globalGitignoreContent(undefined)).toBe('.monoceros/\n');
+    expect(globalGitignoreContent({ [GH_REF]: {} })).toBe('.monoceros/\n');
+  });
+
+  it('adds graphify build output when that feature is in the container', () => {
+    expect(globalGitignoreContent({ [GH_REF]: {}, [GRAPHIFY_REF]: {} })).toBe(
+      '.monoceros/\ngraphify-out/\n',
     );
   });
 });
