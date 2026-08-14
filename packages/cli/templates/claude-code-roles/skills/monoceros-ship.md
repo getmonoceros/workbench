@@ -11,11 +11,14 @@ argument-hint: '[<app>/<slug> | slug]'
 
 Implement the plan named by: $ARGUMENTS
 
-Plans on disk, relative to `{{PLANS_DIR}}/`:
+Plans on disk, as absolute paths under `{{PLANS_DIR}}/`:
 
-!`find {{PLANS_DIR}} -name '*.md' 2>/dev/null | sed "s|^{{PLANS_DIR}}/||" | sort`
+!`find {{PLANS_DIR}} -name '*.md'`
 
-The app of the working directory is: !`pwd | sed -n 's|.*/projects/\([^/]*\).*|\1|p'`
+The working directory is: !`pwd`
+
+The app is the path segment right after `projects/` in that path. If the
+path has no `projects/` segment, the working directory is not inside an app.
 
 ## 1. Resolve the plan
 

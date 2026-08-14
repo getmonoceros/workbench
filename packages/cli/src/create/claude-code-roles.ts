@@ -53,7 +53,8 @@ import type { CreateOptions } from './types.js';
 
 /** Container-side home of the workspace user; everything hangs off it. */
 const CONTAINER_HOME = '/home/node';
-const PLANS_DIR = `${CONTAINER_HOME}/.claude/plans`;
+/** Where the roles keep their plans. Exported: the settings need it too. */
+export const PLANS_DIR = `${CONTAINER_HOME}/.claude/plans`;
 const PLANS_DIR_TILDE = '~/.claude/plans';
 const GUARD = `${CONTAINER_HOME}/.claude/monoceros-roles/guard.mjs`;
 
@@ -128,6 +129,17 @@ export async function writeClaudeCodeRoles(
   );
   const claudeDir = path.join(targetDir, 'home', '.claude');
 
+  // A role this CLI no longer ships has to go, and nothing else does it:
+  // `~/.claude` is a persistent bind mount, so an agent or skill from an older
+  // apply stays on disk and stays live forever. The design role was built,
+  // rejected (ADR 0050) and dropped from the templates, and it kept showing up
+  // in every session of a container that had once applied it.
+  await pruneStaleEntries(
+    path.join(claudeDir, 'agents'),
+    AGENTS.map((name) => `${name}.md`),
+  );
+  await pruneStaleEntries(path.join(claudeDir, 'skills'), [...SKILLS]);
+
   // Agents: one flat file each, under ~/.claude/agents/.
   const agentsDir = path.join(claudeDir, 'agents');
   await fsp.mkdir(agentsDir, { recursive: true });
@@ -195,6 +207,29 @@ async function removeClaudeCodeRoles(targetDir: string): Promise<void> {
     recursive: true,
     force: true,
   });
+}
+
+/**
+ * Delete the `monoceros-*` entries in a directory that this CLI no longer
+ * ships, keeping the ones it is about to write. The same directories hold
+ * skills and agents from elsewhere, so the prefix decides what we may touch
+ * and `keep` decides what survives.
+ */
+async function pruneStaleEntries(
+  dir: string,
+  keep: readonly string[],
+): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith('monoceros-')) continue;
+    if (keep.includes(entry)) continue;
+    await fsp.rm(path.join(dir, entry), { recursive: true, force: true });
+  }
 }
 
 /**

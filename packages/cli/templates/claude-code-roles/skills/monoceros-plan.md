@@ -1,8 +1,7 @@
 ---
 name: monoceros-plan
-description: 'Plan a task before implementing it: an issue reference, a backlog entry or free text. Grills the ambiguity out of it, then writes a plan file the implementer and the reviewer work from.'
+description: 'Plan a task before implementing it: an issue reference, a backlog entry or free text. Grills the ambiguity out of it, then writes a plan file the implementer and the reviewer work from. Use only when the user asks for a plan in so many words, never on your own before starting work.'
 argument-hint: '[issue ref | backlog entry | free text]'
-disable-model-invocation: true
 allowed-tools: Bash(gh issue view *), Bash(git *), Read, Grep, Glob
 ---
 
@@ -13,7 +12,10 @@ allowed-tools: Bash(gh issue view *), Bash(git *), Read, Grep, Glob
 
 Plan this task: $ARGUMENTS
 
-The app of the working directory is: !`pwd | sed -n 's|.*/projects/\([^/]*\).*|\1|p'`
+The working directory is: !`pwd`
+
+The app is the path segment right after `projects/` in that path. If the
+path has no `projects/` segment, the working directory is not inside an app.
 
 You lead this run. You do the asking, and `monoceros-planner` writes the plan.
 The split is not cosmetic: a subagent has no way to reach the user, so the
@@ -79,9 +81,9 @@ the prompt has to carry everything, or it is lost.
     Report back. You cannot ask questions: anything still open goes into the
     plan's Open questions section.
 
-If the working-directory line above is empty, you are not inside a project
-directory. Then use the app the plan is about, the directory under `projects/`
-that will be created or changed, and say which one you picked.
+If the working directory has no `projects/` segment, you are not inside a
+project directory. Then use the app the plan is about, the directory under
+`projects/` that will be created or changed, and say which one you picked.
 
 ## 4. Show it and stop
 

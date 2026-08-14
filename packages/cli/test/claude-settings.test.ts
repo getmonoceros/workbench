@@ -59,6 +59,33 @@ describe('writeClaudePermissionMode', () => {
     expect(cfg.skipDangerousModePermissionPrompt).toBeUndefined();
   });
 
+  // The roles keep their plans outside the workspace so they survive an apply,
+  // and Claude Code refuses to list a directory that is not a working directory
+  // of the session in every mode but auto. A skill's `!`find …`` preamble is not
+  // a prompt anyone can approve, so the skill aborts before it loads - which is
+  // what Claude Desktop over SSH does, because it attaches in acceptEdits.
+  it('allows the plans directory while the roles are installed', async () => {
+    const ROLES = 'ghcr.io/getmonoceros/monoceros-features/claude-code-roles:1';
+    await writeClaudePermissionMode(dir, { [CLAUDE_REF]: {}, [ROLES]: {} });
+    const withRoles = (await read()).permissions as Record<string, unknown>;
+    expect(withRoles.additionalDirectories).toEqual([
+      '/home/node/.claude/plans',
+    ]);
+
+    // Dropping the feature takes the entry with it, and leaves a directory the
+    // builder added themselves alone.
+    (withRoles.additionalDirectories as string[]).unshift('/opt/shared');
+    await fsp.writeFile(
+      settings(),
+      JSON.stringify({ permissions: withRoles }, null, 2),
+    );
+    await writeClaudePermissionMode(dir, { [CLAUDE_REF]: {} });
+    expect(
+      ((await read()).permissions as Record<string, unknown>)
+        .additionalDirectories,
+    ).toEqual(['/opt/shared']);
+  });
+
   it('honours an explicit `ask` option (no env, no skip)', async () => {
     await writeClaudePermissionMode(dir, {
       [CLAUDE_REF]: { permissionMode: 'ask' },

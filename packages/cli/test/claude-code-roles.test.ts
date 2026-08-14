@@ -88,22 +88,39 @@ describe('writeClaudeCodeRoles', () => {
     ).resolves.toContain('PreToolUse');
   });
 
-  // Regression from the first real run: `/monoceros-plan` ended with the user
-  // saying "let's implement it", and the session could not reach
-  // `/monoceros-ship` because the skill blocked model invocation. Only the
-  // entry point stays blocked, so a planning dialogue is never started
-  // unasked; the two steps after an approved plan have to be callable.
-  it('lets the session carry on from an approved plan', async () => {
+  // Regression from a real run: `/monoceros-plan` blocked model invocation, so
+  // it existed only as a slash command. Claude Desktop attached over SSH builds
+  // its slash palette client-side and never sees a skill in the container's
+  // home, and its prompts arrive as plain SDK text - which left the entry point
+  // of the whole chain unreachable there, while ship and review worked. Every
+  // skill has to be model-invocable; the guard against starting a planning
+  // dialogue unasked lives in the description instead.
+  it('keeps every skill reachable without a slash palette', async () => {
     await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
-    expect(await skill('monoceros-plan')).toContain(
-      'disable-model-invocation: true',
-    );
-    expect(await skill('monoceros-ship')).not.toContain(
-      'disable-model-invocation',
-    );
-    expect(await skill('monoceros-review')).not.toContain(
-      'disable-model-invocation',
-    );
+    for (const name of ['monoceros-plan', 'monoceros-ship', 'monoceros-review'])
+      expect(await skill(name)).not.toContain('disable-model-invocation');
+    expect(await skill('monoceros-plan')).toContain('asks for a plan');
+  });
+
+  // A role this CLI no longer ships has to go on the next apply, not only when
+  // the feature leaves the yml. The design role was built, rejected (ADR 0050)
+  // and dropped from the templates, and it stayed live in every container that
+  // had applied it once, because `~/.claude` is a persistent bind mount.
+  it('drops roles it no longer ships, and nothing else', async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+    await writeFile(path.join(agentsDir(), 'monoceros-designer.md'), 'old\n');
+    await mkdir(path.join(skillsDir(), 'monoceros-design'), {
+      recursive: true,
+    });
+    await writeFile(path.join(agentsDir(), 'my-own.md'), 'mine\n');
+
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+
+    const agents = await readdir(agentsDir());
+    expect(agents).not.toContain('monoceros-designer.md');
+    expect(agents).toContain('monoceros-planner.md');
+    expect(agents).toContain('my-own.md');
+    expect(await readdir(skillsDir())).not.toContain('monoceros-design');
   });
 
   // Claude Code withholds AskUserQuestion from every subagent, so phase 0
@@ -136,6 +153,20 @@ describe('writeClaudeCodeRoles', () => {
     // And no technical either/or is left standing as the model of a good question.
     expect(plan).not.toContain('Web app or CLI changes the shape');
     expect(plan).not.toContain('a web app or a CLI tool');
+  });
+
+  // Second run, second instance of one class: a check that cannot fail. First it
+  // was a 200 on `/` (the rule above), then an acceptance script that used
+  // `2026-02-30` as its invalid date, which JavaScript rolls over to
+  // `2026-03-02` and accepts - green while every genuinely impossible date
+  // answered 500. So the planner carries the general rule, not a list of traps:
+  // every check names the broken behaviour it catches, and a check that would
+  // already pass against today's code is not a check.
+  it('makes the planner write checks that can fail', async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+    expect(await agent('monoceros-planner')).toContain(
+      'Every check has to be able to fail',
+    );
   });
 
   // A dev server answers `/` with the page shell whether the app loads or not,
@@ -249,6 +280,28 @@ describe('writeClaudeCodeRoles', () => {
     ]) {
       expect(await agent(name)).not.toContain('effort:');
       expect(await agent(name)).not.toContain('{{EFFORT_LINE}}');
+    }
+  });
+
+  // Every `!`…`` line in a skill runs before the skill loads, and it is not a
+  // prompt anyone can approve: if the permission check stops it, the skill
+  // aborts with a stderr line and nothing runs. Claude Code splits a command on
+  // its pipes and checks each part, so `pwd | sed …` needed approval for the
+  // `sed` half and all three skills were dead in every mode but auto - which is
+  // what Claude Desktop over SSH uses. One command per substitution, and the
+  // model does the string work the pipe used to do.
+  it('keeps the preamble substitutions to a single command', async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+    for (const name of [
+      'monoceros-plan',
+      'monoceros-ship',
+      'monoceros-review',
+    ]) {
+      const body = await skill(name);
+      for (const line of body.split('\n')) {
+        if (!line.includes('!`')) continue;
+        expect(line).not.toMatch(/[|;&]/);
+      }
     }
   });
 

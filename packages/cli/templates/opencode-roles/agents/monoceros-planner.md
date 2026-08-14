@@ -162,6 +162,14 @@ one it cannot:
   command stays in the project and guards the runs after this one. A real run
   shipped a white page with fifteen green tests because nothing fetched the one
   module the page imported.
+- **Every check has to be able to fail.** For each one, name the broken behaviour
+  it would catch and pick the input that produces it. Ask of every check whether
+  it would already pass against the code as it stands today: if it would, it
+  proves nothing and belongs rewritten, not in the plan. The rule above is one
+  instance of this; the other trap is input the runtime quietly repairs on the
+  way in. A real run checked date validation with `2026-02-30`, which JavaScript
+  rolls over to `2026-03-02` and accepts, so the check stayed green while every
+  genuinely impossible date answered 500. `2026-13-01` would have failed it.
 - Write the steps in the order they must happen, one change per step.
 - Fill "out of scope" honestly. It is the fence that keeps the implementer from
   improving neighbouring code.

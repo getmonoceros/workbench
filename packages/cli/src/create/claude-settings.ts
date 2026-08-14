@@ -1,6 +1,7 @@
 import { existsSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { matchMonocerosFeature } from '../util/ref.js';
+import { PLANS_DIR } from './claude-code-roles.js';
 import type { CreateOptions } from './types.js';
 
 /**
@@ -73,6 +74,9 @@ export async function writeClaudePermissionMode(
   const hasGraphify = Object.keys(features).some(
     (ref) => matchMonocerosFeature(ref)?.name === 'graphify',
   );
+  const hasRoles = Object.keys(features).some(
+    (ref) => matchMonocerosFeature(ref)?.name === 'claude-code-roles',
+  );
 
   const raw = entry[1]?.permissionMode;
   const mode = resolveClaudeDefaultMode(
@@ -104,6 +108,7 @@ export async function writeClaudePermissionMode(
       ? (config.permissions as Record<string, unknown>)
       : {};
   permissions.defaultMode = mode;
+  applyPlansDirectory(permissions, hasRoles);
   config.permissions = permissions;
 
   // Auto Mode: enable it via env where the account supports it; otherwise drop
@@ -131,6 +136,36 @@ export async function writeClaudePermissionMode(
   applyGraphifyHooks(config, hasGraphify);
 
   await fsp.writeFile(file, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/**
+ * Put the roles' plans directory on the session's list of allowed working
+ * directories, so the skills can read it in every permission mode.
+ *
+ * Plans live under the persisted `~/.claude`, deliberately outside the
+ * workspace, so a plan survives an apply. Outside is the problem: Claude Code
+ * refuses to list or search a directory that is not a working directory of the
+ * session, and refuses it *silently for a skill* - the `!`find …`` line in the
+ * skill's preamble is not a prompt the user can approve, so the whole skill
+ * aborts before it loads. Auto Mode hid this for months (its classifier lets
+ * the read through); Claude Desktop attaches over SSH in `acceptEdits`, where
+ * it fails every time.
+ *
+ * Only the plans directory, not `~/.claude`: this widens what a session may
+ * read, and it should widen by exactly the directory the roles own.
+ */
+function applyPlansDirectory(
+  permissions: Record<string, unknown>,
+  hasRoles: boolean,
+): void {
+  const existing = Array.isArray(permissions.additionalDirectories)
+    ? (permissions.additionalDirectories as unknown[]).filter(
+        (entry) => typeof entry === 'string' && entry !== PLANS_DIR,
+      )
+    : [];
+  const next = hasRoles ? [...existing, PLANS_DIR] : existing;
+  if (next.length > 0) permissions.additionalDirectories = next;
+  else delete permissions.additionalDirectories;
 }
 
 /** A Claude Code `PreToolUse` entry, as it sits in settings.json. */

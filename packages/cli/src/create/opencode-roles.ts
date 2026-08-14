@@ -127,6 +127,13 @@ export async function writeOpencodeRoles(
     ['commands', COMMANDS],
   ] as const) {
     const outDir = path.join(configDir, kind);
+    // A role this CLI no longer ships has to go, and nothing else does it:
+    // `~/.config/opencode` is a persistent bind mount, so an agent or command
+    // from an older apply stays on disk and stays live forever.
+    await pruneStaleEntries(
+      outDir,
+      names.map((name) => `${name}.md`),
+    );
     await fsp.mkdir(outDir, { recursive: true });
     for (const name of names) {
       const src = path.join(templates, kind, `${name}.md`);
@@ -168,6 +175,29 @@ async function removeOpencodeRoles(targetDir: string): Promise<void> {
     await removeNamespacedEntries(path.join(configDir, kind));
   }
   await removeAgentEntries(path.join(configDir, 'opencode.json'));
+}
+
+/**
+ * Delete the `monoceros-*` entries in a directory that this CLI no longer
+ * ships, keeping the ones it is about to write. The same directories hold
+ * agents and commands from elsewhere, so the prefix decides what we may touch
+ * and `keep` decides what survives.
+ */
+async function pruneStaleEntries(
+  dir: string,
+  keep: readonly string[],
+): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith('monoceros-')) continue;
+    if (keep.includes(entry)) continue;
+    await fsp.rm(path.join(dir, entry), { recursive: true, force: true });
+  }
 }
 
 /**

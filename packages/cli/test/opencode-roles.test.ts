@@ -49,6 +49,27 @@ describe('writeOpencodeRoles', () => {
     await expect(readdir(agentsDir())).rejects.toThrow();
   });
 
+  // A role this CLI no longer ships has to go on the next apply, not only when
+  // the feature leaves the yml. `~/.config/opencode` is a persistent bind
+  // mount, so an agent or command from an older apply stays on disk and stays
+  // live: the design role was rejected (ADR 0050) and dropped from the
+  // templates, and it kept turning up in containers that had applied it once.
+  it('drops roles it no longer ships, and nothing else', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    await writeFile(path.join(agentsDir(), 'monoceros-designer.md'), 'old\n');
+    await writeFile(path.join(commandsDir(), 'monoceros-design.md'), 'old\n');
+    await writeFile(path.join(commandsDir(), 'my-own.md'), 'mine\n');
+
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+
+    const agents = await readdir(agentsDir());
+    expect(agents).not.toContain('monoceros-designer.md');
+    expect(agents).toContain('monoceros-planner.md');
+    const commands = await readdir(commandsDir());
+    expect(commands).not.toContain('monoceros-design.md');
+    expect(commands).toContain('my-own.md');
+  });
+
   // Dropping the feature from the yml has to take its files with it.
   // `~/.config/opencode` is a persistent bind mount, so everything an earlier
   // apply wrote stays there until something deletes it, and the roles keep
@@ -577,6 +598,18 @@ describe('writeOpencodeRoles', () => {
     expect(planner).toMatch(/Not\s+"which database\?" but/);
     expect(planner).not.toContain('Web app or CLI changes the shape');
     expect(planner).not.toContain('a web\napp or a CLI tool');
+  });
+
+  // Same rule as on the Claude side, from the same run: an acceptance check used
+  // `2026-02-30` as its invalid date, which rolls over to `2026-03-02` and is
+  // accepted, so it stayed green while every impossible date answered 500. The
+  // general form of the page-reference rule above, and the planner carries that
+  // form rather than a list of traps.
+  it('makes the planner write checks that can fail', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    expect(
+      await read(path.join(agentsDir(), 'monoceros-planner.md')),
+    ).toContain('Every check has to be able to fail');
   });
 
   // Same rule, same reason as on the Claude side: `/` returns the page shell
