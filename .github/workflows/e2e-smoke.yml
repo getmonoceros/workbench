@@ -28,6 +28,19 @@ on:
   # change that didn't touch packages/cli/ but you still want to
   # verify, or right after pushing the workflow itself).
   workflow_dispatch:
+  # Nightly on main, to catch upstream drift. The features install their
+  # tools unpinned, on purpose: a container is supposed to carry the
+  # current tool, not the one that was current when we last shipped. The
+  # price is that a third party can break our build without us touching a
+  # line, and every other trigger here fires only on OUR changes, so that
+  # class of break stayed invisible until a builder ran into it. It did:
+  # Atlassian reworked twg's installer consent step from a stdin prompt to
+  # an up-front flag, and the atlassian feature stopped building. The
+  # scenarios download the real installers, so this run sees it first.
+  # Off-the-hour by GitHub's own advice, the top of an hour is the most
+  # oversubscribed slot on their schedulers.
+  schedule:
+    - cron: '17 3 * * *'
 
 # Cancel an in-flight run on the same ref when a new commit lands. The
 # literal `e2e-smoke-` prefix is load-bearing: a release-*.yml caller
@@ -52,10 +65,17 @@ jobs:
     # to 384s, because graphify's default extras pull scipy, numba,
     # llvmlite and graspologic into the feature layer - 24s on a local Mac,
     # ~280s on a runner. The suite then hit 20 minutes at scenario 23 of 25
-    # and the publish was skipped, which is the gate doing its job. Measured
-    # length now is ~25 min, so this keeps real headroom. The alternative was
-    # a cheaper canary without those extras, rejected because the gate
-    # should exercise the configuration builders actually get.
+    # and the publish was skipped, which is the gate doing its job. The
+    # alternative was a cheaper canary without those extras, rejected
+    # because the gate should exercise the configuration builders actually
+    # get.
+    #
+    # The headroom is for outliers, not for the normal case: measured over
+    # every run since the canary landed, the job takes 12 to 13.5 minutes
+    # (11.5 to 12 before it). The one run that hit the old ceiling was a
+    # single slow runner, a parallel run the same minute finished green in
+    # 13.4. So the ceiling is deliberately far above the mean, because the
+    # tail is what skips a publish.
     timeout-minutes: 35
 
     # Job-level env so $GH_TOKEN is in scope for the credential
