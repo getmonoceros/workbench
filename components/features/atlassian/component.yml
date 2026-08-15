@@ -45,7 +45,7 @@ options:
     description: 'Bitbucket access for twg and repo clone: an Atlassian API token with `read/write:repository:bitbucket` scopes (app passwords retire 2026-06-09). Leave empty to reuse `apiToken` when that token already carries the Bitbucket scopes.'
     surface: env
 feature:
-  version: 1.3.2
+  version: 1.3.3
   # Installs a global npm package, so it has to run after the node
   # feature: otherwise npm resolves the version against the Node the
   # runtime image ships, which a pinned `node:<major>` then replaces.

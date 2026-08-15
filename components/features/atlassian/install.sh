@@ -214,32 +214,23 @@ if [ "${TWG}" = "true" ]; then
   # The official install script:
   #   - Downloads the binary; we pin install dir to /usr/local/bin so
   #     both root (build time) and node (runtime) have it on PATH.
-  #   - Runs a `twg consent --source direct-public-installer` step
-  #     that prompts on stdin. We feed it `yes` via a heredoc; the
-  #     extra blank lines are harmless padding in case a future
-  #     version adds more prompts. (The recorded consent lands in
-  #     /root/.config/twg/ which is not visible to the node user at
-  #     runtime — we re-record it as node in the post-create hook
-  #     below.)
+  #   - Records consent to the Atlassian customer agreement. That step
+  #     used to read a `yes` from stdin; it no longer does. It now
+  #     refuses to prompt at all without a controlling terminal and
+  #     demands the consent up front, so `--yes` is mandatory here.
+  #     Without it the whole feature build dies with "Interactive auth
+  #     prompting is unavailable […] Pass --agree or --yes". Upstream
+  #     forwards `--yes` only for a fully unattended install, i.e. only
+  #     together with --skip-login AND --skip-skills.
   #   - With --skip-login / --skip-skills we keep the install
   #     non-interactive. Auth is env-var based (see the workspaceEnv
   #     note below, no login step); skills install later as the node
   #     user so they persist into the bind-mounted home.
-  #
-  # Heredoc (not `yes ... |`) deliberately: a long-lived `yes` left
-  # writing into a closed pipe after the install script exits gets
-  # SIGPIPE'd, and our own `set -o pipefail` would then propagate
-  # that 141 as a feature-install failure even though the install
-  # actually succeeded.
   bash "${TMP}" \
     --install-dir /usr/local/bin \
     --skip-login \
     --skip-skills \
-    <<'TWG_INSTALL_INPUT'
-yes
-yes
-yes
-TWG_INSTALL_INPUT
+    --yes
   rm -f "${TMP}"
 
   # The install script's mktemp + chmod +x leaves twg-bin at 0700
