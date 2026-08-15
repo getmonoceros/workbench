@@ -25,18 +25,59 @@ const FRAME_INTERVAL_MS = 80;
 const TAIL_LINES = 15;
 
 /**
- * Lines we drop from the on-screen failure tail — pure `@devcontainers/cli`
- * / Node internals that are never user-actionable and would otherwise
- * crowd the real error (e.g. a git "could not read Username") out of the
- * {@link TAIL_LINES}-line window. The full stream still goes to the log
- * file, so nothing is lost for deep debugging.
+ * Strip the per-line prefixes the pipeline stamps on before the actual
+ * content: the devcontainer CLI's `[2026-…Z] ` timestamp, BuildKit's
+ * `#19 ` step marker, and the elapsed-seconds stamp that follows it
+ * (`16.42 `, which BuildKit keeps but the `#19 ` is dropped from when it
+ * replays a failed step's output). Used for noise matching only; the
+ * tail keeps the line as it came in.
+ */
+function tailLineContent(line: string): string {
+  return line
+    .trim()
+    .replace(/^\[\d{4}-\d{2}-\d{2}T[\d:.]+Z\]\s*/, '')
+    .replace(/^#\d+\s*/, '')
+    .replace(/^\d+\.\d+\s*/, '')
+    .trim();
+}
+
+/**
+ * Lines we drop from the on-screen failure tail: noise that is never
+ * user-actionable and would otherwise crowd the real error (a git "could
+ * not read Username", a feature's install script saying what it choked
+ * on) out of the {@link TAIL_LINES}-line window. The full stream still
+ * goes to the log file, so nothing is lost for deep debugging.
+ *
+ * The BuildKit block is the reason this list is as long as it is. When a
+ * feature fails to install, BuildKit closes with ~20 lines of pure frame:
+ * a numbered excerpt of the generated Dockerfile, a `failed to solve:`
+ * repeat of the RUN command, a build-details URL, and the compose command
+ * that wrapped it all. Not one of them says what went wrong, and together
+ * they are long enough to push the failing script's own output, the only
+ * part that does, clean out of the window.
  */
 function isNoiseTailLine(line: string): boolean {
-  const t = line.trim();
+  const t = tailLineContent(line);
   return (
+    t.length === 0 ||
     /^at\s/.test(t) || // JS stack frame
     t.startsWith('{"outcome":') || // devcontainer-cli result blob
-    /^Error: Command failed: \/bin\/sh -c/.test(t) // Node child rethrow header
+    /^Error: Command failed: \/bin\/sh -c/.test(t) || // Node child rethrow header
+    // BuildKit's failure frame around the step that actually failed.
+    /^-{3,}$/.test(t) || // ------ separators
+    /^\d+\s*\|/.test(t) || // 35 | >>> RUN --mount=…
+    /^Dockerfile(-with-features)?:\d+$/.test(t) ||
+    /^>\s*\[.+\]\s/.test(t) || // > [dev_containers_target_stage 5/8] RUN …
+    /^ERROR: process ["']/.test(t) ||
+    /^failed to solve: /.test(t) ||
+    /^View build details: /.test(t) ||
+    /^Exit code \d+$/.test(t) ||
+    /^Error: Command failed: docker /.test(t) ||
+    // curl's transfer meter. A feature that downloads a 100 MB binary
+    // otherwise fills the whole window with progress bars.
+    /^%\s+Total/.test(t) ||
+    /^Dload\s+Upload/.test(t) ||
+    (/(--:--:--|\d+:\d{2}:\d{2})/.test(t) && /^[\d\s.,%kKMGTB:-]+$/.test(t))
   );
 }
 

@@ -192,6 +192,64 @@ describe('createApplyProgress stream sink (phase detection + tail)', () => {
     ]);
   });
 
+  it("drops BuildKit's failure frame so a failed feature install stays visible", () => {
+    const { stream } = makeFakeOut({ isTTY: false });
+    const progress = createApplyProgress({ out: stream, interactive: false });
+    // Trimmed from a real apply log: the atlassian feature's install
+    // script died, and BuildKit's closing frame (Dockerfile excerpt,
+    // `failed to solve:`, build URL, compose rethrow) plus curl's
+    // transfer meter is long enough to push the one diagnostic line out
+    // of the 15-line window.
+    progress.streamSink.write(
+      [
+        // Real ISO timestamps here (not the `[t]` shorthand the other
+        // cases use): the frame filter matches on the content behind the
+        // devcontainer-CLI timestamp, so the prefix is part of what this
+        // case is checking.
+        '[2026-08-15T17:30:02.000Z] Start: Run: docker compose --project-name x -f y build workspace',
+        '#19 0.398 [atlassian/twg] installing via official install script',
+        '#19 1.455 Downloading https://teamwork-graph.atlassian.com/cli/twg-linux-arm64-v1.2.5 …',
+        '#19 1.460   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current',
+        '#19 1.460                                  Dload  Upload   Total   Spent    Left  Speed',
+        '#19 1.460   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0',
+        '100  102M  100  102M    0     0  7958k      0  0:00:13  0:00:13 --:--:-- 10.7M',
+        '#19 15.77 ',
+        '#19 16.42 Interactive auth prompting is unavailable without a controlling terminal. Pass --agree or --yes.',
+        '#19 16.43 ERROR: Feature "Atlassian" (ghcr.io/…/atlassian) failed to install!',
+        '#19 ERROR: process "/bin/sh -c cp -ar /tmp/build-features-src/atlassian_1 …" did not complete successfully: exit code: 1',
+        '------',
+        ' > [dev_containers_target_stage 5/8] RUN --mount=type=bind,from=… :',
+        '16.42 Interactive auth prompting is unavailable without a controlling terminal. Pass --agree or --yes.',
+        '16.43 ERROR: Feature "Atlassian" (ghcr.io/…/atlassian) failed to install!',
+        '------',
+        'Dockerfile-with-features:35',
+        '--------------------',
+        '  34 |     ',
+        '  35 | >>> RUN --mount=type=bind,from=dev_containers_feature_content_source,source=atlassian_1 \\',
+        '  42 |     ',
+        '--------------------',
+        'failed to solve: process "/bin/sh -c cp -ar …" did not complete successfully: exit code: 1',
+        'View build details: docker-desktop://dashboard/build/default/default/p5kys',
+        '[2026-08-15T17:30:20.283Z] Exit code 1',
+        'Error: Command failed: docker compose --project-name x -f y build workspace',
+        '',
+      ].join('\n'),
+    );
+    const { tailLines } = progress.fail();
+    // Every surviving line says something about what happened; the frame,
+    // the transfer meter and the bare step markers are gone. The phase
+    // trigger stays as the first line, as it does for every phase.
+    expect(tailLines).toEqual([
+      '[2026-08-15T17:30:02.000Z] Start: Run: docker compose --project-name x -f y build workspace',
+      '#19 0.398 [atlassian/twg] installing via official install script',
+      '#19 1.455 Downloading https://teamwork-graph.atlassian.com/cli/twg-linux-arm64-v1.2.5 …',
+      '#19 16.42 Interactive auth prompting is unavailable without a controlling terminal. Pass --agree or --yes.',
+      '#19 16.43 ERROR: Feature "Atlassian" (ghcr.io/…/atlassian) failed to install!',
+      '16.42 Interactive auth prompting is unavailable without a controlling terminal. Pass --agree or --yes.',
+      '16.43 ERROR: Feature "Atlassian" (ghcr.io/…/atlassian) failed to install!',
+    ]);
+  });
+
   it('scopes the failure tail to the failing phase (drops the build/run transcript)', () => {
     const { stream } = makeFakeOut({ isTTY: false });
     const progress = createApplyProgress({ out: stream, interactive: false });
