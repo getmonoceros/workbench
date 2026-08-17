@@ -115,6 +115,36 @@ describe('expandCuratedService / isCuratedService', () => {
     expect(exampleVolumesComment([])).toBeUndefined();
   });
 
+  it('expands caddy for a repo-mounted Caddyfile, watched and deferred', () => {
+    const svc = expandCuratedService('caddy');
+    expect(svc.image).toBe('caddy:2.11.4');
+    expect(svc.port).toBe(80);
+    // `--watch` is the whole reason for an explicit command: an edited
+    // Caddyfile takes effect on save. Drop it and every config change needs a
+    // service restart, silently.
+    expect(svc.command).toBe(
+      'caddy run --config /etc/caddy/Caddyfile --adapter caddyfile --watch',
+    );
+    // The Caddyfile is mounted out of the cloned repo, so this has to start in
+    // the second wave (ADR 0025) - at the parallel start docker would create a
+    // DIRECTORY at the missing mount source and Caddy would find a directory
+    // where it wants its config.
+    expect(serviceDefersStart('caddy')).toBe(true);
+    // No healthcheck on purpose: nothing gates on this service, and a probe on
+    // `/` reports the upstream - it would mark Caddy unhealthy whenever the dev
+    // server behind it is simply not running.
+    expect(svc.healthcheck).toBeUndefined();
+    // Traffic runs from Caddy to the app, not the other way, so the workspace
+    // gets no connection env for it.
+    expect(svc.connectionEnv).toBeUndefined();
+    // The DIRECTORY, not the Caddyfile: docker caches a single-file bind mount
+    // by inode, so an editor that saves by replacing the file would leave the
+    // container on the old content and `--watch` would never fire.
+    expect(curatedServiceExampleVolumes('caddy')).toEqual([
+      'projects/<app>/caddy:/etc/caddy:ro',
+    ]);
+  });
+
   it('exposes literal env dev-defaults for .env seeding', () => {
     expect(curatedServiceEnvDefaults('postgres')).toEqual({
       POSTGRES_USER: 'monoceros',

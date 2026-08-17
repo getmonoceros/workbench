@@ -1,0 +1,58 @@
+id: caddy
+category: service
+displayName: Caddy
+description: 'Reverse proxy for local dev, so your app and the services behind it answer under one address. Reachable in-container as host `caddy`. Its configuration is a Caddyfile you keep in the repo and mount through the commented volumes below.'
+documentationURL: https://caddyserver.com/docs/caddyfile
+service:
+  image: caddy:2.11.4
+  defaultPort: 80
+  # `caddy run` keeps the server in the foreground, which a container needs.
+  # `--adapter caddyfile` says the mounted file is a Caddyfile and not Caddy's
+  # native JSON. `--watch` re-reads it on change, so an edit to the Caddyfile in
+  # the repo takes effect without a restart and without an apply - the binary's
+  # own help recommends the flag for local development only, which is exactly
+  # this. Without a command the image's default start would run without it.
+  command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile --watch
+  # Starts in a host-side second wave AFTER the repo clone (ADR 0025), because
+  # the Caddyfile is mounted out of the cloned repo: at the normal parallel
+  # start the file does not exist yet, docker would create a DIRECTORY at the
+  # mount source, and Caddy would find a directory where it wants its config.
+  # No dataMount: /data only holds certificate state, and TLS terminates in
+  # front of this (`share`) or is not used at all (the proxy speaks http on
+  # localhost). No healthcheck: nothing gates on this service, and a probe on
+  # `/` reports the UPSTREAM - it would mark Caddy unhealthy whenever the dev
+  # server behind it is simply not running, which is the normal state.
+  deferStart: true
+  # Rendered as a COMMENTED volumes: scaffold in the yml (the catalog can't
+  # know your repo path). Uncomment + edit to mount your own config.
+  #
+  # The DIRECTORY, not the Caddyfile itself: Docker Desktop caches a
+  # single-file bind mount by inode, so an editor that saves by writing a
+  # temp file and renaming it over the original leaves the container with the
+  # old content and `--watch` never fires. Measured on Docker Desktop: with
+  # the file mounted, an in-place edit arrives and a rename does not; with the
+  # directory mounted, both arrive. The same inode trap is why `share`
+  # unlinks its generated Caddyfile before rewriting it.
+  exampleVolumes:
+    - projects/<app>/caddy:/etc/caddy:ro
+usageNotes:
+  - 'The Caddyfile is a project artifact: keep it in your repo as `projects/<app>/caddy/Caddyfile` and mount it through the commented `volumes:` entry. Without that mount Caddy starts with the file from the image and serves its welcome page on port 80, so it looks like it works.'
+  - 'Mount the directory, not the file. Docker caches a single-file mount by inode, so an editor that saves by replacing the file leaves the container with the old content and the reload never happens. The directory has to contain a file named `Caddyfile`.'
+  - 'Name the targets by their in-network hostname: `workspace` is the container your own dev server runs in, a service is named as in the container yml, e.g. `keycloak:8080`.'
+  - 'Keep the site address at `:80`, without a domain name. Given a domain name Caddy tries to obtain a TLS certificate, which fails here and is not needed: TLS terminates in front of it, and the proxy speaks plain http on localhost.'
+  - 'Edits to the Caddyfile take effect when you save (`--watch`). No apply, no restart.'
+  - 'A dev server proxied through Caddy keeps serving the page but loses live reload, because it tells the browser to open its reload connection on its own port while the browser came in through Caddy. Point it at the port the browser used (Vite: `server.ws.clientPort`, formerly `server.hmr.clientPort`).'
+briefing:
+  - text: 'Reverse proxy, reached in-container as host `caddy`. Its job is to put your app and the services it talks to behind ONE address, so cookies, redirects and an OIDC issuer all agree on the origin.'
+  - text: 'Its configuration is a Caddyfile at `projects/<app>/caddy/Caddyfile`. Inside it, address the targets by their in-network hostnames: `workspace` for the container you are working in (where your dev server runs) and the service name from the container yml for everything else. Keep the site address `:80` without a domain name, otherwise Caddy tries to get a TLS certificate and fails.'
+  - text: |-
+      You can create and edit that Caddyfile, but the bind-mount that feeds it to Caddy lives in the container yml on the host, which you cannot edit from inside. Give the user this exact block to add under the `caddy` service in the container yml, with `<app>` replaced by the real project name:
+
+      ```yaml
+      volumes:
+        - projects/<app>/caddy:/etc/caddy:ro
+      ```
+
+      It mounts the DIRECTORY, so keep the file named `Caddyfile` inside it. Do not change this to a single-file mount: docker caches that by inode, and a save that replaces the file would never reach the container. Then have the user run `monoceros apply <name>` on the host. After that, every later change you make to the Caddyfile is live on save, Caddy watches the file.
+  - text: |-
+      A dev server behind the proxy keeps serving but its live reload breaks, because it advertises its own port for the reload connection while the browser arrived through Caddy. Configure the port the browser actually used. For Vite that is `server.ws.clientPort` (older versions: `server.hmr.clientPort`); check the key against the version in the project's lockfile before you write it.

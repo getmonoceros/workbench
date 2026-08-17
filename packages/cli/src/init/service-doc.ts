@@ -109,7 +109,7 @@ export function exampleVolumesComment(
 ): string | undefined {
   if (exampleVolumes.length === 0) return undefined;
   return [
-    ' volumes:                   # uncomment + edit to mount your realm/theme',
+    ' volumes:                   # uncomment + edit to mount your own files',
     ...exampleVolumes.map((v) => `   - ${v}`),
   ].join('\n');
 }

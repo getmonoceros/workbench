@@ -99,6 +99,14 @@
   ],
   "services": [
     {
+      "name": "caddy",
+      "displayName": "Caddy",
+      "description": "Reverse proxy for local dev, so your app and the services behind it answer under one address. Reachable in-container as host `caddy`. Its configuration is a Caddyfile you keep in the repo and mount through the commented volumes below.",
+      "options": [],
+      "documentationURL": "https://caddyserver.com/docs/caddyfile",
+      "defaultPort": 80
+    },
+    {
       "name": "keycloak",
       "displayName": "Keycloak",
       "description": "Identity and access management (OAuth2 / OpenID Connect / SAML) for local dev. Reachable in-container as host `keycloak`. Starts in dev mode and imports realm JSON from a repo you mount, through the commented volumes below.",
