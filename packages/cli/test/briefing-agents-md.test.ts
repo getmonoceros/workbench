@@ -65,6 +65,31 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain("- `monoceros …` commands are the user's to run");
   });
 
+  // MCP servers reach the container from the user's own Claude account too,
+  // not only from `add-mcp-server`, so the rule cannot hang off the MCP
+  // section: a container with an Atlassian connector and the `twg` CLI has no
+  // MCP section at all and still has to prefer the CLI.
+  it('states the CLI-over-MCP rule even when no MCP server is registered', () => {
+    const md = generateAgentsMd({
+      containerName: 'demo',
+      languages: ['node'],
+      services: [],
+      features: [],
+      repos: [],
+      ports: [],
+    });
+    expect(md).not.toContain('### MCP servers');
+    const rule = md.indexOf(
+      '- When a task can be done through an installed CLI and through an MCP',
+    );
+    expect(rule).toBeGreaterThan(-1);
+    expect(rule).toBeLessThan(md.indexOf('## What is here'));
+    expect(md).toContain('take the CLI');
+    expect(md).toContain(
+      'The MCP server is the fallback for what the CLI cannot do.',
+    );
+  });
+
   it('states its own line count and the files it imports', () => {
     const md = generateAgentsMd({
       containerName: 'demo',

@@ -166,6 +166,10 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     '  backgrounded one (`… &`) holds your stdout open until your tool call',
     '  times out, and `pkill -f` kills the shell running it. `monoceros-ctl`',
     '  has none of those problems and waits until the port listens.',
+    '- When a task can be done through an installed CLI and through an MCP',
+    '  server, take the CLI. You can filter its output before it reaches your',
+    '  context window; an MCP response arrives whole, including everything you',
+    '  did not need. The MCP server is the fallback for what the CLI cannot do.',
     ...(deploy
       ? [
           '- Take a compose file for the pipeline from `.monoceros/deploy.md`, block',
@@ -274,7 +278,8 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     lines.push('');
     lines.push(
       'Registered for you already, so use them instead of rediscovering what',
-      'they cover:',
+      'they cover - after you have checked that no installed CLI covers the',
+      'same task, per the rule above:',
     );
     lines.push('');
     for (const server of mcpServers) {
