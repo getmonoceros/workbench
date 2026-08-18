@@ -701,6 +701,7 @@ export function resolveService(entry: ServiceObject): ResolvedService {
     name: entry.name,
     image: entry.image,
     ...(entry.port !== undefined ? { port: entry.port } : {}),
+    ...(entry.httpPort !== undefined ? { httpPort: entry.httpPort } : {}),
     env: entry.env ? { ...entry.env } : {},
     volumes: entry.volumes ? [...entry.volumes] : [],
     ...(entry.user ? { user: entry.user } : {}),

@@ -3,6 +3,7 @@ import { consola } from 'consola';
 import path from 'node:path';
 import type { Document } from 'yaml';
 import { parseConfig, readConfig, stringifyConfig } from '../config/io.js';
+import { httpServices, type HttpService } from '../config/http-services.js';
 import {
   containerConfigPath,
   containerConfigsDir,
@@ -74,6 +75,7 @@ import {
 import {
   proxyUrlsFor,
   removeDynamicConfig,
+  serviceProxyUrl,
   writeDynamicConfig,
 } from '../proxy/dynamic.js';
 import { preflightHostPort } from '../proxy/port-check.js';
@@ -1254,9 +1256,15 @@ async function syncPortsToProxy(
   const logger = input.logger ?? defaultLogger();
 
   let allPorts: number[];
+  // Exposed services (`httpPort`) have routes in the same file. Removing the
+  // last PORT therefore must not delete the file or offer the proxy for
+  // teardown while a service still answers on it - the file gets rewritten with
+  // just the service routes instead.
+  let exposed: HttpService[] = [];
   try {
     const parsed = await readConfig(ymlPath);
     allPorts = (parsed.config.routing?.ports ?? []).map(portNumber);
+    exposed = httpServices(parsed.config.services);
   } catch (err) {
     logger.warn(
       `Could not re-read yml after edit to sync Traefik routes: ${err instanceof Error ? err.message : String(err)}. The yml is correct; \`monoceros apply ${input.name}\` will rebuild the routes.`,
@@ -1282,15 +1290,19 @@ async function syncPortsToProxy(
   // builder needs the actionable message verbatim. The yml is
   // already updated at this point — that's fine, it's the source of
   // truth and the next apply heals once the conflict is resolved.
-  if (allPorts.length > 0) {
+  const hasRoutes = allPorts.length > 0 || exposed.length > 0;
+  if (hasRoutes) {
     await preflightHostPort(hostPort, {
       ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
     });
   }
 
   try {
-    if (allPorts.length > 0) {
-      await writeDynamicConfig(input.name, allPorts, { monocerosHome: home });
+    if (hasRoutes) {
+      await writeDynamicConfig(input.name, allPorts, {
+        monocerosHome: home,
+        services: exposed,
+      });
       await ensureProxy({
         monocerosHome: home,
         hostPort,
@@ -1303,14 +1315,17 @@ async function syncPortsToProxy(
       // answer 502. Join it live instead of sending the builder through
       // an apply the docs say they don't need (#74). No running
       // container → nothing to do; the next apply creates it attached.
-      const containerId = await findRunningContainerByLocalFolder(
-        containerDir(input.name, home),
-        {
-          ...(input.containerLookupDocker
-            ? { docker: input.containerLookupDocker }
-            : {}),
-        },
-      );
+      const containerId =
+        allPorts.length > 0
+          ? await findRunningContainerByLocalFolder(
+              containerDir(input.name, home),
+              {
+                ...(input.containerLookupDocker
+                  ? { docker: input.containerLookupDocker }
+                  : {}),
+              },
+            )
+          : undefined;
       if (containerId) {
         const outcome = await attachToProxyNetwork(containerId, input.name, {
           ...(input.proxyDocker ? { docker: input.proxyDocker } : {}),
@@ -1326,6 +1341,14 @@ async function syncPortsToProxy(
         const tag = u.isDefault ? ' (default)' : '';
         return `  ${u.url}${tag}`;
       });
+      // Service routes are listed too, so a `remove-port` that leaves only
+      // services still shows what stays reachable instead of looking like a
+      // teardown.
+      for (const svc of exposed) {
+        lines.push(
+          `  ${serviceProxyUrl(input.name, svc.name, hostPort)}  (${svc.name})`,
+        );
+      }
       logger.info(`Traefik routes refreshed:\n${lines.join('\n')}`);
     } else {
       await removeDynamicConfig(input.name, { monocerosHome: home });

@@ -13,7 +13,12 @@ import {
   realDockerLookup,
   type DockerLookupExec,
 } from '../devcontainer/locate-running.js';
-import { proxyUrlsFor, type ProxyUrl } from '../proxy/dynamic.js';
+import {
+  proxyUrlsFor,
+  serviceProxyUrl,
+  type ProxyUrl,
+} from '../proxy/dynamic.js';
+import { httpServices } from '../config/http-services.js';
 import { type Palette } from '../util/format.js';
 
 /**
@@ -50,6 +55,12 @@ export interface ServiceState {
   status: string;
   /** In-container listen port, when the catalog declares one. */
   port?: number;
+  /**
+   * Host name the proxy routes to this service, when it declares an `httpPort`.
+   * It belongs on the service row and not in the Ports section: that section is
+   * the workspace's own ports, while this is an address of a sibling container.
+   */
+  route?: string;
   /**
    * Config files written for this service at the standard location that
    * no volume in the yml mounts, so the service runs without ever reading
@@ -185,6 +196,19 @@ export async function gatherStatus(
     };
   }
 
+  // Effective Traefik host port, read once: both the service routes below and
+  // the Ports section further down spell it out when it is not the default 80.
+  let hostPort = 80;
+  try {
+    hostPort = proxyHostPort(
+      await readMonocerosConfig({
+        ...(opts.home ? { monocerosHome: opts.home } : {}),
+      }),
+    );
+  } catch {
+    // default host port
+  }
+
   // ── services (by compose project label; works stopped via `ps -a`) ──
   const services: ServiceState[] = [];
   if (declaredServices.length > 0) {
@@ -207,13 +231,22 @@ export async function gatherStatus(
     // Config files written for a service that no volume feeds to it. Host-
     // side read of the workspace, so it works with the container down.
     const unmounted = await findUnmountedServiceConfigs(root, resolvedServices);
+    // Which services the proxy has a route for, by name.
+    const routed = new Map(
+      httpServices(resolvedServices).map((svc) => [
+        svc.name,
+        serviceProxyUrl(name, svc.name, hostPort).replace(/^https?:\/\//, ''),
+      ]),
+    );
     for (const s of declaredServices) {
       const m = live.get(s.name);
+      const route = routed.get(s.name);
       services.push({
         name: s.name,
         running: m?.running ?? false,
         status: m?.status ?? 'not created',
         ...(typeof s.port === 'number' ? { port: s.port } : {}),
+        ...(route ? { route } : {}),
         unmountedConfigs: unmounted.filter((u) => u.service === s.name),
       });
     }
@@ -294,18 +327,7 @@ export async function gatherStatus(
   }
 
   // ── ports (proxy URLs, static from the yml) ─────────────────────────
-  let hostPort = 80;
-  try {
-    hostPort = proxyHostPort(
-      await readMonocerosConfig({
-        ...(opts.home ? { monocerosHome: opts.home } : {}),
-      }),
-    );
-  } catch {
-    // default host port
-  }
   const ports = proxyUrlsFor(name, declaredPorts, hostPort);
-
   return {
     name,
     configured,
@@ -373,9 +395,15 @@ function renderServices(p: Palette, m: StatusModel): string[] {
   const pad = Math.max(...m.services.map((s) => s.name.length));
   const out = ['', p.sectionLine('Services')];
   for (const s of m.services) {
-    const detail = s.running
-      ? p.dim(typeof s.port === 'number' ? `running    :${s.port}` : 'running')
-      : p.dim(s.status || 'stopped');
+    const state = s.running
+      ? typeof s.port === 'number'
+        ? `running    :${s.port}`
+        : 'running'
+      : s.status || 'stopped';
+    // The proxy route is declared, not live: it exists as long as the yml says
+    // so, whether the service answers or not. So it rides along on the row
+    // rather than gating on `running`.
+    const detail = p.dim(s.route ? `${state}    ${s.route}` : state);
     const marked =
       s.unmountedConfigs.length > 0
         ? `${detail}    ${p.yellow(`⚠ ${s.unmountedConfigs.map((u) => baseName(u.file)).join(', ')} not mounted`)}`

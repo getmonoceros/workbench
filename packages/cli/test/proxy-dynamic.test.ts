@@ -42,6 +42,54 @@ describe('renderDynamicConfig', () => {
   });
 });
 
+describe('renderDynamicConfig with exposed services', () => {
+  it('routes a service under its prefixed alias, not the bare container name', () => {
+    const yaml = renderDynamicConfig(
+      'acme',
+      [5173],
+      [{ name: 'caddy', port: 81 }],
+    );
+    // the port keeps the default host, so adding a service never moves an
+    // address the builder already uses
+    expect(yaml).toContain(
+      'rule: "Host(`acme.localhost`) || Host(`acme-5173.localhost`)"',
+    );
+    expect(yaml).toContain('rule: "Host(`acme-caddy.localhost`)"');
+    // backend is the alias on the machine-wide proxy network, prefixed so two
+    // workbenches with the same service cannot collide on it
+    expect(yaml).toContain('- url: "http://acme-caddy:81"');
+    expect(yaml).not.toContain('- url: "http://caddy:81"');
+    expect(yaml).toContain('# Services: caddy:81');
+  });
+
+  it('works without any port, which is a workbench fronted by a service', () => {
+    const yaml = renderDynamicConfig(
+      'acme',
+      [],
+      [{ name: 'keycloak', port: 8080 }],
+    );
+    expect(yaml).toContain('rule: "Host(`acme-keycloak.localhost`)"');
+    expect(yaml).toContain('- url: "http://acme-keycloak:8080"');
+    // nothing claims the bare host when no port is declared
+    expect(yaml).not.toContain('Host(`acme.localhost`)');
+    expect(yaml).toContain('# Ports: (none)');
+  });
+
+  it('gives every exposed service its own router and backend', () => {
+    const yaml = renderDynamicConfig(
+      'acme',
+      [],
+      [
+        { name: 'keycloak', port: 8080 },
+        { name: 'mailpit', port: 8025 },
+      ],
+    );
+    expect(yaml).toContain('rule: "Host(`acme-keycloak.localhost`)"');
+    expect(yaml).toContain('rule: "Host(`acme-mailpit.localhost`)"');
+    expect(yaml).toContain('- url: "http://acme-mailpit:8025"');
+  });
+});
+
 describe('writeDynamicConfig / removeDynamicConfig', () => {
   let home: string;
 
@@ -62,6 +110,15 @@ describe('writeDynamicConfig / removeDynamicConfig', () => {
     expect(file).toBe(dynamicConfigPath('sandbox', { monocerosHome: home }));
     const body = await fs.readFile(file, 'utf8');
     expect(body).toContain('http://sandbox:3000');
+  });
+
+  it('writes a file for a workbench with only an exposed service', async () => {
+    const file = await writeDynamicConfig('acme', [], {
+      monocerosHome: home,
+      services: [{ name: 'caddy', port: 81 }],
+    });
+    const body = await fs.readFile(file, 'utf8');
+    expect(body).toContain('Host(`acme-caddy.localhost`)');
   });
 
   it('rejects an empty port list with a hint at the alternative', async () => {

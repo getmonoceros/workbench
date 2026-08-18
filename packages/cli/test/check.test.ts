@@ -811,6 +811,71 @@ describe('runCheck: proxy-network attachment (#74)', () => {
     );
   });
 
+  it('reports the same 502 cause for an exposed service on the wrong network', async () => {
+    await writeYml(
+      'schemaVersion: 1\nname: acme\nservices:\n  - name: caddy\n    image: caddy:2\n    port: 81\n    httpPort: 81\n',
+    );
+    const report = await runCheck(
+      NAME,
+      checkOpts({
+        // `ps -q` (the service lookup) answers with an id, the networks
+        // inspect says the container only sits on the compose default
+        proxyDocker: async (args: string[]) =>
+          args.includes(NETWORKS_FORMAT)
+            ? {
+                stdout: '{"acme_devcontainer_default":{}}',
+                stderr: '',
+                exitCode: 0,
+              }
+            : { stdout: 'deadbeef1234\n', stderr: '', exitCode: 0 },
+      }),
+    );
+    const finding = report.findings.find((f) => f.where === 'service caddy');
+    expect(finding).toBeDefined();
+    expect(finding?.what).toContain('acme-caddy.localhost answers 502');
+    expect(finding?.fix).toContain(`monoceros apply ${NAME}`);
+  });
+
+  it('says nothing about a service that is on the network', async () => {
+    await writeYml(
+      'schemaVersion: 1\nname: acme\nservices:\n  - name: caddy\n    image: caddy:2\n    port: 81\n    httpPort: 81\n',
+    );
+    const report = await runCheck(
+      NAME,
+      checkOpts({
+        proxyDocker: async (args: string[]) =>
+          args.includes(NETWORKS_FORMAT)
+            ? {
+                stdout: '{"monoceros-proxy":{"Aliases":["acme-caddy"]}}',
+                stderr: '',
+                exitCode: 0,
+              }
+            : { stdout: 'deadbeef1234\n', stderr: '', exitCode: 0 },
+      }),
+    );
+    expect(report.findings.some((f) => f.where === 'service caddy')).toBe(
+      false,
+    );
+  });
+
+  it('says nothing about a service without an httpPort', async () => {
+    await writeYml(
+      'schemaVersion: 1\nname: acme\nservices:\n  - name: postgres\n    image: postgres:18\n    port: 5432\n',
+    );
+    const report = await runCheck(
+      NAME,
+      checkOpts({
+        proxyDocker: async (args: string[]) =>
+          args.includes(NETWORKS_FORMAT)
+            ? { stdout: '{"bridge":{}}', stderr: '', exitCode: 0 }
+            : { stdout: 'deadbeef1234\n', stderr: '', exitCode: 0 },
+      }),
+    );
+    expect(report.findings.some((f) => f.where === 'service postgres')).toBe(
+      false,
+    );
+  });
+
   it('never asks docker at all when the yml declares no ports', async () => {
     await writeYml('schemaVersion: 1\nname: acme\n');
     let asked = false;

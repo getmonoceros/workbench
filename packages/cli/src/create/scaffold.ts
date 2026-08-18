@@ -1,6 +1,7 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { componentsRootDir, workbenchCheckoutRoot } from '../config/paths.js';
+import { httpServices, serviceProxyAlias } from '../config/http-services.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { descriptorToFeatureManifest } from '../catalog/generate-manifest.js';
@@ -1384,6 +1385,13 @@ export function buildComposeYaml(
 ): string {
   void dockerMode;
   const hasPorts = (opts.ports?.length ?? 0) > 0;
+  // Services the catalog marks reachable (`httpPort`) get a Traefik route of
+  // their own, which means their container has to sit on the machine-wide
+  // proxy network too. So the network block below is needed as soon as EITHER
+  // exists: a workbench that only fronts a service (a reverse proxy, a mail
+  // inbox) declares no `routing.ports` at all.
+  const exposed = httpServices(opts.services);
+  const needsProxyNetwork = hasPorts || exposed.length > 0;
   const sshBridgePort = windowsBridgePort(opts);
   const lines: string[] = ['services:'];
 
@@ -1514,6 +1522,18 @@ export function buildComposeYaml(
         lines.push(`      - ${composeVolumeSource(vol, svc.name, opts.name)}`);
       }
     }
+    // An exposed service is reached by Traefik, which lives on the machine-wide
+    // `monoceros-proxy` network - so the container joins it in addition to the
+    // compose default it shares with the workspace. The alias carries the
+    // workbench name because that network is shared by every workbench: two of
+    // them running keycloak would otherwise both answer to `keycloak` on it.
+    if (svc.httpPort !== undefined) {
+      lines.push('    networks:');
+      lines.push('      default: {}');
+      lines.push('      monoceros-proxy:');
+      lines.push('        aliases:');
+      lines.push(`          - ${serviceProxyAlias(opts.name, svc.name)}`);
+    }
     if (svc.healthcheck) {
       const hc = svc.healthcheck;
       lines.push('    healthcheck:');
@@ -1550,7 +1570,7 @@ export function buildComposeYaml(
     }
   }
 
-  if (hasPorts) {
+  if (needsProxyNetwork) {
     // `external: true` tells compose that `monoceros-proxy` is managed
     // outside this stack (Monoceros's proxy module creates it via
     // `docker network create`). Without this declaration compose would

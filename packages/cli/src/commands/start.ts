@@ -11,6 +11,7 @@ import {
 } from '../create/catalog.js';
 import { OPEN_TOOLS, runOpen } from '../open/index.js';
 import { ensureProxy } from '../proxy/index.js';
+import { httpServices } from '../config/http-services.js';
 import { preflightHostPort } from '../proxy/port-check.js';
 import {
   ctlArgs,
@@ -104,7 +105,14 @@ async function bringContainerUp(
     try {
       const parsed = await readConfig(containerConfigPath(args.name));
       runtimeVersion = parsed.config.runtimeVersion;
-      if ((parsed.config.routing?.ports ?? []).length > 0) {
+      // Ports and exposed services both need the singleton: a workbench whose
+      // reverse proxy answers at `<name>-caddy.localhost` declares no
+      // `routing.ports` at all, and starting it without Traefik would leave
+      // that address dead.
+      const hasRoutes =
+        (parsed.config.routing?.ports ?? []).length > 0 ||
+        httpServices(parsed.config.services).length > 0;
+      if (hasRoutes) {
         needsProxy = true;
         const global = await readMonocerosConfig();
         hostPort = proxyHostPort(global);

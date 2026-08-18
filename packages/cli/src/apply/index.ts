@@ -113,6 +113,7 @@ import {
   type DockerExec as ProxyDockerExec,
 } from '../proxy/index.js';
 import { removeDynamicConfig, writeDynamicConfig } from '../proxy/dynamic.js';
+import { httpServices } from '../config/http-services.js';
 import { preflightHostPort } from '../proxy/port-check.js';
 import {
   collectGitIdentity,
@@ -872,8 +873,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     // devcontainer that also wants Traefik just joins the already-
     // running proxy. See ADR 0007.
     const ports = createOpts.ports ?? [];
-    const hasPorts = ports.length > 0;
-    if (hasPorts) {
+    // Routing exists for two reasons now: a declared port on the workspace, and
+    // a service the catalog marks reachable (`httpPort`). Either one needs the
+    // singleton up, the host port free and a routes file; only when NEITHER is
+    // left does the file go away again.
+    const exposedServices = httpServices(createOpts.services);
+    const hasRoutes = ports.length > 0 || exposedServices.length > 0;
+    if (hasRoutes) {
       // Pre-flight: bail with an actionable hint before `docker run`
       // tries to bind a held port. Throws on conflict — the message
       // names the routing.hostPort escape hatch and asks the builder
@@ -884,8 +890,11 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     }
 
     try {
-      if (hasPorts) {
-        await writeDynamicConfig(opts.name, ports, { monocerosHome: home });
+      if (hasRoutes) {
+        await writeDynamicConfig(opts.name, ports, {
+          monocerosHome: home,
+          services: exposedServices,
+        });
         await ensureProxy({
           ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
           monocerosHome: home,
@@ -893,8 +902,9 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
           logger: containerLogger,
         });
       } else {
-        // `ports:` is empty (or was removed since the last apply) —
-        // drop any stale dynamic-config file. Filesystem only; the
+        // Neither a port nor an exposed service is left (or both were
+        // removed since the last apply) — drop any stale dynamic-config
+        // file, routes for services included. Filesystem only; the
         // proxy itself is offered for teardown by stop/remove, not
         // here (apply ends with the container up, not stopped).
         await removeDynamicConfig(opts.name, { monocerosHome: home });

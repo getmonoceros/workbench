@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { containerConfigPath } from '../config/paths.js';
 import { readConfig } from '../config/io.js';
+import { httpServices } from '../config/http-services.js';
 
 /**
  * Which of a workbench's services may be reached from outside the container.
@@ -39,10 +40,5 @@ export async function shareableServices(
   const ymlPath = containerConfigPath(name, opts.monocerosHome);
   if (!existsSync(ymlPath)) return [];
   const parsed = await readConfig(ymlPath);
-  return parsed.config.services
-    .filter(
-      (svc): svc is typeof svc & { httpPort: number } =>
-        typeof svc.httpPort === 'number',
-    )
-    .map((svc) => ({ name: svc.name, port: svc.httpPort }));
+  return httpServices(parsed.config.services);
 }

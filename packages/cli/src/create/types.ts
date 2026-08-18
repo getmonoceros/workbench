@@ -73,6 +73,13 @@ export interface ResolvedService {
   image: string;
   /** In-container listen port — feeds `monoceros tunnel`. Not a host mapping. */
   port?: number;
+  /**
+   * In-container HTTP port that may leave the container: `monoceros share`
+   * offers it to other devices, and the Traefik proxy writes a
+   * `<container>-<service>.localhost` route to it. Set only for services the
+   * catalog marks that way (see catalog/descriptor.ts); a database has none.
+   */
+  httpPort?: number;
   env: Record<string, string>;
   volumes: string[];
   /**

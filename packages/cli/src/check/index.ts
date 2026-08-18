@@ -21,8 +21,11 @@ import {
 } from '../devcontainer/locate-running.js';
 import {
   isAttachedToProxyNetwork,
+  defaultDockerExec,
   type DockerExec as ProxyDockerExec,
 } from '../proxy/index.js';
+import { httpServices, serviceProxyAlias } from '../config/http-services.js';
+import { composeProjectName } from '../devcontainer/compose.js';
 import { MARKER_BEGIN, MARKER_END } from '../briefing/markers.js';
 import { checkMcpServers, type McpProbe } from './mcp.js';
 import type { ResolvedService } from '../create/types.js';
@@ -214,6 +217,14 @@ export async function runCheck(
   findings.push(...(await checkPorts(name, apps, declaredPorts, opts.home)));
   findings.push(
     ...(await checkProxyAttachment(name, root, declaredPorts, opts)),
+  );
+  findings.push(
+    ...(await checkServiceProxyAttachment(
+      name,
+      httpServices(createOpts.services),
+      composeProjectName(root),
+      opts,
+    )),
   );
   findings.push(...(await checkGitIdentity(root, name)));
   const mcp = await checkMcpServers(
@@ -966,6 +977,58 @@ async function checkProxyAttachment(
       fix: `Run \`monoceros add-port ${name} ${declaredPorts[0]}\` again (it now joins the network), or \`monoceros apply ${name}\`.`,
     },
   ];
+}
+
+/**
+ * The same "route exists, backend unreachable" trap, one level over: a service
+ * that declares an `httpPort` has a `<name>-<service>.localhost` route, and its
+ * container has to sit on the `monoceros-proxy` network for Traefik to resolve
+ * the alias behind it.
+ *
+ * How a workbench gets there: network membership is fixed when the container is
+ * created, so a service that gained its `httpPort` after the last apply is
+ * running on the compose default network only, and the route answers 502. The
+ * fix is an apply, which is also the only thing that can change a compose file.
+ *
+ * Silent when the service is not running, and when docker cannot answer.
+ */
+async function checkServiceProxyAttachment(
+  name: string,
+  exposed: readonly { name: string }[],
+  composeProject: string,
+  opts: CheckOptions,
+): Promise<Finding[]> {
+  if (exposed.length === 0) return [];
+  const docker = opts.proxyDocker ?? defaultDockerExec;
+  const findings: Finding[] = [];
+  for (const svc of exposed) {
+    let containerId = '';
+    try {
+      const ps = await docker([
+        'ps',
+        '-q',
+        '--filter',
+        `label=com.docker.compose.project=${composeProject}`,
+        '--filter',
+        `label=com.docker.compose.service=${svc.name}`,
+      ]);
+      containerId = ps.stdout.trim().split('\n')[0]?.trim() ?? '';
+    } catch {
+      continue;
+    }
+    if (!containerId) continue;
+    const attached = await isAttachedToProxyNetwork(containerId, {
+      ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
+    });
+    if (attached !== false) continue;
+    findings.push({
+      rule: 'ports',
+      where: `service ${svc.name}`,
+      what: `Exposed with httpPort and running, but not on the monoceros-proxy network, so ${serviceProxyAlias(name, svc.name)}.localhost answers 502.`,
+      fix: `Run \`monoceros apply ${name}\` - a service joins the network when its container is created.`,
+    });
+  }
+  return findings;
 }
 
 /**

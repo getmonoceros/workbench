@@ -340,4 +340,47 @@ describe('renderStatus (hand-built model)', () => {
     expect(out).not.toContain('▸ Ports');
     expect(out).not.toContain('▸ Built in');
   });
+
+  it("puts an exposed service's proxy route on its own row, not under Ports", () => {
+    const m: StatusModel = {
+      name: 'acme',
+      configured: true,
+      container: {
+        exists: true,
+        running: true,
+        status: 'Up 1 minute',
+        dockerName: 'monoceros-acme',
+      },
+      services: [
+        {
+          name: 'caddy',
+          running: true,
+          status: 'Up 1 minute',
+          port: 81,
+          route: 'acme-caddy.localhost',
+          unmountedConfigs: [],
+        },
+        {
+          name: 'postgres',
+          running: true,
+          status: 'Up 1 minute',
+          port: 5432,
+          unmountedConfigs: [],
+        },
+      ],
+      apps: [],
+      appStateKnown: true,
+      // no `routing.ports` at all, which is what a workbench fronted by its own
+      // reverse proxy looks like
+      ports: [],
+      builtIn: { languages: [], features: [] },
+    };
+    const out = renderStatus(m, plain);
+    // the address belongs to the service, so no Ports section appears
+    expect(out).not.toContain('▸ Ports');
+    expect(out).toContain('▸ Services');
+    expect(out).toContain('acme-caddy.localhost');
+    // a database has no route, and its row stays as it was
+    expect(out).toMatch(/postgres.*running {4}:5432/);
+  });
 });
