@@ -44,6 +44,11 @@ import type { FeatureManifestSummary } from '../init/manifest.js';
  * of the briefing.
  */
 
+/** `<SERVICE>` env prefix, same rule as `serviceConnectionEnv`. */
+function envPrefixFor(serviceName: string): string {
+  return serviceName.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
+}
+
 export interface AgentsMdInput {
   containerName: string;
   languages: readonly string[];
@@ -239,6 +244,12 @@ export function generateAgentsMd(input: AgentsMdInput): string {
       );
       lines.push('');
       lines.push(
+        'Your own container answers to `workspace` on that network, in',
+        '`$WORKSPACE_HOST`. Use it instead of writing the name into a config file,',
+        'so the same file also works where the host differs.',
+      );
+      lines.push('');
+      lines.push(
         'There is deliberately **no** bare `DATABASE_URL` (multiple databases',
         'would collide on it). If a framework or tool defaults to `DATABASE_URL`,',
         "set it in the project's `.env` to the right service URL, e.g.",
@@ -305,8 +316,9 @@ export function generateAgentsMd(input: AgentsMdInput): string {
     lines.push('');
   }
 
-  if (input.ports.length > 0) {
-    lines.push('### Exposed ports');
+  const reachable = input.services.filter((s) => s.httpPort !== undefined);
+  if (input.ports.length > 0 || reachable.length > 0) {
+    lines.push('### Reachable from outside the container');
     lines.push('');
     for (let i = 0; i < input.ports.length; i++) {
       const port = input.ports[i]!;
@@ -320,12 +332,33 @@ export function generateAgentsMd(input: AgentsMdInput): string {
         );
       }
     }
+    // A reachable service (`httpPort`) has a host-side address exactly like a
+    // port does, and the agent needs it for the same reasons: a redirect URI to
+    // put in a realm, a link to show the user. Each one is also in the
+    // environment as `<SERVICE>_PUBLIC_URL`, so nothing has to be assembled from
+    // the workbench name by hand.
+    for (const svc of reachable) {
+      lines.push(
+        `- \`${svc.name}\` :${svc.httpPort} → http://${input.containerName}-${svc.name}.localhost${portSuffix} (\`$${envPrefixFor(svc.name)}_PUBLIC_URL\`)`,
+      );
+    }
     lines.push('');
+    if (input.ports.length > 0) {
+      lines.push(
+        'To show the user a running app, open it in their host browser with',
+        `\`xdg-open http://${input.containerName}.localhost${portSuffix}\` — Monoceros relays`,
+        'browser-opens from the container to the host machine. Also tell the user',
+        'the URL, so they can open it themselves if no bridge is active.',
+      );
+      lines.push('');
+    }
     lines.push(
-      'To show the user a running app, open it in their host browser with',
-      `\`xdg-open http://${input.containerName}.localhost${portSuffix}\` — Monoceros relays`,
-      'browser-opens from the container to the host machine. Also tell the user',
-      'the URL, so they can open it themselves if no bridge is active.',
+      "These `.localhost` names resolve on the user's machine only. While",
+      '`monoceros share` runs, the same things answer on the LAN over https under',
+      'a different name, so anything that has to be correct per request (a link',
+      "you render, an issuer you stamp) must come from the request's",
+      '`X-Forwarded-Host` / `X-Forwarded-Proto`, not from these values. Use the',
+      'values above for configuration that is written once.',
     );
     lines.push('');
   }

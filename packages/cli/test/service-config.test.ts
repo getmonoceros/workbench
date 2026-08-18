@@ -144,9 +144,15 @@ describe('expandCuratedService / isCuratedService', () => {
     // `/` reports the upstream - it would mark Caddy unhealthy whenever the dev
     // server behind it is simply not running.
     expect(svc.healthcheck).toBeUndefined();
-    // Traffic runs from Caddy to the app, not the other way, so the workspace
-    // gets no connection env for it.
-    expect(svc.connectionEnv).toBeUndefined();
+    // Connection env like every other service. The traffic does run the other
+    // way (Caddy calls the app), so the workspace rarely needs these - but the
+    // briefing promises one set per service, and a neighbouring service that
+    // wants out through the proxy needs the in-network address.
+    expect(svc.connectionEnv).toEqual({
+      URL: 'http://${host}:${port}',
+      HOST: '${host}',
+      PORT: '${port}',
+    });
     // The DIRECTORY, not the Caddyfile: docker caches a single-file bind mount
     // by inode, so an editor that saves by replacing the file would leave the
     // container on the old content and `--watch` would never fire.
@@ -171,6 +177,64 @@ describe('expandCuratedService / isCuratedService', () => {
     expect(isCuratedService('rustfs/rustfs:latest')).toBe(false);
     expect(() => expandCuratedService('rustfs/rustfs:latest')).toThrow(
       /Unknown service/,
+    );
+  });
+});
+
+describe('the workspace env', () => {
+  it('names the workspace host, so a config file need not hardcode it', () => {
+    const yaml = buildComposeYaml({
+      ...base,
+      services: [resolveService({ name: 'postgres', image: 'postgres:18' })],
+    });
+    expect(yaml).toContain('WORKSPACE_HOST: "workspace"');
+  });
+});
+
+describe('serviceConnectionEnv: the host-side address', () => {
+  const svc = (name: string, port: number, httpPort?: number) =>
+    resolveService({
+      name,
+      image: 'x',
+      port,
+      ...(httpPort !== undefined ? { httpPort } : {}),
+    });
+
+  it('gives every reachable service a PUBLIC_URL under the workbench alias', () => {
+    const env = serviceConnectionEnv(
+      [
+        svc('caddy', 81, 81),
+        svc('keycloak', 8080, 8080),
+        svc('postgres', 5432),
+      ],
+      { containerName: 'acme' },
+    );
+    expect(env.CADDY_PUBLIC_URL).toBe('http://acme-caddy.localhost');
+    expect(env.KEYCLOAK_PUBLIC_URL).toBe('http://acme-keycloak.localhost');
+    // a backing store is not reachable, so it gets no outside address
+    expect(env.POSTGRES_PUBLIC_URL).toBeUndefined();
+  });
+
+  it('spells out a non-default proxy host port, so the value matches the browser', () => {
+    const env = serviceConnectionEnv([svc('caddy', 81, 81)], {
+      containerName: 'acme',
+      hostPort: 8080,
+    });
+    expect(env.CADDY_PUBLIC_URL).toBe('http://acme-caddy.localhost:8080');
+  });
+
+  it('emits the address even for a service without connection templates', () => {
+    // `connectionEnv` and reachability are independent: a hand-written service
+    // with an httpPort and no templates still has an outside address.
+    const env = serviceConnectionEnv([svc('front', 8080, 8080)], {
+      containerName: 'acme',
+    });
+    expect(env.FRONT_PUBLIC_URL).toBe('http://acme-front.localhost');
+  });
+
+  it('omits it without a workbench name, since the alias carries one', () => {
+    expect(serviceConnectionEnv([svc('caddy', 81, 81)]).CADDY_PUBLIC_URL).toBe(
+      undefined,
     );
   });
 });

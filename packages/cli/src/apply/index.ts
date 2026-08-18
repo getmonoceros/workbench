@@ -424,6 +424,10 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     );
   }
   createOpts.services = interpServices.services;
+  // The workspace env spells out each reachable service's host-side address, so
+  // it needs the port Traefik really binds (default 80, `routing.hostPort`
+  // otherwise) - the same value the routes and the printed URLs use.
+  createOpts.proxyHostPort = proxyHostPort(globalConfig);
 
   // Resolve the `mcpServers:` block: `${VAR}` from the env file first, then the
   // catalog lookup that turns a bare `name:` into a full server definition

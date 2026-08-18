@@ -92,6 +92,30 @@ export function generateDeployMd(
     }
   }
 
+  // Every value in these blocks is `${VAR:?message}` by rule (ADR 0037), so a
+  // missing one stops `docker compose` instead of starting on a dev credential.
+  // That only helps if the names end up somewhere a human can fill them, which
+  // is the project's own env sample - and the agent had no way of knowing that
+  // from the blocks alone. Listing them here beats asking it to grep.
+  const required = requiredVariables(known);
+  if (required.length > 0) {
+    lines.push('## Variables these blocks require');
+    lines.push('');
+    lines.push(
+      'Every value above is a required variable: compose refuses to start',
+      'without it rather than falling back to a dev default. Collect them in the',
+      "project's own env sample (`.env.example` or whatever it already uses),",
+      'with an empty value and the explanation from the block, and set the real',
+      'values as pipeline secrets. Do not invent defaults and do not copy the',
+      'dev credentials from `<name>.env`.',
+    );
+    lines.push('');
+    for (const name of required) {
+      lines.push(`- \`${name}\``);
+    }
+    lines.push('');
+  }
+
   // Named, not silently omitted: the agent must not read a missing block
   // as "this service needs nothing in the pipeline".
   if (without.length > 0) {
@@ -120,6 +144,27 @@ export function hasDeployBriefing(
   services: readonly ResolvedService[],
 ): boolean {
   return services.some((svc) => curatedServiceDeploy(svc.name) !== undefined);
+}
+
+/**
+ * The `${VAR:?…}` names across the rendered blocks, in first-seen order per
+ * service. Reads the same strings the file shows, so the list cannot drift from
+ * the blocks above it.
+ */
+function requiredVariables(
+  known: readonly { svc: ResolvedService; compose: string }[],
+): string[] {
+  const out: string[] = [];
+  for (const { svc, compose } of known) {
+    const requires = curatedServiceDeployRequires(svc.name) ?? '';
+    for (const m of `${compose}\n${requires}`.matchAll(
+      /\$\{([A-Za-z_][A-Za-z0-9_]*):\?/g,
+    )) {
+      const name = m[1]!;
+      if (!out.includes(name)) out.push(name);
+    }
+  }
+  return out;
 }
 
 /** `a`, `a and b`, `a, b and c`. */

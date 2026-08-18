@@ -47,18 +47,43 @@ service:
   # unlinks its generated Caddyfile before rewriting it.
   exampleVolumes:
     - projects/<app>/caddy:/etc/caddy:ro
+  # The workspace rarely calls Caddy - the traffic runs the other way - but the
+  # briefing promises one set per service, and a neighbouring service that wants
+  # to go out through the proxy needs the in-network address. `PUBLIC_URL` (the
+  # host-side `.localhost` address) is added by the CLI for every service with an
+  # httpPort, so it is not repeated here.
+  connectionEnv:
+    URL: http://${host}:${port}
+    HOST: ${host}
+    PORT: ${port}
 usageNotes:
   - 'The Caddyfile is a project artifact: keep it in your repo as `projects/<app>/caddy/Caddyfile` and mount it through the commented `volumes:` entry. Without that mount Caddy starts with the file from the image, which serves a welcome page on port 80, so nothing answers on the 81 the yml declares.'
   - 'Mount the directory, not the file. Docker caches a single-file mount by inode, so an editor that saves by replacing the file leaves the container with the old content and the reload never happens. The directory has to contain a file named `Caddyfile`.'
   - 'Name the targets by their in-network hostname: `workspace` is the container your own dev server runs in, a service is named as in the container yml, e.g. `keycloak:8080`.'
   - 'The site address in your Caddyfile is `:81`, matching `port` and `httpPort` in the yml. Change one and you change all three, or nothing answers. 81 rather than 80 because on the host 80 belongs to the machine-wide Traefik proxy, and rather than 8080 because that is what many app servers take.'
+  - 'Write the port and the upstreams as `{$VAR:default}` and the same file works in a deployment: `:{$CADDY_SITE_PORT:81}` and `reverse_proxy {$APP_HOST:workspace}:{$APP_PORT:5173}`. In the workbench nothing is set and the defaults apply; the pipeline block in `.monoceros/deploy.md` supplies the other values. Caddy substitutes environment variables anywhere in the Caddyfile.'
   - 'Leave the domain name off the site address. Given one, Caddy tries to obtain a TLS certificate, which fails here and is not needed: TLS terminates in front of it, and the proxy speaks plain http on localhost.'
   - 'Open the Caddyfile with a global `servers { trusted_proxies static private_ranges }` block. `monoceros share` terminates HTTPS in front of Caddy and forwards over plain http, saying so in the headers; without that block Caddy drops the information and a backend behind it stamps `http://` URLs into an https page, which breaks an OIDC login.'
   - 'Edits to the Caddyfile take effect when you save (`--watch`). No apply, no restart.'
   - 'A dev server proxied through Caddy keeps serving the page but loses live reload, because it tells the browser to open its reload connection on its own port while the browser came in through Caddy. Point it at the port the browser used (Vite: `server.ws.clientPort`, formerly `server.hmr.clientPort`).'
 briefing:
   - text: 'Reverse proxy, reached in-container as host `caddy`. Its job is to put your app and the services it talks to behind ONE address, so cookies, redirects and an OIDC issuer all agree on the origin.'
-  - text: 'Its configuration is a Caddyfile at `projects/<app>/caddy/Caddyfile`. Inside it, address the targets by their in-network hostnames: `workspace` for the container you are working in (where your dev server runs) and the service name from the container yml for everything else. The site address is `:81` and has to match the `port` and `httpPort` of the caddy service in the container yml; leave the domain name off, otherwise Caddy tries to get a TLS certificate and fails.'
+  - text: 'Its configuration is a Caddyfile at `projects/<app>/caddy/Caddyfile`. Inside it, address the targets by their in-network hostnames: `workspace` for the container you are working in (where your dev server runs, also in `$WORKSPACE_HOST`) and the service name from the container yml for everything else. The site address is `:81` and has to match the `port` and `httpPort` of the caddy service in the container yml; leave the domain name off, otherwise Caddy tries to get a TLS certificate and fails.'
+  - text: |-
+      Write the port and every upstream as `{$VAR:default}`, so the one file also serves a deployment where the port and the service names differ:
+
+      ```
+      :{$CADDY_SITE_PORT:81} {
+      	handle /realms/* {
+      		reverse_proxy {$KEYCLOAK_HOST:keycloak}:{$KEYCLOAK_PORT:8080}
+      	}
+      	handle {
+      		reverse_proxy {$APP_HOST:workspace}:{$APP_PORT:5173}
+      	}
+      }
+      ```
+
+      In here nothing is set and the defaults apply. The pipeline block in `.monoceros/deploy.md` supplies the other values, and its variables are the ones to collect into the project's env sample. Do not keep a second Caddyfile for deployment.
   - text: |-
       You can create and edit that Caddyfile, but the bind-mount that feeds it to Caddy lives in the container yml on the host, which you cannot edit from inside. Give the user this exact block to add under the `caddy` service in the container yml, with `<app>` replaced by the real project name:
 
@@ -82,3 +107,38 @@ briefing:
       `monoceros share` puts its own HTTPS terminator in front of Caddy and forwards over plain http, passing the original scheme in the headers. Without the block Caddy replaces that with what it sees, so Keycloak behind it stamps an `http://` issuer into an https page and the login fails.
   - text: |-
       A dev server behind the proxy keeps serving but its live reload breaks, because it advertises its own port for the reload connection while the browser arrived through Caddy. Configure the port the browser actually used. For Vite that is `server.ws.clientPort` (older versions: `server.hmr.clientPort`); check the key against the version in the project's lockfile before you write it.
+
+# The service block for the project's pipeline compose file, verbatim (ADR 0037).
+deploy:
+  compose: |-
+    image: caddy:2
+    # No `--watch`: reloading on a file change is a dev convenience, and in a
+    # pipeline the config is fixed for the life of the container.
+    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    # The site address and the upstreams are the only things that differ from
+    # the workbench, so keep ONE Caddyfile and let the environment fill them:
+    # `:{$CADDY_SITE_PORT:81}` and `reverse_proxy {$APP_HOST:workspace}:{$APP_PORT:5173}`
+    # read these here and fall back to the dev values in the workbench.
+    environment:
+      CADDY_SITE_PORT: ${CADDY_SITE_PORT:?the port Caddy listens on, e.g. 80}
+      APP_HOST: ${APP_HOST:?the compose service name of your app}
+      APP_PORT: ${APP_PORT:?the port your app listens on}
+    volumes:
+      # The Caddyfile is a repo artifact, the same file the workbench mounts.
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificate state, needed as soon as the site address carries a real
+      # domain and Caddy obtains its own certificate. Harmless behind an ingress
+      # that terminates TLS instead.
+      - caddy-data:/data
+    healthcheck:
+      # The image ships wget; probe the site itself, which in a pipeline is up
+      # only when the upstream it fronts is up - exactly what a gate wants.
+      test: [CMD, wget, -q, -O, /dev/null, 'http://localhost:${CADDY_SITE_PORT}/']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  requires: |-
+    volumes:
+      # Certificates and OCSP staples. Losing it means every restart asks the
+      # CA again, which rate-limits.
+      caddy-data:

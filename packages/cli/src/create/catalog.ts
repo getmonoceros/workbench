@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { ServiceHealthcheck, ServiceObject } from '../config/schema.js';
 import type { ResolvedService } from './types.js';
 import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
+import { serviceProxyAlias } from '../config/http-services.js';
 import type { CatalogComponent } from '../catalog/load.js';
 import type { BriefingLine } from '../catalog/descriptor.js';
 
@@ -801,11 +802,32 @@ export function curatedServiceEnvDefaults(
  * those are project/framework concerns. A tool that wants `DATABASE_URL` reads
  * `<NAME>_URL` (the briefing says so) or maps it in the project's `.env`.
  */
+export interface ServiceConnectionEnvOptions {
+  /** Workbench name, needed for the `<NAME>_PUBLIC_URL` proxy address. */
+  containerName?: string;
+  /** Traefik host port (`routing.hostPort`); spelled out when not 80. */
+  hostPort?: number;
+}
+
 export function serviceConnectionEnv(
   services: readonly ResolvedService[],
+  opts: ServiceConnectionEnvOptions = {},
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const svc of services) {
+    // `<NAME>_PUBLIC_URL`: the address the service answers on OUTSIDE the
+    // container, for every service the catalog marks reachable. The agent needs
+    // it for the same reason it needs the `.localhost` URL of a port - a
+    // redirect URI in a realm, a link shown to a user - and building it from
+    // the container name by hand is exactly the guessing the briefing is meant
+    // to end. Emitted before the templates below, and independent of them: a
+    // service can be reachable without having connection templates at all.
+    if (svc.httpPort !== undefined && opts.containerName) {
+      const suffix =
+        !opts.hostPort || opts.hostPort === 80 ? '' : `:${opts.hostPort}`;
+      env[`${envPrefix(svc.name)}_PUBLIC_URL`] =
+        `http://${serviceProxyAlias(opts.containerName, svc.name)}.localhost${suffix}`;
+    }
     // The templates on the service win: `expand`/`add-service` serialise a
     // `connectionEnv` block into the yml (renderServiceObjectBody), so they
     // travel with the instance and a renamed/duplicated curated service
@@ -814,7 +836,7 @@ export function serviceConnectionEnv(
     // happens to keep the catalog name).
     const conn = svc.connectionEnv ?? SERVICE_CATALOG[svc.name]?.connectionEnv;
     if (!conn || Object.keys(conn).length === 0) continue;
-    const prefix = svc.name.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
+    const prefix = envPrefix(svc.name);
     const host = svc.name;
     const port = svc.port !== undefined ? String(svc.port) : '';
     const fill = (template: string): string =>
@@ -828,6 +850,11 @@ export function serviceConnectionEnv(
     }
   }
   return env;
+}
+
+/** Env-var prefix for a service: its name, uppercased, non-alphanumerics to `_`. */
+function envPrefix(serviceName: string): string {
+  return serviceName.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
 }
 
 /**

@@ -1462,7 +1462,16 @@ export function buildComposeYaml(
   // forge → FORGE_EMAIL/FORGE_API_TOKEN). Both land in the workspace
   // container's process environment, visible to every process.
   const wsEnv: Record<string, string> = {
-    ...serviceConnectionEnv(opts.services),
+    // The workspace's own name on the workbench network. It was briefing prose
+    // only, which meant a Caddyfile had to hardcode `workspace` - with the var
+    // the same file works here and in a deployment where the host differs.
+    WORKSPACE_HOST: 'workspace',
+    ...serviceConnectionEnv(opts.services, {
+      containerName: opts.name,
+      ...(opts.proxyHostPort !== undefined
+        ? { hostPort: opts.proxyHostPort }
+        : {}),
+    }),
     ...featureWorkspaceEnv(resolvedFeatures),
     ...languageWorkspaceEnv(opts.languages),
     ...(sshBridgePort

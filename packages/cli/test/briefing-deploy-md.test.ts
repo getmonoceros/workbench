@@ -122,3 +122,18 @@ function indent(block: string): string {
     .map((l) => (l.trim() ? `  ${l}` : l))
     .join('\n');
 }
+
+describe('deploy.md: the variables the blocks require', () => {
+  it('lists them and says where they belong, so nobody has to grep the blocks', () => {
+    const md = generateDeployMd([
+      { name: 'postgres', image: 'postgres:18', env: {}, volumes: [] },
+    ]);
+    expect(md).not.toBeNull();
+    expect(md).toContain('## Variables these blocks require');
+    expect(md).toContain('`POSTGRES_PASSWORD`');
+    expect(md).toContain('env sample');
+    // a `${VAR:-default}` would be a rule violation the catalog rejects, so the
+    // list only ever carries the required form
+    expect(md).not.toContain(':-');
+  });
+});

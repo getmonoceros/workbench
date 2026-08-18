@@ -172,6 +172,13 @@ export interface CreateOptions {
    */
   ports?: number[];
   /**
+   * Effective Traefik host port (`routing.hostPort`, default 80), resolved by
+   * the caller from `monoceros-config.yml`. Only used to spell out the
+   * `<SERVICE>_PUBLIC_URL` addresses when it is not the default, so the value
+   * the workspace reads matches the address the browser has to use.
+   */
+  proxyHostPort?: number;
+  /**
    * Whether VS Code's Dev-Containers extension should auto-forward
    * ports on top of Traefik. Default `false` whenever `ports` is
    * non-empty — Traefik is the single source of truth for external

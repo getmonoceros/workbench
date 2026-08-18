@@ -395,7 +395,7 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain(
       '- `projects/logoscraper/` ← https://github.com/conciso/logoscraper',
     );
-    expect(md).toContain('### Exposed ports');
+    expect(md).toContain('### Reachable from outside the container');
     expect(md).toContain('3000 (default route) → http://demo.localhost');
     expect(md).toContain('5173 → http://demo-5173.localhost');
     // Tells the agent it can open the running app on the host browser.
@@ -597,5 +597,43 @@ describe('AGENTS.md generator', () => {
         'API-key mode active',
       ]);
     });
+  });
+});
+
+describe('AGENTS.md: what is reachable from outside', () => {
+  it('lists a reachable service with its host address and env var', () => {
+    const md = generateAgentsMd({
+      containerName: 'acme',
+      languages: ['node'],
+      services: [
+        {
+          name: 'caddy',
+          image: 'caddy:2',
+          port: 81,
+          httpPort: 81,
+          env: {},
+          volumes: [],
+        },
+        {
+          name: 'postgres',
+          image: 'postgres:18',
+          port: 5432,
+          env: {},
+          volumes: [],
+        },
+      ],
+      features: [],
+      repos: [],
+      ports: [5173],
+    });
+    expect(md).toContain('### Reachable from outside the container');
+    expect(md).toContain('http://acme-caddy.localhost');
+    expect(md).toContain('$CADDY_PUBLIC_URL');
+    // a database has no outside address, so it must not appear here
+    expect(md).not.toContain('acme-postgres.localhost');
+    // the per-request truth is named, since these names are host-only
+    expect(md).toContain('X-Forwarded-Host');
+    // and the workspace's own name is in the environment, not just in prose
+    expect(md).toContain('$WORKSPACE_HOST');
   });
 });
