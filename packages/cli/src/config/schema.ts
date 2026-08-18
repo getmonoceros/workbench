@@ -370,6 +370,12 @@ export const ServiceObjectSchema = z.object({
   // port argument. NOT a host port mapping — host exposure goes through
   // routing.ports (Traefik) or `monoceros tunnel`.
   port: z.number().int().min(1, 'Port must be ≥ 1.').max(65535).optional(),
+  // The service's HTTP port that may leave the container: `monoceros share`
+  // offers it on the LAN over https, and the proxy routes to it. Curated
+  // entries bake it from the catalog (only where it makes sense - never on a
+  // database); removing the line keeps this workbench's instance to itself.
+  // A hand-written service can set it too. Not a host port mapping.
+  httpPort: z.number().int().min(1, 'Port must be ≥ 1.').max(65535).optional(),
   env: z.record(z.string(), ServiceEnvValueSchema).optional(),
   volumes: z
     .array(

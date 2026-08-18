@@ -19,10 +19,18 @@
 export const CADDY_IMAGE = 'caddy:2.11.4';
 
 export interface CaddySite {
-  /** Host-published port; also the container-internal port socat/Caddy binds. */
-  port: number;
-  /** Docker-network hostname of the workspace container. */
+  /**
+   * Port Caddy listens on inside its own container, and the host port it is
+   * published under (they are kept equal, see `buildCaddyDockerArgs`).
+   */
+  listenPort: number;
+  /** Docker-network hostname of the upstream: `workspace` or a service name. */
   targetHost: string;
+  /**
+   * Port on the upstream. Differs from `listenPort` when the host port was
+   * remapped, and whenever a service's HTTP port collides with an app port.
+   */
+  targetPort: number;
 }
 
 /**
@@ -45,9 +53,9 @@ export function renderCaddyfile(
 ): string {
   const blocks = sites.map(
     (s) =>
-      `:${s.port} {\n` +
+      `:${s.listenPort} {\n` +
       `\ttls /certs/${certFile} /certs/${keyFile}\n` +
-      `\treverse_proxy http://${s.targetHost}:${s.port}\n` +
+      `\treverse_proxy http://${s.targetHost}:${s.targetPort}\n` +
       `}`,
   );
   return [
@@ -70,20 +78,29 @@ export function renderCaddyfile(
 }
 
 /**
- * One published port for the terminator. `host` is the LAN-facing port the
- * Docker publish binds on `0.0.0.0`; `container` is the port Caddy listens on
- * internally and proxies to. They are equal by default; they diverge only when
- * `--forward-ports` remaps a busy host port (e.g. an IDE already forwards the
- * container port to `127.0.0.1`). See ADR 0033.
+ * One published port for the terminator: the LAN-facing host port, which is
+ * also the port Caddy listens on inside its own container. Keeping the two
+ * equal costs nothing (the sidecar's network namespace is private) and buys
+ * the case that matters: when an app port and a service's HTTP port are the
+ * same number, one of them moves to a free host port and its listener moves
+ * with it, so two upstreams never fight over one listener. The upstream port
+ * lives on the site (`CaddySite.targetPort`), not here. See ADR 0033.
  */
 export interface CaddyPortMapping {
   host: number;
-  container: number;
 }
 
 export interface BuildCaddyDockerArgsInput {
   /** Bind address on the host (`0.0.0.0` for LAN exposure). */
   localAddress: string;
+  /**
+   * Container name, `monoceros-share-<workbench>-<app>`. Without it docker
+   * invents one (`suspicious_ramanujan`), and the port-collision message of the
+   * NEXT share then names something the builder cannot place - while the holder
+   * is in fact their own share running in another terminal. See
+   * `formatShareCollision`.
+   */
+  containerName: string;
   ports: CaddyPortMapping[];
   network: string;
   /** Host dir holding the leaf cert + key, mounted read-only at /certs. */
@@ -101,9 +118,16 @@ export interface BuildCaddyDockerArgsInput {
 export function buildCaddyDockerArgs(
   input: BuildCaddyDockerArgsInput,
 ): string[] {
-  const args = ['run', '--rm', '-i', `--network=${input.network}`];
-  for (const { host, container } of input.ports) {
-    args.push('-p', `${input.localAddress}:${host}:${container}`);
+  const args = [
+    'run',
+    '--rm',
+    '-i',
+    '--name',
+    input.containerName,
+    `--network=${input.network}`,
+  ];
+  for (const { host } of input.ports) {
+    args.push('-p', `${input.localAddress}:${host}:${host}`);
   }
   args.push(
     '-v',

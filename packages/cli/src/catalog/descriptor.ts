@@ -187,6 +187,23 @@ export const ServiceBlockSchema = z.object({
   image: z.string().min(1),
   defaultPort: z.number().int().positive().optional(),
   /**
+   * The one HTTP port of this service that may leave the container: what
+   * `monoceros share` offers on the LAN, and what the proxy writes a route
+   * for. Absent means neither happens, which is the answer for every backing
+   * store: Caddy speaks HTTP, so a database behind it would return garbage.
+   *
+   * A port and not a boolean, because `defaultPort` is the MACHINE port and
+   * the two differ where it matters: mailpit's defaultPort is 1025 (SMTP)
+   * while its web UI is 8025, rustfs's is 9000 (the S3 API) while the console
+   * is 9001. A boolean falling back to defaultPort would expose SMTP and an
+   * S3 API, the opposite of the intent.
+   *
+   * Unlike `deferStart` this is NOT descriptor-only: it is baked into the
+   * expanded yml like `port` and `command`, so the builder sees it and can
+   * remove the line to keep one workbench's service to itself.
+   */
+  httpPort: z.number().int().min(1).max(65535).optional(),
+  /**
    * Compose `command:` for the service container — the process to run
    * instead of the image's default CMD. Baked into the expanded yml
    * (visible + editable, unlike `deferStart`). E.g. Keycloak needs

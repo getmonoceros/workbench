@@ -23,6 +23,9 @@ import {
   CADDY_IMAGE,
   type CaddySite,
 } from './caddy.js';
+import { shareableServices, type ShareableService } from './services.js';
+import { DEFAULT_PROXY_HOST_PORT } from '../config/global.js';
+import { defaultDockerExec, type DockerExec } from '../proxy/index.js';
 import { monocerosHome as defaultMonocerosHome } from '../config/paths.js';
 import {
   isWsl,
@@ -54,13 +57,22 @@ const SHARE_ADDRESS = '0.0.0.0';
 export interface ForwardPortMapping {
   host: number;
   container: number;
+  /**
+   * Set by the qualified form `host:service:port`. Only needed when the same
+   * container port is claimed by more than one upstream (an app target and a
+   * service, or two services), where the bare port no longer says which one
+   * to move.
+   */
+  service?: string;
 }
 
 /**
  * Parse the `--forward-ports` value: a comma-separated list of `host:container`
- * pairs (Docker `-p` order), e.g. `15173:5173,18000:8000`. Mirrors the
- * project's `--with-*` convention (comma-separated). Throws with an actionable
- * message on a malformed entry or an out-of-range port.
+ * pairs (Docker `-p` order), e.g. `15173:5173,18000:8000`. A service's port can
+ * be named explicitly as `host:service:container` (e.g. `18080:keycloak:8080`),
+ * which is what an ambiguous bare port asks for. Mirrors the project's
+ * `--with-*` convention (comma-separated). Throws with an actionable message on
+ * a malformed entry or an out-of-range port.
  */
 export function parseForwardPorts(raw: string): ForwardPortMapping[] {
   const out: ForwardPortMapping[] = [];
@@ -68,14 +80,14 @@ export function parseForwardPorts(raw: string): ForwardPortMapping[] {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)) {
-    const m = /^(\d+):(\d+)$/.exec(entry);
+    const m = /^(\d+):(?:([a-z0-9][a-z0-9_-]*):)?(\d+)$/.exec(entry);
     if (!m) {
       throw new Error(
-        `Invalid --forward-ports entry '${entry}': expected host:container (e.g. 15173:5173).`,
+        `Invalid --forward-ports entry '${entry}': expected host:container (e.g. 15173:5173) or host:service:container (e.g. 18080:keycloak:8080).`,
       );
     }
     const host = Number(m[1]);
-    const container = Number(m[2]);
+    const container = Number(m[3]);
     for (const [label, port] of [
       ['host', host],
       ['container', container],
@@ -86,13 +98,18 @@ export function parseForwardPorts(raw: string): ForwardPortMapping[] {
         );
       }
     }
-    out.push({ host, container });
+    out.push({ host, container, ...(m[2] ? { service: m[2] } : {}) });
   }
   return out;
 }
 
 export interface RunShareOptions {
   name: string;
+  /**
+   * App under `projects/` whose launch-config ports get shared, alongside every
+   * service that declares an `httpPort`. A missing launch config only warns:
+   * the services are then shared on their own.
+   */
   app: string;
   monocerosHome?: string;
   /**
@@ -103,8 +120,21 @@ export interface RunShareOptions {
   /** Injected in tests. */
   dockerSpawn?: DockerSpawn;
   resolve?: (opts: ResolveOptions) => Promise<ResolvedTarget>;
+  /**
+   * Injected in tests; defaults to reading the workbench yml for services that
+   * declare an `httpPort`.
+   */
+  shareableServices?: (
+    name: string,
+    opts: { monocerosHome?: string },
+  ) => Promise<ShareableService[]>;
   /** TCP-connect probe for the host ports share will bind. Injected in tests. */
   probe?: PortProbe;
+  /**
+   * Docker invocation used only to name what holds a busy port. Injected in
+   * tests; defaults to the real `docker`.
+   */
+  docker?: DockerExec;
   installSignalHandler?: (handler: () => void) => () => void;
   hostAddresses?: () => HostAddresses;
   /**
@@ -240,38 +270,204 @@ async function findFreeHostPort(
 }
 
 /**
- * The `share`-specific "host port already in use" error. Names the real cause
- * (the attached IDE's port auto-forward on 127.0.0.1, which cannot be reliably
- * disabled) and the two real remedies: free the exact port in the IDE, or
- * re-run with `--forward-ports` using the suggested free host ports. Unlike the
- * tunnel error, it never mentions `--local-port` (which `share` does not have).
+ * The `share`-specific "host port already in use" error. It names the holder
+ * whenever docker can be asked - a container publishing that port, most often a
+ * share of this very workbench still running in another terminal - and only
+ * falls back to the IDE story when nothing published it, because a
+ * Remote-SSH auto-forward binds 127.0.0.1 from the host and is invisible to
+ * docker. Guessing "your IDE" while a container of ours holds the port sends
+ * the builder hunting through a PORTS panel that has nothing in it. The
+ * remedies stay the same: free the port, or re-run with `--forward-ports` and
+ * the suggested free host ports. Unlike the tunnel error it never mentions
+ * `--local-port`, which `share` does not have.
  */
 function formatShareCollision(input: {
   name: string;
   app: string;
   busyHostPorts: number[];
   suggestions: string[];
+  /** Port → `<container> (<image>)` for every busy port docker could explain. */
+  holders?: ReadonlyMap<number, string>;
 }): string {
   const plural = input.busyHostPorts.length > 1;
   const cmd = `monoceros share ${input.name} ${input.app} --forward-ports ${input.suggestions.join(',')}`;
-  return [
+  const named = input.busyHostPorts.filter((p) => input.holders?.has(p));
+  const lines = [
     `Cannot share ${input.name}/${input.app}: host port${plural ? 's' : ''} ${input.busyHostPorts.join(', ')} already in use.`,
+  ];
+  if (named.length > 0) {
+    lines.push('', 'Published by a running container:');
+    for (const port of named) {
+      lines.push(`  ${port}  ${input.holders!.get(port)!}`);
+    }
+    lines.push(
+      '',
+      'A share of this workbench in another terminal looks exactly like this;',
+      'stop it there with Ctrl+C, or remove the container by name.',
+    );
+  }
+  if (named.length < input.busyHostPorts.length) {
+    lines.push(
+      '',
+      "Ports with no container behind them are usually your IDE's, which",
+      'forwards the container ports to 127.0.0.1 (VS Code, Codium and',
+      'JetBrains auto-forward over Remote-SSH, and it cannot be reliably',
+      'turned off). That collides with share, which binds on 0.0.0.0 to',
+      'reach other devices.',
+    );
+  }
+  // A shared service can want a port the machine itself already serves, and
+  // there the IDE story is the wrong lead: 80 is the Traefik singleton that
+  // fronts every workbench with `routing.ports`, and freeing it would take the
+  // proxy down for all of them. A reverse proxy shared on 80 hits this on its
+  // first run, and its own config file is where the fix belongs - so point at
+  // the yml rather than at a flag the builder would retype forever.
+  if (input.busyHostPorts.includes(DEFAULT_PROXY_HOST_PORT)) {
+    lines.push(
+      '',
+      `Port ${DEFAULT_PROXY_HOST_PORT} is the exception: that is monoceros-proxy, the machine-wide`,
+      'Traefik that serves every workbench with ports, and it stays. Give the',
+      'service a port of its own instead: set another `httpPort` in the yml and',
+      "the same port in the service's own config (a Caddyfile's `:8080`), then",
+      're-run share unchanged.',
+    );
+  }
+  lines.push(
     '',
-    "Your IDE forwards the container's ports to 127.0.0.1 (VS Code, Codium",
-    'and JetBrains auto-forward over Remote-SSH, and it cannot be reliably',
-    'turned off). That collides with share, which binds these ports on',
-    '0.0.0.0 to reach other devices.',
+    'Either free the port, or re-run share and publish the busy ports under',
+    'different host ports (Docker order, host:container, a service named',
+    'explicitly):',
     '',
-    'Resolve it one of two ways:',
-    '',
-    '  1. In the IDE\'s PORTS panel, right-click each port -> "Stop Forwarding',
-    '     Port" (stays gone across reconnects), then re-run share unchanged.',
-    '',
-    '  2. Re-run share and publish the busy ports under different host ports',
-    '     (Docker order, host:container):',
-    '',
-    `       ${cmd}`,
-  ].join('\n');
+    `  ${cmd}`,
+  );
+  return lines.join('\n');
+}
+
+/**
+ * Which container publishes each of these host ports, as `<name> (<image>)`.
+ * Best effort: a docker that is unreachable or a port nothing published simply
+ * leaves the entry out, and the caller then says what it can.
+ */
+async function findPortHolders(
+  ports: readonly number[],
+  docker: DockerExec,
+): Promise<Map<number, string>> {
+  const holders = new Map<number, string>();
+  for (const port of ports) {
+    try {
+      const res = await docker([
+        'ps',
+        '--filter',
+        `publish=${port}`,
+        '--format',
+        '{{.Names}} ({{.Image}})',
+      ]);
+      const first = res.stdout
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)[0];
+      if (first) holders.set(port, first);
+    } catch {
+      // docker not reachable: the message falls back to the IDE explanation.
+    }
+  }
+  return holders;
+}
+
+/**
+ * One HTTPS listener the share terminator puts on the LAN. `hostPort` is what a
+ * device dials and what Caddy listens on; `targetHost`/`targetPort` are the
+ * upstream inside the workbench network, which is the workspace container for
+ * an app target and the service itself for a service.
+ */
+interface ShareSite {
+  /** Banner + error label: `<app>:<port>` for an app port, the service name otherwise. */
+  label: string;
+  kind: 'app' | 'service';
+  hostPort: number;
+  targetHost: string;
+  targetPort: number;
+}
+
+/**
+ * Name of the terminator container: `monoceros-share-<workbench>-<app>`. Docker
+ * allows `[a-zA-Z0-9][a-zA-Z0-9_.-]*`, and an app is a path under `projects/`
+ * that may nest, so slashes become hyphens. A named container is what lets the
+ * next share say "your own share holds this port" instead of quoting a random
+ * docker nickname.
+ */
+function shareContainerName(name: string, app: string): string {
+  return `monoceros-share-${name}-${app.replace(/[^A-Za-z0-9_.-]+/g, '-')}`;
+}
+
+/** The `--forward-ports` spec that would move this site to `hostPort`. */
+function forwardPortSpec(site: ShareSite, hostPort: number): string {
+  return site.kind === 'service'
+    ? `${hostPort}:${site.label}:${site.targetPort}`
+    : `${hostPort}:${site.targetPort}`;
+}
+
+/**
+ * Move the host side of the sites `--forward-ports` names. A bare `host:port`
+ * addresses whichever site listens on that port; once two upstreams share the
+ * number it stops being an address, so that case demands the qualified
+ * `host:service:port` form instead of picking one silently.
+ */
+function applyForwardPorts(
+  sites: ShareSite[],
+  forwardPorts: readonly ForwardPortMapping[],
+): void {
+  for (const fp of forwardPorts) {
+    const matches = sites.filter((s) =>
+      fp.service !== undefined
+        ? s.kind === 'service' && s.label === fp.service
+        : s.targetPort === fp.container,
+    );
+    if (fp.service !== undefined) {
+      const byPort = matches.filter((s) => s.targetPort === fp.container);
+      if (matches.length === 0) {
+        throw new Error(
+          `--forward-ports names service '${fp.service}', but it is not shared. Shared services: ${
+            sites
+              .filter((s) => s.kind === 'service')
+              .map((s) => s.label)
+              .join(', ') || '(none)'
+          }.`,
+        );
+      }
+      if (byPort.length === 0) {
+        throw new Error(
+          `--forward-ports maps ${fp.service}:${fp.container}, but ${fp.service} is shared on port ${matches[0]!.targetPort}.`,
+        );
+      }
+      byPort[0]!.hostPort = fp.host;
+      continue;
+    }
+    if (matches.length === 0) {
+      throw new Error(
+        `--forward-ports maps container port ${fp.container}, but no shared target uses it. Shared ports: ${sites.map((s) => s.targetPort).join(', ')}.`,
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(
+        `--forward-ports maps container port ${fp.container}, but ${matches.map((s) => s.label).join(' and ')} both use it. Name the one to move: --forward-ports ${fp.host}:<service>:${fp.container}.`,
+      );
+    }
+    matches[0]!.hostPort = fp.host;
+  }
+}
+
+/** The first host port two sites both claim, with both claimants. */
+function findHostPortCollision(
+  sites: readonly ShareSite[],
+): { port: number; sites: ShareSite[] } | undefined {
+  const seen = new Map<number, ShareSite>();
+  for (const site of sites) {
+    const first = seen.get(site.hostPort);
+    if (first) return { port: site.hostPort, sites: [first, site] };
+    seen.set(site.hostPort, site);
+  }
+  return undefined;
 }
 
 export async function runShare(opts: RunShareOptions): Promise<number> {
@@ -280,81 +476,156 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
     warn: (m) => consola.warn(m),
   };
 
+  // A missing launch config is a warning, not the end: the workbench's services
+  // may well be the thing worth sharing (a reverse proxy that fronts them, a
+  // mail inbox), and refusing over the app would hide them. Only when neither
+  // side yields a port does share stop, further down.
+  const ported: Array<{ name: string; port: number }> = [];
   const cfg = await readLaunchConfig(opts.name, opts.app, opts.monocerosHome);
   if (!cfg) {
-    throw new Error(
-      `No launch config for '${opts.app}' (expected projects/${opts.app}/.monoceros/launch.json). Nothing to share.`,
+    log.warn?.(
+      `No launch config for '${opts.app}' (expected projects/${opts.app}/.monoceros/launch.json) - sharing this workbench's services only.`,
     );
-  }
-  const ported = cfg.configurations.filter(
-    (t): t is typeof t & { port: number } => typeof t.port === 'number',
-  );
-  if (ported.length === 0) {
-    throw new Error(
-      `No target in '${opts.app}' declares a port, so there is nothing to share. Add a \`port\` to a target in its launch.json.`,
+  } else {
+    const withPort = cfg.configurations.filter(
+      (t): t is typeof t & { port: number } => typeof t.port === 'number',
     );
+    if (withPort.length === 0) {
+      log.warn?.(
+        `No target in '${opts.app}' declares a port - sharing this workbench's services only. Add a \`port\` to a target in its launch.json to share the app itself.`,
+      );
+    }
+    ported.push(...withPort.map((t) => ({ name: t.name, port: t.port })));
   }
   // One forward per distinct port; the network + target host are identical for
   // every workspace port, so resolve once and reuse.
   const ports = [...new Set(ported.map((t) => t.port))];
 
-  // `--forward-ports` remaps the host side of busy container ports. Validate
-  // each names a container port we actually share, then build the effective
-  // host port per container port (parity unless remapped).
-  const overrides = new Map<number, number>();
-  for (const fp of opts.forwardPorts ?? []) {
-    if (!ports.includes(fp.container)) {
-      throw new Error(
-        `--forward-ports maps container port ${fp.container}, but no shared target uses it. Shared ports: ${ports.join(', ')}.`,
-      );
-    }
-    overrides.set(fp.container, fp.host);
+  const resolve = opts.resolve ?? resolveTunnelTarget;
+  const homeOpt =
+    opts.monocerosHome !== undefined
+      ? { monocerosHome: opts.monocerosHome }
+      : {};
+  // Every app port goes to the workspace container; a service is its own
+  // upstream under its own hostname, so it gets resolved on its own. Which
+  // services those are is the catalog's call via `httpPort` - a database never
+  // shows up here (see share/services.ts).
+  const sites: ShareSite[] = [];
+  // The terminator joins one network, and in compose mode every upstream lives
+  // on it - the workspace and each service alike - so whichever resolution runs
+  // first settles it.
+  let network: string | undefined;
+  if (ports.length > 0) {
+    const base = await resolve({
+      name: opts.name,
+      target: String(ports[0]),
+      ...homeOpt,
+    });
+    network = base.network;
+    sites.push(
+      ...ports.map((port) => ({
+        label: `${opts.app}:${port}`,
+        kind: 'app' as const,
+        hostPort: port,
+        targetHost: base.targetHost,
+        targetPort: port,
+      })),
+    );
   }
-  const hostPortFor = (container: number): number =>
-    overrides.get(container) ?? container;
-  const pairs = ports.map((container) => ({
-    host: hostPortFor(container),
-    container,
-  }));
+  const services = await (opts.shareableServices ?? shareableServices)(
+    opts.name,
+    homeOpt,
+  );
+  for (const svc of services) {
+    const target = await resolve({
+      name: opts.name,
+      target: `${svc.name}:${svc.port}`,
+      ...homeOpt,
+    });
+    network ??= target.network;
+    sites.push({
+      label: svc.name,
+      kind: 'service',
+      hostPort: svc.port,
+      targetHost: target.targetHost,
+      targetPort: svc.port,
+    });
+  }
+
+  if (sites.length === 0) {
+    throw new Error(
+      [
+        `Nothing to share in '${opts.name}': '${opts.app}' declares no port, and no service declares an \`httpPort\`.`,
+        '',
+        'Give the app a target with a `port` in',
+        `projects/${opts.app}/.monoceros/launch.json, or give a service an`,
+        '`httpPort` in the yml, which is what lets it out of the container.',
+        'Curated HTTP services bring one along; a database deliberately has',
+        'none, and raw TCP goes through `monoceros tunnel` instead.',
+      ].join('\n'),
+    );
+  }
+
+  applyForwardPorts(sites, opts.forwardPorts ?? []);
+
+  // Two upstreams can want the same number - an app target on 8080 and Keycloak
+  // on 8080 - and one Caddy cannot listen twice on one port. Say so with both
+  // claimants named instead of silently serving one of them.
+  const collision = findHostPortCollision(sites);
+  if (collision) {
+    const free = await findFreeHostPort(
+      collision.sites[1]!.hostPort + 10000,
+      opts.probe ?? realPortProbe,
+      new Set(sites.map((s) => s.hostPort)),
+    );
+    throw new Error(
+      [
+        `Cannot share ${opts.name}/${opts.app}: ${collision.sites
+          .map((s) => s.label)
+          .join(' and ')} both want host port ${collision.port}.`,
+        '',
+        'Publish one of them under a different host port (Docker order,',
+        'host:container, a service named explicitly):',
+        '',
+        `  monoceros share ${opts.name} ${opts.app} --forward-ports ${forwardPortSpec(collision.sites[1]!, free)}`,
+      ].join('\n'),
+    );
+  }
 
   // Probe every effective host port on 0.0.0.0 (loopback is the real conflict
   // surface) BEFORE touching Docker, so a busy port fails fast without spinning
-  // up target resolution or a cert. Collect ALL busy ports rather than dying on
-  // the first, so the message can list them together with a copy-pasteable
-  // remap command. The common holder is the attached IDE's port auto-forward,
-  // which binds 127.0.0.1:<port> and cannot be reliably turned off (issue #57).
+  // up a cert. Collect ALL busy ports rather than dying on the first, so the
+  // message can list them together with a copy-pasteable remap command. The
+  // common holder is the attached IDE's port auto-forward, which binds
+  // 127.0.0.1:<port> and cannot be reliably turned off (issue #57).
   const probe = opts.probe ?? realPortProbe;
-  const busy: ForwardPortMapping[] = [];
-  for (const pair of pairs) {
-    const result = await probe(pair.host, SHARE_ADDRESS);
-    if (!result.ok) busy.push(pair);
+  const busy: ShareSite[] = [];
+  for (const site of sites) {
+    const result = await probe(site.hostPort, SHARE_ADDRESS);
+    if (!result.ok) busy.push(site);
   }
   if (busy.length > 0) {
-    const taken = new Set<number>(pairs.map((p) => p.host));
+    const taken = new Set<number>(sites.map((s) => s.hostPort));
     const suggestions: string[] = [];
     for (const b of busy) {
-      const free = await findFreeHostPort(b.container + 10000, probe, taken);
+      const free = await findFreeHostPort(b.targetPort + 10000, probe, taken);
       taken.add(free);
-      suggestions.push(`${free}:${b.container}`);
+      suggestions.push(forwardPortSpec(b, free));
     }
+    const holders = await findPortHolders(
+      busy.map((b) => b.hostPort),
+      opts.docker ?? defaultDockerExec,
+    );
     throw new Error(
       formatShareCollision({
         name: opts.name,
         app: opts.app,
-        busyHostPorts: busy.map((b) => b.host),
+        busyHostPorts: busy.map((b) => b.hostPort),
         suggestions,
+        holders,
       }),
     );
   }
-
-  const resolve = opts.resolve ?? resolveTunnelTarget;
-  const base = await resolve({
-    name: opts.name,
-    target: String(ports[0]),
-    ...(opts.monocerosHome !== undefined
-      ? { monocerosHome: opts.monocerosHome }
-      : {}),
-  });
 
   // Issue a leaf cert covering every name/address a device might use, so socat
   // can terminate TLS - HTTP over a LAN IP / `.local` name is an insecure
@@ -382,9 +653,10 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
   // One Caddy sidecar terminates TLS for every shared port and injects
   // X-Forwarded-Proto/Host, so scheme-sensitive backends (Keycloak, ...) stamp
   // https URLs matching the browser's origin (ADR 0033).
-  const sites: CaddySite[] = ports.map((port) => ({
-    port,
-    targetHost: base.targetHost,
+  const caddySites: CaddySite[] = sites.map((s) => ({
+    listenPort: s.hostPort,
+    targetHost: s.targetHost,
+    targetPort: s.targetPort,
   }));
   const home = opts.monocerosHome ?? defaultMonocerosHome();
   const shareDir = path.join(home, 'share');
@@ -400,7 +672,7 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
   await fs.rm(caddyfilePath, { force: true });
   await fs.writeFile(
     caddyfilePath,
-    renderCaddyfile(sites, tls.certFile, tls.keyFile),
+    renderCaddyfile(caddySites, tls.certFile, tls.keyFile),
   );
 
   // Pull the terminator image before the banner so a first-run `docker pull`
@@ -427,10 +699,21 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
   const banner: string[] = [
     `Sharing ${opts.name}/${opts.app} on the local network:`,
   ];
+  const hostPortForApp = (port: number): number =>
+    sites.find((s) => s.kind === 'app' && s.targetPort === port)?.hostPort ??
+    port;
   for (const t of ported) {
     banner.push('', `    ${cyan(t.name)}`);
     for (const addr of addresses) {
-      banner.push(`      https://${addr}:${hostPortFor(t.port)}`);
+      banner.push(`      https://${addr}:${hostPortForApp(t.port)}`);
+    }
+  }
+  // Services come after the app's own targets, under their service name, so it
+  // is obvious which of the addresses is the login server or the mail inbox.
+  for (const s of sites.filter((x) => x.kind === 'service')) {
+    banner.push('', `    ${cyan(s.label)} ${dim('(service)')}`);
+    for (const addr of addresses) {
+      banner.push(`      https://${addr}:${s.hostPort}`);
     }
   }
   banner.push(
@@ -447,8 +730,11 @@ export async function runShare(opts: RunShareOptions): Promise<number> {
     dockerSpawn(
       buildCaddyDockerArgs({
         localAddress: SHARE_ADDRESS,
-        ports: pairs,
-        network: base.network,
+        containerName: shareContainerName(opts.name, opts.app),
+        ports: sites.map((s) => ({ host: s.hostPort })),
+        // Set by the resolution above; `sites` is non-empty by this point, so
+        // at least one target was resolved.
+        network: network!,
         certDir: tls.certDir,
         caddyfilePath,
       }),

@@ -104,7 +104,7 @@
       "description": "Reverse proxy for local dev, so your app and the services behind it answer under one address. Reachable in-container as host `caddy`. Its configuration is a Caddyfile you keep in the repo and mount through the commented volumes below.",
       "options": [],
       "documentationURL": "https://caddyserver.com/docs/caddyfile",
-      "defaultPort": 80
+      "defaultPort": 81
     },
     {
       "name": "keycloak",
@@ -130,7 +130,7 @@
     {
       "name": "mailpit",
       "displayName": "Mailpit",
-      "description": "SMTP catcher for local dev, so apps send mail to it and nothing leaves the machine. SMTP on `mailpit:1025`; web UI + API on 8025 (reach via `monoceros tunnel <name> mailpit:8025`).",
+      "description": "SMTP catcher for local dev, so apps send mail to it and nothing leaves the machine. SMTP on `mailpit:1025`; web UI + API on 8025, reachable from the host via `monoceros tunnel <name> mailpit:8025` and from another device via `monoceros share`.",
       "options": [],
       "defaultPort": 1025
     },
@@ -242,7 +242,7 @@
     {
       "name": "rustfs",
       "displayName": "RustFS",
-      "description": "S3-compatible object storage (MinIO-compatible API). S3 API on `rustfs:9000`; web console on 9001 (enable with `RUSTFS_CONSOLE_ENABLE=true`, reach via `monoceros tunnel <name> rustfs:9001`).",
+      "description": "S3-compatible object storage (MinIO-compatible API). S3 API on `rustfs:9000`; web console on 9001 (enable with `RUSTFS_CONSOLE_ENABLE=true`), reachable from the host via `monoceros tunnel <name> rustfs:9001` and from another device via `monoceros share`.",
       "options": [
         {
           "key": "RUSTFS_ACCESS_KEY",

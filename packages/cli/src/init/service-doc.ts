@@ -20,6 +20,7 @@ export function renderServiceObjectBody(svc: ServiceObject): string[] {
   if (svc.user !== undefined)
     lines.push(`user: '${svc.user.replace(/'/g, "''")}'`);
   if (svc.port !== undefined) lines.push(`port: ${svc.port}`);
+  if (svc.httpPort !== undefined) lines.push(`httpPort: ${svc.httpPort}`);
   if (svc.env && Object.keys(svc.env).length > 0) {
     lines.push('env:');
     for (const [k, v] of Object.entries(svc.env)) {

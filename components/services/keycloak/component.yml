@@ -6,6 +6,10 @@ documentationURL: https://www.keycloak.org/
 service:
   image: quay.io/keycloak/keycloak:26.6
   defaultPort: 8080
+  # A login server has to be reachable from the device that logs in, and the
+  # `--proxy-headers=xforwarded` below is what makes the issuer follow that
+  # address. Same port as defaultPort here: Keycloak speaks http on 8080.
+  httpPort: 8080
   # Dev mode + realm import. The Keycloak image has no auto-start default,
   # so a command is mandatory. `--import-realm` reads every *.json from
   # /opt/keycloak/data/import at startup (a no-op if the dir is empty).

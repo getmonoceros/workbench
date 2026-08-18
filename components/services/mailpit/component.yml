@@ -1,10 +1,13 @@
 id: mailpit
 category: service
 displayName: Mailpit
-description: 'SMTP catcher for local dev, so apps send mail to it and nothing leaves the machine. SMTP on `mailpit:1025`; web UI + API on 8025 (reach via `monoceros tunnel <name> mailpit:8025`).'
+description: 'SMTP catcher for local dev, so apps send mail to it and nothing leaves the machine. SMTP on `mailpit:1025`; web UI + API on 8025, reachable from the host via `monoceros tunnel <name> mailpit:8025` and from another device via `monoceros share`.'
 service:
   image: axllent/mailpit:latest
   defaultPort: 1025
+  # 8025, not the defaultPort: 1025 is SMTP, which is what the app dials and
+  # what nobody opens in a browser. The web inbox is the part worth reaching.
+  httpPort: 8025
   healthcheck:
     # Mailpit ships its own readiness probe in the image — no curl/wget needed.
     test: [CMD, /mailpit, readyz]

@@ -442,6 +442,14 @@ export interface ServiceEntry {
    */
   defaultPort: number;
   /**
+   * The service's HTTP port that may leave the container: `monoceros share`
+   * offers it on the LAN, the proxy routes to it. Absent means neither, which
+   * is why a database is never shared. Differs from `defaultPort` wherever the
+   * machine port is not the human one (mailpit 1025 vs 8025, rustfs 9000 vs
+   * 9001). See descriptor.ts.
+   */
+  httpPort?: number;
+  /**
    * VS Code extensions to *recommend* (not auto-install) when this
    * service is present. Written to `extensions.recommendations` in the
    * generated `.code-workspace`. Unlike feature-bound extensions (which
@@ -555,6 +563,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
           displayName: c.descriptor.displayName,
           description: c.descriptor.description,
           defaultPort: svc.defaultPort,
+          ...(svc.httpPort !== undefined ? { httpPort: svc.httpPort } : {}),
           ...(svc.vscodeExtensions
             ? { vscodeExtensions: svc.vscodeExtensions }
             : {}),
@@ -728,6 +737,9 @@ export function expandCuratedService(name: string): ServiceObject {
     name: def.id,
     image: def.image,
     port: def.defaultPort,
+    // Visible in the yml, unlike `deferStart`: the builder can drop the line
+    // to keep this instance off the LAN and off the proxy.
+    ...(def.httpPort !== undefined ? { httpPort: def.httpPort } : {}),
     ...(def.env
       ? {
           env: Object.fromEntries(

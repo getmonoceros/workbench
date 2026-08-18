@@ -117,8 +117,18 @@ describe('expandCuratedService / isCuratedService', () => {
 
   it('expands caddy for a repo-mounted Caddyfile, watched and deferred', () => {
     const svc = expandCuratedService('caddy');
-    expect(svc.image).toBe('caddy:2.11.4');
-    expect(svc.port).toBe(80);
+    expect(svc.image).toBe('caddy:2');
+    // 81: not 80, which monoceros-proxy owns on the host, and not 8080, which
+    // app servers take - a Caddy on either would collide and need a remap on
+    // every share. Both numbers move together and have to match the site
+    // address in the builder's Caddyfile.
+    expect(svc.port).toBe(81);
+    expect(svc.httpPort).toBe(81);
+    // a backing store never leaves the container
+    expect(expandCuratedService('postgres').httpPort).toBeUndefined();
+    // the web UI, not the machine port, wherever they differ
+    expect(expandCuratedService('mailpit').httpPort).toBe(8025);
+    expect(expandCuratedService('rustfs').httpPort).toBe(9001);
     // `--watch` is the whole reason for an explicit command: an edited
     // Caddyfile takes effect on save. Drop it and every config change needs a
     // service restart, silently.

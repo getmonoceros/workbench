@@ -5,12 +5,33 @@ import {
   buildCaddyDockerArgs,
 } from '../src/share/caddy.js';
 
+describe('renderCaddyfile with a service upstream', () => {
+  it('proxies each listener to its own host and port', () => {
+    const cf = renderCaddyfile(
+      [
+        // an app port, and a service whose port collided with it and moved
+        { listenPort: 8080, targetHost: 'workspace', targetPort: 8080 },
+        { listenPort: 18080, targetHost: 'keycloak', targetPort: 8080 },
+        { listenPort: 8025, targetHost: 'mailpit', targetPort: 8025 },
+      ],
+      'leaf.pem',
+      'leaf-key.pem',
+    );
+    expect(cf).toContain(':8080 {');
+    expect(cf).toContain('reverse_proxy http://workspace:8080');
+    // the moved listener keeps the upstream's own port
+    expect(cf).toContain(':18080 {');
+    expect(cf).toContain('reverse_proxy http://keycloak:8080');
+    expect(cf).toContain('reverse_proxy http://mailpit:8025');
+  });
+});
+
 describe('renderCaddyfile', () => {
   it('emits a TLS + reverse_proxy block per port with the leaf cert', () => {
     const cf = renderCaddyfile(
       [
-        { port: 5173, targetHost: 'ws' },
-        { port: 8080, targetHost: 'ws' },
+        { listenPort: 5173, targetHost: 'ws', targetPort: 5173 },
+        { listenPort: 8080, targetHost: 'ws', targetPort: 8080 },
       ],
       'leaf.pem',
       'leaf-key.pem',
@@ -34,10 +55,8 @@ describe('buildCaddyDockerArgs', () => {
   it('publishes every port, mounts certs + Caddyfile read-only, runs pinned Caddy', () => {
     const args = buildCaddyDockerArgs({
       localAddress: '0.0.0.0',
-      ports: [
-        { host: 5173, container: 5173 },
-        { host: 8080, container: 8080 },
-      ],
+      containerName: 'monoceros-share-acme-web',
+      ports: [{ host: 5173 }, { host: 8080 }],
       network: 'net',
       certDir: '/home/certs',
       caddyfilePath: '/home/share/acme__web.Caddyfile',
@@ -49,20 +68,25 @@ describe('buildCaddyDockerArgs', () => {
     expect(args).toContain(
       '/home/share/acme__web.Caddyfile:/etc/caddy/Caddyfile:ro',
     );
+    // named, so the next share's collision message can say whose it is
+    expect(args.join(' ')).toContain('--name monoceros-share-acme-web');
     // the image is the last arg, and both mounts come before it
     expect(args[args.length - 1]).toBe(CADDY_IMAGE);
     expect(args.lastIndexOf('-v')).toBeLessThan(args.indexOf(CADDY_IMAGE));
   });
 
-  it('remaps only the host side of a publish (host:container may differ)', () => {
+  it('publishes a remapped port on itself, so the listener moves with it', () => {
     const args = buildCaddyDockerArgs({
       localAddress: '0.0.0.0',
-      ports: [{ host: 15173, container: 5173 }],
+      containerName: 'monoceros-share-acme-web',
+      ports: [{ host: 15173 }],
       network: 'net',
       certDir: '/home/certs',
       caddyfilePath: '/home/share/acme__web.Caddyfile',
     });
-    // host 15173 -> container 5173; Caddy still terminates on the container port
-    expect(args).toContain('0.0.0.0:15173:5173');
+    // Caddy listens on the host port inside its own namespace; the upstream
+    // port lives in the Caddyfile, which is what lets two upstreams that want
+    // the same number coexist.
+    expect(args).toContain('0.0.0.0:15173:15173');
   });
 });
