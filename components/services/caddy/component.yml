@@ -119,6 +119,11 @@ deploy:
     # the workbench, so keep ONE Caddyfile and let the environment fill them:
     # `:{$CADDY_SITE_PORT:81}` and `reverse_proxy {$APP_HOST:workspace}:{$APP_PORT:5173}`
     # read these here and fall back to the dev values in the workbench.
+    #
+    # One upstream is the shape the catalog can know. A Caddyfile that fronts
+    # more than one (an API here, a built front end there) needs a variable pair
+    # per upstream, added the same way - that is an expected extension of this
+    # block, not a departure from it.
     environment:
       CADDY_SITE_PORT: ${CADDY_SITE_PORT:?the port Caddy listens on, e.g. 80}
       APP_HOST: ${APP_HOST:?the compose service name of your app}
@@ -130,10 +135,19 @@ deploy:
       # domain and Caddy obtains its own certificate. Harmless behind an ingress
       # that terminates TLS instead.
       - caddy-data:/data
+    # A reverse proxy is the way in, so unlike a database it has to be published:
+    # nothing outside the compose network reaches it otherwise. Drop this block
+    # when an ingress in front of the stack targets the service directly.
+    ports:
+      - '${CADDY_PUBLISH_PORT:?the host port the browser uses, e.g. 80}:${CADDY_SITE_PORT}'
     healthcheck:
-      # The image ships wget; probe the site itself, which in a pipeline is up
-      # only when the upstream it fronts is up - exactly what a gate wants.
-      test: [CMD, wget, -q, -O, /dev/null, 'http://localhost:${CADDY_SITE_PORT}/']
+      # A TCP connect, not an HTTP request: this has to answer "is Caddy
+      # listening", and any HTTP probe answers for the upstream instead. `/` is
+      # 404 in plenty of applications (publication space, an API-only root), and
+      # wget exits non-zero on a 404 - so an HTTP probe would hold a healthy
+      # proxy down forever. Swap in a request against a real health endpoint of
+      # your own if you want the gate to cover the app as well.
+      test: [CMD, nc, -z, localhost, '${CADDY_SITE_PORT}']
       interval: 5s
       timeout: 5s
       retries: 20
