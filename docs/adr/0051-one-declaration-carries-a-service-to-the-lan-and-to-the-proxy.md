@@ -4,6 +4,8 @@
 - Date: 2026-08-18
 - Relates to: [ADR 0007](0007-port-management-traefik.md) (the shared
   Traefik singleton and the routing model this extends),
+  [ADR 0030](0030-share-app-to-lan.md) (the share contract this widened, amended
+  the same day),
   [ADR 0033](0033-https-for-share-via-local-ca.md) (why `share` terminates TLS
   with a Caddy sidecar),
   [ADR 0009](0009-tcp-tunnels-foreground-sidecar.md) (the raw-TCP forward that stays the answer

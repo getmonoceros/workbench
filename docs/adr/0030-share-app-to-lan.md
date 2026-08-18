@@ -1,6 +1,6 @@
 # ADR 0030: `monoceros share` - expose a workbench app to the LAN
 
-- Status: accepted
+- Status: accepted, amended 2026-08-18 (see [Amendment](#amendment-2026-08-18-the-services-come-along-and-a-missing-launch-config-is-not-fatal))
 - Date: 2026-06-25
 
 ## Context
@@ -77,3 +77,52 @@ forwards every configured port of the app to the LAN.**
   raw-TCP / non-HTTP access (DB clients, ad-hoc ports), `share` is the
   HTTP-apps-to-the-LAN front door.
 - Ships in CLI 1.37.0. No runtime change (reuses the `tunnel` socat sidecar).
+
+## Amendment (2026-08-18): the services come along, and a missing launch config is not fatal
+
+The original decision scoped `share` to **an app's** ports, read from its launch
+config. That left the case it was pitched for half-solved: a phone can open the
+app but cannot log in, because the Keycloak the app delegates to stays inside the
+container and the OIDC issuer it hands back names an address the device cannot
+resolve. Every project worked around it by proxying the login endpoints through
+its own dev server.
+
+So `share` now exposes **the app's ports and every service that declares an
+`httpPort`**, the same declaration the Traefik proxy routes by
+([ADR 0051](0051-one-declaration-carries-a-service-to-the-lan-and-to-the-proxy.md)).
+The invocation is unchanged, `monoceros share <name> <app>`; services are not
+named on the command line, they come from the yml.
+
+Four decisions fell out of building it, each one a real run's doing:
+
+**The terminator listens on the host port, and the upstream port lives in the
+Caddyfile.** It used to listen on the container port and be published under the
+host one, which is identical until two upstreams want the same number - an app
+target on 8080 and Keycloak on 8080. One Caddy cannot listen twice on 8080, so
+one of them moves, and its listener has to move with it. Publishing 1:1 makes
+that automatic; the sidecar's network namespace is private, so nothing is lost.
+
+**`--forward-ports` gained a qualified form**, `host:service:port`. With several
+upstreams a bare container port no longer identifies one, and guessing which to
+move would be worse than asking. An ambiguous bare port is refused with the
+qualified form spelled out.
+
+**A missing launch config warns instead of aborting.** A workbench fronted by its
+own reverse proxy has no app of its own to share, and refusing there hid exactly
+the services that were the point. `share` stops only when neither the app nor a
+service yields a port, and then names both places to fill. The app argument stays
+required: `share` is app-centric, and a workbench-only invocation would be a
+second command shape for the same job.
+
+**The busy-port message asks docker who holds the port.** It used to blame the
+IDE's Remote-SSH auto-forward for every collision, which sent the builder
+hunting through an empty PORTS panel while our own terminator held the port.
+The terminator is therefore named `monoceros-share-<workbench>-<app>` rather
+than taking docker's random nickname, and the message quotes the container that
+published the port. The IDE explanation stays for the case docker cannot see,
+which is what a 127.0.0.1 forward from the host is.
+
+What did not change: TLS is still terminated by the Caddy sidecar against the
+machine-local CA ([ADR 0033](0033-https-for-share-via-local-ca.md)), the command
+is still foreground and self-cleaning, and non-HTTP forwards still belong to
+[`monoceros tunnel`](0009-tcp-tunnels-foreground-sidecar.md).
