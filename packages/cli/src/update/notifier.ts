@@ -4,6 +4,7 @@ import {
   recordVersionCheck,
   type MachineState,
 } from '../config/machine-state.js';
+import { isManagedWslDistro } from '../util/wsl.js';
 
 // Self-update notice. On every (interactive) command we read a cached
 // "latest version" from machine-state — NO network on the hot path — and,
@@ -18,13 +19,19 @@ const PACKAGE = '@getmonoceros/workbench';
 /** npm registry endpoint for the `latest` dist-tag manifest. */
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE}/latest`;
 /**
- * The update command shown in the notice. The CLI always runs in a Linux
- * context (WSL on Windows), so re-running the sh installer updates it on
- * every platform. npm is an implementation detail INSIDE the script and is
- * never surfaced as an alternative.
+ * The update command shown in the notice: re-running the installer. npm is an
+ * implementation detail INSIDE the script and is never surfaced.
+ *
+ * The CLI itself always runs on Linux, but in Monoceros's managed WSL distro
+ * that Linux sits behind a Windows shim - and there the sh installer would
+ * only refresh the in-distro CLI, not the shim, the completion script or the
+ * %USERPROFILE%\.monoceros link. So the managed distro is shown the PowerShell
+ * installer, which is what the Windows docs tell the builder to run.
  */
-const INSTALL_COMMAND =
+const INSTALL_COMMAND_SH =
   'curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.sh | bash';
+const INSTALL_COMMAND_PWSH =
+  'irm https://raw.githubusercontent.com/getmonoceros/workbench/main/installer/install.ps1 | iex';
 /** Check at most this often. */
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** Set to any non-empty value to silence the check entirely. */
@@ -54,11 +61,22 @@ export function isNewerVersion(latest: string, current: string): boolean {
   return false;
 }
 
-/** The notice text (trailing + leading newline so it stands apart). */
-export function formatUpdateNotice(latest: string, current: string): string {
+/**
+ * The notice text (trailing + leading newline so it stands apart). `onWindows`
+ * selects the installer the builder can actually run; it defaults to the real
+ * distro detection and is only passed explicitly by tests.
+ */
+export function formatUpdateNotice(
+  latest: string,
+  current: string,
+  onWindows: boolean = isManagedWslDistro(),
+): string {
+  const update = onWindows
+    ? `  Update in PowerShell:  ${INSTALL_COMMAND_PWSH}`
+    : `  Update:  ${INSTALL_COMMAND_SH}`;
   return (
     `\n⬆ Monoceros ${latest} is available (you have ${current}).\n` +
-    `  Update:  ${INSTALL_COMMAND}\n`
+    `${update}\n`
   );
 }
 

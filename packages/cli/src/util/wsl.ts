@@ -20,3 +20,20 @@ export function isWslHost(
     return false;
   }
 }
+
+/**
+ * Whether this is Monoceros's own managed WSL distro - the one install.ps1
+ * imports on Windows, sitting behind the Windows shim. Any other WSL distro is
+ * a Linux the builder set up themselves and updates with the sh installer;
+ * pointing THOSE at install.ps1 would import a second, managed distro next to
+ * theirs instead of updating anything. A distro renamed via the installer's
+ * `-DistroName` reads as unmanaged here - a deliberate false negative, because
+ * the wrong answer in that direction only costs a stale shim.
+ */
+export function isManagedWslDistro(
+  platform: string = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (!isWslHost(platform, env)) return false;
+  return (env['WSL_DISTRO_NAME'] ?? '').toLowerCase() === 'monoceros';
+}

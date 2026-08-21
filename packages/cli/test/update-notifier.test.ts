@@ -32,11 +32,25 @@ describe('isNewerVersion', () => {
 
 describe('formatUpdateNotice', () => {
   it('names both versions and points at the install script, not npm', () => {
-    const n = formatUpdateNotice('1.31.0', '1.30.0');
+    const n = formatUpdateNotice('1.31.0', '1.30.0', false);
     expect(n).toContain('1.31.0');
     expect(n).toContain('1.30.0');
     expect(n).toContain('install.sh');
     expect(n).not.toContain('npm');
+  });
+
+  it('offers the sh installer off Windows and the ps1 one on it', () => {
+    const sh = formatUpdateNotice('1.31.0', '1.30.0', false);
+    expect(sh).toContain('curl -fsSL');
+    expect(sh).toContain('install.sh');
+    expect(sh).not.toContain('install.ps1');
+
+    const pwsh = formatUpdateNotice('1.31.0', '1.30.0', true);
+    expect(pwsh).toContain('install.ps1');
+    expect(pwsh).toContain('| iex');
+    expect(pwsh).toContain('PowerShell');
+    expect(pwsh).not.toContain('install.sh');
+    expect(pwsh).not.toContain('curl');
   });
 });
 
