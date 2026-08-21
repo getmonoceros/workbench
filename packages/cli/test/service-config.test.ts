@@ -76,7 +76,10 @@ describe('expandCuratedService / isCuratedService', () => {
   it('expands keycloak with a command + admin env, no volumes/healthcheck (ADR 0025)', () => {
     expect(serviceDefersStart('keycloak')).toBe(true);
     const svc = expandCuratedService('keycloak');
-    expect(svc.image).toBe('quay.io/keycloak/keycloak:26.6');
+    // The repository, not the tag: pinning the exact tag here only makes
+    // this test fail on every catalog version bump, and the tag is not
+    // what this test is about.
+    expect(svc.image.split(':')[0]).toBe('quay.io/keycloak/keycloak');
     expect(svc.command).toBe(
       'start-dev --import-realm --proxy-headers=xforwarded',
     );

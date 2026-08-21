@@ -4,7 +4,7 @@ displayName: Keycloak
 description: 'Identity and access management (OAuth2 / OpenID Connect / SAML) for local dev. Reachable in-container as host `keycloak`. Starts in dev mode and imports realm JSON from a repo you mount, through the commented volumes below.'
 documentationURL: https://www.keycloak.org/
 service:
-  image: quay.io/keycloak/keycloak:26.6
+  image: quay.io/keycloak/keycloak:26.7
   defaultPort: 8080
   # A login server has to be reachable from the device that logs in, and the
   # `--proxy-headers=xforwarded` below is what makes the issuer follow that
@@ -60,7 +60,7 @@ usageNotes:
 # The service block for the project's pipeline compose file, verbatim.
 deploy:
   compose: |-
-    image: quay.io/keycloak/keycloak:26.6
+    image: quay.io/keycloak/keycloak:26.7
     # `start`, not start-dev: start-dev keeps everything in an in-memory
     # database and turns the hostname check off. The realm is imported on
     # first boot and skipped once it exists.

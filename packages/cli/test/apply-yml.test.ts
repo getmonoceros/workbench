@@ -831,6 +831,43 @@ describe('runApply', () => {
     expect(composeText).toContain('postgres:');
   });
 
+  it('re-pulls service images on a rebuild, never on a routine apply (ADR 0052)', async () => {
+    await writeYml(
+      'pulldemo',
+      [
+        'schemaVersion: 1',
+        'name: pulldemo',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '',
+      ].join('\n'),
+    );
+    const pulls: string[][] = [];
+    const composeSpawn = async (args: string[]) => {
+      pulls.push(args);
+      return 0;
+    };
+
+    await runApply({
+      ...baseRunOpts,
+      name: 'pulldemo',
+      monocerosHome: home,
+      composeSpawn,
+    });
+    expect(pulls).toEqual([]);
+
+    await runApply({
+      ...baseRunOpts,
+      name: 'pulldemo',
+      monocerosHome: home,
+      composeSpawn,
+      rebuild: true,
+    });
+    expect(pulls).toHaveLength(1);
+    expect(pulls[0]).toContain('pull');
+  });
+
   it('puts service data in a per-service docker volume, not a host bind mount', async () => {
     await writeYml(
       'dbhost',

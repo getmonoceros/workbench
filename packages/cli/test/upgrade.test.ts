@@ -4,9 +4,11 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   runUpgrade,
+  setCuratedServiceImages,
   setRuntimeVersion,
   type UpgradeOptions,
 } from '../src/upgrade/index.js';
+import { SERVICE_CATALOG } from '../src/create/catalog.js';
 import type { RunApplyOptions, RunApplyResult } from '../src/apply/index.js';
 import type { DockerExec } from '../src/proxy/index.js';
 
@@ -37,6 +39,83 @@ describe('setRuntimeVersion', () => {
     expect(setRuntimeVersion('name: demo\n', '1.1.0')).toBe(
       'runtimeVersion: 1.1.0\nname: demo\n',
     );
+  });
+});
+
+describe('setCuratedServiceImages', () => {
+  const keycloak = SERVICE_CATALOG.keycloak!.image;
+  const postgres = SERVICE_CATALOG.postgres!.image;
+
+  it('pulls an outdated curated tag up to the catalog, keeping comments', () => {
+    const yml = [
+      'schemaVersion: 1',
+      'name: demo',
+      'services:',
+      '  - name: keycloak',
+      '    # a comment that must survive',
+      '    image: quay.io/keycloak/keycloak:26.0',
+      '    port: 8080',
+      '',
+    ].join('\n');
+    const { yml: out, changed } = setCuratedServiceImages(yml);
+    expect(out).toContain(`image: ${keycloak}`);
+    expect(out).toContain('# a comment that must survive');
+    expect(out).toContain('    port: 8080');
+    expect(changed).toEqual([`quay.io/keycloak/keycloak:26.0 → ${keycloak}`]);
+  });
+
+  it('leaves an already-current tag untouched and reports no change', () => {
+    const yml = `services:\n  - name: keycloak\n    image: ${keycloak}\n`;
+    const { yml: out, changed } = setCuratedServiceImages(yml);
+    expect(out).toBe(yml);
+    expect(changed).toEqual([]);
+  });
+
+  it('leaves an image the builder chose alone - no catalog entry claims it', () => {
+    const yml = 'services:\n  - name: weird\n    image: acme/weird:1.2.3\n';
+    expect(setCuratedServiceImages(yml)).toEqual({ yml, changed: [] });
+  });
+
+  it('retags a renamed instance too - matched by repository, not name', () => {
+    const yml =
+      'services:\n  - name: identity\n    image: quay.io/keycloak/keycloak:26.0\n';
+    const { yml: out, changed } = setCuratedServiceImages(yml);
+    expect(out).toContain(`image: ${keycloak}`);
+    expect(changed).toHaveLength(1);
+  });
+
+  it('retags every instance of the same repository', () => {
+    const yml = [
+      'services:',
+      '  - name: db',
+      '    image: postgres:9',
+      '  - name: db2',
+      '    image: postgres:9',
+      '',
+    ].join('\n');
+    const { changed } = setCuratedServiceImages(yml);
+    expect(changed).toEqual([
+      `postgres:9 → ${postgres}`,
+      `postgres:9 → ${postgres}`,
+    ]);
+  });
+
+  it('never touches a commented-out example or an unindented key', () => {
+    const yml = [
+      'image: postgres:9',
+      'services:',
+      '  - name: db',
+      '    # image: postgres:9',
+      `    image: ${postgres}`,
+      '',
+    ].join('\n');
+    expect(setCuratedServiceImages(yml)).toEqual({ yml, changed: [] });
+  });
+
+  it('does not mistake a registry port for a tag', () => {
+    const yml =
+      'services:\n  - name: x\n    image: registry.local:5000/postgres\n';
+    expect(setCuratedServiceImages(yml)).toEqual({ yml, changed: [] });
   });
 });
 
@@ -87,6 +166,46 @@ describe('runUpgrade', () => {
     expect(appliedWith).toEqual([
       { name: 'demo', cliVersion: '9.9.9', monocerosHome: home, rebuild: true },
     ]);
+  });
+
+  it('writes the catalog service tag into the yml and reports it', async () => {
+    await writeFile(
+      ymlPath('demo'),
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'services:',
+        '  - name: keycloak',
+        '    image: quay.io/keycloak/keycloak:26.0',
+        '',
+      ].join('\n'),
+    );
+    await runUpgrade(base({ name: 'demo', version: '1.2.0' }));
+    const written = await readFile(ymlPath('demo'), 'utf8');
+    expect(written).toContain(`image: ${SERVICE_CATALOG.keycloak!.image}`);
+    expect(written).toContain('runtimeVersion: 1.2.0');
+    expect(messages.some((m) => m.includes('Retagged a service'))).toBe(true);
+    const summary = messages.find((m) => m.startsWith('success:')) ?? '';
+    expect(summary).toMatch(/services\s+images re-pulled \(1 retagged\)/);
+  });
+
+  it('writes the yml when only the service tag moved, not the runtime', async () => {
+    await writeFile(
+      ymlPath('demo'),
+      [
+        'schemaVersion: 1',
+        'runtimeVersion: 1.2.0',
+        'name: demo',
+        'services:',
+        '  - name: keycloak',
+        '    image: quay.io/keycloak/keycloak:26.0',
+        '',
+      ].join('\n'),
+    );
+    await runUpgrade(base({ name: 'demo', version: '1.2.0' }));
+    expect(await readFile(ymlPath('demo'), 'utf8')).toContain(
+      `image: ${SERVICE_CATALOG.keycloak!.image}`,
+    );
   });
 
   it('refreshes ALL containers (rebuild) and stamps the run when no name is given', async () => {
@@ -143,6 +262,7 @@ describe('runUpgrade', () => {
     const summary = messages.find((m) => m.startsWith('success:')) ?? '';
     expect(summary).toMatch(/tools\s+rebuilt/);
     expect(summary).toMatch(/base\s+1\.2\.0 \(1 bumped\)/);
+    expect(summary).toMatch(/services\s+images re-pulled/);
     expect(summary).toMatch(/pruned\s+nothing stale/);
     expect(summary).toMatch(/recorded\s+\d{4}-\d\d-\d\d \d\d:\d\d UTC/);
   });

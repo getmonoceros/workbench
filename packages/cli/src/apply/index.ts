@@ -84,7 +84,9 @@ import {
 import { writeBriefing } from '../briefing/index.js';
 import { loadComponentCatalog } from '../init/components.js';
 import {
+  type ComposeSpawn,
   type DockerExec,
+  pullServiceImages,
   runContainerCycle,
   startDeferredServices,
 } from '../devcontainer/compose.js';
@@ -190,6 +192,8 @@ export interface RunApplyOptions {
   };
   dockerExec?: DockerExec;
   devcontainerSpawn?: DevcontainerSpawn;
+  /** `docker compose` spawn for the upgrade-time image re-pull. Tests inject. */
+  composeSpawn?: ComposeSpawn;
   dockerInfoSpawn?: DockerInfoSpawn;
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
@@ -933,6 +937,32 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
           ? 'cleaning up previous containers…'
           : 'starting container…',
       );
+    }
+
+    // `upgrade` re-pulls the service images before anything starts
+    // (ADR 0052). Routine `apply` never does — it reuses the local cache,
+    // like it reuses the base pin and the feature layers. Failures are
+    // advisory: the cached image still starts, so a warn and carry on.
+    if (opts.rebuild && needsCompose(createOpts)) {
+      if (progress) progress.setPhase('re-pulling service images…');
+      try {
+        const pullExit = await pullServiceImages({
+          root: targetDir,
+          ...(opts.composeSpawn ? { spawn: opts.composeSpawn } : {}),
+          logSink: applyLog.sink,
+          silent: progress !== null,
+          logger: internalLogger,
+        });
+        if (pullExit !== 0) {
+          containerLogger.warn?.(
+            `Could not re-pull every service image (exit ${pullExit}). The container starts from the cached images; see the apply log for which pull failed.`,
+          );
+        }
+      } catch (err) {
+        containerLogger.warn?.(
+          `Could not re-pull service images: ${err instanceof Error ? err.message : String(err)}. The container starts from the cached images.`,
+        );
+      }
     }
 
     exitCode = await runContainerCycle(targetDir, {

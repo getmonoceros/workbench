@@ -11,6 +11,7 @@ import {
   runStart,
   runStatus,
   runStop,
+  pullServiceImages,
   startDeferredServices,
 } from '../src/devcontainer/compose.js';
 
@@ -198,6 +199,43 @@ describe('compose actions', () => {
         cwd: solution,
       },
     ]);
+  });
+
+  it('pullServiceImages re-pulls the project images, deferred ones included (ADR 0052)', async () => {
+    const calls: { args: string[]; cwd: string }[] = [];
+    const exitCode = await pullServiceImages({
+      root: solution,
+      spawn: async (args, cwd) => {
+        calls.push({ args, cwd });
+        return 0;
+      },
+    });
+    expect(exitCode).toBe(0);
+    expect(calls).toEqual([
+      {
+        args: [
+          '-f',
+          composeFile,
+          '-p',
+          projectName,
+          '--profile',
+          'monoceros-deferred',
+          'pull',
+          '--ignore-buildable',
+          '--ignore-pull-failures',
+          '--quiet',
+        ],
+        cwd: solution,
+      },
+    ]);
+  });
+
+  it('pullServiceImages reports a failing pull instead of throwing', async () => {
+    // A rate-limited or offline registry must not fail the upgrade: the
+    // caller warns and the container starts from the cached image.
+    await expect(
+      pullServiceImages({ root: solution, spawn: async () => 1 }),
+    ).resolves.toBe(1);
   });
 
   it('startDeferredServices is a no-op with no deferred services', async () => {

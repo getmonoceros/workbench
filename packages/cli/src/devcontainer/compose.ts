@@ -372,6 +372,64 @@ export async function startDeferredServices(
   );
 }
 
+export interface PullImagesOptions {
+  root: string;
+  spawn?: ComposeSpawn;
+  /** Tee the compose output here (the apply log). */
+  logSink?: NodeJS.WritableStream;
+  /** Keep the compose output off the screen (spinner mode); it still goes to logSink. */
+  silent?: boolean;
+  logger?: { info: (message: string) => void };
+}
+
+/**
+ * Re-pull the service images of a compose project (ADR 0052). Used by
+ * `upgrade`, which is the deliberate freshness path — routine `apply`
+ * never does this.
+ *
+ * Needed because `docker compose up` reuses whatever is in the local
+ * image cache, so a floating tag that moved upstream (a patched
+ * `keycloak:26.7`) never reaches an existing workbench on its own. Runs
+ * BEFORE the container cycle, against the compose file the current apply
+ * just wrote, so both the initial `devcontainer up` and the deferred
+ * second wave find the fresh images locally.
+ *
+ * `--ignore-buildable` skips the workspace service (it is built from the
+ * Dockerfile, not pulled); `--ignore-pull-failures` keeps an offline or
+ * rate-limited registry from failing the whole upgrade — the cached image
+ * still starts. The exit code is returned but is advisory: the caller
+ * warns, it does not abort.
+ */
+export async function pullServiceImages(
+  opts: PullImagesOptions,
+): Promise<number> {
+  const { composeFile, projectName } = resolveCompose(opts.root);
+  const spawnFn =
+    opts.spawn ??
+    spawnDockerComposeTo({
+      ...(opts.logSink ? { logSink: opts.logSink } : {}),
+      ...(opts.silent ? { silent: true } : {}),
+    });
+  opts.logger?.info('Re-pulling service images…');
+  return spawnFn(
+    [
+      '-f',
+      composeFile,
+      '-p',
+      projectName,
+      // Deferred services (ADR 0025) are profile-gated, so without this
+      // the one image most likely to carry a security fix is skipped.
+      '--profile',
+      DEFERRED_SERVICE_PROFILE,
+      'pull',
+      '--ignore-buildable',
+      '--ignore-pull-failures',
+      '--quiet',
+    ],
+    opts.root,
+  );
+}
+
 export interface StartOptions {
   root: string;
   spawn?: DevcontainerSpawn;

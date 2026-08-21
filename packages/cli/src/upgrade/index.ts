@@ -7,7 +7,7 @@ import {
   monocerosHome as defaultMonocerosHome,
 } from '../config/paths.js';
 import { markUpgraded } from '../config/machine-state.js';
-import { compareRuntimeVersions } from '../create/catalog.js';
+import { compareRuntimeVersions, SERVICE_CATALOG } from '../create/catalog.js';
 import { isWorkspaceRunning, spawnDocker } from '../devcontainer/compose.js';
 import { type DockerExec } from '../proxy/index.js';
 import { pruneStaleImages } from './prune.js';
@@ -105,6 +105,62 @@ export function setRuntimeVersion(yml: string, version: string): string {
     );
   }
   return `runtimeVersion: ${version}\n${yml}`;
+}
+
+/**
+ * The repository half of an image reference: everything before the tag
+ * or digest. A registry port (`ghcr.io:5000/x/app`) is not a tag, so the
+ * split is only a tag when it comes after the last `/`.
+ */
+function imageRepo(image: string): string {
+  const repo = image.split('@')[0]!;
+  const colon = repo.lastIndexOf(':');
+  return colon > repo.lastIndexOf('/') ? repo.slice(0, colon) : repo;
+}
+
+/** repo → the image reference the catalog ships today. */
+function catalogImagesByRepo(): Map<string, string> {
+  const byRepo = new Map<string, string>();
+  for (const entry of Object.values(SERVICE_CATALOG)) {
+    byRepo.set(imageRepo(entry.image), entry.image);
+  }
+  return byRepo;
+}
+
+/**
+ * Pull the curated services in a yml document up to the tags the catalog
+ * ships now, preserving comments and everything else (ADR 0052).
+ *
+ * Matched by image REPOSITORY, not by service name: that also catches an
+ * instance renamed with `add-service … --as`, and it leaves an image the
+ * builder chose themselves alone, because no catalog entry claims its
+ * repository. Only indented `image:` lines are considered, so a
+ * top-level key or a commented-out example is never touched.
+ *
+ * Pure — no I/O. Returns the new document and one `old → new` line per
+ * rewrite, for the caller to log.
+ */
+export function setCuratedServiceImages(yml: string): {
+  yml: string;
+  changed: string[];
+} {
+  const byRepo = catalogImagesByRepo();
+  const changed: string[] = [];
+  const out = yml.split('\n').map((line) => {
+    const m = /^(\s+image:[ \t]*)(\S+)([ \t]*)$/.exec(line);
+    if (!m) return line;
+    const [, prefix, image, trailing] = m as unknown as [
+      string,
+      string,
+      string,
+      string,
+    ];
+    const current = byRepo.get(imageRepo(image));
+    if (current === undefined || current === image) return line;
+    changed.push(`${image} → ${current}`);
+    return `${prefix}${current}${trailing}`;
+  });
+  return { yml: out.join('\n'), changed };
 }
 
 export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
@@ -212,16 +268,25 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
 
   let worstExit = 0;
   let bumped = 0;
+  let retagged = 0;
   for (const name of targets) {
     const ymlPath = containerConfigPath(name, home);
     if (!existsSync(ymlPath)) continue; // removed mid-run — skip
     const raw = await fs.readFile(ymlPath, 'utf8');
-    const updated = setRuntimeVersion(raw, pinVersion);
-    if (updated !== raw) {
-      await fs.writeFile(ymlPath, updated);
+    const withRuntime = setRuntimeVersion(raw, pinVersion);
+    if (withRuntime !== raw) {
       bumped += 1;
       logger.info(`Pinned '${name}' to runtime ${pinVersion}.`);
     }
+    // Curated service images move with the catalog, not with the
+    // container (ADR 0052) — a security fix in an upstream image reaches
+    // an existing workbench only if upgrade writes the new tag here.
+    const { yml: updated, changed } = setCuratedServiceImages(withRuntime);
+    for (const line of changed) {
+      retagged += 1;
+      logger.info(`Retagged a service in '${name}': ${line}.`);
+    }
+    if (updated !== raw) await fs.writeFile(ymlPath, updated);
     logger.info(`Refreshing '${name}' (rebuild — latest tools)…`);
     const result = await apply({
       name,
@@ -246,6 +311,7 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
       `Upgraded ${opts.name ? `'${opts.name}'` : `${targets.length} running container${targets.length === 1 ? '' : 's'}`}\n` +
         `  tools     rebuilt — latest pulled\n` +
         `  base      ${pinVersion} ${bumped > 0 ? `(${bumped} bumped)` : '(already latest)'}\n` +
+        `  services  images re-pulled${retagged > 0 ? ` (${retagged} retagged)` : ''}\n` +
         `  pruned    ${formatPruneLine(prune)}\n` +
         (skipped.length > 0
           ? `  skipped   ${skipped.length} not running (${skipped.join(', ')})\n`
