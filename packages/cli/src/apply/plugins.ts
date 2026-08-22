@@ -215,14 +215,18 @@ export function formatPluginFailures(
 ): string {
   const lines: string[] = [
     ...warnHeading('Agent plugins not installed'),
-    yellow('   Declared in the yml, but not in the container:'),
+    yellow('   Not everything the yml declares reached the container:'),
   ];
   for (const failure of failures) {
     lines.push(`     • ${failure.what}`);
     lines.push(`       ${failure.cause}`);
   }
   const hints = [...new Set(failures.map((f) => f.hint).filter(Boolean))];
-  lines.push('', bold('   The container is up; only the plugins are missing.'));
+  lines.push(
+    '',
+    bold('   The container is up; the agent is missing plugins or running'),
+    bold('   older ones.'),
+  );
   for (const hint of hints) lines.push(`   ${hint}`);
   lines.push(
     `   Fix the cause, then re-apply: ${cyan(`monoceros apply ${containerName}`)}`,
@@ -337,8 +341,17 @@ export async function installPlugins(
       // `install` on an already-installed plugin is also a no-op, so the
       // refreshed marketplace only reaches the agent through an explicit
       // update. Harmless when it is already current.
+      //
+      // `update` takes `plugin@marketplace` and nothing else: unlike
+      // `install`, it does not search the marketplaces for a bare name and
+      // answers `Plugin "<name>" not found` instead.
       if (registered?.alreadyPresent) {
-        const update = await exec([source.cli, 'plugin', 'update', name]);
+        const update = await exec([
+          source.cli,
+          'plugin',
+          'update',
+          `${name}@${registered.name}`,
+        ]);
         if (update.code !== 0) {
           failures.push({
             what: `could not update ${name}; the version already in the container stayed`,

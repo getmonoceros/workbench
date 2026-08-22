@@ -437,6 +437,8 @@ describe('installPlugins refreshing an existing marketplace', () => {
   // ~/.claude survives a rebuild, and `add` on an existing marketplace does
   // not pull. Without the refresh a workbench would stay on the version it
   // first cloned, forever.
+  // `plugin update` does not resolve a bare name the way `install` does; it
+  // answers `Plugin "<name>" not found`. It has to be `plugin@marketplace`.
   it('pulls the marketplace and the plugin when both were already there', async () => {
     const { commands, result } = run(
       "✔ Marketplace 'acme-plugins' already on disk",
@@ -446,7 +448,7 @@ describe('installPlugins refreshing an existing marketplace', () => {
       'claude plugin marketplace add https://github.com/acme/claude-plugins.git',
       'claude plugin marketplace update acme-plugins',
       'claude plugin install acme-conventions',
-      'claude plugin update acme-conventions',
+      'claude plugin update acme-conventions@acme-plugins',
     ]);
   });
 
