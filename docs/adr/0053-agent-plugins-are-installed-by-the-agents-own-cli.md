@@ -51,6 +51,15 @@ name. Both commands are idempotent (a second `add` reports "already on disk", a
 second `install` "already installed", both exit 0) and both work without the
 agent being logged in, which is what makes them usable in a build step.
 
+Idempotent here means "does nothing", including "does not pull". Since
+`~/.claude` survives a rebuild, an apply over an existing workbench would
+otherwise freeze it on whatever the marketplace held the day it was first
+registered, and no amount of re-applying would ever pick up a fix. So when
+`add` reports the marketplace was already on disk, apply follows with
+`marketplace update` and then `plugin update` per plugin. The marketplace name
+those commands need is read out of what `add` printed, which is the one place
+it is stated in a readable form.
+
 Which CLI to run is a catalog fact, not a hardcoded one: the descriptor's
 `feature.pluginCli` names it, and its presence is what makes `plugins:` on that
 feature meaningful at all. A `plugins:` block on a feature without it is a

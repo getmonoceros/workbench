@@ -5,6 +5,7 @@ import { stripAnsi } from '../src/util/format.js';
 import {
   describePluginFailure,
   formatPluginFailures,
+  marketplaceName,
   installPlugins,
   pluginCredentialHosts,
   resolvePluginSources,
@@ -377,5 +378,97 @@ describe('formatPluginFailures', () => {
       ),
     );
     expect(text.split(hint)).toHaveLength(2);
+  });
+});
+
+describe('marketplaceName', () => {
+  // Both lines verbatim from the agent CLI. The name is the marketplace's
+  // own, not one we picked, and this is where it is readable.
+  it('reads the name and whether it was already there', () => {
+    expect(
+      marketplaceName(
+        '\u001b[32m✔\u001b[39m Successfully added marketplace: monoceros-discovery (declared in user settings)',
+      ),
+    ).toEqual({ name: 'monoceros-discovery', alreadyPresent: false });
+    expect(
+      marketplaceName(
+        "✔ Marketplace 'monoceros-discovery' already on disk — declared in user settings",
+      ),
+    ).toEqual({ name: 'monoceros-discovery', alreadyPresent: true });
+  });
+
+  it('gives up rather than guessing', () => {
+    expect(marketplaceName('something else entirely')).toBeUndefined();
+  });
+});
+
+describe('installPlugins refreshing an existing marketplace', () => {
+  const source = {
+    featureRef: CLAUDE,
+    cli: 'claude',
+    source: 'https://github.com/acme/claude-plugins.git',
+    enable: ['acme-conventions'],
+  };
+
+  function run(
+    addOutput: string,
+    codeFor: (args: string[]) => number = () => 0,
+  ) {
+    const commands: string[][] = [];
+    return {
+      commands,
+      result: installPlugins({
+        root: '/tmp/demo',
+        sources: [source],
+        spawn: async (
+          args: string[],
+          _cwd: string,
+          options?: { progressSink?: NodeJS.WritableStream },
+        ) => {
+          const cmd = args.slice(args.indexOf('--') + 1);
+          commands.push(cmd);
+          if (cmd.includes('add')) options?.progressSink?.write(addOutput);
+          return codeFor(cmd);
+        },
+      }),
+    };
+  }
+
+  // ~/.claude survives a rebuild, and `add` on an existing marketplace does
+  // not pull. Without the refresh a workbench would stay on the version it
+  // first cloned, forever.
+  it('pulls the marketplace and the plugin when both were already there', async () => {
+    const { commands, result } = run(
+      "✔ Marketplace 'acme-plugins' already on disk",
+    );
+    await result;
+    expect(commands.map((c) => c.join(' '))).toEqual([
+      'claude plugin marketplace add https://github.com/acme/claude-plugins.git',
+      'claude plugin marketplace update acme-plugins',
+      'claude plugin install acme-conventions',
+      'claude plugin update acme-conventions',
+    ]);
+  });
+
+  it('skips the refresh on a marketplace it just cloned', async () => {
+    const { commands, result } = run(
+      '✔ Successfully added marketplace: acme-plugins (declared in user settings)',
+    );
+    await result;
+    expect(commands.map((c) => c.join(' '))).toEqual([
+      'claude plugin marketplace add https://github.com/acme/claude-plugins.git',
+      'claude plugin install acme-conventions',
+    ]);
+  });
+
+  it('reports a refresh that failed and leaves the old version alone', async () => {
+    const { commands, result } = run(
+      "✔ Marketplace 'acme-plugins' already on disk",
+      (cmd) => (cmd.includes('marketplace') && cmd.includes('update') ? 1 : 0),
+    );
+    const { installed, failures } = await result;
+    expect(commands).toHaveLength(2);
+    expect(installed).toEqual([]);
+    expect(failures[0]?.what).toContain('stayed at the version already in the');
   });
 });

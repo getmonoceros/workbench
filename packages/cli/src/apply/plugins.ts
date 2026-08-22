@@ -298,17 +298,73 @@ export async function installPlugins(
       });
       continue;
     }
+
+    // `add` on a marketplace that is already on disk is a pure no-op: it does
+    // not pull. Since ~/.claude survives a rebuild, that would freeze a
+    // workbench on whatever the marketplace held the first time it was
+    // registered, and no amount of re-applying would ever pick up a fix. So
+    // when it was already there, refresh it and the plugins on top of it.
+    const registered = marketplaceName(add.output);
+    if (registered?.alreadyPresent) {
+      const update = await exec([
+        source.cli,
+        'plugin',
+        'marketplace',
+        'update',
+        registered.name,
+      ]);
+      if (update.code !== 0) {
+        // Not fatal: the plugins that are there keep working, they are just
+        // the older ones.
+        failures.push({
+          what: `could not refresh ${source.source}; ${source.enable.join(', ')} stayed at the version already in the container`,
+          ...describePluginFailure(update.output, update.code),
+        });
+        continue;
+      }
+    }
+
     for (const name of source.enable) {
       const install = await exec([source.cli, 'plugin', 'install', name]);
-      if (install.code === 0) {
-        installed.push(name);
-      } else {
+      if (install.code !== 0) {
         failures.push({
           what: `could not install ${name} from ${source.source}`,
           ...describePluginFailure(install.output, install.code),
         });
+        continue;
+      }
+      installed.push(name);
+      // `install` on an already-installed plugin is also a no-op, so the
+      // refreshed marketplace only reaches the agent through an explicit
+      // update. Harmless when it is already current.
+      if (registered?.alreadyPresent) {
+        const update = await exec([source.cli, 'plugin', 'update', name]);
+        if (update.code !== 0) {
+          failures.push({
+            what: `could not update ${name}; the version already in the container stayed`,
+            ...describePluginFailure(update.output, update.code),
+          });
+        }
       }
     }
   }
   return { installed, failures };
+}
+
+/**
+ * The marketplace name out of what `marketplace add` printed, plus whether it
+ * was already on disk. The name is not ours to choose — it comes from the
+ * marketplace's own manifest — and this is the one place it is stated in a
+ * form we can read, which is why the refresh can be targeted at one
+ * marketplace instead of updating every one the builder ever added.
+ */
+export function marketplaceName(
+  output: string,
+): { name: string; alreadyPresent: boolean } | undefined {
+  const text = stripAnsi(output);
+  const added = /Successfully added marketplace:\s*([^\s(]+)/.exec(text);
+  if (added?.[1]) return { name: added[1], alreadyPresent: false };
+  const present = /Marketplace ['"]([^'"]+)['"] already on disk/.exec(text);
+  if (present?.[1]) return { name: present[1], alreadyPresent: true };
+  return undefined;
 }
