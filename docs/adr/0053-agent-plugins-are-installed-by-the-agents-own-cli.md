@@ -73,11 +73,22 @@ ships (ADR 0018). A pin the CLI cannot honor would be a lie in the yml.
 installing all of them because the builder named none is the wrong default —
 our own marketplace would drag in a second plugin nobody asked for.
 
-**The install is best-effort.** A marketplace that cannot be reached, or a
-plugin name that is not in it, produces a warning and leaves the apply green.
-At that point the container is up, the agent is installed and the repos are
-cloned; tearing all of that down over a plugin is the worse trade. The warning
-names the cause, and a re-run picks it up.
+**The install is best-effort, and the warning names the cause.** A marketplace
+that cannot be reached, or a plugin name that is not in it, produces a warning
+and leaves the apply green. At that point the container is up, the agent is
+installed and the repos are cloned; tearing all of that down over a plugin is
+the worse trade.
+
+An exit code is not a cause. The agent CLI's output is captured rather than
+streamed, and the warning carries the lines that say what happened (`Failed to
+add marketplace: …`, `fatal: unable to get password from user`) with the
+spinner labels and git's clone progress stripped out. When the cause is git
+having no credentials, the warning also says what to set. The full transcript
+stays in the apply log.
+
+A private marketplace should not get that far: its host goes through the repo
+credential pre-flight, which names the missing token before anything is built,
+including what a missing token costs a plugin.
 
 **No `add-plugin` command.** `init` and `add-feature` write a commented
 `plugins:` example onto the feature entry, the same carrier a curated service

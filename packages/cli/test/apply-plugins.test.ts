@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { validateConfig } from '../src/config/schema.js';
 import type { FeatureEntry } from '../src/config/schema.js';
 import {
+  describePluginFailure,
   installPlugins,
   pluginCredentialHosts,
   resolvePluginSources,
@@ -177,6 +178,66 @@ describe('pluginCredentialHosts', () => {
   });
 });
 
+describe('describePluginFailure', () => {
+  // Verbatim from a real apply against a private marketplace with no token in
+  // the workbench. The point of the renderer is this transcript, so it is the
+  // fixture: an exit code told the builder nothing, the `fatal:` line tells
+  // them everything.
+  const REAL_AUTH_FAILURE = [
+    "\u001b[31m✘\u001b[39m Failed to add marketplace: Failed to clone marketplace repository: Cloning into '/home/node/.claude/plugins/marketplaces/temp_1787423663644'...",
+    'fatal: unable to get password from user',
+    'Adding marketplace…',
+    '',
+  ].join('\n');
+
+  it('names the cause git gave, not the exit code', () => {
+    const { cause } = describePluginFailure(REAL_AUTH_FAILURE, 1);
+    expect(cause).toContain('fatal: unable to get password from user');
+    expect(cause).toContain('Failed to add marketplace');
+    // The spinner remnant and the temp clone path are not the cause.
+    expect(cause).not.toContain('Adding marketplace');
+    expect(cause).not.toContain('Cloning into');
+    expect(cause).not.toContain('temp_');
+    expect(cause).toBe(
+      'Failed to add marketplace: Failed to clone marketplace repository / fatal: unable to get password from user',
+    );
+    expect(cause).not.toMatch(/exit(ed)? 1/);
+  });
+
+  it('says what to do when git had no credentials', () => {
+    const { hint } = describePluginFailure(REAL_AUTH_FAILURE, 1);
+    expect(hint).toMatch(/private, or its host needs a token/);
+    expect(hint).toContain('git-and-repos');
+  });
+
+  it.each([
+    'fatal: could not read Username for https://github.com: No such device',
+    'remote: Invalid username or token.',
+    'fatal: Authentication failed for https://git.acme.example/x.git',
+  ])('recognises %s as an auth problem', (line) => {
+    expect(describePluginFailure(line, 128).hint).toBeDefined();
+  });
+
+  it('offers no hint for a failure that is not about credentials', () => {
+    const { cause, hint } = describePluginFailure(
+      '✘ Plugin "acme-typo" not found in any marketplace\n',
+      1,
+    );
+    expect(cause).toBe('Plugin "acme-typo" not found in any marketplace');
+    expect(hint).toBeUndefined();
+  });
+
+  // Better a weak line than a number: the builder can search for it.
+  it('falls back to the last line, and to the exit code only when silent', () => {
+    expect(describePluginFailure('something odd happened\n', 2).cause).toBe(
+      'something odd happened',
+    );
+    expect(describePluginFailure('', 2).cause).toBe(
+      'the command exited 2 without output',
+    );
+  });
+});
+
 describe('installPlugins', () => {
   const source = {
     featureRef: CLAUDE,
@@ -185,19 +246,27 @@ describe('installPlugins', () => {
     enable: ['acme-conventions', 'acme-review'],
   };
 
-  function recordingSpawn(codeFor: (args: string[]) => number) {
+  function recordingSpawn(
+    outcome: (args: string[]) => { code: number; output?: string },
+  ) {
     const calls: string[][] = [];
     return {
       calls,
-      spawn: async (args: string[]) => {
+      spawn: async (
+        args: string[],
+        _cwd: string,
+        options?: { progressSink?: NodeJS.WritableStream },
+      ) => {
         calls.push(args);
-        return codeFor(args);
+        const { code, output } = outcome(args);
+        if (output) options?.progressSink?.write(output);
+        return code;
       },
     };
   }
 
   it('registers the marketplace once, then installs each named plugin', async () => {
-    const { calls, spawn } = recordingSpawn(() => 0);
+    const { calls, spawn } = recordingSpawn(() => ({ code: 0 }));
     const result = await installPlugins({
       root: '/tmp/demo',
       sources: [source],
@@ -216,9 +285,11 @@ describe('installPlugins', () => {
   });
 
   // One unreachable marketplace is one cause, not one per plugin.
-  it('skips the installs when the marketplace cannot be registered', async () => {
+  it('skips the installs when the marketplace cannot be registered, and carries the reason', async () => {
     const { calls, spawn } = recordingSpawn((args) =>
-      args.includes('marketplace') ? 1 : 0,
+      args.includes('marketplace')
+        ? { code: 1, output: 'fatal: unable to get password from user\n' }
+        : { code: 0 },
     );
     const result = await installPlugins({
       root: '/tmp/demo',
@@ -227,14 +298,21 @@ describe('installPlugins', () => {
     });
     expect(calls).toHaveLength(1);
     expect(result.installed).toEqual([]);
-    expect(result.failures).toEqual([
-      'https://github.com/acme/claude-plugins.git could not be registered (exit 1); acme-conventions, acme-review not installed',
-    ]);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.what).toBe(
+      'could not register https://github.com/acme/claude-plugins.git, so acme-conventions, acme-review were not installed',
+    );
+    expect(result.failures[0]?.cause).toBe(
+      'fatal: unable to get password from user',
+    );
+    expect(result.failures[0]?.hint).toBeDefined();
   });
 
   it('reports the plugin that failed and keeps installing the rest', async () => {
     const { spawn } = recordingSpawn((args) =>
-      args.includes('acme-conventions') ? 3 : 0,
+      args.includes('acme-conventions')
+        ? { code: 3, output: '✘ Plugin "acme-conventions" not found\n' }
+        : { code: 0 },
     );
     const result = await installPlugins({
       root: '/tmp/demo',
@@ -243,7 +321,10 @@ describe('installPlugins', () => {
     });
     expect(result.installed).toEqual(['acme-review']);
     expect(result.failures).toEqual([
-      'acme-conventions could not be installed from https://github.com/acme/claude-plugins.git (exit 3)',
+      {
+        what: 'could not install acme-conventions from https://github.com/acme/claude-plugins.git',
+        cause: 'Plugin "acme-conventions" not found',
+      },
     ]);
   });
 });

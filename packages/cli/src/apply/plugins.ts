@@ -1,9 +1,11 @@
+import { PassThrough } from 'node:stream';
 import type { FeatureEntry, PluginEntry } from '../config/schema.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
 import {
   spawnDevcontainer,
   type DevcontainerSpawn,
 } from '../devcontainer/cli.js';
+import { stripAnsi } from '../util/format.js';
 
 /**
  * Agent plugins declared on a feature entry, installed into the container
@@ -114,10 +116,89 @@ export interface InstallPluginsOptions {
   spawn?: DevcontainerSpawn;
 }
 
-/** What went wrong, per marketplace or plugin, for one summary warning. */
+/** One thing that did not work, with the reason it did not. */
+export interface PluginFailure {
+  /** What was attempted, in the builder's words. */
+  what: string;
+  /** The line(s) from the agent CLI that say why. Never an exit code alone. */
+  cause: string;
+  /** What to do about it, when the cause is one we recognise. */
+  hint?: string;
+}
+
 export interface InstallPluginsResult {
   installed: string[];
-  failures: string[];
+  failures: PluginFailure[];
+}
+
+/**
+ * Lines the agent CLI prints that carry no information: its own spinner
+ * labels, and the progress noise git writes to stderr on the way to the real
+ * error. Dropping them is what turns a wall of output into one readable
+ * cause.
+ */
+const NOISE = [
+  /^Adding marketplace/i,
+  /^Installing plugin/i,
+  /^Cloning into /i,
+  /^remote:/i,
+  /^Receiving objects/i,
+  /^Resolving deltas/i,
+];
+
+/**
+ * Turn the agent CLI's output into the reason a step failed.
+ *
+ * An exit code is not a reason. `git` puts the actual cause on its own line
+ * (`fatal: …`) and the agent wraps it in a line of its own (`✘ Failed to add
+ * marketplace: …`), so both are worth keeping and everything between them is
+ * not. When nothing recognisable is left, the last line of output beats a
+ * number.
+ */
+export function describePluginFailure(
+  output: string,
+  exitCode: number,
+): { cause: string; hint?: string } {
+  const lines = stripAnsi(output)
+    .split('\n')
+    .map((l) => l.replace(/[\r…]+$/, '').trim())
+    .filter((l) => l.length > 0)
+    .filter((l) => !NOISE.some((re) => re.test(l)));
+
+  const decorated = lines.map((l) =>
+    l
+      .replace(/^[✘✖x!]\s*/u, '')
+      // git's clone progress gets concatenated onto the agent's error line;
+      // the temp checkout path is never the reason for anything.
+      .replace(/:?\s*Cloning into '[^']*'\.*$/, '')
+      .replace(/[\s:]+$/, '')
+      .trim(),
+  );
+  const fatal = decorated.find((l) => /^(fatal|error):/i.test(l));
+  const failed = decorated.find((l) => /^Failed to /i.test(l));
+  const picked = [failed, fatal].filter(
+    (l, i, all): l is string => Boolean(l) && all.indexOf(l) === i,
+  );
+
+  const cause =
+    picked.length > 0
+      ? picked.join(' / ')
+      : (decorated.at(-1) ?? `the command exited ${exitCode} without output`);
+
+  // The one cause worth naming a fix for: git had no credentials and, in a
+  // container, no one to ask. Every spelling git and its helpers use for it.
+  const authFailed =
+    /unable to get password|could not read (Username|Password)|Authentication failed|terminal prompts disabled|Permission denied \(publickey\)|remote: (Invalid username|Repository not found)/i.test(
+      stripAnsi(output),
+    );
+  return {
+    cause,
+    ...(authFailed
+      ? {
+          hint: 'The marketplace is private, or its host needs a token that this workbench does not have. Set one in the env file and re-apply: https://getmonoceros.build/docs/concepts/git-and-repos/',
+        }
+      : {}),
+  };
 }
 
 /**
@@ -136,10 +217,19 @@ export async function installPlugins(
 ): Promise<InstallPluginsResult> {
   const spawnFn = opts.spawn ?? spawnDevcontainer;
   const installed: string[] = [];
-  const failures: string[] = [];
+  const failures: PluginFailure[] = [];
 
-  const exec = (command: readonly string[]): Promise<number> =>
-    spawnFn(
+  // The agent CLI's output is captured rather than streamed: on success it is
+  // chatter, and on failure the builder is better served by the one line that
+  // says why than by the whole transcript. The full text still reaches the
+  // apply log through `logSink`.
+  const exec = async (
+    command: readonly string[],
+  ): Promise<{ code: number; output: string }> => {
+    const captured = new PassThrough();
+    const chunks: Buffer[] = [];
+    captured.on('data', (c: Buffer) => chunks.push(Buffer.from(c)));
+    const code = await spawnFn(
       [
         'exec',
         '--workspace-folder',
@@ -151,34 +241,39 @@ export async function installPlugins(
       opts.root,
       {
         ...(opts.logSink ? { logSink: opts.logSink } : {}),
-        ...(opts.silent ? { quiet: true } : {}),
+        progressSink: captured,
+        silent: true,
       },
     );
+    return { code, output: Buffer.concat(chunks).toString('utf8') };
+  };
 
   for (const source of opts.sources) {
-    const addCode = await exec([
+    const add = await exec([
       source.cli,
       'plugin',
       'marketplace',
       'add',
       source.source,
     ]);
-    if (addCode !== 0) {
+    if (add.code !== 0) {
       // Every plugin of this marketplace is out — naming them one by one
       // would repeat the same cause N times.
-      failures.push(
-        `${source.source} could not be registered (exit ${addCode}); ${source.enable.join(', ')} not installed`,
-      );
+      failures.push({
+        what: `could not register ${source.source}, so ${source.enable.join(', ')} ${source.enable.length === 1 ? 'was' : 'were'} not installed`,
+        ...describePluginFailure(add.output, add.code),
+      });
       continue;
     }
     for (const name of source.enable) {
-      const installCode = await exec([source.cli, 'plugin', 'install', name]);
-      if (installCode === 0) {
+      const install = await exec([source.cli, 'plugin', 'install', name]);
+      if (install.code === 0) {
         installed.push(name);
       } else {
-        failures.push(
-          `${name} could not be installed from ${source.source} (exit ${installCode})`,
-        );
+        failures.push({
+          what: `could not install ${name} from ${source.source}`,
+          ...describePluginFailure(install.output, install.code),
+        });
       }
     }
   }

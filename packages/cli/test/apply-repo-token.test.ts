@@ -50,6 +50,9 @@ describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
     return parseConfig(await readFile(ymlPath(name), 'utf8')).config;
   }
 
+  const claudeRef = (): string =>
+    catalog.get('claude')!.file.contributes.features![0]!.ref;
+
   const githubCliRef = (): string =>
     catalog.get('github')!.file.contributes.features![0]!.ref;
 
@@ -95,6 +98,49 @@ describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
       GIT_TOKEN__GITHUB: 'ghp_3',
     });
     expect(r.used[0]!.varName).toBe('GIT_TOKEN__GITHUB');
+  });
+
+  // A plugin marketplace is cloned by the agent inside the container, with the
+  // same git and the same credential helper as a repo. Before this, a private
+  // marketplace with no token got no pre-flight at all and surfaced as a failed
+  // clone at the very end of apply.
+  it('treats a plugin marketplace like a repo for credentials', async () => {
+    await writeFile(
+      ymlPath('plug'),
+      [
+        'schemaVersion: 1',
+        'name: plug',
+        'features:',
+        `  - ref: ${claudeRef()}`,
+        '    plugins:',
+        '      - url: https://github.com/acme/claude-plugins.git',
+        '        enable:',
+        '          - acme-conventions',
+        '',
+      ].join('\n'),
+    );
+    const config = await configOf('plug');
+
+    const missing = resolveRepoTokens(config, catalog, {});
+    expect(missing.missing).toEqual([
+      {
+        host: 'github.com',
+        provider: 'github',
+        tried: [
+          'GITHUB_API_TOKEN',
+          'GIT_TOKEN__GITHUB_ACME',
+          'GIT_TOKEN__GITHUB',
+        ],
+      },
+    ]);
+
+    // And with a token, the host reaches the credentials file, so the clone
+    // inside the container can authenticate at all.
+    const resolved = resolveRepoTokens(config, catalog, {
+      GIT_TOKEN__GITHUB: 'ghp_x',
+    });
+    expect(resolved.missing).toEqual([]);
+    expect(resolved.hostTokens.get('github.com')).toBe('ghp_x');
   });
 
   it('reports missing with the tried vars when no token is set', async () => {

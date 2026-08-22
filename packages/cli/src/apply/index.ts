@@ -1053,8 +1053,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
           );
         }
         for (const failure of failures) {
+          // The cause first, because that is the part the builder acts on.
+          // An exit code alone would send them to the log file to find out
+          // what actually happened.
           containerLogger.warn?.(
-            `Agent plugin: ${failure}. The workbench is up; fix the cause and re-run \`monoceros apply ${opts.name}\`.`,
+            `Agent plugin: ${failure.what}.\n    ${failure.cause}` +
+              (failure.hint ? `\n    ${failure.hint}` : '') +
+              `\n    The workbench is up; fix the cause and re-run \`monoceros apply ${opts.name}\`.`,
           );
         }
       } catch (err) {
@@ -1237,7 +1242,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     // error tail, since a private-repo clone that failed for lack of a
     // token is exactly when this matters most).
     if (repoTokens.missing.length > 0) {
-      const warning = formatUnauthenticatedRepos(repoTokens.missing, opts.name);
+      const warning = formatUnauthenticatedRepos(
+        repoTokens.missing,
+        opts.name,
+        {
+          hasPlugins: pluginSources.length > 0,
+        },
+      );
       progressOut.write(`\n${warning}\n`);
       applyLog.stream.write(`\n${stripAnsi(warning)}\n`);
     }

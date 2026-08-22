@@ -1,3 +1,4 @@
+import { pluginCredentialHosts } from './plugins.js';
 import { promises as fs } from 'node:fs';
 import {
   PROVIDER_LABEL,
@@ -192,7 +193,18 @@ export function resolveRepoTokens(
     if (feature) feature.options = { ...feature.options, apiToken: token };
   };
 
-  for (const repo of config.repos ?? []) {
+  // A plugin marketplace is a repo as far as credentials go: the agent CLI
+  // clones it inside the container with the same git and the same mounted
+  // helper. Resolving it here is what puts its host into `hostTokens` (so the
+  // clone can authenticate at all) and into `missing` (so a host without a
+  // token is named up front, instead of surfacing as a failed clone at the
+  // very end of apply).
+  const credentialSources = [
+    ...(config.repos ?? []),
+    ...pluginCredentialHosts(config.features),
+  ];
+
+  for (const repo of credentialSources) {
     if (!repo.url.startsWith('https://')) continue; // only HTTPS is cloned
     let host: string;
     try {
@@ -320,6 +332,7 @@ function detailsFooter(): string {
 export function formatUnauthenticatedRepos(
   missing: readonly MissingRepoToken[],
   containerName: string,
+  opts: { hasPlugins?: boolean } = {},
 ): string {
   const lines: string[] = [
     ...warnHeading('Repo access — action needed'),
@@ -334,6 +347,12 @@ export function formatUnauthenticatedRepos(
     '     • gh / glab in the container are not logged in.',
     '     • pushing, and cloning/pulling PRIVATE repositories, fails.',
     '     • branches, PRs/MRs — anything that writes to the remote — fails.',
+    ...(opts.hasPlugins
+      ? [
+          '     • a PRIVATE plugin marketplace is not registered, so its plugins',
+          '       never reach the agent.',
+        ]
+      : []),
     '',
     bold('   Set a token, then re-apply:'),
   );
