@@ -159,6 +159,22 @@ features:
       apiKey: sk-ant-… # optional → API mode instead of OAuth/subscription
 ```
 
+An agent that reads plugins carries them on the same entry, and the
+container comes up with them installed:
+
+```yaml
+features:
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
+    plugins:
+      - url: https://github.com/acme/claude-plugins.git
+        enable:
+          - acme-conventions
+```
+
+Same idea as everywhere else: the yml says what is in the container, and
+apply makes it so. Monoceros does not write the agent's own config for
+this, it runs the agent's plugin commands inside the container (ADR 0053).
+
 So the same Atlassian/Anthropic data doesn't have to be repeated in
 every container yml, `monoceros-config.yml` holds defaults per feature
 ref:
