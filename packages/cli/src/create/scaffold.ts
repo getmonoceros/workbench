@@ -263,6 +263,9 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
     ...(opts.vscodeAutoForward !== undefined
       ? { vscodeAutoForward: opts.vscodeAutoForward }
       : {}),
+    ...(opts.pluginMarketplaceUrls && opts.pluginMarketplaceUrls.length > 0
+      ? { pluginMarketplaceUrls: [...new Set(opts.pluginMarketplaceUrls)] }
+      : {}),
   };
 }
 

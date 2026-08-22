@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { writeScaffold } from '../src/create/scaffold.js';
+import { normalizeOptions, writeScaffold } from '../src/create/scaffold.js';
 import { solutionConfigToCreateOptions } from '../src/config/transform.js';
 import { parseConfig } from '../src/config/index.js';
 import type { CreateOptions } from '../src/create/types.js';
@@ -26,7 +26,11 @@ afterEach(async () => {
 async function postCreateOf(opts: CreateOptions): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'monoceros-scaffold-'));
   tmpDirs.push(dir);
-  await writeScaffold(opts, dir);
+  // Through normalizeOptions, exactly like apply: it rebuilds the object
+  // field by field, so a field it does not know about never reaches the
+  // scaffold. That is how the credential-helper fix went missing on a real
+  // apply while a direct writeScaffold test stayed green.
+  await writeScaffold(normalizeOptions(opts), dir);
   return fs.readFile(path.join(dir, '.devcontainer', 'post-create.sh'), 'utf8');
 }
 
