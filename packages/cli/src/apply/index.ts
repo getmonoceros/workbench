@@ -103,7 +103,9 @@ import {
   formatUnknownProviderError,
 } from '../devcontainer/credentials.js';
 import {
+  formatPluginFailures,
   installPlugins,
+  type PluginFailure,
   pluginCredentialHosts,
   resolvePluginSources,
 } from './plugins.js';
@@ -835,6 +837,19 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // environments fall back to the live stream so CI logs and
   // builder-driven debugging stay intact.
   const progressOut = opts.progressOut ?? process.stderr;
+
+  /**
+   * The one way an end-of-apply warning block reaches the builder: on screen
+   * framed by blank lines, and in the apply log with the colours stripped.
+   * Every block goes through here (repo access, uncloned repos, feature
+   * notes, agent plugins) so a fourth one cannot quietly pick its own
+   * moment, indentation and colours. The block itself is built by a
+   * `format*` function using `warnHeading`.
+   */
+  const writeWarningBlock = (block: string): void => {
+    progressOut.write(`\n${block}\n`);
+    applyLog.stream.write(`\n${stripAnsi(block)}\n`);
+  };
   const interactive = (progressOut.isTTY ?? false) && !opts.verbose;
   const progress: ApplyProgress | null = interactive
     ? createApplyProgress({ out: progressOut, interactive: true })
@@ -877,6 +892,9 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   process.on('SIGINT', onSigint);
 
   let exitCode: number;
+  // Collected during the container phase, reported at the end with the other
+  // warning blocks rather than mid-spinner, where it would scroll away.
+  let pluginFailures: PluginFailure[] = [];
   try {
     // First-apply context: devcontainer-cli prints "Error fetching image
     // details: No manifest found for …" for multi-arch GHCR images, then
@@ -1052,20 +1070,14 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
             `Agent plugins installed: ${installed.join(', ')}.`,
           );
         }
-        for (const failure of failures) {
-          // The cause first, because that is the part the builder acts on.
-          // An exit code alone would send them to the log file to find out
-          // what actually happened.
-          containerLogger.warn?.(
-            `Agent plugin: ${failure.what}.\n    ${failure.cause}` +
-              (failure.hint ? `\n    ${failure.hint}` : '') +
-              `\n    The workbench is up; fix the cause and re-run \`monoceros apply ${opts.name}\`.`,
-          );
-        }
+        pluginFailures = failures;
       } catch (err) {
-        containerLogger.warn?.(
-          `Could not install agent plugins: ${err instanceof Error ? err.message : String(err)}. The workspace is up.`,
-        );
+        pluginFailures = [
+          {
+            what: 'could not run the agent plugin install',
+            cause: err instanceof Error ? err.message : String(err),
+          },
+        ];
       }
     }
 
@@ -1160,9 +1172,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       // something wants the builder's attention.
       const notes = await readFeatureNotes(targetDir);
       if (notes.length > 0) {
-        const block = formatFeatureNotes(notes);
-        progressOut.write(`\n${block}\n`);
-        applyLog.stream.write(`\n${stripAnsi(block)}\n`);
+        writeWarningBlock(formatFeatureNotes(notes));
       }
 
       // Faithful reporting: the summary lists declared repos, but the clone
@@ -1198,9 +1208,12 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         }
       }
       if (failedClones.length > 0) {
-        const warning = formatFailedClones(failedClones, opts.name);
-        progressOut.write(`\n${warning}\n`);
-        applyLog.stream.write(`\n${stripAnsi(warning)}\n`);
+        writeWarningBlock(formatFailedClones(failedClones, opts.name));
+      }
+
+      // Sibling of the block above: declared in the yml, not in the container.
+      if (pluginFailures.length > 0) {
+        writeWarningBlock(formatPluginFailures(pluginFailures, opts.name));
       }
 
       // Record the image this apply built, so the upgrade prune can later
@@ -1242,15 +1255,11 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     // error tail, since a private-repo clone that failed for lack of a
     // token is exactly when this matters most).
     if (repoTokens.missing.length > 0) {
-      const warning = formatUnauthenticatedRepos(
-        repoTokens.missing,
-        opts.name,
-        {
+      writeWarningBlock(
+        formatUnauthenticatedRepos(repoTokens.missing, opts.name, {
           hasPlugins: pluginSources.length > 0,
-        },
+        }),
       );
-      progressOut.write(`\n${warning}\n`);
-      applyLog.stream.write(`\n${stripAnsi(warning)}\n`);
     }
 
     // Close the log before announcing its path — guarantees the file

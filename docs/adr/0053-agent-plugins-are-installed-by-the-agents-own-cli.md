@@ -86,6 +86,14 @@ spinner labels and git's clone progress stripped out. When the cause is git
 having no credentials, the warning also says what to set. The full transcript
 stays in the apply log.
 
+It is reported the way every other apply warning is: an end-of-apply block
+built with `warnHeading`, printed once through the single writer that frames it
+on screen and strips the colours for the log. A warning that picks its own
+moment mid-spinner scrolls away, and one that picks its own indentation makes
+the builder learn a second vocabulary. That writer now carries all four blocks
+(repo access, uncloned repos, feature notes, agent plugins), so the next one
+cannot drift either.
+
 A private marketplace should not get that far: its host goes through the repo
 credential pre-flight, which names the missing token before anything is built,
 including what a missing token costs a plugin.

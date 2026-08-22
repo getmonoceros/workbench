@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { validateConfig } from '../src/config/schema.js';
 import type { FeatureEntry } from '../src/config/schema.js';
+import { stripAnsi } from '../src/util/format.js';
 import {
   describePluginFailure,
+  formatPluginFailures,
   installPlugins,
   pluginCredentialHosts,
   resolvePluginSources,
@@ -206,8 +208,7 @@ describe('describePluginFailure', () => {
 
   it('says what to do when git had no credentials', () => {
     const { hint } = describePluginFailure(REAL_AUTH_FAILURE, 1);
-    expect(hint).toMatch(/private, or its host needs a token/);
-    expect(hint).toContain('git-and-repos');
+    expect(hint).toMatch(/private marketplace whose token is missing/);
   });
 
   it.each([
@@ -326,5 +327,55 @@ describe('installPlugins', () => {
         cause: 'Plugin "acme-conventions" not found',
       },
     ]);
+  });
+});
+
+describe('formatPluginFailures', () => {
+  const block = () =>
+    stripAnsi(
+      formatPluginFailures(
+        [
+          {
+            what: 'could not register https://github.com/acme/claude-plugins.git, so acme-conventions was not installed',
+            cause: 'fatal: unable to get password from user',
+            hint: 'Most often a private marketplace whose token is missing: set it in\n   the env file, same as for a private repo.',
+          },
+        ],
+        'acme',
+      ),
+    );
+
+  // The complaint this answers: four warnings, four shapes, four moments.
+  // Whatever the repo-access block does, this one does too.
+  it('uses the same warning vocabulary as the other end-of-apply blocks', () => {
+    const lines = block().split('\n');
+    expect(lines[0]).toBe('⚠  Agent plugins not installed');
+    expect(lines[1]).toBe('');
+    // Yellow lead-in, then bullets at the same depth as everywhere else.
+    expect(lines[2]).toMatch(/^ {3}\S/);
+    expect(lines.some((l) => l.startsWith('     • '))).toBe(true);
+    expect(lines.at(-1)).toContain(
+      'Details: https://getmonoceros.build/docs/concepts/git-and-repos/',
+    );
+  });
+
+  it('carries the cause and the command that retries it', () => {
+    expect(block()).toContain('fatal: unable to get password from user');
+    expect(block()).toContain('monoceros apply acme');
+  });
+
+  // One cause, one hint, however many plugins it took down.
+  it('does not repeat the same hint per failure', () => {
+    const hint = 'set a token';
+    const text = stripAnsi(
+      formatPluginFailures(
+        [
+          { what: 'a', cause: 'x', hint },
+          { what: 'b', cause: 'y', hint },
+        ],
+        'acme',
+      ),
+    );
+    expect(text.split(hint)).toHaveLength(2);
   });
 });

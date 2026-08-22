@@ -1,11 +1,12 @@
 import { PassThrough } from 'node:stream';
+import { REPO_DOCS_URL } from '../config/schema.js';
 import type { FeatureEntry, PluginEntry } from '../config/schema.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
 import {
   spawnDevcontainer,
   type DevcontainerSpawn,
 } from '../devcontainer/cli.js';
-import { stripAnsi } from '../util/format.js';
+import { bold, cyan, stripAnsi, warnHeading, yellow } from '../util/format.js';
 
 /**
  * Agent plugins declared on a feature entry, installed into the container
@@ -195,10 +196,42 @@ export function describePluginFailure(
     cause,
     ...(authFailed
       ? {
-          hint: 'The marketplace is private, or its host needs a token that this workbench does not have. Set one in the env file and re-apply: https://getmonoceros.build/docs/concepts/git-and-repos/',
+          hint: 'Most often a private marketplace whose token is missing: set it in\n   the env file, same as for a private repo.',
         }
       : {}),
   };
+}
+
+/**
+ * Render the failures as an end-of-apply warning block, in the vocabulary the
+ * repo-access, failed-clone and feature-note blocks already use: `⚠` heading
+ * in bold yellow, a yellow lead-in, bullets, then what it means. A builder
+ * should not have to learn a fourth way of being told "nothing is broken, but
+ * look at this".
+ */
+export function formatPluginFailures(
+  failures: readonly PluginFailure[],
+  containerName: string,
+): string {
+  const lines: string[] = [
+    ...warnHeading('Agent plugins not installed'),
+    yellow('   Declared in the yml, but not in the container:'),
+  ];
+  for (const failure of failures) {
+    lines.push(`     • ${failure.what}`);
+    lines.push(`       ${failure.cause}`);
+  }
+  const hints = [...new Set(failures.map((f) => f.hint).filter(Boolean))];
+  lines.push('', bold('   The container is up; only the plugins are missing.'));
+  for (const hint of hints) lines.push(`   ${hint}`);
+  lines.push(
+    `   Fix the cause, then re-apply: ${cyan(`monoceros apply ${containerName}`)}`,
+    '',
+    // Same footer as the repo-access block: a private marketplace is
+    // authenticated exactly like a private repo, so it is the same page.
+    `   Details: ${cyan(REPO_DOCS_URL)}`,
+  );
+  return lines.join('\n');
 }
 
 /**
