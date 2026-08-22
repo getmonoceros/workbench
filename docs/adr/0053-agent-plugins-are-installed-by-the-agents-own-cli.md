@@ -96,7 +96,10 @@ cannot drift either.
 
 A private marketplace should not get that far: its host goes through the repo
 credential pre-flight, which names the missing token before anything is built,
-including what a missing token costs a plugin.
+including what a missing token costs a plugin. And the credential helper that
+the in-container clone reads is wired whenever anything clones over https, not
+only when a repo is declared: a workbench whose only clone is a marketplace
+needs it just as much.
 
 **No `add-plugin` command.** `init` and `add-feature` write a commented
 `plugins:` example onto the feature entry, the same carrier a curated service

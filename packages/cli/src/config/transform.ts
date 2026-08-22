@@ -98,6 +98,13 @@ export function solutionConfigToCreateOptions(
   if (Object.keys(featureRecord).length > 0) {
     result.features = featureRecord;
   }
+  const pluginMarketplaceUrls = config.features
+    .flatMap((f) => f.plugins ?? [])
+    .map((p) => p.url)
+    .filter((u): u is string => u !== undefined);
+  if (pluginMarketplaceUrls.length > 0) {
+    result.pluginMarketplaceUrls = pluginMarketplaceUrls;
+  }
   if (config.installUrls.length > 0) {
     result.installUrls = [...config.installUrls];
   }

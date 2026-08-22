@@ -138,6 +138,13 @@ export interface CreateOptions {
    */
   features?: Record<string, FeatureOptions>;
   /**
+   * HTTPS marketplaces an agent clones inside the container for its plugins.
+   * The scaffold needs them for one decision only: whether to wire git's
+   * credential helper. A workbench with plugins but no repos clones too, and
+   * without the helper that clone dies asking for a password nobody can type.
+   */
+  pluginMarketplaceUrls?: string[];
+  /**
    * MCP servers to register with the agents in this container, already
    * resolved against the catalog and with `${VAR}` / `${option}` filled in
    * (ADR 0045). Resolution needs the descriptor catalog, so unlike the rest of
