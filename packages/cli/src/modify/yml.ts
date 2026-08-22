@@ -15,6 +15,7 @@ import { loadFeatureManifestSummary } from '../init/manifest.js';
 import { mergeFeatureOptions } from '../init/components.js';
 import {
   buildFeatureHeaderCommentBefore,
+  examplePluginsComment,
   featureOptionHints,
   FEATURE_HEADER_WIDTH,
 } from '../init/feature-doc.js';
@@ -636,6 +637,12 @@ export function addFeatureToDoc(
     (entry as { commentBefore?: string }).commentBefore = headerBefore;
     (entry as { spaceBefore?: boolean }).spaceBefore = true;
   }
+  // Commented `plugins:` example for a feature whose agent reads plugins,
+  // as the entry's trailing comment — the same carrier a curated service
+  // uses for its `volumes:` scaffold, and the only one that survives the
+  // map being moved into the sequence.
+  const pluginScaffold = examplePluginsComment(summary?.examplePlugin);
+  if (pluginScaffold) entry.comment = pluginScaffold;
   seq.add(entry);
   return true;
 }

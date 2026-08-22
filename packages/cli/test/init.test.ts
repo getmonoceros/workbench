@@ -495,6 +495,38 @@ describe('runInit', () => {
     expect(text).toContain('forge: false');
   });
 
+  it('claude ships a commented plugins example, ready to uncomment (real catalog)', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      languages: ['node'],
+      features: ['claude'],
+      workbenchRoot: repoRoot,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    // The whole block is commented, key included: an active but empty
+    // `plugins:` parses to null and apply rejects it.
+    expect(text).toContain('    # plugins:');
+    expect(text).toContain(
+      '    #   - url: https://github.com/acme/claude-plugins.git',
+    );
+    expect(text).toContain('    #       - acme-conventions');
+    // Single `#` per line - no `# #` nesting.
+    expect(text).not.toMatch(/#\s+#\s+plugins:/);
+
+    // And uncommenting it yields something the schema accepts, which is the
+    // only reason to put a concrete example in the file at all.
+    const uncommented = text.replace(
+      /^(\s*)# (plugins:| {2}- url:| {4}enable:| {6}- )/gm,
+      '$1$2',
+    );
+    const parsed = parseConfig(uncommented);
+    expect(parsed.config.features[0]?.plugins?.[0]?.enable).toEqual([
+      'acme-conventions',
+    ]);
+  });
+
   it('--with-ports: writes an active routing block, first entry default', async () => {
     const result = await runInit({
       name: 'sandbox',

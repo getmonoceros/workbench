@@ -60,6 +60,17 @@ export interface FeatureManifestSummary {
   usageNotes: string[];
   /** Optional briefing block for `AGENTS.md`. */
   briefing?: FeatureBriefing;
+  /**
+   * Example plugin marketplace for the commented `plugins:` scaffold, from
+   * the descriptor. Only set for a feature whose agent reads plugins.
+   */
+  examplePlugin?: { url: string; enable: readonly string[] };
+  /**
+   * In-container CLI that manages this agent's plugins. Set only for a
+   * feature that can host them, so it doubles as the "`plugins:` is allowed
+   * here" answer.
+   */
+  pluginCli?: string;
 }
 
 export interface FeatureBriefing {
@@ -146,5 +157,11 @@ export function loadFeatureManifestSummary(
     optionDefaults,
     usageNotes: descriptor.usageNotes,
     ...(briefing ? { briefing } : {}),
+    ...(descriptor.feature?.examplePlugin
+      ? { examplePlugin: descriptor.feature.examplePlugin }
+      : {}),
+    ...(descriptor.feature?.pluginCli
+      ? { pluginCli: descriptor.feature.pluginCli }
+      : {}),
   };
 }

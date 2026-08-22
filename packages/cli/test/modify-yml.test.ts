@@ -520,6 +520,31 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toContain('- https://example.com/install');
   });
 
+  it('runAddFeature ships claude with the same commented plugins example as init', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('    # plugins:');
+    expect(yml).toContain(
+      '    #   - url: https://github.com/acme/claude-plugins.git',
+    );
+    expect(yml).toContain('    #       - acme-conventions');
+    // The two entry points must not drift: whatever a builder sees after
+    // `init --with-features` they must also see after `add-feature`.
+    const uncommented = yml.replace(
+      /^(\s*)# (plugins:| {2}- url:| {4}enable:| {6}- )/gm,
+      '$1$2',
+    );
+    expect(
+      parseConfig(uncommented).config.features[0]?.plugins?.[0]?.enable,
+    ).toEqual(['acme-conventions']);
+  });
+
   it('runAddFeature writes a structured entry with options', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({

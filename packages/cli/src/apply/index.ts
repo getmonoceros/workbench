@@ -103,6 +103,11 @@ import {
   formatUnknownProviderError,
 } from '../devcontainer/credentials.js';
 import {
+  installPlugins,
+  pluginCredentialHosts,
+  resolvePluginSources,
+} from './plugins.js';
+import {
   type DockerInfoSpawn,
   detectDockerMode,
   formatRootlessNotSupportedError,
@@ -640,7 +645,15 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // more useful than a generic "no credentials" hint because the
   // builder might actually have credentials in their helper, but we
   // wouldn't know which CLI to suggest.
-  const hostsToFetch = uniqueHttpsHosts(createOpts.repos ?? []);
+  // A plugin marketplace on a private host needs the same token as a private
+  // repo: the agent CLI clones it in the container, through the same mounted
+  // credential helper. So its host goes through the same provider resolution
+  // and the same "declare `provider:`" gate as a repo, rather than failing
+  // later inside the agent with a bare clone error.
+  const hostsToFetch = uniqueHttpsHosts([
+    ...(createOpts.repos ?? []),
+    ...pluginCredentialHosts(parsed.config.features),
+  ]);
   const unknownProviderHosts = hostsToFetch
     .filter((h) => h.provider === 'unknown')
     .map((h) => h.host);
@@ -659,6 +672,12 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       });
     }
   }
+
+  // Resolve declared agent plugins now, before anything is built: a
+  // `plugins:` block on a feature whose agent cannot host plugins is a
+  // config error, and finding that out after a five-minute image build
+  // helps nobody. The install itself runs once the container is up.
+  const pluginSources = resolvePluginSources(parsed.config.features, opts.name);
 
   // NOTE: repos are cloned IN the container (post-create.sh), using the
   // container's network + the mounted credential helper. We deliberately
@@ -1007,6 +1026,41 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
             `Could not start deferred service(s) ${deferred.join(', ')}: ${err instanceof Error ? err.message : String(err)}. The workspace is up.`,
           );
         }
+      }
+    }
+
+    // Agent plugins: register each declared marketplace and install the
+    // plugins named on it, through the agent's own CLI inside the container
+    // (ADR 0053). After the deferred services, because a plugin needs nothing
+    // from them and the network call belongs at the end. Best-effort: the
+    // workbench is up and sound, so a marketplace that cannot be reached is a
+    // warning, not a failed apply.
+    if (exitCode === 0 && pluginSources.length > 0) {
+      if (progress) progress.setPhase('installing agent plugins…');
+      try {
+        const { installed, failures } = await installPlugins({
+          root: targetDir,
+          sources: pluginSources,
+          logSink: applyLog.sink,
+          silent: progress !== null,
+          ...(opts.devcontainerSpawn !== undefined
+            ? { spawn: opts.devcontainerSpawn }
+            : {}),
+        });
+        if (installed.length > 0) {
+          containerLogger.info(
+            `Agent plugins installed: ${installed.join(', ')}.`,
+          );
+        }
+        for (const failure of failures) {
+          containerLogger.warn?.(
+            `Agent plugin: ${failure}. The workbench is up; fix the cause and re-run \`monoceros apply ${opts.name}\`.`,
+          );
+        }
+      } catch (err) {
+        containerLogger.warn?.(
+          `Could not install agent plugins: ${err instanceof Error ? err.message : String(err)}. The workspace is up.`,
+        );
       }
     }
 

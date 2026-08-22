@@ -39,6 +39,18 @@ export function resolveProvider(
   return explicit ?? 'unknown';
 }
 
+/**
+ * The minimum a caller has to hand over to be credential-checked: where it is
+ * fetched from, and (for a host that is not one of the three canonical ones)
+ * which provider's token applies. A repo satisfies this; so does a plugin
+ * marketplace, which the agent CLI clones with the same git and the same
+ * mounted helper.
+ */
+export interface HttpsSource {
+  url: string;
+  provider?: RepoProvider | undefined;
+}
+
 export interface HostWithProvider {
   host: string;
   provider: ResolvedProvider;
@@ -55,7 +67,9 @@ export interface HostWithProvider {
  * we get here in normal flow. (Schema-level dedup would lock us in
  * before the builder ever sees the warning.)
  */
-function uniqueHttpsHosts(repos: readonly RepoEntry[]): HostWithProvider[] {
+function uniqueHttpsHosts(
+  repos: readonly (HttpsSource | RepoEntry)[],
+): HostWithProvider[] {
   const byHost = new Map<string, HostWithProvider>();
   for (const repo of repos) {
     if (!repo.url.startsWith('https://')) continue;

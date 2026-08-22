@@ -28,6 +28,10 @@ feature:
   # runtime image ships, which a pinned `node:<major>` then replaces.
   installsAfter: [ghcr.io/devcontainers/features/node]
   persistentHomePaths: [.claude]
+  pluginCli: claude
+  examplePlugin:
+    url: https://github.com/acme/claude-plugins.git
+    enable: [acme-conventions]
   persistentHomeFiles:
     - path: .claude.json
       initialContent: "{}\n"

@@ -134,6 +134,78 @@ export const FeatureOptionValueSchema = z
   .union([z.string(), z.number(), z.boolean(), z.null()])
   .transform((v) => (v === null ? '' : v));
 
+/**
+ * One entry under a feature's `plugins:` — an agent plugin marketplace and
+ * the plugins to install from it.
+ *
+ * A marketplace is either remote (`url`, an HTTPS git URL) or already in the
+ * workspace (`path`, under `projects/`). Exactly one of the two. There is
+ * deliberately no `owner/repo` shorthand: it silently means GitHub and leaves
+ * a builder on GitLab or Bitbucket no way to say so. Same rule, same regex
+ * and the same `provider:` escape hatch as `repos:`.
+ *
+ * No `ref:` either. The agent CLIs install a plugin from the marketplace's
+ * default branch and offer no way to pin one, and the workbench takes the
+ * same line with its features: tooling floats to what upstream ships (ADR
+ * 0018). A pin the CLI cannot honor would be a lie in the yml.
+ *
+ * `enable` is required. A marketplace can hold several plugins, and
+ * installing all of them because the builder named none is the wrong
+ * default — our own marketplace would drag in a second plugin nobody asked
+ * for.
+ */
+export const PluginEntrySchema = z
+  .object({
+    url: z
+      .string()
+      .regex(
+        REPO_URL_RE,
+        'Invalid plugin marketplace URL. Only HTTPS URLs are supported (https://...). SSH-style URLs (git@host:..., ssh://...) are not supported.',
+      )
+      .optional(),
+    path: z
+      .string()
+      .regex(
+        REPO_PATH_RE,
+        "Invalid plugin marketplace path. Use a path under `projects/` with letters/digits/'._-', forward slashes for nested folders, no leading or trailing slash.",
+      )
+      .refine(
+        (p) => !p.split('/').some((seg) => seg === '..' || seg === '.'),
+        'Plugin marketplace path segments cannot be "." or "..".',
+      )
+      .optional(),
+    // Same meaning as on a repo: needed only for a host that is not one of
+    // the three canonical ones, so the apply pre-flight can name the right
+    // token when credentials are missing.
+    provider: z.enum(PROVIDER_VALUES).optional(),
+    enable: z
+      .array(z.string().min(1, 'Plugin name cannot be empty.'), {
+        error:
+          'Name the plugins to install from this marketplace, e.g. `enable: [acme-conventions]`.',
+      })
+      .min(1, 'List at least one plugin to install from this marketplace.'),
+  })
+  .superRefine((data, ctx) => {
+    const hasUrl = data.url !== undefined;
+    const hasPath = data.path !== undefined;
+    if (hasUrl === hasPath) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: hasUrl
+          ? 'A plugin marketplace has either `url` or `path`, not both.'
+          : 'A plugin marketplace needs `url` (an HTTPS git URL) or `path` (a folder under projects/).',
+      });
+    }
+    if (hasPath && data.provider !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['provider'],
+        message:
+          '`provider` belongs to a `url` marketplace; a path in the workspace is not fetched.',
+      });
+    }
+  });
+
 export const FeatureEntrySchema = z.object({
   ref: z
     .string()
@@ -142,6 +214,11 @@ export const FeatureEntrySchema = z.object({
       "Invalid feature ref. Expected an OCI-image-style ref like 'ghcr.io/devcontainers/features/<name>:<tag>'.",
     ),
   options: z.record(z.string(), FeatureOptionValueSchema).optional(),
+  // Agent plugins this feature should carry. Accepted on every feature
+  // entry at parse time; whether the feature can actually host plugins is
+  // a catalog question (`feature.acceptsPlugins` in the descriptor) and is
+  // checked at apply, like every other catalog validation (ADR 0006).
+  plugins: z.array(PluginEntrySchema).optional(),
 });
 
 /**
@@ -668,6 +745,7 @@ export const SolutionConfigSchema = z
 
 export type SolutionConfig = z.infer<typeof SolutionConfigSchema>;
 export type FeatureEntry = z.infer<typeof FeatureEntrySchema>;
+export type PluginEntry = z.infer<typeof PluginEntrySchema>;
 export type McpEntry = z.infer<typeof McpEntrySchema>;
 export type ServiceObject = z.infer<typeof ServiceObjectSchema>;
 export type ServiceHealthcheck = z.infer<typeof ServiceHealthcheckSchema>;

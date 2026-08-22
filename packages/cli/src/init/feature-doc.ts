@@ -184,3 +184,29 @@ export function featureOptionHints(
       return { key, envVar, placeholder: `\${${envVar}}` };
     });
 }
+
+/**
+ * The commented `plugins:` scaffold for a feature whose agent reads plugins.
+ * Returned without the leading `#` on each line — the caller (the init
+ * generator) or yaml-lib (the `add-feature` AST writer) adds it, the same
+ * shape as a service's `exampleVolumesComment`.
+ *
+ * The whole block stays commented, key included: an active but empty
+ * `plugins:` parses to null and apply rejects it. The example is a real,
+ * complete entry rather than placeholders in angle brackets, so uncommenting
+ * it produces something that parses, and editing it is one word at a time.
+ *
+ * Returns undefined for a feature that has no example (and therefore no
+ * plugins).
+ */
+export function examplePluginsComment(
+  example: { url: string; enable: readonly string[] } | undefined,
+): string | undefined {
+  if (!example) return undefined;
+  return [
+    ' plugins:',
+    `   - url: ${example.url}`,
+    '     enable:',
+    ...example.enable.map((name) => `       - ${name}`),
+  ].join('\n');
+}

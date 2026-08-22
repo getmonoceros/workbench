@@ -6,6 +6,7 @@ import {
 } from './catalog-header.js';
 import {
   buildFeatureHeaderLines,
+  examplePluginsComment,
   featureOptionHints,
   wrapToComment as sharedWrapToComment,
 } from './feature-doc.js';
@@ -363,7 +364,14 @@ function renderFeatureBlock(
   // into <name>.env). Derivation is shared via featureOptionHints.
   const hints = featureOptionHints(summary, feature.ref, Object.keys(options));
 
-  if (activeKeys.length === 0 && hints.length === 0) return;
+  // Commented (documented-template) mode gets no plugins scaffold: the whole
+  // entry is already commented out, so a second scaffold inside it would
+  // render as `# #` — the nesting the builder rightly objected to.
+  const pluginScaffold = commented
+    ? undefined
+    : examplePluginsComment(summary?.examplePlugin);
+
+  if (activeKeys.length === 0 && hints.length === 0 && !pluginScaffold) return;
 
   if (commented) {
     // Documented mode: the whole feature block is single-`#`
@@ -392,12 +400,20 @@ function renderFeatureBlock(
   // which the transform skips → the monoceros-config default is
   // inherited (not clobbered). The matching `.env` keys are seeded blank
   // by init/add-feature, so the builder just fills the value.
-  out.push(`    options:`);
-  for (const [key, value] of activeKeys) {
-    out.push(`      ${key}: ${renderScalarValue(value)}`);
+  if (activeKeys.length > 0 || hints.length > 0) {
+    out.push(`    options:`);
+    for (const [key, value] of activeKeys) {
+      out.push(`      ${key}: ${renderScalarValue(value)}`);
+    }
+    for (const hint of hints) {
+      out.push(`      ${hint.key}: ${hint.placeholder}`);
+    }
   }
-  for (const hint of hints) {
-    out.push(`      ${hint.key}: ${hint.placeholder}`);
+  // Commented `plugins:` example, at the same depth as `options:`.
+  if (pluginScaffold) {
+    for (const line of pluginScaffold.split('\n')) {
+      out.push(`    #${line}`.trimEnd());
+    }
   }
 }
 

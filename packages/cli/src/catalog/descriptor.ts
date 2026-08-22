@@ -325,6 +325,16 @@ const WorkspaceEnvBlockSchema = z.object({
 export type WorkspaceEnvBlock = z.infer<typeof WorkspaceEnvBlockSchema>;
 
 /** `category: feature` block — a tool we author and publish to GHCR. */
+/**
+ * The example marketplace a plugin-hosting feature ships for its commented
+ * `plugins:` scaffold. Same fields as the yml's plugin entry, minus the ones
+ * an example never needs: it is written out verbatim, so keep it neutral.
+ */
+const ExamplePluginSchema = z.object({
+  url: z.string().min(1),
+  enable: z.array(z.string().min(1)).min(1),
+});
+
 export const FeatureBlockSchema = z.object({
   /** Publishable feature version (devcontainer-feature.json `version`). */
   version: z.string().min(1),
@@ -352,6 +362,22 @@ export const FeatureBlockSchema = z.object({
    * install. See `featureWorkspaceEnv` in create/scaffold.ts.
    */
   workspaceEnv: z.array(WorkspaceEnvBlockSchema).optional(),
+  /**
+   * The in-container CLI that manages this agent's plugins (`claude`). Its
+   * presence is what makes a `plugins:` block on the yml entry meaningful:
+   * apply rejects `plugins:` on a feature without it, rather than installing
+   * nothing and staying quiet about it. One field rather than a flag plus a
+   * command, because the two can never disagree.
+   */
+  pluginCli: z.string().min(1).optional(),
+  /**
+   * One example plugin marketplace, rendered as a COMMENTED `plugins:` block
+   * in the generated yml (init / add-feature) for the builder to uncomment
+   * and edit. Same idea as a service's `exampleVolumes`: the catalog cannot
+   * know which plugins a builder wants, but it can show the shape in the
+   * file instead of making them look it up.
+   */
+  examplePlugin: ExamplePluginSchema.optional(),
 });
 export type FeatureBlock = z.infer<typeof FeatureBlockSchema>;
 
