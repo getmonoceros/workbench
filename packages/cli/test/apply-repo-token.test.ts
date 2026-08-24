@@ -153,7 +153,8 @@ describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
       'GIT_TOKEN__GITHUB_CONCISO',
       'GIT_TOKEN__GITHUB',
     ]);
-    const msg = formatUnauthenticatedRepos(r.missing, 'demo');
+    // A repo is declared here, so the block takes its repo wording.
+    const msg = formatUnauthenticatedRepos(r.missing, 'demo', { repos: true });
     expect(msg).toContain('UNAUTHENTICATED');
     expect(msg).toContain('GITHUB_API_TOKEN');
     expect(msg).toContain('container-configs/demo.env');
@@ -312,5 +313,56 @@ describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
     );
     const r = await resolveContainerRepoTokens('demo', home, catalog);
     expect(r.hostTokens.get('github.com')).toBe('ghp_env');
+  });
+});
+
+describe('formatUnauthenticatedRepos wording', () => {
+  const missing = [
+    {
+      host: 'github.com',
+      provider: 'github' as const,
+      tried: [
+        'GITHUB_API_TOKEN',
+        'GIT_TOKEN__GITHUB_ACME',
+        'GIT_TOKEN__GITHUB',
+      ],
+    },
+  ];
+
+  // A workbench with a plugin marketplace and no repos was told that "some
+  // repositories are UNAUTHENTICATED" about repositories it does not have,
+  // and then read three consequences that could not apply to it.
+  it('does not talk about repositories when none are declared', () => {
+    const block = formatUnauthenticatedRepos(missing, 'handout', {
+      plugins: true,
+    });
+    expect(block).toContain('Git access — action needed');
+    expect(block).toContain('These Git hosts have no token:');
+    expect(block).toContain('plugin marketplace is not registered');
+    expect(block).not.toMatch(/repositor(y|ies)/i);
+    expect(block).not.toContain('gh / glab');
+    // Still names the fix.
+    expect(block).toContain('GITHUB_API_TOKEN');
+  });
+
+  it('keeps the repo wording and consequences when repos are declared', () => {
+    const block = formatUnauthenticatedRepos(missing, 'handout', {
+      repos: true,
+      plugins: true,
+      providerCli: true,
+    });
+    expect(block).toContain('Repo access — action needed');
+    expect(block).toContain('Some repositories are UNAUTHENTICATED:');
+    expect(block).toContain('branches, PRs/MRs');
+    expect(block).toContain('gh / glab');
+    expect(block).toContain('plugin marketplace is not registered');
+  });
+
+  it('mentions the provider CLI only when there is one, or a repo', () => {
+    const withCli = formatUnauthenticatedRepos(missing, 'handout', {
+      plugins: true,
+      providerCli: true,
+    });
+    expect(withCli).toContain('gh / glab');
   });
 });

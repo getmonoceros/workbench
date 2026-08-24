@@ -718,8 +718,10 @@ async function tryCloneInRunningContainer(
     if (noToken) {
       // Almost always the "private repo, no token" case — show the same
       // prominent, consequence-spelling block apply uses, not a bare warn.
+      // `add-repo` is by definition about a repo, so the block takes its
+      // repo wording and consequences.
       process.stderr.write(
-        `\n${formatUnauthenticatedRepos([noToken], input.name)}\n`,
+        `\n${formatUnauthenticatedRepos([noToken], input.name, { repos: true })}\n`,
       );
     } else {
       logger.warn(

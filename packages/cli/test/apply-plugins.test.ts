@@ -356,7 +356,7 @@ describe('formatPluginFailures', () => {
     expect(lines[2]).toMatch(/^ {3}\S/);
     expect(lines.some((l) => l.startsWith('     • '))).toBe(true);
     expect(lines.at(-1)).toContain(
-      'Details: https://getmonoceros.build/docs/concepts/git-and-repos/',
+      'Details: https://getmonoceros.build/docs/features/claude/#plugins',
     );
   });
 
@@ -472,5 +472,37 @@ describe('installPlugins refreshing an existing marketplace', () => {
     expect(commands).toHaveLength(2);
     expect(installed).toEqual([]);
     expect(failures[0]?.what).toContain('stayed at the version already in the');
+  });
+});
+
+describe('formatPluginFailures owning the token fix', () => {
+  // A workbench whose only https clone is a marketplace gets ONE warning,
+  // about the thing it declared. Before this it read a plugin block with a
+  // vague hint and then a second block about repositories it did not have.
+  it('carries the exact env var instead of a hint, and stays about plugins', () => {
+    const block = stripAnsi(
+      formatPluginFailures(
+        [
+          {
+            what: 'could not register https://github.com/acme/p.git, so acme-conventions was not installed',
+            cause: 'fatal: unable to get password from user',
+            hint: 'Most often a private marketplace whose token is missing.',
+          },
+        ],
+        'handout',
+        {
+          tokenAdvice: [
+            '     • GitHub: GITHUB_API_TOKEN in container-configs/handout.env,',
+            '       or GIT_TOKEN__GITHUB in monoceros-config.env',
+          ],
+        },
+      ),
+    );
+    expect(block).toContain('Agent plugins not installed');
+    expect(block).toContain('Set a token, then re-apply:');
+    expect(block).toContain('GITHUB_API_TOKEN');
+    // The vague hint is gone, and so is any talk of repositories.
+    expect(block).not.toContain('Most often a private marketplace');
+    expect(block).not.toMatch(/repositor(y|ies)/i);
   });
 });

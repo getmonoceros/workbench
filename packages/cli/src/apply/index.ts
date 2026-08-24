@@ -29,7 +29,12 @@ import {
   resolveGitUserFields,
   GIT_IDENTITY_VAR,
 } from '../config/env-file.js';
-import { PROVIDER_LABEL, REGEX, isValidEmail } from '../config/schema.js';
+import {
+  PROVIDER_LABEL,
+  PROVIDER_VALUES,
+  REGEX,
+  isValidEmail,
+} from '../config/schema.js';
 import {
   buildStateFile,
   readStateFile,
@@ -137,6 +142,7 @@ import {
   formatUnauthenticatedRepos,
   formatTokenUse,
   resolveRepoTokens,
+  tokenAdviceLines,
 } from './repo-token.js';
 
 /**
@@ -681,6 +687,21 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // helps nobody. The install itself runs once the container is up.
   const pluginSources = resolvePluginSources(parsed.config.features, opts.name);
 
+  // Who reports a missing token. A workbench with repos, or with a provider
+  // CLI feature, has a git-access story of its own and gets the repo block.
+  // One whose only https clone is a plugin marketplace does not: for it the
+  // missing token IS the plugin failure, so the plugin block carries the fix
+  // and the repo block stays away entirely.
+  const hasRepos = (parsed.config.repos ?? []).length > 0;
+  const providerCliRefs = PROVIDER_VALUES.map(
+    (p) => catalog.get(p)?.file.contributes.features?.[0]?.ref,
+  ).filter((ref): ref is string => ref !== undefined);
+  const hasProviderCli = parsed.config.features.some((f) =>
+    providerCliRefs.includes(f.ref),
+  );
+  const pluginsOwnTheTokenAdvice =
+    pluginSources.length > 0 && !hasRepos && !hasProviderCli;
+
   // NOTE: repos are cloned IN the container (post-create.sh), using the
   // container's network + the mounted credential helper. We deliberately
   // do NOT probe or clone repos host-side: the host's network/credential
@@ -1213,7 +1234,22 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
       // Sibling of the block above: declared in the yml, not in the container.
       if (pluginFailures.length > 0) {
-        writeWarningBlock(formatPluginFailures(pluginFailures, opts.name));
+        // A workbench that declares a marketplace and no repos gets ONE
+        // warning, about the thing it declared. The missing token is the
+        // cause of the plugin failure, so the fix belongs in this block
+        // rather than in a second one from the repo world (see
+        // `pluginsOwnTheTokenAdvice` below).
+        writeWarningBlock(
+          formatPluginFailures(
+            pluginsOwnTheTokenAdvice
+              ? pluginFailures.map(({ hint: _hint, ...rest }) => rest)
+              : pluginFailures,
+            opts.name,
+            pluginsOwnTheTokenAdvice
+              ? { tokenAdvice: tokenAdviceLines(repoTokens.missing, opts.name) }
+              : {},
+          ),
+        );
       }
 
       // Record the image this apply built, so the upgrade prune can later
@@ -1255,11 +1291,15 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     // error tail, since a private-repo clone that failed for lack of a
     // token is exactly when this matters most).
     if (repoTokens.missing.length > 0) {
-      writeWarningBlock(
-        formatUnauthenticatedRepos(repoTokens.missing, opts.name, {
-          hasPlugins: pluginSources.length > 0,
-        }),
-      );
+      if (!pluginsOwnTheTokenAdvice) {
+        writeWarningBlock(
+          formatUnauthenticatedRepos(repoTokens.missing, opts.name, {
+            repos: hasRepos,
+            plugins: pluginSources.length > 0,
+            providerCli: hasProviderCli,
+          }),
+        );
+      }
     }
 
     // Close the log before announcing its path — guarantees the file

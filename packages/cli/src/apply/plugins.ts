@@ -25,6 +25,10 @@ import { bold, cyan, stripAnsi, warnHeading, yellow } from '../util/format.js';
  * 0053.
  */
 
+/** Where the plugins block is documented, for a failure that is not about git. */
+const PLUGIN_DOCS_URL =
+  'https://getmonoceros.build/docs/features/claude/#plugins';
+
 /** One marketplace to register, resolved to what the container will see. */
 export interface ResolvedPluginSource {
   /** Feature that declared it, for messages. */
@@ -212,6 +216,7 @@ export function describePluginFailure(
 export function formatPluginFailures(
   failures: readonly PluginFailure[],
   containerName: string,
+  opts: { tokenAdvice?: readonly string[] } = {},
 ): string {
   const lines: string[] = [
     ...warnHeading('Agent plugins not installed'),
@@ -221,6 +226,16 @@ export function formatPluginFailures(
     lines.push(`     • ${failure.what}`);
     lines.push(`       ${failure.cause}`);
   }
+
+  // When the cause is a missing token, this block owns the fix. A workbench
+  // that declares a marketplace and no repos should read one warning about
+  // the thing it declared, not a second one from the repo world.
+  if (opts.tokenAdvice && opts.tokenAdvice.length > 0) {
+    lines.push('', bold('   Set a token, then re-apply:'), ...opts.tokenAdvice);
+    lines.push('', `   Details: ${cyan(REPO_DOCS_URL)}`);
+    return lines.join('\n');
+  }
+
   const hints = [...new Set(failures.map((f) => f.hint).filter(Boolean))];
   lines.push(
     '',
@@ -231,9 +246,8 @@ export function formatPluginFailures(
   lines.push(
     `   Fix the cause, then re-apply: ${cyan(`monoceros apply ${containerName}`)}`,
     '',
-    // Same footer as the repo-access block: a private marketplace is
-    // authenticated exactly like a private repo, so it is the same page.
-    `   Details: ${cyan(REPO_DOCS_URL)}`,
+    // Not the repo docs: this failure is not about git at all.
+    `   Details: ${cyan(PLUGIN_DOCS_URL)}`,
   );
   return lines.join('\n');
 }

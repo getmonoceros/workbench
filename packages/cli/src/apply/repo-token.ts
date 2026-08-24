@@ -332,30 +332,71 @@ function detailsFooter(): string {
 export function formatUnauthenticatedRepos(
   missing: readonly MissingRepoToken[],
   containerName: string,
-  opts: { hasPlugins?: boolean } = {},
+  declared: { repos?: boolean; plugins?: boolean; providerCli?: boolean } = {},
 ): string {
+  // What a host without a token costs depends on what this workbench actually
+  // declares. A container with a plugin marketplace and no repos was told
+  // "some repositories are UNAUTHENTICATED" about repositories it does not
+  // have, and then read three consequences that could not apply to it.
+  const consequences: string[] = [];
+  if (declared.repos) {
+    consequences.push(
+      '     • pushing, and cloning/pulling PRIVATE repositories, fails.',
+      '     • branches, PRs/MRs — anything that writes to the remote — fails.',
+    );
+  }
+  if (declared.plugins) {
+    consequences.push(
+      '     • a PRIVATE plugin marketplace is not registered, so its plugins',
+      '       never reach the agent.',
+    );
+  }
+  if (declared.repos || declared.providerCli) {
+    consequences.push('     • gh / glab in the container are not logged in.');
+  }
+
   const lines: string[] = [
-    ...warnHeading('Repo access — action needed'),
-    yellow('   Some repositories are UNAUTHENTICATED:'),
+    ...warnHeading(
+      declared.repos
+        ? 'Repo access — action needed'
+        : 'Git access — action needed',
+    ),
+    yellow(
+      declared.repos
+        ? '   Some repositories are UNAUTHENTICATED:'
+        : '   These Git hosts have no token:',
+    ),
   ];
   for (const m of missing) {
     lines.push(`     • ${PROVIDER_LABEL[m.provider]} (${m.host})`);
   }
   lines.push(
     '',
-    bold('   Public repositories still clone (read-only). But:'),
-    '     • gh / glab in the container are not logged in.',
-    '     • pushing, and cloning/pulling PRIVATE repositories, fails.',
-    '     • branches, PRs/MRs — anything that writes to the remote — fails.',
-    ...(opts.hasPlugins
-      ? [
-          '     • a PRIVATE plugin marketplace is not registered, so its plugins',
-          '       never reach the agent.',
-        ]
-      : []),
+    bold(
+      declared.repos
+        ? '   Public repositories still clone (read-only). But:'
+        : '   What that costs here:',
+    ),
+    ...consequences,
     '',
     bold('   Set a token, then re-apply:'),
   );
+  lines.push(...tokenAdviceLines(missing, containerName));
+  lines.push('', detailsFooter());
+  return lines.join('\n');
+}
+
+/**
+ * The per-provider bullets naming the env var to set and where. Shared, so
+ * whichever block reports a missing token gives the same instruction: the
+ * builder should not get one wording from the repo block and a vaguer one
+ * from somewhere else.
+ */
+export function tokenAdviceLines(
+  missing: readonly MissingRepoToken[],
+  containerName: string,
+): string[] {
+  const lines: string[] = [];
   for (const m of missing) {
     const sharedVar = m.tried.find((v) => v.startsWith('GIT_TOKEN__'));
     if (sharedVar) {
@@ -374,8 +415,12 @@ export function formatUnauthenticatedRepos(
       );
     }
   }
-  lines.push('', detailsFooter());
-  return lines.join('\n');
+  return lines;
+}
+
+/** Shared footer, exported so the plugin block can end the same way. */
+export function repoDocsFooter(): string {
+  return detailsFooter();
 }
 
 /** A repo declared in the yml that did not clone (its checkout is absent). */
