@@ -389,7 +389,7 @@ describe('readRefreshLog / formatRefreshLog', () => {
     expect(out).toContain('claude 2.1.247 (already current)');
     expect(out).toContain('gh 2.60.1 (updated from 2.55.0)');
     // Services and the base image move on `upgrade`, and a builder reading
-    // "Tools refreshed" should not conclude that everything else did too.
+    // "Features refreshed" should not conclude that everything else did too.
     expect(out).toContain('upgrade');
   });
 });

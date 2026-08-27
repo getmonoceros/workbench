@@ -55,12 +55,16 @@ export async function readRefreshLog(targetDir: string): Promise<string[]> {
 /**
  * Render the refresh lines as a plain end-of-apply block. Not a warning: it
  * reports normal, successful work, so it gets neither the `⚠` heading nor the
- * yellow of the notes block. A tool that could not be checked says so on its
+ * yellow of the notes block. A feature that could not be checked says so on its
  * own line and is not escalated either — the builder still has a working tool
  * from the image.
+ *
+ * "Features", not "tools": `features:` is what the yml calls them and what
+ * `add-feature` operates on, and the set is not all AI agents — `gh` and `glab`
+ * sit in it too.
  */
 export function formatRefreshLog(lines: readonly string[]): string {
-  const out = [bold('   Tools refreshed')];
+  const out = [bold('   Features refreshed')];
   for (const line of lines) out.push(`     • ${line}`);
   out.push(
     dim('     Services and the base image move on `monoceros upgrade`.'),
