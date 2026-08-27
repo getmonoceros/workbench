@@ -14,6 +14,12 @@ const silentLogger = {
 };
 
 const stubDevcontainerSpawn = async () => 0;
+// Since ADR 0054 a workbench's FIRST apply pulls the service images, and every
+// test here applies into a fresh tmp home, so every compose-mode test is a
+// first apply. Without this stub they would shell out to a real
+// `docker compose pull` and hang on the network. Tests that assert on the pull
+// pass their own recording spawn.
+const stubComposeSpawn = async () => 0;
 // Replaces the previous `stubCleanupSpawn: async () => 0`. The
 // cleanup is now driven by direct docker exec calls, so the stub
 // returns the DockerResult shape that spawnDocker produces. Empty
@@ -52,6 +58,7 @@ const baseRunOpts = {
   identityPrompt: stubIdentityPrompt,
   env: stubEnv,
   dockerInfoSpawn: stubDockerInfoSpawn,
+  composeSpawn: stubComposeSpawn,
 };
 
 describe('runApply', () => {
