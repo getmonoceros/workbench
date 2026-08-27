@@ -72,8 +72,10 @@ beforeAll(async () => {
   dir = await mkdtemp(path.join(tmpdir(), 'monoceros-rovodev-'));
   binDir = path.join(dir, 'bin');
   const postCreate = path.join(dir, 'post-create.d');
+  const refreshDir = path.join(dir, 'refresh.d');
   await mkdir(binDir, { recursive: true });
   await mkdir(postCreate, { recursive: true });
+  await mkdir(refreshDir, { recursive: true });
 
   // Enough of the build environment for the rovodev branch to run: a fake
   // download, a fake `install`, a fake arch probe, and an `acli` that exists.
@@ -89,6 +91,7 @@ beforeAll(async () => {
   // Redirect the hook directory into the sandbox; everything else runs as-is.
   const patched = src
     .replaceAll('/usr/local/share/monoceros/post-create.d', postCreate)
+    .replaceAll('/usr/local/share/monoceros/refresh.d', refreshDir)
     .replaceAll(
       '/usr/local/share/monoceros/rovodev-billing-site.py',
       presetScript,

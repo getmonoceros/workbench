@@ -86,6 +86,7 @@ import {
   formatFeatureNotes,
   readFeatureNotes,
 } from '../create/feature-notes.js';
+import { formatRefreshLog, readRefreshLog } from '../create/refresh-log.js';
 import { writeBriefing } from '../briefing/index.js';
 import { loadComponentCatalog } from '../init/components.js';
 import {
@@ -174,10 +175,15 @@ export interface RunApplyOptions {
   monocerosHome?: string;
   now?: Date;
   /**
-   * Rebuild feature layers from scratch (`--build-no-cache`), so feature
-   * tools re-pull their latest versions instead of reusing the frozen cached
-   * layer. Set by `monoceros upgrade`; a routine `apply` leaves it false and
-   * uses the cache. See ADR 0018.
+   * Rebuild feature layers from scratch (`--build-no-cache`) and pull the
+   * service images. Set by `monoceros upgrade`; a routine `apply` leaves it
+   * false and builds from the cache.
+   *
+   * Since ADR 0054 this is no longer what keeps the CLI tools current — they
+   * refresh themselves in a post-create hook on every apply. What the rebuild
+   * still does is move everything else a feature layer installed (apt
+   * packages, an interpreter, a tool with no refresh hook) and, together with
+   * the service pull, make `upgrade` the one deliberate "move it all" step.
    */
   rebuild?: boolean;
   /**
@@ -205,7 +211,7 @@ export interface RunApplyOptions {
   };
   dockerExec?: DockerExec;
   devcontainerSpawn?: DevcontainerSpawn;
-  /** `docker compose` spawn for the upgrade-time image re-pull. Tests inject. */
+  /** `docker compose` spawn for the service image pull. Tests inject. */
   composeSpawn?: ComposeSpawn;
   dockerInfoSpawn?: DockerInfoSpawn;
   identitySpawn?: IdentitySpawn;
@@ -295,6 +301,15 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
   const targetDir = containerDir(opts.name, home);
   await assertSafeTargetDir(targetDir, opts.name);
+
+  // Is this the workbench's first apply? `state.json` is written by every
+  // apply, so its absence means nothing has been materialized here yet —
+  // and therefore no service owns a data directory. That is the one moment
+  // a service image can be pulled without risking an irreversible data
+  // migration, so it is the moment we do it (ADR 0054). Read before the
+  // scaffold runs, because `writeStateFile` below would answer its own
+  // question.
+  const isFirstApply = (await readStateFile(targetDir)) === undefined;
 
   // ── Configuration ────────────────────────────────────────────
   section('Configuration');
@@ -997,12 +1012,18 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       );
     }
 
-    // `upgrade` re-pulls the service images before anything starts
-    // (ADR 0052). Routine `apply` never does — it reuses the local cache,
-    // like it reuses the base pin and the feature layers. Failures are
-    // advisory: the cached image still starts, so a warn and carry on.
-    if (opts.rebuild && needsCompose(createOpts)) {
-      if (progress) progress.setPhase('re-pulling service images…');
+    // Service images are pulled by `upgrade` (ADR 0052) and on a
+    // workbench's FIRST apply (ADR 0054). Not on later routine applies:
+    // a service owns a data directory, and a minor image bump can migrate
+    // that data irreversibly — Keycloak rewrites its DB schema on a minor
+    // bump, and the older image then refuses the migrated directory. An
+    // apply the builder ran to change a port must never trigger that. On
+    // the first apply no data exists yet, so there is nothing to migrate
+    // and a locally cached, months-old tag would just be a worse start.
+    // Failures are advisory: the cached image still starts, so warn and
+    // carry on.
+    if ((opts.rebuild || isFirstApply) && needsCompose(createOpts)) {
+      if (progress) progress.setPhase('pulling service images…');
       try {
         const pullExit = await pullServiceImages({
           root: targetDir,
@@ -1013,12 +1034,12 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         });
         if (pullExit !== 0) {
           containerLogger.warn?.(
-            `Could not re-pull every service image (exit ${pullExit}). The container starts from the cached images; see the apply log for which pull failed.`,
+            `Could not pull every service image (exit ${pullExit}). The container starts from the cached images; see the apply log for which pull failed.`,
           );
         }
       } catch (err) {
         containerLogger.warn?.(
-          `Could not re-pull service images: ${err instanceof Error ? err.message : String(err)}. The container starts from the cached images.`,
+          `Could not pull service images: ${err instanceof Error ? err.message : String(err)}. The container starts from the cached images.`,
         );
       }
     }
@@ -1070,7 +1091,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
     // Agent plugins: register each declared marketplace and install the
     // plugins named on it, through the agent's own CLI inside the container
-    // (ADR 0053). After the deferred services, because a plugin needs nothing
+    // (ADR 0054). After the deferred services, because a plugin needs nothing
     // from them and the network call belongs at the end. Best-effort: the
     // workbench is up and sound, so a marketplace that cannot be reached is a
     // warning, not a failed apply.
@@ -1194,6 +1215,15 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       const notes = await readFeatureNotes(targetDir);
       if (notes.length > 0) {
         writeWarningBlock(formatFeatureNotes(notes));
+      }
+
+      // What the refresh hooks did (ADR 0054). Printed unconditionally when
+      // there is anything to say, including "already current": the builder
+      // asked for a container they can trust, and silence would leave them
+      // guessing which version their next prompt runs against.
+      const refreshed = await readRefreshLog(targetDir);
+      if (refreshed.length > 0) {
+        writeWarningBlock(formatRefreshLog(refreshed));
       }
 
       // Faithful reporting: the summary lists declared repos, but the clone

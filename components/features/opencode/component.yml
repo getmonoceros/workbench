@@ -41,7 +41,7 @@ options:
     description: "Start OpenCode's built-in language servers, so the agent sees type errors and unresolved imports right after an edit instead of when the tests run. Off by default, as upstream. A server whose toolchain is missing does not start."
     surface: yml
 feature:
-  version: 1.2.1
+  version: 1.2.2
   # Installs a global npm package, so it has to run after the node
   # feature: otherwise npm resolves the version against the Node the
   # runtime image ships, which a pinned `node:<major>` then replaces.

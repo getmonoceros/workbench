@@ -410,7 +410,7 @@ export async function pullServiceImages(
       ...(opts.logSink ? { logSink: opts.logSink } : {}),
       ...(opts.silent ? { silent: true } : {}),
     });
-  opts.logger?.info('Re-pulling service images…');
+  opts.logger?.info('Pulling service images…');
   return spawnFn(
     [
       '-f',
@@ -435,7 +435,7 @@ export interface StartOptions {
   spawn?: DevcontainerSpawn;
   /**
    * Pass `--build-no-cache` to `devcontainer up` so feature install layers
-   * rebuild from scratch and re-pull their latest tools (ADR 0018, used by
+   * rebuild from scratch and re-pull their latest tools (ADR 0018/0054, used by
    * `monoceros upgrade`). Only takes effect when the container is (re)created,
    * which the apply cycle ensures via prior teardown / `--remove-existing-container`.
    */
@@ -509,7 +509,7 @@ interface DevcontainerSpawnOptionsForwarded {
 
 export interface RunContainerCycleOptions {
   hasCompose: boolean;
-  /** Rebuild feature layers from scratch (`--build-no-cache`). See ADR 0018. */
+  /** Rebuild feature layers from scratch (`--build-no-cache`). See ADR 0018/0054. */
   noCache?: boolean;
   /** Override the bind-source-retry delay (ms). Test seam; default 500. */
   bindRetryDelayMs?: number;

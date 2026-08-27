@@ -1,7 +1,18 @@
 # ADR 0018 — Tool Freshness Model: cached `apply`, `upgrade` refreshes + prunes, staleness nudge
 
-- Status: accepted
+- Status: partly superseded by [ADR 0054](0054-apply-delivers-current-tools-upgrade-moves-the-services.md)
 - Date: 2026-06-10
+
+> **Decisions 1 and 3 no longer hold.** `apply` does not just reuse the
+> cache: tool features refresh themselves on every apply through a
+> post-create hook, and a workbench's first apply also pulls the service
+> images. This ADR weighed only "the tool is old" and missed the sharper
+> failure — that an `apply` moves a working container _backwards_, losing
+> a runtime self-update and with it capabilities the builder was already
+> using. The Consequences below still say "we do not special-case
+> first-apply"; ADR 0054 reverses exactly that. Everything else here
+> (decision 2's `upgrade`, the prune, the timestamp, the nudge, and
+> installing as `node`) stands.
 
 ## Context
 

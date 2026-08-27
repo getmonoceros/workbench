@@ -256,11 +256,13 @@ describe('runUpgrade', () => {
     );
   });
 
-  it('prints a summary (tools / base / pruned / recorded)', async () => {
+  it('prints a summary (layers / base / services / pruned / recorded)', async () => {
     await writeFile(ymlPath('demo'), 'schemaVersion: 1\nname: demo\n');
     await runUpgrade(base({ name: 'demo' }));
     const summary = messages.find((m) => m.startsWith('success:')) ?? '';
-    expect(summary).toMatch(/tools\s+rebuilt/);
+    // "layers", not "tools": since ADR 0054 the CLI tools are refreshed by every
+    // apply, and what the rebuild moves is the rest of what a feature installed.
+    expect(summary).toMatch(/layers\s+rebuilt/);
     expect(summary).toMatch(/base\s+1\.2\.0 \(1 bumped\)/);
     expect(summary).toMatch(/services\s+images re-pulled/);
     expect(summary).toMatch(/pruned\s+nothing stale/);

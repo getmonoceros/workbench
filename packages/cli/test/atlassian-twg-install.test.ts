@@ -43,8 +43,10 @@ beforeAll(async () => {
   dir = await mkdtemp(path.join(tmpdir(), 'monoceros-twg-'));
   const binDir = path.join(dir, 'bin');
   const postCreate = path.join(dir, 'post-create.d');
+  const refreshDir = path.join(dir, 'refresh.d');
   await mkdir(binDir, { recursive: true });
   await mkdir(postCreate, { recursive: true });
+  await mkdir(refreshDir, { recursive: true });
 
   argsFile = path.join(dir, 'install-args');
   const downloaded = path.join(dir, 'twg-install.sh');
@@ -63,7 +65,9 @@ beforeAll(async () => {
   const installer = path.join(dir, 'install.sh');
   await writeFile(
     installer,
-    src.replaceAll('/usr/local/share/monoceros/post-create.d', postCreate),
+    src
+      .replaceAll('/usr/local/share/monoceros/post-create.d', postCreate)
+      .replaceAll('/usr/local/share/monoceros/refresh.d', refreshDir),
   );
 
   const result = await new Promise<{ code: number; stderr: string }>(

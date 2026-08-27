@@ -36,6 +36,7 @@ const INSTALL_SH = fileURLToPath(
 let dir: string;
 let binDir: string;
 let postCreate: string;
+let refreshDir: string;
 let installer: string;
 let hook: string;
 
@@ -98,6 +99,7 @@ beforeEach(async () => {
   );
   binDir = path.join(dir, 'bin');
   postCreate = path.join(dir, 'post-create.d');
+  refreshDir = path.join(dir, 'refresh.d');
   await mkdir(binDir, { recursive: true });
 
   // The uv tool venv the install links to. Present so the symlink install.sh
@@ -125,7 +127,8 @@ beforeEach(async () => {
   const src = await readFile(INSTALL_SH, 'utf8');
   const patched = src
     .replaceAll('/usr/local/bin/graphify', path.join(binDir, 'graphify'))
-    .replaceAll('/usr/local/share/monoceros/post-create.d', postCreate);
+    .replaceAll('/usr/local/share/monoceros/post-create.d', postCreate)
+    .replaceAll('/usr/local/share/monoceros/refresh.d', refreshDir);
   installer = path.join(dir, 'install.sh');
   await writeFile(installer, patched);
   hook = path.join(postCreate, 'graphify-skill.sh');

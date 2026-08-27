@@ -309,7 +309,7 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
     const prune = await pruneAndStamp();
     logger.success(
       `Upgraded ${opts.name ? `'${opts.name}'` : `${targets.length} running container${targets.length === 1 ? '' : 's'}`}\n` +
-        `  tools     rebuilt — latest pulled\n` +
+        `  layers    rebuilt - latest pulled\n` +
         `  base      ${pinVersion} ${bumped > 0 ? `(${bumped} bumped)` : '(already latest)'}\n` +
         `  services  images re-pulled${retagged > 0 ? ` (${retagged} retagged)` : ''}\n` +
         `  pruned    ${formatPruneLine(prune)}\n` +

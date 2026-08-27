@@ -11,7 +11,7 @@ options:
     description: 'GitHub PAT (scopes: repo, read:org, gist, read:user); empty for `gh auth login` on first run.'
     surface: env
 feature:
-  version: 1.0.0
+  version: 1.0.1
   persistentHomePaths: [.config/gh]
   vscodeExtensions: [github.vscode-pull-request-github]
   # gh reads GH_TOKEN from the environment. Handing it to the workspace

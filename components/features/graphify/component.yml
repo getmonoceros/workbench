@@ -21,7 +21,7 @@ options:
     description: 'Block the first raw file read of a Claude Code session until one `graphify query` has run, instead of only reminding. Upstream ties this to a project-scoped install; Monoceros wires the hook into the container instead, so nothing is written to your repository. It fires at most once per session and then falls back to the reminder, so it cannot strand an agent mid-task. Toggle it for a single session with `GRAPHIFY_HOOK_STRICT=0`.'
     surface: yml
 feature:
-  version: 1.0.1
+  version: 1.0.2
   # `strict` reaches the hook through the workspace environment, not through
   # install.sh: the hook itself is written at apply (create/claude-settings.ts),
   # and the env var is what upstream's `hook-guard` reads at runtime. So a

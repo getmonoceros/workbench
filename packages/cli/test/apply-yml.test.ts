@@ -831,7 +831,7 @@ describe('runApply', () => {
     expect(composeText).toContain('postgres:');
   });
 
-  it('re-pulls service images on a rebuild, never on a routine apply (ADR 0052)', async () => {
+  it('pulls service images on the first apply and on a rebuild, not on a routine re-apply (ADR 0052/0054)', async () => {
     await writeYml(
       'pulldemo',
       [
@@ -849,14 +849,30 @@ describe('runApply', () => {
       return 0;
     };
 
+    // First apply: no state.json yet, so no service owns data. Nothing can be
+    // migrated irreversibly and a months-old cached tag would just be a worse
+    // start, so the images are pulled (ADR 0054).
     await runApply({
       ...baseRunOpts,
       name: 'pulldemo',
       monocerosHome: home,
       composeSpawn,
     });
-    expect(pulls).toEqual([]);
+    expect(pulls).toHaveLength(1);
+    expect(pulls[0]).toContain('pull');
 
+    // Routine re-apply: the service now owns a data directory, and a minor
+    // image bump can migrate it one-way. An apply run to change a port must
+    // never trigger that, so no pull.
+    await runApply({
+      ...baseRunOpts,
+      name: 'pulldemo',
+      monocerosHome: home,
+      composeSpawn,
+    });
+    expect(pulls).toHaveLength(1);
+
+    // `upgrade` is where a service moves, deliberately and on request.
     await runApply({
       ...baseRunOpts,
       name: 'pulldemo',
@@ -864,8 +880,8 @@ describe('runApply', () => {
       composeSpawn,
       rebuild: true,
     });
-    expect(pulls).toHaveLength(1);
-    expect(pulls[0]).toContain('pull');
+    expect(pulls).toHaveLength(2);
+    expect(pulls[1]).toContain('pull');
   });
 
   it('puts service data in a per-service docker volume, not a host bind mount', async () => {

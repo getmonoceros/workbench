@@ -145,6 +145,12 @@ export function daysBetween(fromIso: string, now: Date): number {
  * ever run, we do NOT nag (a freshly-built container is current by definition);
  * the nudge is only for tooling that has demonstrably gone stale since the last
  * refresh.
+ *
+ * Since ADR 0054 this is no longer about the CLI tools: those refresh
+ * themselves on every apply. What still only moves on an explicit `upgrade` is
+ * the runtime base image and the service images, so the wording names those
+ * instead of "tools" — a builder who read the old line and then saw `claude`
+ * update itself had every reason to conclude the nudge was noise.
  */
 export function upgradeNudge(
   state: MachineState,
@@ -154,5 +160,5 @@ export function upgradeNudge(
   if (!state.lastUpgradeAt) return null;
   const days = daysBetween(state.lastUpgradeAt, now);
   if (days < thresholdDays) return null;
-  return `Tools last refreshed ${days} days ago. Run \`monoceros upgrade\` to update them.`;
+  return `Base image and service images last updated ${days} days ago. Run \`monoceros upgrade\` to move them.`;
 }
