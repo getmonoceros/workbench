@@ -93,6 +93,40 @@ mcpServer:
     expect(context7).not.toHaveProperty('auth');
   });
 
+  /**
+   * A consumer that reads only `options` would call Caddy configuration-free:
+   * its keys live in the builder's Caddyfile, so they are commented scaffolds
+   * rather than options. The projection therefore carries the setup notes and
+   * both scaffolds — that is the whole configuration surface of the service.
+   */
+  it('carries the setup a service does not work without', async () => {
+    const catalog = await loadDescriptorCatalog(componentsRoot);
+    const doc = buildCatalogJson(catalog, 'dev');
+
+    const caddy = doc.services.find((s) => s.name === 'caddy');
+    expect(caddy?.options).toEqual([]);
+    expect(caddy?.exampleVolumes).toEqual([
+      'projects/<app>/caddy:/etc/caddy:ro',
+    ]);
+    expect(caddy?.exampleEnv).toEqual({
+      CADDY_SITE_PORT: '${CADDY_SITE_PORT}',
+      APP_HOST: '${APP_HOST}',
+      APP_PORT: '${APP_PORT}',
+    });
+    expect(caddy?.usageNotes?.join(' ')).toContain('projects/<app>/caddy');
+
+    // A service with neither carries neither key, so the file stays small and
+    // an absent key keeps meaning "nothing to set up here".
+    const postgres = doc.services.find((s) => s.name === 'postgres');
+    expect(postgres).not.toHaveProperty('exampleVolumes');
+    expect(postgres).not.toHaveProperty('exampleEnv');
+    expect(postgres).not.toHaveProperty('usageNotes');
+
+    // The agent-facing briefing stays out: it belongs in AGENTS.md and would
+    // dwarf everything else in the file.
+    for (const s of doc.services) expect(s).not.toHaveProperty('briefing');
+  });
+
   it('emits sorted, deterministic output', async () => {
     const catalog = await loadDescriptorCatalog(componentsRoot);
     const a = buildCatalogJson(catalog, 'dev');
@@ -137,10 +171,16 @@ mcpServer:
       'description',
       'documentationURL',
       'options',
+      'usageNotes',
     ];
     const allowed = {
       languages: new Set([...base, 'defaultVersion', 'versions']),
-      services: new Set([...base, 'defaultPort']),
+      services: new Set([
+        ...base,
+        'defaultPort',
+        'exampleVolumes',
+        'exampleEnv',
+      ]),
       features: new Set([...base, 'presets']),
     };
     for (const group of ['languages', 'services', 'features'] as const) {

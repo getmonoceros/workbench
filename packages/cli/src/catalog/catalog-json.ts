@@ -9,12 +9,19 @@ import type { OptionSpec } from './descriptor.js';
  *
  * This is a deliberate *projection*, not a dump of the descriptors. It
  * carries only what a command-suggesting consumer needs: the selector
- * name, the human labels, and the builder-visible options/versions/
- * presets. Internal implementation details (the upstream OCI feature
- * ref, the service image, healthchecks, `connectionEnv` templates,
- * persistent-home paths, VS Code extensions, and `silent` options like a
- * floating feature version) are intentionally left out — they are not
- * part of the command surface and should not leak into a public API.
+ * name, the human labels, the builder-visible options/versions/presets,
+ * and the setup a component does not work without - `usageNotes` plus a
+ * service's commented `volumes:`/`env:` scaffolds. Those scaffolds are the
+ * whole configuration surface of a service like Caddy, whose keys live in
+ * the builder's own config file and can never be `options`, so a consumer
+ * that saw only `options: []` would report it as needing nothing.
+ * Internal implementation details (the upstream OCI feature ref, the
+ * service image, healthchecks, `connectionEnv` templates, persistent-home
+ * paths, VS Code extensions, and `silent` options like a floating feature
+ * version) are intentionally left out - they are not part of the command
+ * surface and should not leak into a public API. So is `briefing`: it is
+ * written at the in-container agent, ships in AGENTS.md, and would
+ * multiply the file's size.
  *
  * Pure function, no I/O. The caller loads the descriptor catalog and the
  * CLI version and passes them in.
@@ -37,6 +44,11 @@ interface CatalogJsonBase {
   description: string;
   documentationURL?: string;
   options: CatalogJsonOption[];
+  /**
+   * Builder-facing setup notes, the same lines `init` writes above the
+   * component's block. Absent when the descriptor has none.
+   */
+  usageNotes?: string[];
 }
 
 export interface CatalogJsonLanguage extends CatalogJsonBase {
@@ -48,6 +60,18 @@ export interface CatalogJsonLanguage extends CatalogJsonBase {
 
 export interface CatalogJsonService extends CatalogJsonBase {
   defaultPort?: number;
+  /**
+   * Bind-mounts the generated yml carries COMMENTED, for the builder to
+   * uncomment and edit (Keycloak's realm.json, Caddy's config directory).
+   * Not active volumes: the catalog cannot know the repo path.
+   */
+  exampleVolumes?: string[];
+  /**
+   * Env keys the generated yml carries COMMENTED, same idea: the keys are
+   * real, but only the builder's own config file names them (Caddy's
+   * `{$VAR}` substitutions), so they cannot be `options`.
+   */
+  exampleEnv?: Record<string, string>;
 }
 
 export interface CatalogJsonFeature extends CatalogJsonBase {
@@ -72,7 +96,11 @@ export interface CatalogJsonMcpServer extends CatalogJsonBase {
 }
 
 export interface CatalogJson {
-  /** Bumped when this projection's shape changes incompatibly. */
+  /**
+   * Bumped when this projection's shape changes incompatibly. Added fields
+   * are additive and do not bump it: a consumer that does not know
+   * `usageNotes` reads the file exactly as before.
+   */
   schemaVersion: number;
   /** The CLI version this snapshot was generated from. */
   cliVersion: string;
@@ -144,6 +172,7 @@ export function buildCatalogJson(
     if (d.documentationURL !== undefined) {
       base.documentationURL = d.documentationURL;
     }
+    if (d.usageNotes.length > 0) base.usageNotes = [...d.usageNotes];
 
     if (d.category === 'language' && d.language) {
       const lang: CatalogJsonLanguage = { ...base };
@@ -158,6 +187,12 @@ export function buildCatalogJson(
       const svc: CatalogJsonService = { ...base };
       if (d.service.defaultPort !== undefined) {
         svc.defaultPort = d.service.defaultPort;
+      }
+      if (d.service.exampleVolumes !== undefined) {
+        svc.exampleVolumes = [...d.service.exampleVolumes];
+      }
+      if (d.service.exampleEnv !== undefined) {
+        svc.exampleEnv = { ...d.service.exampleEnv };
       }
       services.push(svc);
     } else if (d.category === 'feature') {

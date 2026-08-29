@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "cliVersion": "1.57.4",
+  "cliVersion": "1.57.5",
   "languages": [
     {
       "name": "dotnet",
@@ -104,7 +104,27 @@
       "description": "Reverse proxy for local dev, so your app and the services behind it answer under one address. Reachable in-container as host `caddy`. Its configuration is a Caddyfile you keep in the repo and mount through the commented volumes below.",
       "options": [],
       "documentationURL": "https://caddyserver.com/docs/caddyfile",
-      "defaultPort": 81
+      "usageNotes": [
+        "The Caddyfile is a project artifact: keep it in your repo as `projects/<app>/caddy/Caddyfile` and mount it through the commented `volumes:` entry. Without that mount Caddy starts with the file from the image, which serves a welcome page on port 80, so nothing answers on the 81 the yml declares.",
+        "Mount the directory, not the file. Docker caches a single-file mount by inode, so an editor that saves by replacing the file leaves the container with the old content and the reload never happens. The directory has to contain a file named `Caddyfile`.",
+        "Name the targets by their in-network hostname: `workspace` is the container your own dev server runs in, a service is named as in the container yml, e.g. `keycloak:8080`.",
+        "The site address in your Caddyfile is `:81`, matching `port` and `httpPort` in the yml. Change one and you change all three, or nothing answers. 81 rather than 80 because on the host 80 belongs to the machine-wide Traefik proxy, and rather than 8080 because that is what many app servers take.",
+        "Write the port and the upstreams as `{$VAR:default}` and the same file works in a deployment: `:{$CADDY_SITE_PORT:81}` and `reverse_proxy {$APP_HOST:workspace}:{$APP_PORT:5173}`. In the workbench nothing is set and the defaults apply; the pipeline block in `.monoceros/deploy.md` supplies the other values. Caddy substitutes environment variables anywhere in the Caddyfile.",
+        "Or write them without a default - `:{$CADDY_SITE_PORT}` and `reverse_proxy {$APP_HOST}:{$APP_PORT}` - and uncomment the `env:` block under the caddy service in the container yml, one line per key your Caddyfile reads. The three keys in the scaffold are a suggestion, not the set: any name your Caddyfile substitutes works, as a pair of `KEY: ${KEY}` in the yml and `KEY=value` in `<name>.env`. The values then come from `<name>.env` like every other credential, and no dev fallback can ride along into a deployment. Nothing goes silently wrong either: a `${VAR}` that a service field references and `<name>.env` does not set stops the apply.",
+        "Leave the domain name off the site address. Given one, Caddy tries to obtain a TLS certificate, which fails here and is not needed: TLS terminates in front of it, and the proxy speaks plain http on localhost.",
+        "Open the Caddyfile with a global `servers { trusted_proxies static private_ranges }` block. `monoceros share` terminates HTTPS in front of Caddy and forwards over plain http, saying so in the headers; without that block Caddy drops the information and a backend behind it stamps `http://` URLs into an https page, which breaks an OIDC login.",
+        "Edits to the Caddyfile take effect when you save (`--watch`). No apply, no restart.",
+        "A dev server proxied through Caddy keeps serving the page but loses live reload, because it tells the browser to open its reload connection on its own port while the browser came in through Caddy. Point it at the port the browser used (Vite: `server.ws.clientPort`, formerly `server.hmr.clientPort`)."
+      ],
+      "defaultPort": 81,
+      "exampleVolumes": [
+        "projects/<app>/caddy:/etc/caddy:ro"
+      ],
+      "exampleEnv": {
+        "CADDY_SITE_PORT": "${CADDY_SITE_PORT}",
+        "APP_HOST": "${APP_HOST}",
+        "APP_PORT": "${APP_PORT}"
+      }
     },
     {
       "name": "keycloak",
@@ -125,7 +145,19 @@
         }
       ],
       "documentationURL": "https://www.keycloak.org/",
-      "defaultPort": 8080
+      "usageNotes": [
+        "Realm import: keep your realm export(s) in the repo and bind-mount them into `/opt/keycloak/data/import`. Add an entry to the service `volumes:`, e.g. `projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro`. With no mount, Keycloak starts with an empty realm.",
+        "Multiple realms from different projects: one file-mount per realm to a distinct target name (two directories cannot mount onto the same target). Keycloak imports every *.json in the import dir.",
+        "Custom theme: bind-mount it into `/opt/keycloak/themes/<name>`, e.g. `projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>`, then set `loginTheme`/`accountTheme` to `<name>` in the realm. In dev mode themes are not cached, so edits show on reload.",
+        "Paths are relative to the container root (`projects/<app>/...`); Monoceros resolves the bind source for you. Do not turn off the deferred start while mounting a repo file - the file would not exist at boot.",
+        "Import is one-way: admin-UI changes live in the Keycloak database, not the file. To keep them, export the realm and overwrite the committed JSON.",
+        "The boot import only fills an EMPTY database, so a changed realm file does nothing until apply recreates the service. To apply it to the running Keycloak, run `.monoceros/bin/keycloak-realm <path/to/realm.json>` in the container."
+      ],
+      "defaultPort": 8080,
+      "exampleVolumes": [
+        "projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro",
+        "projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>"
+      ]
     },
     {
       "name": "mailpit",
