@@ -260,6 +260,16 @@ export const ServiceBlockSchema = z.object({
    */
   exampleVolumes: z.array(z.string()).optional(),
   /**
+   * Example env keys rendered as a COMMENTED `env:` scaffold in the generated
+   * yml (init / add-service), next to `exampleVolumes` and for the same
+   * reason: the keys exist, but only the builder's own config file says which
+   * ones. Caddy is the case — a Caddyfile substitutes any `{$VAR}` it likes,
+   * so the catalog cannot carry them as `options:` the way Keycloak's fixed
+   * admin keys are carried. Each value is a `${VAR}` placeholder resolved
+   * from `<name>.env` at apply; an unresolved one is a hard apply error.
+   */
+  exampleEnv: z.record(z.string(), z.string()).optional(),
+  /**
    * Start this service in a SECOND WAVE, host-side, *after* `devcontainer
    * up` (and thus the in-container repo clone in post-create) has
    * finished — instead of together with the workspace at `compose up`.

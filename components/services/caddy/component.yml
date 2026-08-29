@@ -47,6 +47,18 @@ service:
   # unlinks its generated Caddyfile before rewriting it.
   exampleVolumes:
     - projects/<app>/caddy:/etc/caddy:ro
+  # Rendered as a COMMENTED env: scaffold, for the same reason the volumes are:
+  # a Caddyfile substitutes whatever `{$VAR}` its author wrote, so the keys are
+  # the builder's, not the catalog's - they cannot be `options:` the way
+  # Keycloak's fixed admin keys are. The three below are the ones the Caddyfile
+  # in the briefing and the deploy block use; the names match `deploy.compose`
+  # so one Caddyfile serves both. Values resolve from <name>.env at apply, and
+  # a key left unset there fails the apply rather than starting a proxy that
+  # silently listens somewhere else.
+  exampleEnv:
+    CADDY_SITE_PORT: ${CADDY_SITE_PORT}
+    APP_HOST: ${APP_HOST}
+    APP_PORT: ${APP_PORT}
   # The workspace rarely calls Caddy - the traffic runs the other way - but the
   # briefing promises one set per service, and a neighbouring service that wants
   # to go out through the proxy needs the in-network address. `PUBLIC_URL` (the
@@ -62,6 +74,7 @@ usageNotes:
   - 'Name the targets by their in-network hostname: `workspace` is the container your own dev server runs in, a service is named as in the container yml, e.g. `keycloak:8080`.'
   - 'The site address in your Caddyfile is `:81`, matching `port` and `httpPort` in the yml. Change one and you change all three, or nothing answers. 81 rather than 80 because on the host 80 belongs to the machine-wide Traefik proxy, and rather than 8080 because that is what many app servers take.'
   - 'Write the port and the upstreams as `{$VAR:default}` and the same file works in a deployment: `:{$CADDY_SITE_PORT:81}` and `reverse_proxy {$APP_HOST:workspace}:{$APP_PORT:5173}`. In the workbench nothing is set and the defaults apply; the pipeline block in `.monoceros/deploy.md` supplies the other values. Caddy substitutes environment variables anywhere in the Caddyfile.'
+  - 'Or write them without a default - `:{$CADDY_SITE_PORT}` and `reverse_proxy {$APP_HOST}:{$APP_PORT}` - and uncomment the `env:` block under the caddy service in the container yml, one line per key your Caddyfile reads. The three keys in the scaffold are a suggestion, not the set: any name your Caddyfile substitutes works, as a pair of `KEY: ${KEY}` in the yml and `KEY=value` in `<name>.env`. The values then come from `<name>.env` like every other credential, and no dev fallback can ride along into a deployment. Nothing goes silently wrong either: a `${VAR}` that a service field references and `<name>.env` does not set stops the apply.'
   - 'Leave the domain name off the site address. Given one, Caddy tries to obtain a TLS certificate, which fails here and is not needed: TLS terminates in front of it, and the proxy speaks plain http on localhost.'
   - 'Open the Caddyfile with a global `servers { trusted_proxies static private_ranges }` block. `monoceros share` terminates HTTPS in front of Caddy and forwards over plain http, saying so in the headers; without that block Caddy drops the information and a backend behind it stamps `http://` URLs into an https page, which breaks an OIDC login.'
   - 'Edits to the Caddyfile take effect when you save (`--watch`). No apply, no restart.'
@@ -84,6 +97,25 @@ briefing:
       ```
 
       In here nothing is set and the defaults apply. The pipeline block in `.monoceros/deploy.md` supplies the other values, and its variables are the ones to collect into the project's env sample. Do not keep a second Caddyfile for deployment.
+
+      If the user would rather not carry dev values into the deployment as defaults, write the same variables bare (`:{$CADDY_SITE_PORT}`, `{$APP_HOST}:{$APP_PORT}`). They then have to reach Caddy from the workbench too, through the `env:` block under the caddy service in the container yml. That file and `<name>.env` both live on the host, out of your reach, so read the variables your Caddyfile actually uses and hand the user both finished blocks. One `KEY: ${KEY}` line in the yml per variable:
+
+      ```yaml
+      env:
+        CADDY_SITE_PORT: ${CADDY_SITE_PORT}
+        APP_HOST: ${APP_HOST}
+        APP_PORT: ${APP_PORT}
+      ```
+
+      and the values that go with them in `<name>.env`:
+
+      ```
+      CADDY_SITE_PORT=81
+      APP_HOST=workspace
+      APP_PORT=5173
+      ```
+
+      Any variable name works, so a second upstream is two more lines in each block and not a second file. Then have them run `monoceros apply <name>` on the host. A variable a service field references but `<name>.env` does not set fails the apply, so a forgotten key surfaces at once.
   - text: |-
       You can create and edit that Caddyfile, but the bind-mount that feeds it to Caddy lives in the container yml on the host, which you cannot edit from inside. Give the user this exact block to add under the `caddy` service in the container yml, with `<app>` replaced by the real project name:
 

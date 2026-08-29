@@ -10,8 +10,9 @@ import {
   serviceClientNpmPackages,
   serviceDefersStart,
   curatedServiceExampleVolumes,
+  curatedServiceExampleEnv,
 } from '../src/create/catalog.js';
-import { exampleVolumesComment } from '../src/init/service-doc.js';
+import { curatedScaffoldComment } from '../src/init/service-doc.js';
 import {
   buildComposeYaml,
   serviceVolumeHostDirs,
@@ -110,12 +111,43 @@ describe('expandCuratedService / isCuratedService', () => {
     expect(curatedServiceExampleVolumes('postgres')).toEqual([]);
     // the comment block comments the `volumes:` key itself (an active
     // empty volumes: would parse to null and apply would reject it)
-    const comment = exampleVolumesComment(ex);
+    const comment = curatedScaffoldComment(ex);
     expect(comment).toMatch(/^ volumes:/);
     expect(comment).toContain(
       '   - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro',
     );
-    expect(exampleVolumesComment([])).toBeUndefined();
+    // keycloak's env keys are fixed and therefore ACTIVE options, not a
+    // scaffold - nothing commented follows the volumes.
+    expect(curatedServiceExampleEnv('keycloak')).toEqual({});
+    expect(comment).not.toContain(' env:');
+    expect(curatedScaffoldComment([])).toBeUndefined();
+  });
+
+  it('offers caddy env keys as a commented scaffold, because only the Caddyfile names them', () => {
+    // Not `options:`: a Caddyfile substitutes whatever `{$VAR}` its author
+    // wrote, so the catalog cannot enumerate the keys the way it does
+    // keycloak's fixed admin ones. The names match `deploy.compose`, so one
+    // Caddyfile serves the workbench and the pipeline.
+    expect(curatedServiceExampleEnv('caddy')).toEqual({
+      CADDY_SITE_PORT: '${CADDY_SITE_PORT}',
+      APP_HOST: '${APP_HOST}',
+      APP_PORT: '${APP_PORT}',
+    });
+    // Commented, and the `env:` key with it: an active but empty `env:`
+    // parses to null and apply rejects it.
+    const comment = curatedScaffoldComment(
+      curatedServiceExampleVolumes('caddy'),
+      curatedServiceExampleEnv('caddy'),
+    );
+    expect(comment).toMatch(/^ volumes:/);
+    expect(comment).toContain(' env:');
+    expect(comment).toContain('   CADDY_SITE_PORT: ${CADDY_SITE_PORT}');
+    // Never active: the expanded service object carries neither.
+    const svc = expandCuratedService('caddy');
+    expect('env' in svc).toBe(false);
+    expect('exampleEnv' in svc).toBe(false);
+    // ordinary services ship none
+    expect(curatedServiceExampleEnv('postgres')).toEqual({});
   });
 
   it('expands caddy for a repo-mounted Caddyfile, watched and deferred', () => {

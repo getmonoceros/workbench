@@ -97,22 +97,34 @@ export function renderCustomService(
 }
 
 /**
- * A commented `volumes:` scaffold for a curated service that ships example
- * bind-mounts (e.g. Keycloak's realm.json / theme). Returned as a comment
+ * The commented scaffold a curated service ships: example bind-mounts
+ * (Keycloak's realm.json / theme, Caddy's config directory) and example env
+ * keys (Caddy's, whose names only its Caddyfile knows). Returned as a comment
  * string (no leading `#` — the caller / serializer adds it), the same shape
- * as renderCustomService's `comment`. The `volumes:` key is commented too:
- * an active but empty `volumes:` parses to null and `apply` rejects it, so
- * the whole block stays commented until the builder uncomments + edits.
- * Returns `undefined` when there are no example volumes.
+ * as renderCustomService's `comment`. The `volumes:` / `env:` keys are
+ * commented too: an active but empty one parses to null and `apply` rejects
+ * it, so each block stays commented until the builder uncomments + edits.
+ * Returns `undefined` when the service ships neither.
  */
-export function exampleVolumesComment(
+export function curatedScaffoldComment(
   exampleVolumes: readonly string[],
+  exampleEnv: Readonly<Record<string, string>> = {},
 ): string | undefined {
-  if (exampleVolumes.length === 0) return undefined;
-  return [
-    ' volumes:                   # uncomment + edit to mount your own files',
-    ...exampleVolumes.map((v) => `   - ${v}`),
-  ].join('\n');
+  const lines: string[] = [];
+  if (exampleVolumes.length > 0) {
+    lines.push(
+      ' volumes:                   # uncomment + edit to mount your own files',
+      ...exampleVolumes.map((v) => `   - ${v}`),
+    );
+  }
+  const envEntries = Object.entries(exampleEnv);
+  if (envEntries.length > 0) {
+    lines.push(
+      ' env:                       # uncomment + add the keys your config references',
+      ...envEntries.map(([k, v]) => `   ${k}: ${v}`),
+    );
+  }
+  return lines.length > 0 ? lines.join('\n') : undefined;
 }
 
 /**

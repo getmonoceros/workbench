@@ -85,6 +85,7 @@ import {
   curatedServiceEnvDefaults,
   deriveServiceName,
   expandCuratedService,
+  curatedServiceExampleEnv,
   curatedServiceExampleVolumes,
   isCuratedService,
   knownLanguages,
@@ -93,7 +94,7 @@ import {
 import {
   renderServiceObjectBody,
   renderCustomService,
-  exampleVolumesComment,
+  curatedScaffoldComment,
   customServiceHint,
 } from '../init/service-doc.js';
 import {
@@ -325,11 +326,14 @@ export async function runAddService(
   const bodyLines = curated
     ? renderServiceObjectBody({ ...expandCuratedService(arg), name })
     : custom!.bodyLines;
-  // Curated services with example bind-mounts (e.g. Keycloak) ride a
-  // commented `volumes:` scaffold the builder uncomments + edits; custom
-  // images carry their own full field scaffold.
+  // Curated services with example bind-mounts (e.g. Keycloak) or example env
+  // keys (Caddy) ride a commented scaffold the builder uncomments + edits;
+  // custom images carry their own full field scaffold.
   const scaffoldComment = curated
-    ? exampleVolumesComment(curatedServiceExampleVolumes(arg))
+    ? curatedScaffoldComment(
+        curatedServiceExampleVolumes(arg),
+        curatedServiceExampleEnv(arg),
+      )
     : custom!.comment;
 
   const result = await mutate(input, (doc) => {

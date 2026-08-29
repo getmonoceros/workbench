@@ -13,10 +13,11 @@ import {
 import {
   DEFAULT_RUNTIME_VERSION,
   expandCuratedService,
+  curatedServiceExampleEnv,
   curatedServiceExampleVolumes,
 } from '../create/catalog.js';
 import {
-  exampleVolumesComment,
+  curatedScaffoldComment,
   renderCustomService,
   renderServiceObjectBody,
 } from './service-doc.js';
@@ -274,8 +275,9 @@ function pushServiceEntry(out: string[], svc: InitService): void {
   const body = renderServiceObjectBody(expandCuratedService(svc.name));
   out.push(`  - ${body[0]}`);
   for (const line of body.slice(1)) out.push(`    ${line}`);
-  const exComment = exampleVolumesComment(
+  const exComment = curatedScaffoldComment(
     curatedServiceExampleVolumes(svc.name),
+    curatedServiceExampleEnv(svc.name),
   );
   if (exComment) {
     for (const cl of exComment.split('\n')) out.push(`    #${cl}`);

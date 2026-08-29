@@ -487,6 +487,13 @@ export interface ServiceEntry {
    */
   exampleVolumes?: readonly string[];
   /**
+   * Example env keys rendered as a COMMENTED `env:` scaffold in the generated
+   * yml (not active env). For services whose keys only the builder's own
+   * config file names, e.g. Caddy's `{$VAR}` substitutions.
+   * See descriptor.ts.
+   */
+  exampleEnv?: Readonly<Record<string, string>>;
+  /**
    * Start this service in a host-side SECOND WAVE, after `devcontainer up`
    * (and the in-container clone) has finished, rather than together with
    * the workspace. For services that bind-mount a file from a cloned repo
@@ -572,6 +579,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
           ...(svc.client ? { client: svc.client } : {}),
           ...(svc.command ? { command: svc.command } : {}),
           ...(svc.exampleVolumes ? { exampleVolumes: svc.exampleVolumes } : {}),
+          ...(svc.exampleEnv ? { exampleEnv: svc.exampleEnv } : {}),
           ...(svc.deferStart ? { deferStart: true } : {}),
           ...(c.descriptor.briefing && c.descriptor.briefing.length > 0
             ? { briefing: c.descriptor.briefing }
@@ -625,6 +633,18 @@ export function serviceDefersStart(name: string): boolean {
  */
 export function curatedServiceExampleVolumes(name: string): readonly string[] {
   return SERVICE_CATALOG[name]?.exampleVolumes ?? [];
+}
+
+/**
+ * Example env keys for a curated service, rendered as a commented `env:`
+ * scaffold in the generated yml (see init/service-doc.ts). Empty for
+ * services whose env is known and therefore active. Looked up by catalog
+ * name.
+ */
+export function curatedServiceExampleEnv(
+  name: string,
+): Readonly<Record<string, string>> {
+  return SERVICE_CATALOG[name]?.exampleEnv ?? {};
 }
 
 /**
