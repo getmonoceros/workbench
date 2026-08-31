@@ -702,6 +702,28 @@ describe('renderRoleTemplate', () => {
     expect(out).toBe('mode: primary\nprompt: x\n');
   });
 
+  // Same split as the Claude set, deliberately duplicated rather than shared:
+  // the two role sets agree on substance and differ in permissions, and nothing
+  // enforces the overlap except a test in each suite.
+  it("keeps ADRs a planned step and out of the implementer's judgement", async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+
+    const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
+    expect(planner).toContain('docs/adr/');
+    expect(planner).toContain('as a numbered step');
+    expect(planner).toContain('Probe the next number, never guess it');
+
+    const implement = await read(
+      path.join(agentsDir(), 'monoceros-implement.md'),
+    );
+    expect(implement).toContain('do not write an ADR');
+    expect(implement).toContain('Name it in your deviations');
+
+    expect(await read(path.join(agentsDir(), 'monoceros-review.md'))).toContain(
+      'writes an ADR under',
+    );
+  });
+
   it('replaces every occurrence of the plans dir, not only the first', () => {
     const out = renderRoleTemplate(
       '{{PLANS_DIR}}/a {{PLANS_DIR}}/b {{PLANS_DIR_TILDE}}/c\n{{MODEL_LINE}}\n',

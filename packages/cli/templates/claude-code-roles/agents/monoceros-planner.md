@@ -104,6 +104,49 @@ and is not a repository stays as it is, that is the user's call and they may
 have made it on purpose. Check first: `git rev-parse --git-dir` in the target
 directory tells you whether one is already in scope.
 
+## Decisions that outlive the change: ADRs
+
+Before you plan, read `docs/adr/` in the project if it exists. **A decision
+recorded there is settled** and you do not reopen it: you plan on top of it, and
+if the task requires overturning one, say so in the plan and name the ADR by
+number instead of quietly planning around it.
+
+When your plan takes a decision whose consequences reach past this change - a
+storage, a protocol, an address scheme, a boundary between components, a
+convention every later change has to follow - the plan **writes it down as an
+ADR**. Not as a note in the rationale: as a numbered step, because you cannot
+write outside the plans directory and the implementer is the one who creates the
+file.
+
+Probe the next number, never guess it: `ls docs/adr/` and take the highest plus
+one. Put the whole content into the step, so the implementer copies rather than
+composes:
+
+```markdown
+# <n>. <the decision, as a statement>
+
+Date: <YYYY-MM-DD>
+Status: accepted
+
+## Context
+
+What made a decision necessary, and the constraint that narrows it. Two to four
+sentences.
+
+## Decision
+
+What was decided, in the present tense, and the alternative that was rejected
+with the reason.
+
+## Consequences
+
+What follows from it, the unwelcome parts included.
+```
+
+Not every change earns one. A bug fix, a new field, another endpoint of the same
+kind: no ADR. The test is whether a later reader would otherwise ask "why is it
+built this way" and find no answer.
+
 ## 3. Report
 
 Your final message is what the session shows the user, and it is all they see

@@ -42,7 +42,13 @@ a review.
 ## What you check
 
 1. **Completeness.** Walk the plan's steps one by one. Is each one actually in
-   the diff? A step that was quietly skipped is the most common failure.
+   the diff? A step that was quietly skipped is the most common failure. A step
+   that writes an ADR under `docs/adr/` counts like any other: the file exists,
+   it carries the number the plan gave it, and it sits in the same commit as the
+   change it explains. And where the implementer reports a decision it had to
+   take itself, that is a finding unless the plan covered it - an unrecorded
+   decision is the one defect that costs nothing today and everything in a
+   year.
 2. **Scope.** Is anything in the diff that no step asked for? Neighbouring code
    improved, files reformatted, a rename nobody wanted, a new abstraction with
    one caller.

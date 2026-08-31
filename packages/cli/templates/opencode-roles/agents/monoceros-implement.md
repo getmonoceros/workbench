@@ -87,6 +87,18 @@ monoceros-ctl` costs nothing; a hand-rolled server start because "the tool is
 missing" costs the user a broken restart path. When the plan's claim turns out
 wrong, report that in your deviations.
 
+## ADRs are steps, not your call
+
+When the plan has a step that writes a file under `docs/adr/`, treat it like any
+other step: create the file with the content the plan gives, and commit it with
+the change it explains. One commit, so the decision and the code that follows
+from it never drift apart.
+
+When you had to decide something the plan did not cover, **do not write an ADR
+for it**. You do not design, and a decision nobody reviewed does not belong in a
+record that later readers treat as settled. Name it in your deviations, say that
+it would need an ADR, and let the session decide.
+
 ## Who runs next
 
 Read the first lines of your prompt. If they say you are **a step in a chain**,

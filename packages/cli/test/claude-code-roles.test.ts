@@ -305,6 +305,26 @@ describe('writeClaudeCodeRoles', () => {
     }
   });
 
+  // The planner decides but cannot write outside the plans directory, so an ADR
+  // can only reach `docs/adr/` as a step the implementer executes. If that split
+  // ever drifts, decisions stop being recorded at all: the planner would note
+  // them in a rationale nobody reads back, or the implementer would invent them
+  // unreviewed.
+  it("keeps ADRs a planned step and out of the implementer's judgement", async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+
+    const planner = await agent('monoceros-planner');
+    expect(planner).toContain('docs/adr/');
+    expect(planner).toContain('as a numbered step');
+    expect(planner).toContain('Probe the next number, never guess it');
+
+    const implement = await agent('monoceros-implement');
+    expect(implement).toContain('do not write an ADR');
+    expect(implement).toContain('Name it in your deviations');
+
+    expect(await agent('monoceros-review')).toContain('writes an ADR under');
+  });
+
   describe('renderRoleTemplate', () => {
     it('drops the model line entirely when no model is set', () => {
       const out = renderRoleTemplate('a\n{{MODEL_LINE}}\nb\n', '');
