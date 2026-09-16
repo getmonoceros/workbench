@@ -19,6 +19,15 @@ name: Installer
 # way locally, no CI-only wiring.
 
 on:
+  # install.sh is served straight from main (curl | bash), so a push
+  # that lands here IS the delivery - there is no release workflow in
+  # between to gate it. release-cli.yml only fires on packages/cli/**,
+  # which an installer-only change never touches.
+  push:
+    branches: [main]
+    paths:
+      - 'installer/**'
+      - 'packages/cli/templates/monoceros-config.sample.*'
   pull_request:
     paths:
       - 'installer/**'
