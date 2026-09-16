@@ -1,0 +1,83 @@
+name: Installer
+
+# Runs installer/install.sh for real, in containers, across the Node
+# setups builders actually have. Invoked three ways:
+#   - on PRs touching the installer or the config templates it seeds,
+#   - as a REUSABLE GATE (workflow_call) from release-cli.yml, so a
+#     broken installer blocks the npm publish, and
+#   - nightly, because the installer talks to npm and to whatever Node
+#     the base image ships.
+#
+# Why this exists at all: until #109 nothing in CI executed install.sh.
+# e2e-smoke.yml deliberately bypasses it and runs `npm install -g`
+# itself, so the script every builder runs first went 58 releases
+# without ever being executed outside a maintainer's machine. A builder
+# found the gap instead: the installer died in the completion step,
+# printed nothing, and left the home without its config files.
+#
+# The cases live in installer/test/install-matrix.sh - it runs the same
+# way locally, no CI-only wiring.
+
+on:
+  pull_request:
+    paths:
+      - 'installer/**'
+      - 'packages/cli/templates/monoceros-config.sample.*'
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 3 * * *'
+
+concurrency:
+  group: installer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix:
+    name: install.sh (${{ matrix.case }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # One leg per case: a red matrix says which environment broke
+      # instead of just "the installer broke", and the others still
+      # report.
+      fail-fast: false
+      matrix:
+        case:
+          - default-prefix
+          - prefix-not-on-path
+          - unwritable-prefix
+          - completion-blocked
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build CLI
+        run: pnpm --filter @getmonoceros/workbench build
+
+      - name: Pack the CLI
+        # The installer installs a package; give it the one this branch
+        # would publish rather than whatever is already on npm, so the
+        # run also covers "the templates are actually in the tarball".
+        id: pack
+        working-directory: packages/cli
+        run: |
+          set -euo pipefail
+          npm pack
+          tarball=$(ls getmonoceros-workbench-*.tgz)
+          echo "path=/workbench/packages/cli/$tarball" >> "$GITHUB_OUTPUT"
+
+      - name: Run installer case
+        env:
+          MONOCEROS_TEST_PACKAGE: ${{ steps.pack.outputs.path }}
+        run: installer/test/install-matrix.sh "${{ matrix.case }}"

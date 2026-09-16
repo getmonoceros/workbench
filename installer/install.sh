@@ -6,7 +6,13 @@
 #   1. Verifies Docker is reachable (`docker info`).
 #   2. Verifies Node >= 20 is on PATH (with npm).
 #   3. Runs `npm install -g @getmonoceros/workbench`.
-#   4. Drops a shell-completion file in the right place for your shell.
+#   4. Seeds ~/.monoceros with the two config templates.
+#   5. Drops a shell-completion file in the right place for your shell.
+#
+# Steps 1-4 are critical: failing one aborts the install with a reason.
+# Step 5 is optional and only ever warns. See "Step contract" below -
+# the ordering is load-bearing, the config templates are what a
+# builder cannot reconstruct on their own.
 #
 # What this does NOT do:
 #   - Install Docker.
@@ -34,7 +40,7 @@ if [ -z "${BASH_VERSION:-}" ]; then
   exit 1
 fi
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # ── cwd into $HOME ────────────────────────────────────────────────
 #
@@ -90,7 +96,10 @@ if [ -z "${MONOCEROS_DOCKER_GROUP_REEXEC:-}" ] \
   # downstream docker-info check render its usual setup hint.
 fi
 
-PACKAGE="@getmonoceros/workbench"
+# Test seam: installer/test/install-matrix.sh points this at a tarball
+# packed from the working tree, so CI gates a release on the artifact
+# it is about to publish instead of on whatever is already on npm.
+PACKAGE="${MONOCEROS_TEST_PACKAGE:-@getmonoceros/workbench}"
 NODE_MIN_MAJOR=20
 
 # Detect host OS once so prereq hints can show only the relevant
@@ -145,9 +154,53 @@ say()     { printf '%s\n' "$*" >&2; }
 ok()      { printf '  %s✓%s %s\n' "$GREEN" "$RESET" "$*" >&2; }
 warn()    { printf '  %s!%s %s\n' "$YELLOW" "$RESET" "$*" >&2; }
 fail()    { printf '%s✗%s %s\n' "$RED" "$RESET" "$*" >&2; }
-section() { printf '\n%s▸ %s%s\n' "$BOLD$UNDERLINE" "$*" "$RESET" >&2; }
+section() { current_step="$*"; printf '\n%s▸ %s%s\n' "$BOLD$UNDERLINE" "$*" "$RESET" >&2; }
 cmd()     { printf '%s%s%s' "$CYAN" "$*" "$RESET"; }
 dim()     { printf '%s%s%s' "$GREY" "$*" "$RESET"; }
+
+# ── Step contract ──────────────────────────────────────────────────
+#
+# Every step in this installer is either CRITICAL or OPTIONAL, and
+# there is no third variant:
+#
+#   critical  the builder ends up with a broken install, or without
+#             something they cannot reconstruct on their own → call
+#             `abort`, which names the step and the reason and exits
+#             non-zero.
+#   optional  convenience they can add afterwards → `warn` and carry
+#             on with the rest of the install.
+#
+# What this rules out is what shipped for 58 releases and finally bit
+# a builder (#109): a step that fails, prints nothing, and takes the
+# remaining steps down with it through `set -e`. `section` records
+# where we are and the ERR trap below turns any unguarded failure
+# into a message that at least says which step died.
+current_step="startup"
+
+abort() {
+  say ""
+  fail "$current_step failed: $1"
+  shift
+  for line in "$@"; do say "  $line"; done
+  say ""
+  say "  Nothing after this step ran. Fix the cause and re-run the installer;"
+  say "  it is safe to run repeatedly and leaves existing files alone."
+  say ""
+  exit 1
+}
+
+on_unexpected_error() {
+  local rc=$1
+  say ""
+  fail "Installer aborted during \"$current_step\" (exit $rc)."
+  say "  Nothing after this step ran. This is a bug in the installer,"
+  say "  please report it with the output above:"
+  say "  $(cmd 'https://github.com/getmonoceros/workbench/issues')"
+  say ""
+  exit "$rc"
+}
+
+trap 'on_unexpected_error $?' ERR
 
 # ── Header ─────────────────────────────────────────────────────────
 say ""
@@ -453,6 +506,34 @@ ok "Node $(dim "$node_version") with npm"
 # ── 2. CLI install ─────────────────────────────────────────────────
 section "Installing CLI"
 
+# Put a directory on PATH for future shells. Login shells pick up
+# ~/.local/bin via /etc/profile.d on modern Ubuntu, but interactive
+# non-login shells (a normal terminal tab) need the rc-file append.
+# The marker keeps repeat installs from stacking duplicate lines, and
+# is deliberately the one earlier versions wrote - changing it would
+# append a second line on every machine that already has the first.
+persist_path_line() {
+  local dir="$1" rc_file="" path_marker
+  case "$user_shell" in
+    bash) rc_file="$HOME/.bashrc" ;;
+    zsh)  rc_file="$HOME/.zshrc" ;;
+  esac
+  path_marker="# monoceros: per-user npm prefix on PATH"
+  if [ -z "$rc_file" ] || [ ! -f "$rc_file" ]; then
+    return 0
+  fi
+  if grep -qF "$path_marker" "$rc_file"; then
+    return 0
+  fi
+  {
+    echo ""
+    echo "$path_marker"
+    echo "export PATH=\"$dir:\$PATH\""
+    echo ""
+  } >> "$rc_file"
+  ok "appended PATH line to $(dim "$rc_file")"
+}
+
 # Where will 'npm install -g' land? If npm's global prefix isn't
 # writable by the current user (typical when Node was installed
 # system-wide — apt, dnf, NodeSource convenience script), npm would
@@ -483,25 +564,7 @@ if [ -n "$npm_prefix" ] && [ ! -w "$npm_prefix" ]; then
     *) export PATH="$user_prefix/bin:$PATH" ;;
   esac
 
-  # Persist for future shells. ~/.local/bin is in PATH for login
-  # shells via /etc/profile.d on modern Ubuntu, but interactive
-  # non-login shells (typical terminal sessions) need the rc-file
-  # append. Guarded by a marker so repeat installs don't duplicate.
-  rc_file=""
-  case "$user_shell" in
-    bash) rc_file="$HOME/.bashrc" ;;
-    zsh)  rc_file="$HOME/.zshrc" ;;
-  esac
-  path_marker="# monoceros: per-user npm prefix on PATH"
-  if [ -n "$rc_file" ] && [ -f "$rc_file" ] && ! grep -qF "$path_marker" "$rc_file"; then
-    {
-      echo ""
-      echo "$path_marker"
-      echo 'export PATH="$HOME/.local/bin:$PATH"'
-      echo ""
-    } >> "$rc_file"
-    ok "appended PATH line to $(dim "$rc_file")"
-  fi
+  persist_path_line "$user_prefix/bin"
 fi
 
 # --silent suppresses npm's "changed N packages" / "looking for funding"
@@ -535,17 +598,107 @@ EOF
 fi
 rm -f /tmp/monoceros-install-err.$$
 
-# Resolve the just-installed binary path + version. Both are nice to
-# show: builder sees what landed where and which version they're on.
+# Where the package landed. Everything below - the config templates
+# above all - is derived from this, and it is computed from what we
+# already know rather than looked up through PATH: the seeding must
+# not depend on the freshly installed binary being resolvable.
+if [ ${#npm_install_args[@]} -gt 0 ]; then
+  npm_global_prefix="$user_prefix"
+else
+  npm_global_prefix="$npm_prefix"
+fi
+npm_global_root="$npm_global_prefix/lib/node_modules"
+if [ ! -d "$npm_global_root" ]; then
+  npm_global_root=$(npm root -g 2>/dev/null || echo "")
+fi
+
+# npm drops the `monoceros` shim in <prefix>/bin, but nothing says a
+# shell looks there. Someone who ran `npm config set prefix
+# ~/.npm-global` without the matching PATH line has a prefix that is
+# writable - so the fallback branch above never fires - and still no
+# `monoceros` command. Put it on PATH for this run and persist it,
+# the same treatment that branch gives its own prefix.
+if ! command -v monoceros >/dev/null 2>&1 \
+   && [ -x "$npm_global_prefix/bin/monoceros" ]; then
+  export PATH="$npm_global_prefix/bin:$PATH"
+  persist_path_line "$npm_global_prefix/bin"
+fi
+
+# Resolve the binary + version. Both are nice to show: the builder
+# sees what landed where and which version they're on. If it does not
+# resolve, that is the end of the install - we are not printing a
+# green check over a missing CLI again (#109).
 cli_path=$(command -v monoceros 2>/dev/null || true)
-cli_version=$("$cli_path" --version 2>/dev/null | head -1 || true)
+cli_version=""
+if [ -n "$cli_path" ]; then
+  cli_version=$("$cli_path" --version 2>/dev/null | head -1 || true)
+fi
 if [[ -n "$cli_version" && -n "$cli_path" ]]; then
   ok "monoceros $(dim "$cli_version") $(dim "→") $(dim "$cli_path")"
 else
-  ok "Monoceros installed"
+  abort "npm reported success, but the CLI is not runnable." \
+        "Expected the shim at $(dim "$npm_global_prefix/bin/monoceros")." \
+        "If it is there, your shell is not looking in that directory."
 fi
 
-# ── 3. Shell completion ────────────────────────────────────────────
+# ── 3. User home ───────────────────────────────────────────────────
+# Ensure ~/.monoceros/ exists with an all-commented monoceros-config.yml
+# template. The template ships as-is (no placeholder values active);
+# the user uncomments the sections they need. No "copy the sample and
+# rename it" ritual — the file is already in the right place under the
+# right name, and being all-commented means it's a no-op until edited.
+section "User home"
+
+monoceros_home="$HOME/.monoceros"
+
+config_src="$npm_global_root/@getmonoceros/workbench/templates/monoceros-config.sample.yml"
+config_dst="$monoceros_home/monoceros-config.yml"
+
+mkdir -p "$monoceros_home"
+
+if [[ -f "$config_src" ]]; then
+  if [[ -f "$config_dst" ]]; then
+    ok "config $(dim '→') $(dim "$config_dst") $(dim '(already present, left alone)')"
+  else
+    cp "$config_src" "$config_dst"
+    ok "config $(dim '→') $(dim "$config_dst")"
+    say "  $(dim "All entries are commented out - uncomment what you need")"
+    say "  $(dim "(git identity, feature API keys, etc).")"
+  fi
+else
+  abort "the config template is missing from the installed package." \
+        "Looked for $(dim "$config_src")." \
+        "The npm package is incomplete - please report this."
+fi
+
+# Same treatment for the global secrets file: an all-commented
+# monoceros-config.env template so the builder can discover where repo
+# access tokens (PATs) go without hunting through docs. All-commented =
+# a no-op until edited; public repos need no token at all.
+env_src="$npm_global_root/@getmonoceros/workbench/templates/monoceros-config.sample.env"
+env_dst="$monoceros_home/monoceros-config.env"
+
+if [[ -f "$env_src" ]]; then
+  if [[ -f "$env_dst" ]]; then
+    ok "secrets $(dim '→') $(dim "$env_dst") $(dim '(already present, left alone)')"
+  else
+    cp "$env_src" "$env_dst"
+    ok "secrets $(dim '→') $(dim "$env_dst")"
+    say "  $(dim 'All entries are commented out - add repo tokens (PATs) here')"
+    say "  $(dim 'when you need private clone/push (public repos need none).')"
+  fi
+else
+  abort "the secrets template is missing from the installed package." \
+        "Looked for $(dim "$env_src")." \
+        "The npm package is incomplete - please report this."
+fi
+
+# ── 4. Shell completion ────────────────────────────────────────────
+#
+# OPTIONAL by the step contract: every failure below warns and moves
+# on. The builder can regenerate this at any time with a single
+# `monoceros completion <shell>`, and until #109 a stumble here was
+# enough to abort the whole install before the home was seeded.
 section "Shell completion"
 
 # user_shell was detected once at the top of the script (it's also
@@ -560,18 +713,26 @@ install_zsh_completion() {
   if [[ -d "$HOME/.oh-my-zsh/completions" ]]; then
     dir="$HOME/.oh-my-zsh/completions"
     target="$dir/_monoceros"
-    monoceros completion zsh > "$target"
+    if ! monoceros completion zsh > "$target" 2>/dev/null; then
+      rm -f "$target"
+      warn "could not generate zsh completion — skipping"
+      return 0
+    fi
     ok "zsh $(dim "→") $(dim "$target") $(dim "(Oh-My-Zsh)")"
-    return
+    return 0
   fi
 
   # Vanilla zsh: write to ~/.zsh/completions/ and ensure .zshrc has
   # the fpath + compinit lines (guarded by the marker so we don't
   # duplicate on repeat installs).
   dir="$HOME/.zsh/completions"
-  mkdir -p "$dir"
   target="$dir/_monoceros"
-  monoceros completion zsh > "$target"
+  if ! mkdir -p "$dir" 2>/dev/null \
+     || ! monoceros completion zsh > "$target" 2>/dev/null; then
+    rm -f "$target"
+    warn "could not generate zsh completion — skipping"
+    return 0
+  fi
 
   rc_file="$HOME/.zshrc"
   fpath_line="fpath=(~/.zsh/completions \$fpath)"
@@ -607,9 +768,13 @@ install_bash_completion() {
   marker="# monoceros completion (managed by install.sh)"
 
   dir="$HOME/.bash_completion.d"
-  mkdir -p "$dir"
   target="$dir/monoceros"
-  monoceros completion bash > "$target"
+  if ! mkdir -p "$dir" 2>/dev/null \
+     || ! monoceros completion bash > "$target" 2>/dev/null; then
+    rm -f "$target"
+    warn "could not generate bash completion — skipping"
+    return 0
+  fi
 
   rc_file="$HOME/.bashrc"
   source_line="source $target"
@@ -637,63 +802,6 @@ case "$user_shell" in
     say "    $(cmd 'monoceros completion zsh')  > ~/.zsh/completions/_monoceros"
     ;;
 esac
-
-# ── 4. User home ───────────────────────────────────────────────────
-# Ensure ~/.monoceros/ exists with an all-commented monoceros-config.yml
-# template. The template ships as-is (no placeholder values active);
-# the user uncomments the sections they need. No "copy the sample and
-# rename it" ritual — the file is already in the right place under the
-# right name, and being all-commented means it's a no-op until edited.
-section "User home"
-
-monoceros_home="$HOME/.monoceros"
-
-# Where did our package land? If the CLI install routed to a per-user
-# prefix above (the npm_install_args branch), npm root -g would point
-# at the SYSTEM prefix where we did NOT install. Use the actual install
-# location in that case.
-if [ ${#npm_install_args[@]} -gt 0 ]; then
-  npm_global_root="$user_prefix/lib/node_modules"
-else
-  npm_global_root=$(npm root -g 2>/dev/null || echo "")
-fi
-config_src="$npm_global_root/@getmonoceros/workbench/templates/monoceros-config.sample.yml"
-config_dst="$monoceros_home/monoceros-config.yml"
-
-mkdir -p "$monoceros_home"
-
-if [[ -f "$config_src" ]]; then
-  if [[ -f "$config_dst" ]]; then
-    ok "config $(dim '→') $(dim "$config_dst") $(dim '(already present, left alone)')"
-  else
-    cp "$config_src" "$config_dst"
-    ok "config $(dim '→') $(dim "$config_dst")"
-    say "  $(dim "All entries are commented out - uncomment what you need")"
-    say "  $(dim "(git identity, feature API keys, etc).")"
-  fi
-else
-  warn "config template not found at $config_src — skipping"
-fi
-
-# Same treatment for the global secrets file: an all-commented
-# monoceros-config.env template so the builder can discover where repo
-# access tokens (PATs) go without hunting through docs. All-commented =
-# a no-op until edited; public repos need no token at all.
-env_src="$npm_global_root/@getmonoceros/workbench/templates/monoceros-config.sample.env"
-env_dst="$monoceros_home/monoceros-config.env"
-
-if [[ -f "$env_src" ]]; then
-  if [[ -f "$env_dst" ]]; then
-    ok "secrets $(dim '→') $(dim "$env_dst") $(dim '(already present, left alone)')"
-  else
-    cp "$env_src" "$env_dst"
-    ok "secrets $(dim '→') $(dim "$env_dst")"
-    say "  $(dim 'All entries are commented out - add repo tokens (PATs) here')"
-    say "  $(dim 'when you need private clone/push (public repos need none).')"
-  fi
-else
-  warn "secrets template not found at $env_src — skipping"
-fi
 
 # ── 5. Next steps ──────────────────────────────────────────────────
 section "Next steps"

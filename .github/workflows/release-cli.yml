@@ -52,9 +52,16 @@ jobs:
     uses: ./.github/workflows/e2e-smoke.yml
     secrets: inherit
 
+  # Gate 3: install.sh itself, executed in containers across the Node
+  # setups builders have. The e2e suite installs with `npm install -g`
+  # directly and therefore never touches the installer, which is how a
+  # silently aborting installer survived 58 releases (#109).
+  installer:
+    uses: ./.github/workflows/installer.yml
+
   publish:
     name: publish @getmonoceros/workbench
-    needs: [precheck, e2e]
+    needs: [precheck, e2e, installer]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
