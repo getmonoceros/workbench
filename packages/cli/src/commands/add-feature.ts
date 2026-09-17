@@ -24,6 +24,13 @@ export const addFeatureCommand = defineCommand({
         'Feature to add. Either a Monoceros catalog short-name (e.g. `atlassian`, `atlassian/twg`, `claude` — see `monoceros list-components`) or a full OCI feature ref (e.g. `ghcr.io/devcontainers/features/docker-in-docker:2`). The short-name brings its catalog-defined default options; `-- key=value` overrides them.',
       required: true,
     },
+    yes: {
+      type: 'boolean',
+      alias: 'y',
+      description:
+        'Do not ask for the credentials this component needs; leave the keys blank in the env file for later. Implied when stdin or stdout is not a terminal.',
+      required: false,
+    },
   },
   async run({ args }) {
     let options: FeatureOptions;
@@ -35,6 +42,7 @@ export const addFeatureCommand = defineCommand({
     }
     try {
       await runAddFeature({
+        ...(args.yes ? { yes: true } : {}),
         name: args.name,
         ref: args.ref,
         options,

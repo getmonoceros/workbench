@@ -2,7 +2,10 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { renderCompletionScript } from '../src/commands/completion.js';
+import {
+  renderCompletionScript,
+  renderPwshScript,
+} from '../src/commands/completion.js';
 import { main } from '../src/main.js';
 import {
   resolveCompletions,
@@ -107,6 +110,31 @@ describe('renderCompletionScript', () => {
 
 // ─── PowerShell static model ──────────────────────────────────────
 
+describe('the pwsh script', () => {
+  it('has a resolver branch for every dynamic kind the model emits', async () => {
+    const [script, model] = await Promise.all([
+      renderPwshScript(),
+      buildPwshCompletionModel(),
+    ]);
+    const kinds = new Set<string>();
+    for (const spec of Object.values(model.specs)) {
+      for (const p of spec.positionals) if ('kind' in p) kinds.add(p.kind);
+      for (const f of Object.values(spec.flags)) {
+        if (f.value && 'kind' in f.value) kinds.add(f.value.kind);
+      }
+    }
+    expect(kinds.size).toBeGreaterThan(0);
+    for (const kind of kinds) {
+      // A kind with no branch here means Tab silently returns nothing on
+      // Windows while bash and zsh keep working, which is the failure this
+      // whole model is built to avoid.
+      expect(script, `no pwsh branch for kind '${kind}'`).toContain(
+        `'${kind}'`,
+      );
+    }
+  });
+});
+
 describe('buildPwshCompletionModel', () => {
   it('lists every command and gives each a spec', async () => {
     const model = await buildPwshCompletionModel();
@@ -131,6 +159,17 @@ describe('buildPwshCompletionModel', () => {
     expect(
       featFlag.value && 'values' in featFlag.value && featFlag.value.values,
     ).toContain('claude');
+
+    // Hybrid flag value: the shipped template names bake in, and the kind
+    // tells the script to add whatever sits in the builder's own template dir.
+    // Both halves have to survive, or Windows loses one set or the other.
+    const tplFlag = model.specs['init']!.flags['--template']!;
+    expect(
+      tplFlag.value && 'values' in tplFlag.value && tplFlag.value.values,
+    ).toContain('discovery-atlassian');
+    expect(tplFlag.value && 'kind' in tplFlag.value && tplFlag.value.kind).toBe(
+      'workbenchTemplate',
+    );
 
     // Dynamic positional: container name is a kind, not baked values.
     expect(model.specs['apply']!.positionals[0]).toEqual({
@@ -730,5 +769,16 @@ describe('resolveCompletions', () => {
       });
       expect(r).toContain('rovodev=');
     });
+  });
+
+  it('suggests --template and --yes on init, and completes the template names', async () => {
+    const flagLine = 'monoceros init acme --';
+    const flags = await resolveCompletions(flagLine, flagLine.length);
+    expect(flags).toContain('--template=');
+    expect(flags).toContain('--yes');
+
+    const valueLine = 'monoceros init acme --template=';
+    const values = await resolveCompletions(valueLine, valueLine.length);
+    expect(values).toContain('--template=discovery-atlassian');
   });
 });

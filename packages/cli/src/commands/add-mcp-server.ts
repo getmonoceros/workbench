@@ -25,6 +25,13 @@ export const addMcpServerCommand = defineCommand({
         'Catalog connector to register (e.g. `context7` — see `monoceros list-components`). Its credential options are seeded into `<name>.env` as `${VAR}` placeholders for you to fill; `-- key=value` sets a value directly instead.',
       required: true,
     },
+    yes: {
+      type: 'boolean',
+      alias: 'y',
+      description:
+        'Do not ask for the credentials this component needs; leave the keys blank in the env file for later. Implied when stdin or stdout is not a terminal.',
+      required: false,
+    },
   },
   async run({ args }) {
     let options: FeatureOptions;
@@ -36,6 +43,7 @@ export const addMcpServerCommand = defineCommand({
     }
     try {
       await runAddMcpServer({
+        ...(args.yes ? { yes: true } : {}),
         name: args.name,
         connector: args.connector,
         options,

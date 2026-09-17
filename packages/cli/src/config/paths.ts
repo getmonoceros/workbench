@@ -158,7 +158,30 @@ export function componentsRootDir(): string {
   return path.join(workbenchRoot(), 'bundled-components');
 }
 
+/**
+ * `templates/workbenches/` — the workbench templates `monoceros init
+ * --template=<name>` starts from. One yml per template, shipped in the npm
+ * tarball (package.json `files` carries `templates`), so unlike the component
+ * descriptors there is no checkout-vs-bundle split: the package root always
+ * holds them.
+ */
+export function workbenchTemplatesDir(): string {
+  return path.join(workbenchRoot(), 'templates', 'workbenches');
+}
+
 // ─── User-home paths (configs, containers, global config) ────────
+
+/**
+ * `<MONOCEROS_HOME>/templates/workbenches/` — the builder's own workbench
+ * templates. Searched before the ones shipped with the CLI, so a template put
+ * here under a shipped name replaces it rather than colliding with it. Plural,
+ * matching `container-configs/` and the bundled directory.
+ */
+export function userWorkbenchTemplatesDir(
+  home: string = monocerosHome(),
+): string {
+  return path.join(home, 'templates', 'workbenches');
+}
 
 export function containerConfigsDir(home: string = monocerosHome()): string {
   return path.join(home, 'container-configs');

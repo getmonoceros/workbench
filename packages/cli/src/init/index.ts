@@ -5,7 +5,9 @@ import {
   containerConfigPath,
   containerConfigsDir,
   containerEnvPath,
+  globalEnvPath,
   monocerosHome as defaultMonocerosHome,
+  prettyPath,
   componentsRootDir,
 } from '../config/paths.js';
 import {
@@ -13,7 +15,16 @@ import {
   ensureEnvVars,
   GIT_IDENTITY_VAR,
 } from '../config/env-file.js';
-import { featureOptionHints } from './feature-doc.js';
+import { readConfig } from '../config/io.js';
+import {
+  runAddAptPackages,
+  runAddFeature,
+  runAddLanguage,
+  runAddMcpServer,
+  runAddPort,
+  runAddRepo,
+  runAddService,
+} from '../modify/index.js';
 import {
   KNOWN_PROVIDER_HOSTS,
   PROVIDER_FEATURE_SELECTOR,
@@ -39,6 +50,12 @@ import {
   type RenderableMcp,
 } from './generator.js';
 import { loadFeatureManifestSummary } from './manifest.js';
+import { renderWorkbenchTemplate } from './templates.js';
+import {
+  collectEnvPromptCandidates,
+  promptAndWriteEnvValues,
+  shouldPromptForEnv,
+} from './env-prompt.js';
 import {
   curatedServiceEnvDefaults,
   deriveServiceName,
@@ -114,6 +131,33 @@ export interface RunInitOptions {
    * usage error before the yml is written.
    */
   withPorts?: number[];
+  /**
+   * Workbench template to start from (`--template=discovery-atlassian`). The
+   * template is a prepared yml, so it carries what the `--with-*` flags
+   * cannot say: a feature's nested `plugins:` block and its `surface: yml`
+   * options. It is written first and the `--with-*` entries are added on top,
+   * under the same rules an `add-*` would follow.
+   */
+  template?: string;
+  /**
+   * Skip the prompt for env-surfaced feature options and leave the keys
+   * blank (`--yes`). Also implied by a non-TTY stdin or stdout.
+   */
+  yes?: boolean;
+  /**
+   * Override of the dir holding the SHIPPED workbench templates. Tests inject
+   * one. The builder's own dir is derived from `monocerosHome`, so a test that
+   * sets both gets the real two-place lookup.
+   */
+  templatesDir?: string;
+  /** Force the env prompt on or off, bypassing the TTY check. Tests only. */
+  promptEnv?: boolean;
+  /** Injected answer source for the env prompt. Tests only. */
+  askEnvValue?: (candidate: {
+    envVar: string;
+    feature: string;
+    description: string;
+  }) => Promise<string | undefined>;
   /** Override of the CLI-bundle root that holds `templates/components/`. */
   workbenchRoot?: string;
   /** Override of the user-data home that owns `container-configs/`. */
@@ -276,11 +320,37 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   // builder actually asked for (--with-* entries, repos, ports). No
   // commented-out catalog dump; `monoceros list-components` +
   // add-feature/add-service/add-repo are how you discover and add more.
-  const text = generateComposedYml(opts.name, composed, lookup, repos, ports);
+  const text = opts.template
+    ? await renderWorkbenchTemplate(opts.template, opts.name, {
+        monocerosHome: home,
+        ...(opts.templatesDir ? { bundledDir: opts.templatesDir } : {}),
+      })
+    : generateComposedYml(opts.name, composed, lookup, repos, ports);
 
   await fs.mkdir(containerConfigsDir(home), { recursive: true });
   await ensureEnvGitignored(containerConfigsDir(home));
   await fs.writeFile(dest, text, 'utf8');
+
+  // A template is a whole yml, so the `--with-*` entries cannot be composed
+  // into it — they are added to the written file the way `monoceros add-*`
+  // would, which is also where their rules come from: a component already in
+  // the template stays as the template set it, and a conflicting one is the
+  // same error it is on the command line.
+  if (opts.template) {
+    // A rejected `--with-*` entry must not leave the half-written config
+    // behind: the builder would fix their command line and hit "Config
+    // already exists" for a file they never got to keep.
+    const envExisted = existsSync(containerEnvPath(opts.name, home));
+    try {
+      await applyWithFlagsToTemplate(opts, home);
+    } catch (err) {
+      await fs.rm(dest, { force: true });
+      if (!envExisted) {
+        await fs.rm(containerEnvPath(opts.name, home), { force: true });
+      }
+      throw err;
+    }
+  }
 
   // Scaffold the gitignored `<name>.env`: create it with the header
   // stub, then seed the `${VAR}` references the composed yml carries —
@@ -292,16 +362,19 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   // (unlikely) key collision.
   const envPath = containerEnvPath(opts.name, home);
   const seedVars: Record<string, string> = {};
-  for (const f of composed.features) {
-    for (const h of featureOptionHints(
-      lookup(f.ref),
-      f.ref,
-      Object.keys(f.options ?? {}),
-    )) {
-      if (!(h.envVar in seedVars)) seedVars[h.envVar] = '';
-    }
+  // Feature credentials come off the FINISHED yml rather than the in-memory
+  // composition, so one pass covers a template, the `--with-*` flags, and the
+  // two combined: by now they are all just entries in the same file. These are
+  // also the values the prompt below asks for, so the keys exist either way.
+  const finalConfig = await readConfig(dest);
+  const envCandidates = collectEnvPromptCandidates(
+    finalConfig.config.features ?? [],
+    lookup,
+  );
+  for (const candidate of envCandidates) {
+    if (!(candidate.envVar in seedVars)) seedVars[candidate.envVar] = '';
   }
-  for (const svc of composed.services) {
+  for (const svc of opts.template ? [] : composed.services) {
     if (svc.kind === 'curated') {
       Object.assign(seedVars, curatedServiceEnvDefaults(svc.name));
     }
@@ -310,7 +383,7 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   // politeness: apply refuses a connector whose credential resolves empty
   // rather than registering a server that fails on first use, so the key has
   // to be waiting in the env file.
-  for (const server of composed.mcpServers) {
+  for (const server of opts.template ? [] : composed.mcpServers) {
     for (const value of Object.values(server.options)) {
       if (typeof value !== 'string') continue;
       const match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
@@ -326,7 +399,28 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     seedVars[GIT_IDENTITY_VAR.name] = '';
     seedVars[GIT_IDENTITY_VAR.email] = '';
   }
-  await ensureEnvVars(envPath, opts.name, seedVars);
+  const seeded = await ensureEnvVars(envPath, opts.name, seedVars);
+
+  // Ask for the env-surfaced options the finished yml references. Reading the
+  // written file rather than the in-memory `composed` is what makes one code
+  // path cover a template, the `--with-*` flags, and the two combined: by now
+  // they are all just entries in the same file. Seeding runs first, so every
+  // key is present and the answers only fill in the blanks.
+  // Only the keys this run added: an env file carried over by `restore`
+  // already holds the builder's values, and asking again would be asking them
+  // to retype what is sitting in the file.
+  await promptAndWriteEnvValues(
+    envCandidates.filter((c) => seeded.added.includes(c.envVar)),
+    envPath,
+    opts.name,
+    {
+      interactive: opts.promptEnv ?? shouldPromptForEnv(opts.yes),
+      globalEnvPath: prettyPath(globalEnvPath(home)),
+      containerEnvPath: prettyPath(envPath),
+      ...(opts.askEnvValue ? { ask: opts.askEnvValue } : {}),
+      output: (line) => logger.info(line),
+    },
+  );
 
   // Paths relative to MONOCEROS_HOME keep the line readable (the dev
   // .local home is deep under the project root).
@@ -338,6 +432,52 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   );
 
   return { configPath: dest };
+}
+
+// ───── Template mode ──────────────────────────────────────────────
+
+/**
+ * Apply the `--with-*` entries to a config that came from a template.
+ *
+ * Each category goes through the very `runAdd*` the matching `monoceros
+ * add-*` command uses, in the order the flags are documented in. That is the
+ * whole point of doing it this way: there is no second merge implementation
+ * to keep in step, so a component the template already carries behaves
+ * exactly as it does when you add it by hand afterwards.
+ */
+async function applyWithFlagsToTemplate(
+  opts: RunInitOptions,
+  home: string,
+): Promise<void> {
+  const common = { name: opts.name, monocerosHome: home };
+  // Silent: init reports what it wrote at the end, and an `add-*` line per
+  // flag in between would bury it.
+  const quiet = {
+    logger: { info: () => {}, success: () => {}, warn: () => {} },
+  };
+  for (const language of opts.languages ?? []) {
+    await runAddLanguage({ ...common, ...quiet, language });
+  }
+  for (const service of opts.services ?? []) {
+    await runAddService({ ...common, ...quiet, service });
+  }
+  for (const ref of opts.features ?? []) {
+    await runAddFeature({ ...common, ...quiet, ref });
+  }
+  for (const connector of opts.mcpServers ?? []) {
+    await runAddMcpServer({ ...common, ...quiet, connector });
+  }
+  const aptPackages = opts.aptPackages ?? [];
+  if (aptPackages.length > 0) {
+    await runAddAptPackages({ ...common, ...quiet, packages: aptPackages });
+  }
+  for (const url of opts.withRepo ?? []) {
+    await runAddRepo({ ...common, ...quiet, url });
+  }
+  const ports = opts.withPorts ?? [];
+  if (ports.length > 0) {
+    await runAddPort({ ...common, ...quiet, ports });
+  }
 }
 
 // ───── Composed-mode input resolution ─────────────────────────────

@@ -107,7 +107,11 @@ function renderZshScript(): string {
  * (the symlink the Windows installer creates into the WSL distro), so
  * they work with the container stopped and cost only a directory scan.
  */
-async function renderPwshScript(): Promise<string> {
+/**
+ * Exported for the test that checks every dynamic value kind has a branch
+ * here. A kind without one silently loses completion on Windows only.
+ */
+export async function renderPwshScript(): Promise<string> {
   const model = await buildPwshCompletionModel();
   const json = JSON.stringify(model);
   return `# PowerShell completion for monoceros (self-contained).
@@ -192,6 +196,18 @@ function __Monoceros_Apps($name) {
   @($acc | Sort-Object)
 }
 
+# Workbench templates the builder put in MONOCEROS_HOME. Merged with the names
+# baked into this script, which are the ones shipped with the CLI.
+function __Monoceros_Templates($bundled) {
+  $dir = Join-Path (Join-Path (__Monoceros_Home) 'templates') 'workbenches'
+  $own = @()
+  if (Test-Path -LiteralPath $dir) {
+    $own = @(Get-ChildItem -LiteralPath $dir -Filter '*.yml' -File -ErrorAction SilentlyContinue |
+      ForEach-Object { $_.BaseName })
+  }
+  @(@($bundled) + $own | Where-Object { $_ } | Sort-Object -Unique)
+}
+
 function __Monoceros_Targets($name, $app) {
   if (-not $name -or -not $app) { return @() }
   $appPath = $app -replace '/', '\\'
@@ -218,7 +234,9 @@ function __Monoceros_Positionals($argTokens) {
 # dynamic) to its candidate list.
 function __Monoceros_Values($desc, $argTokens) {
   if (-not $desc) { return @() }
-  if ($null -ne $desc.values) { return @($desc.values) }
+  # A descriptor with both is hybrid: the kind resolver takes the baked values
+  # and adds to them. Values alone stay a plain static list.
+  if ($null -ne $desc.values -and -not $desc.kind) { return @($desc.values) }
   if ($desc.kind) {
     $pos = __Monoceros_Positionals $argTokens
     $name = if ($pos.Count -gt 0) { $pos[0] } else { $null }
@@ -229,6 +247,7 @@ function __Monoceros_Values($desc, $argTokens) {
       'appOrService'  { return (__Monoceros_Apps $name) }
       'runInDir'      { return (__Monoceros_WorkspaceDirs $name) }
       'target'        { return (__Monoceros_Targets $name $app) }
+      'workbenchTemplate' { return (__Monoceros_Templates $desc.values) }
     }
   }
   return @()

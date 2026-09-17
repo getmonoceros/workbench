@@ -6,6 +6,7 @@ import { solutionConfigToCreateOptions } from '../config/transform.js';
 import { listApps, readLaunchConfig } from '../config/launch-config.js';
 import { loadComponentCatalog } from '../init/components.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
+import { listWorkbenchTemplates } from '../init/templates.js';
 import { knownLanguages, knownServices } from '../create/catalog.js';
 import { PROVIDER_VALUES, REGEX } from '../config/schema.js';
 import { OPEN_TOOLS } from '../open/index.js';
@@ -163,9 +164,19 @@ export type PwshValueKind =
   | 'app'
   | 'appOrService'
   | 'runInDir'
-  | 'target';
+  | 'target'
+  | 'workbenchTemplate';
 
-type PwshMeta = { static: true } | { static: false; kind: PwshValueKind };
+type PwshMeta =
+  | { static: true }
+  | { static: false; kind: PwshValueKind }
+  /**
+   * Both: the values known at build time are baked in AND the kind is
+   * resolved host-side, with the pwsh script merging the two. Workbench
+   * templates are the case: the shipped ones ship with the CLI, the
+   * builder's own sit in MONOCEROS_HOME and cannot be known now.
+   */
+  | { static: true; kind: PwshValueKind };
 const pwshMeta = new WeakMap<object, PwshMeta>();
 
 /** Tag a source whose values can be baked into the pwsh script now. */
@@ -175,6 +186,12 @@ function staticSource(fn: ValueSource): ValueSource {
 }
 
 /** Tag a source the pwsh script resolves from the filesystem at Tab time. */
+/** Tag a source whose baked values are only part of the answer (see PwshMeta). */
+function hybridSource(kind: PwshValueKind, fn: ValueSource): ValueSource {
+  pwshMeta.set(fn, { static: true, kind });
+  return fn;
+}
+
 function dynamicSource(kind: PwshValueKind, fn: ValueSource): ValueSource {
   pwshMeta.set(fn, { static: false, kind });
   return fn;
@@ -751,6 +768,13 @@ const mcpValues = staticSource(() => listMcpServers());
 const providerValues = staticSource(() => listProviders());
 const shellValues = staticSource(() => listShellNames());
 const openToolValues = staticSource(() => [...OPEN_TOOLS]);
+// Workbench templates ship with the CLI, so the names are known at build
+// time and bake into the PowerShell script like every other static source.
+const templateValues = hybridSource('workbenchTemplate', (ctx) =>
+  listWorkbenchTemplates(
+    ctx.opts.monocerosHome ? { monocerosHome: ctx.opts.monocerosHome } : {},
+  ),
+);
 
 const COMMAND_SPECS: Record<string, CommandSpec> = {
   init: {
@@ -760,6 +784,8 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     // flag suggestions.
     positionalCount: 1,
     flags: {
+      '--template': { type: 'value', values: templateValues },
+      '--yes': { type: 'boolean', aliases: ['-y'] },
       '--with-languages': { type: 'value', values: languageValues },
       '--with-features': { type: 'value', values: featureValues },
       '--with-services': { type: 'value', values: serviceValues },
@@ -834,6 +860,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   },
   'add-feature': {
     positionals: [containerName, featureValues],
+    flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
     innerArgs: (ctx) => listFeatureOptionInnerArgs(ctx),
   },
   'add-mcp-server': {
@@ -841,6 +868,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     // are the connector's own options, which have no manifest to read (a
     // connector publishes no devcontainer feature), so no suggestions there.
     positionals: [containerName, mcpValues],
+    flags: { '--yes': { type: 'boolean', aliases: ['-y'] } },
     innerArgs: () => [],
   },
   'add-from-url': {
@@ -929,6 +957,7 @@ export const COMPLETION_COMMAND_SPEC_KEYS = Object.keys(COMMAND_SPECS);
 export type PwshValueDesc =
   | { values: string[] }
   | { kind: PwshValueKind }
+  | { values: string[]; kind: PwshValueKind }
   | Record<string, never>;
 
 export interface PwshFlagDesc {
@@ -959,8 +988,11 @@ async function describeSource(
   // Untagged sources (freeform value flags, the `upgrade` version slot,
   // `() => []` inner-args) get no pwsh suggestions.
   if (!meta) return {};
-  if (meta.static) return { values: await src(EMPTY_CTX) };
-  return { kind: meta.kind };
+  if (!meta.static) return { kind: meta.kind };
+  const values = await src(EMPTY_CTX);
+  // A hybrid source carries both: the script merges the baked names with
+  // whatever the builder's own template dir holds at completion time.
+  return 'kind' in meta ? { values, kind: meta.kind } : { values };
 }
 
 /**

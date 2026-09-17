@@ -1,0 +1,67 @@
+# The workbench `__MONOCEROS_NAME__`, from the `discovery-atlassian` template.
+# This file is the source of truth; the container is built from it. Change it
+# here or with `monoceros add-*`, then run `monoceros apply __MONOCEROS_NAME__`.
+# https://getmonoceros.build/docs/concepts/configuration/
+#
+# What is in here: Claude Code carrying the discovery skills, the three build
+# roles, and the Atlassian CLI the roles read Jira and Confluence with. That is
+# enough to run the discovery from an idea to a cut backlog. The stack the
+# product itself needs (languages, services, repositories) is not here yet: the
+# technical brief decides it, and `monoceros add-*` puts it in afterwards.
+# https://getmonoceros.build/from-idea-to-code/
+
+schemaVersion: 1
+name: __MONOCEROS_NAME__
+# Pinned runtime base image, reused on every apply (never auto-bumped).
+# `monoceros upgrade __MONOCEROS_NAME__` refreshes the tooling and moves this to
+# the latest runtime when a newer one exists.
+runtimeVersion: __MONOCEROS_RUNTIME_VERSION__
+
+# Full catalog and every option: `monoceros list-components`, or the feature
+# page linked above each entry.
+features:
+  # Claude Code, carrying the discovery plugin: the skills that work an idea
+  # into a brief, personas and journeys, a domain model, a technical frame and
+  # a cut backlog, written to Confluence and Jira.
+  # https://getmonoceros.build/docs/features/claude/
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
+    options:
+      permissionMode: auto
+      apiKey: ${CLAUDE_CODE_API_KEY}
+    plugins:
+      - url: https://github.com/getmonoceros/monoceros-discovery.git
+        enable:
+          - discovery-atlassian
+
+  # The three roles that build a story: the planner writes the plan, the
+  # implementer executes it, the reviewer checks the result against it.
+  #
+  # The models below are a starting point, not a rule. Planning and reviewing
+  # carry the thinking, so they get the stronger model; implementing follows a
+  # plan that already names the files and the acceptance command, so it runs
+  # cheaper. Change them here, or empty a value to let that role run on
+  # whatever the session runs on.
+  # https://getmonoceros.build/docs/features/claude-code-roles/
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code-roles:1
+    options:
+      plannerModel: opus
+      plannerEffort: high
+      implementModel: sonnet
+      implementEffort: high
+      reviewModel: opus
+      reviewEffort: high
+
+  # Atlassian: the `twg` CLI on its own, which is how the roles read and write
+  # Jira and Confluence from in here. Rovo Dev and Forge are deliberately left
+  # off; add them with
+  # `monoceros add-feature __MONOCEROS_NAME__ atlassian/rovodev` if you want
+  # them.
+  # https://getmonoceros.build/docs/features/atlassian/
+  - ref: ghcr.io/getmonoceros/monoceros-features/atlassian:1
+    options:
+      rovodev: false
+      twg: true
+      forge: false
+      instance: ${ATLASSIAN_INSTANCE}
+      email: ${ATLASSIAN_EMAIL}
+      apiToken: ${ATLASSIAN_API_TOKEN}

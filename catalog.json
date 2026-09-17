@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "cliVersion": "1.58.0",
+  "cliVersion": "1.59.0",
   "languages": [
     {
       "name": "dotnet",
@@ -303,7 +303,7 @@
           "type": "string",
           "surface": "env",
           "default": "",
-          "description": "Atlassian API token for twg and Forge (id.atlassian.com, Security, API tokens). Rovo Dev does not accept this one, see `rovodevToken`."
+          "description": "Atlassian API token for twg and Forge (id.atlassian.com, Security, API tokens)."
         },
         {
           "key": "bitbucketToken",

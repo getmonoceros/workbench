@@ -9,7 +9,9 @@ import {
   containerConfigsDir,
   containerDir,
   containerEnvPath,
+  globalEnvPath,
   monocerosHome as defaultMonocerosHome,
+  prettyPath,
 } from '../config/paths.js';
 import {
   ensureEnvGitignored,
@@ -23,6 +25,11 @@ import {
   FEATURE_HEADER_WIDTH,
 } from '../init/feature-doc.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
+import {
+  envCandidatesForVars,
+  promptAndWriteEnvValues,
+  shouldPromptForEnv,
+} from '../init/env-prompt.js';
 import {
   buildLanguageHeaderLines,
   buildServiceHeaderLines,
@@ -150,6 +157,20 @@ export interface ModifyOptions {
   output?: (line: string) => void;
   /** Override the resolved MONOCEROS_HOME. Tests inject a tmpdir. */
   monocerosHome?: string;
+  /**
+   * Skip the prompt for the credentials a newly added component needs, leaving
+   * the keys blank in `<name>.env` (`--yes`). A non-TTY stdin or stdout does
+   * the same, so a scripted `add-*` never stops on a question.
+   */
+  yes?: boolean;
+  /** Force the credential prompt on or off, bypassing the TTY check. Tests. */
+  promptEnv?: boolean;
+  /** Injected answer source for the credential prompt. Tests. */
+  askEnvValue?: (candidate: {
+    envVar: string;
+    feature: string;
+    description: string;
+  }) => Promise<string | undefined>;
 }
 
 export interface AddLanguageInput extends ModifyOptions {
@@ -903,9 +924,22 @@ export async function runAddFeature(
         vars,
       );
       if (seeded.added.length > 0) {
-        (input.logger ?? defaultLogger()).info(
-          `Seeded ${seeded.added.join(', ')} into ${input.name}.env — fill in the values.`,
+        const logger = input.logger ?? defaultLogger();
+        const written = await promptForNewEnvVars(
+          input,
+          seeded.added,
+          summary?.name ?? resolved.ref,
+          (envVar) =>
+            featureOptionHints(summary, resolved.ref)
+              .filter((h) => h.envVar === envVar)
+              .map((h) => summary?.optionDescriptions[h.key] ?? '')[0] ?? '',
         );
+        const left = seeded.added.filter((v) => !written.includes(v));
+        if (left.length > 0) {
+          logger.info(
+            `Seeded ${left.join(', ')} into ${input.name}.env, fill in the values.`,
+          );
+        }
       }
     }
   }
@@ -960,13 +994,56 @@ export async function runAddMcpServer(
         vars,
       );
       if (seeded.added.length > 0) {
-        (input.logger ?? defaultLogger()).info(
-          `Seeded ${seeded.added.join(', ')} into ${input.name}.env — fill in the values before the next apply.`,
+        const logger = input.logger ?? defaultLogger();
+        const written = await promptForNewEnvVars(
+          input,
+          seeded.added,
+          descriptor.displayName,
+          (envVar) =>
+            descriptor.options[varOptionKey(descriptor, envVar)]?.description ??
+            '',
         );
+        const left = seeded.added.filter((v) => !written.includes(v));
+        if (left.length > 0) {
+          logger.info(
+            `Seeded ${left.join(', ')} into ${input.name}.env, fill in the values before the next apply.`,
+          );
+        }
       }
     }
   }
   return result;
+}
+
+/**
+ * Ask for the credentials an `add-*` just seeded, and write the answers.
+ *
+ * The same prompt `init` runs, for the same reason: a feature added three
+ * commands later needs its token no less than one that arrived with the first
+ * config, and a blank key the builder never sees becomes an apply that fails
+ * on the first call inside the container. Returns the keys that got a value,
+ * so the caller only mentions the ones still empty.
+ */
+async function promptForNewEnvVars(
+  input: ModifyOptions,
+  vars: readonly string[],
+  featureName: string,
+  describe: (envVar: string) => string,
+): Promise<string[]> {
+  const home = input.monocerosHome ?? defaultMonocerosHome();
+  const envPath = containerEnvPath(input.name, home);
+  return promptAndWriteEnvValues(
+    envCandidatesForVars(vars, featureName, describe),
+    envPath,
+    input.name,
+    {
+      interactive: input.promptEnv ?? shouldPromptForEnv(input.yes),
+      globalEnvPath: prettyPath(globalEnvPath(home)),
+      containerEnvPath: prettyPath(envPath),
+      ...(input.askEnvValue ? { ask: input.askEnvValue } : {}),
+      output: (line) => (input.logger ?? defaultLogger()).info(line),
+    },
+  );
 }
 
 /** The option key an mcp connector's derived env var came from. */

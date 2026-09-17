@@ -520,6 +520,81 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toContain('- https://example.com/install');
   });
 
+  it('runAddFeature asks for the credentials it just seeded and writes them', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const asked: string[] = [];
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      monocerosHome: home,
+      promptEnv: true,
+      askEnvValue: async (c) => {
+        asked.push(c.envVar);
+        return c.envVar === 'ATLASSIAN_INSTANCE' ? 'acme.atlassian.net' : '';
+      },
+    });
+    // Same prompt as init, for the same reason: a key nobody sees becomes an
+    // apply that fails on the first call inside the container.
+    expect(asked).toContain('ATLASSIAN_INSTANCE');
+    const env = await fs.readFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      'utf8',
+    );
+    expect(env).toContain('ATLASSIAN_INSTANCE=acme.atlassian.net');
+    expect(env).toMatch(/ATLASSIAN_EMAIL=\s*$/m);
+  });
+
+  it('runAddFeature asks nothing under --yes and still seeds the blank keys', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    let asked = 0;
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian',
+      monocerosHome: home,
+      yes: true,
+      askEnvValue: async () => {
+        asked += 1;
+        return 'x';
+      },
+    });
+    expect(asked).toBe(0);
+    const env = await fs.readFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      'utf8',
+    );
+    expect(env).toContain('ATLASSIAN_INSTANCE=');
+  });
+
+  it('runAddFeature does not ask again for a key the builder already filled', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const first = { ...baseOpts, name: 'demo', ref: 'atlassian' } as const;
+    await runAddFeature({
+      ...first,
+      monocerosHome: home,
+      promptEnv: true,
+      askEnvValue: async () => 'acme.atlassian.net',
+    });
+    const asked: string[] = [];
+    await runAddFeature({
+      ...first,
+      monocerosHome: home,
+      promptEnv: true,
+      askEnvValue: async (c) => {
+        asked.push(c.envVar);
+        return 'second';
+      },
+    });
+    // Nothing new was seeded, so there is nothing to ask about.
+    expect(asked).toEqual([]);
+    const env = await fs.readFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      'utf8',
+    );
+    expect(env).toContain('ATLASSIAN_INSTANCE=acme.atlassian.net');
+  });
+
   it('runAddFeature ships claude with the same commented plugins example as init', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({

@@ -7,7 +7,7 @@ export const initCommand = defineCommand({
     name: 'init',
     group: 'lifecycle',
     description:
-      'Create a fresh container-config yml at <MONOCEROS_HOME>/container-configs/<name>.yml. Without any --with-* flag, the file is a documented default with every component commented out. With --with-languages / --with-features / --with-services / --with-mcp-servers / --with-apt-packages, the named pieces are composed into an active, immediately-applyable yml. Then run `monoceros apply <name>`.',
+      'Create a fresh container-config yml at <MONOCEROS_HOME>/container-configs/<name>.yml. Without any --with-* flag, the file is a documented default with every component commented out. With --with-languages / --with-features / --with-services / --with-mcp-servers / --with-apt-packages, the named pieces are composed into an active, immediately-applyable yml. --template=<name> starts from a prepared yml and takes the --with-* entries on top. Then run `monoceros apply <name>`.',
   },
   args: {
     name: {
@@ -15,6 +15,19 @@ export const initCommand = defineCommand({
       description:
         'Config name. The yml lands at <MONOCEROS_HOME>/container-configs/<name>.yml and becomes the source-of-truth for `monoceros apply <name>`.',
       required: true,
+    },
+    template: {
+      type: 'string',
+      description:
+        "Start from a prepared workbench yml instead of an empty one, e.g. --template=discovery-atlassian. A template carries what the --with-* flags cannot: a feature's nested `plugins:` block and its yml-level options. Any --with-* entries are added on top, under the same rules as `monoceros add-*`. Names: `monoceros init --template=` + Tab, or see the docs.",
+      required: false,
+    },
+    yes: {
+      type: 'boolean',
+      alias: 'y',
+      description:
+        'Do not ask for the feature credentials the yml references; leave the keys blank in the env file for later. Implied when stdin or stdout is not a terminal.',
+      required: false,
     },
     'with-languages': {
       type: 'string',
@@ -70,6 +83,8 @@ export const initCommand = defineCommand({
       const ports = collectWithPortsList(args['with-ports'], rawArgs);
       await runInit({
         name: args.name,
+        ...(args.template ? { template: args.template } : {}),
+        ...(args.yes ? { yes: true } : {}),
         ...(languages.length > 0 ? { languages } : {}),
         ...(features.length > 0 ? { features } : {}),
         ...(services.length > 0 ? { services } : {}),
