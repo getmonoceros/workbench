@@ -380,6 +380,34 @@ describe('init env prompt', () => {
     expect(asked).toContain('CLAUDE_CODE_API_KEY');
   });
 
+  it('asks for a credential an added component brought in, in the same block', async () => {
+    const asked: string[] = [];
+    await runInit({
+      name: 'acme',
+      template: 'demo',
+      // A repo pulls in the provider's CLI feature, which has a token of its
+      // own. That `add-*` seeds the key but must not ask for it itself: its
+      // question would land before init has said what it is asking for, with
+      // the rest arriving afterwards. One block, one order.
+      withRepo: ['https://github.com/acme/app.git'],
+      monocerosHome,
+      templatesDir,
+      promptEnv: true,
+      askEnvValue: async (c) => {
+        asked.push(c.envVar);
+        return c.envVar === 'GITHUB_API_TOKEN' ? 'ghp_test' : '';
+      },
+      logger: silentLogger,
+    });
+    expect(asked).toContain('CLAUDE_CODE_API_KEY');
+    expect(asked).toContain('GITHUB_API_TOKEN');
+    const env = await readFile(
+      path.join(monocerosHome, 'container-configs', 'acme.env'),
+      'utf8',
+    );
+    expect(env).toContain('GITHUB_API_TOKEN=ghp_test');
+  });
+
   it('asks nothing under --yes', async () => {
     let asked = 0;
     await runInit({

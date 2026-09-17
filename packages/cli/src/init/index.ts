@@ -13,6 +13,7 @@ import {
 import {
   ensureEnvGitignored,
   ensureEnvVars,
+  readEnvFile,
   GIT_IDENTITY_VAR,
 } from '../config/env-file.js';
 import { readConfig } from '../config/io.js';
@@ -399,18 +400,20 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     seedVars[GIT_IDENTITY_VAR.name] = '';
     seedVars[GIT_IDENTITY_VAR.email] = '';
   }
-  const seeded = await ensureEnvVars(envPath, opts.name, seedVars);
+  await ensureEnvVars(envPath, opts.name, seedVars);
 
   // Ask for the env-surfaced options the finished yml references. Reading the
   // written file rather than the in-memory `composed` is what makes one code
   // path cover a template, the `--with-*` flags, and the two combined: by now
   // they are all just entries in the same file. Seeding runs first, so every
   // key is present and the answers only fill in the blanks.
-  // Only the keys this run added: an env file carried over by `restore`
-  // already holds the builder's values, and asking again would be asking them
-  // to retype what is sitting in the file.
+  // Every candidate whose value is still empty, which is not the same as the
+  // keys this call seeded: an `add-*` run for a `--with-*` entry seeds its own,
+  // and those need asking too. A value already in the file, from `restore` or
+  // from the builder, is left alone and not asked about.
+  const currentEnv = readEnvFile(envPath);
   await promptAndWriteEnvValues(
-    envCandidates.filter((c) => seeded.added.includes(c.envVar)),
+    envCandidates.filter((c) => (currentEnv[c.envVar] ?? '').trim() === ''),
     envPath,
     opts.name,
     {
@@ -450,10 +453,14 @@ async function applyWithFlagsToTemplate(
   home: string,
 ): Promise<void> {
   const common = { name: opts.name, monocerosHome: home };
-  // Silent: init reports what it wrote at the end, and an `add-*` line per
-  // flag in between would bury it.
+  // Silent, and no questions of their own. init asks for every credential in
+  // one block once the file is final: an `add-*` prompting mid-run put the
+  // github token question before init had even said what it was asking for,
+  // with the rest of the questions arriving after. The keys are still seeded,
+  // so the block at the end picks them up.
   const quiet = {
     logger: { info: () => {}, success: () => {}, warn: () => {} },
+    yes: true,
   };
   for (const language of opts.languages ?? []) {
     await runAddLanguage({ ...common, ...quiet, language });
@@ -472,7 +479,21 @@ async function applyWithFlagsToTemplate(
     await runAddAptPackages({ ...common, ...quiet, packages: aptPackages });
   }
   for (const url of opts.withRepo ?? []) {
-    await runAddRepo({ ...common, ...quiet, url });
+    // `containerLookupDocker` finds a RUNNING container to clone into, which
+    // `add-repo` does so the builder need not re-apply. init has no container
+    // to speak of: it just created this config, so anything running under the
+    // same name is an older workbench, and cloning into it is wrong. A lookup
+    // that reports nothing keeps the yml write and skips the clone.
+    await runAddRepo({
+      ...common,
+      ...quiet,
+      url,
+      containerLookupDocker: async () => ({
+        stdout: '',
+        stderr: '',
+        exitCode: 0,
+      }),
+    });
   }
   const ports = opts.withPorts ?? [];
   if (ports.length > 0) {

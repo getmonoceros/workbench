@@ -110,6 +110,15 @@ without a flag of their own.
 
 ## Consequences
 
+- **An `add-*` run for init must not talk to the builder or to Docker.** Both
+  showed up in one command: `--with-repos` pulls in the provider's CLI feature,
+  whose credential question fired before init had said what it was asking for,
+  with the other four questions arriving after the clone; and `add-repo` clones
+  into a running container so the builder need not re-apply, which for init
+  means an older workbench that happens to share the name. So the calls run with
+  `yes: true` and a container lookup that finds nothing. The keys are still
+  seeded, and the block at the end asks about every candidate that is still
+  empty, which is not the same as the keys init itself seeded.
 - **The template is a new place a component can be named.** A component or an
   option renamed or retired has to be fixed here too, because a frozen copy of
   a yml cannot follow the catalog. Two tests stand in for that: one renders the
