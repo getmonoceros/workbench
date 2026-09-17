@@ -126,6 +126,85 @@ describe('init --template', () => {
     expect(text).toContain('discovery-atlassian');
   });
 
+  it('seeds a service the template carries, with its dev defaults', async () => {
+    const userDir = path.join(monocerosHome, 'templates', 'workbenches');
+    await mkdir(userDir, { recursive: true });
+    await writeFile(
+      path.join(userDir, 'withdb.yml'),
+      [
+        'schemaVersion: 1',
+        'name: __MONOCEROS_NAME__',
+        'runtimeVersion: __MONOCEROS_RUNTIME_VERSION__',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '    port: 5432',
+        '    env:',
+        '      POSTGRES_USER: ${POSTGRES_USER}',
+        '      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}',
+        '      POSTGRES_DB: ${POSTGRES_DB}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    await runInit({
+      name: 'acme',
+      template: 'withdb',
+      monocerosHome,
+      templatesDir,
+      yes: true,
+      logger: silentLogger,
+    });
+    const env = await readFile(
+      path.join(monocerosHome, 'container-configs', 'acme.env'),
+      'utf8',
+    );
+    // Working dev credentials, not blank keys: a postgres out of a template
+    // has to come up the same way one added with `--with-services` does.
+    expect(env).toContain('POSTGRES_USER=monoceros');
+    expect(env).toContain('POSTGRES_PASSWORD=monoceros');
+    expect(env).toContain('POSTGRES_DB=monoceros');
+  });
+
+  it('never asks about a service credential, only about feature ones', async () => {
+    const userDir = path.join(monocerosHome, 'templates', 'workbenches');
+    await mkdir(userDir, { recursive: true });
+    await writeFile(
+      path.join(userDir, 'both.yml'),
+      [
+        'schemaVersion: 1',
+        'name: __MONOCEROS_NAME__',
+        'runtimeVersion: __MONOCEROS_RUNTIME_VERSION__',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '    port: 5432',
+        '    env:',
+        '      POSTGRES_USER: ${POSTGRES_USER}',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        '    options:',
+        '      apiKey: ${CLAUDE_CODE_API_KEY}',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const asked: string[] = [];
+    await runInit({
+      name: 'acme',
+      template: 'both',
+      monocerosHome,
+      templatesDir,
+      promptEnv: true,
+      askEnvValue: async (c) => {
+        asked.push(c.envVar);
+        return '';
+      },
+      logger: silentLogger,
+    });
+    expect(asked).toEqual(['CLAUDE_CODE_API_KEY']);
+  });
+
   it('rejects an unknown template and names the ones that exist', async () => {
     await expect(
       runInit({

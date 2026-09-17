@@ -380,6 +380,22 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
       Object.assign(seedVars, curatedServiceEnvDefaults(svc.name));
     }
   }
+  // A template can carry services too, and they are not in `composed`. Read
+  // them off the written file: every `${VAR}` a service references gets a key,
+  // and a curated one brings the dev-defaults it ships with, so a postgres out
+  // of a template comes up with credentials instead of an empty password. Not
+  // prompt candidates: these are working defaults, not secrets only the builder
+  // has, which is why `add-service` does not ask either.
+  if (opts.template) {
+    for (const svc of finalConfig.config.services ?? []) {
+      for (const ref of collectServiceEnvRefs(svc)) {
+        if (!(ref in seedVars)) seedVars[ref] = '';
+      }
+      if (isCuratedService(svc.name)) {
+        Object.assign(seedVars, curatedServiceEnvDefaults(svc.name));
+      }
+    }
+  }
   // MCP server credentials, blank for the builder to fill. Not optional
   // politeness: apply refuses a connector whose credential resolves empty
   // rather than registering a server that fails on first use, so the key has
@@ -435,6 +451,36 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   );
 
   return { configPath: dest };
+}
+
+/**
+ * Every `${VAR}` a service block references, from wherever it sits: `env:`,
+ * the healthcheck, `connectionEnv`. Walking the value tree rather than naming
+ * the fields keeps this right when a service gains one.
+ *
+ * `connectionEnv` templates also carry `${host}` and `${port}`, which apply
+ * substitutes per instance and which are not env keys, so they are skipped.
+ */
+function collectServiceEnvRefs(value: unknown): string[] {
+  const out: string[] = [];
+  const walk = (node: unknown): void => {
+    if (typeof node === 'string') {
+      for (const m of node.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) {
+        const name = m[1]!;
+        if (name !== 'host' && name !== 'port') out.push(name);
+      }
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (node && typeof node === 'object') {
+      for (const item of Object.values(node)) walk(item);
+    }
+  };
+  walk(value);
+  return [...new Set(out)];
 }
 
 // ───── Template mode ──────────────────────────────────────────────
