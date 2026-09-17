@@ -1,0 +1,77 @@
+# The workbench `__MONOCEROS_NAME__`, from the `go-service` template.
+# This file is the source of truth; the container is built from it. Change it
+# here or with `monoceros add-*`, then run `monoceros apply __MONOCEROS_NAME__`.
+# https://getmonoceros.build/docs/concepts/configuration/
+#
+# What is in here: a Go service with Postgres behind it, plus Claude Code.
+# Deliberately small. Add what this service actually needs with
+# `monoceros add-*`, and a repo added with `monoceros add-repo` brings its
+# provider's CLI along.
+# https://getmonoceros.build/docs/guides/templates/
+
+schemaVersion: 1
+name: __MONOCEROS_NAME__
+# Pinned runtime base image, reused on every apply (never auto-bumped).
+# `monoceros upgrade __MONOCEROS_NAME__` refreshes the tooling and moves this to the
+# latest runtime when a newer one exists.
+runtimeVersion: __MONOCEROS_RUNTIME_VERSION__
+
+# Language runtimes installed inside the dev-container. Pick the ones your
+# projects build against. The catalog of available runtimes is shown by
+# `monoceros list-components`.
+languages:
+  # Go: The Go toolchain plus golangci-lint via the upstream devcontainer
+  # feature. Pin a version with `go:<version>`.
+  # https://getmonoceros.build/docs/languages/go/
+  - go:latest
+
+# Sibling containers that run alongside the dev-container (databases,
+# caches, message queues, …). Each service is reachable from inside the
+# dev-container by its name as hostname (e.g. `postgres://postgres:5432`).
+# Activating any service switches the container to docker-compose mode
+# automatically.
+services:
+  # PostgreSQL: Relational database with seeded dev credentials and a
+  # readiness healthcheck. Reachable in-container as host `postgres`.
+  # https://getmonoceros.build/docs/services/postgres/
+  - name: postgres
+    image: postgres:18
+    port: 5432
+    env:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - data:/var/lib/postgresql
+    healthcheck:
+      test:
+        ['CMD', 'pg_isready', '-U', '${POSTGRES_USER}', '-d', '${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    connectionEnv:
+      URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${POSTGRES_DB}'
+      HOST: '${host}'
+      PORT: '${port}'
+      USER: '${POSTGRES_USER}'
+      PASSWORD: '${POSTGRES_PASSWORD}'
+      DB: '${POSTGRES_DB}'
+
+# A Monoceros dev-container is shaped by features, pluggable units that drop
+# tooling (AI assistants, language CLIs, cloud SDKs) into the container and
+# bring their own options. The features active for this container are listed
+# below; adjust their options as needed. Shared credentials used across
+# containers belong in monoceros-config.yml under `defaults.features.<ref>`
+# rather than here. Full catalog: `monoceros list-components`.
+features:
+  # Claude Code: Anthropic's CLI coding assistant. OAuth/subscription login
+  # persists across container rebuilds.
+  # https://getmonoceros.build/docs/features/claude/
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
+    options:
+      permissionMode: auto
+      apiKey: ${CLAUDE_CODE_API_KEY}
+    # plugins:
+    #   - url: https://github.com/acme/claude-plugins.git
+    #     enable:
+    #       - acme-conventions

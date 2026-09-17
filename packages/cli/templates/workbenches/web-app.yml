@@ -1,0 +1,110 @@
+# The workbench `__MONOCEROS_NAME__`, from the `web-app` template.
+# This file is the source of truth; the container is built from it. Change it
+# here or with `monoceros add-*`, then run `monoceros apply __MONOCEROS_NAME__`.
+# https://getmonoceros.build/docs/concepts/configuration/
+#
+# What is in here: a web application with a Node front end, a Java back end,
+# Postgres behind it and Keycloak for the logins, plus Claude Code. Every part
+# is a starting point: swap a language, drop a service, or add your repo with
+# `monoceros add-repo`, which brings its provider's CLI along.
+# https://getmonoceros.build/docs/guides/templates/
+
+schemaVersion: 1
+name: __MONOCEROS_NAME__
+# Pinned runtime base image, reused on every apply (never auto-bumped).
+# `monoceros upgrade __MONOCEROS_NAME__` refreshes the tooling and moves this to the
+# latest runtime when a newer one exists.
+runtimeVersion: __MONOCEROS_RUNTIME_VERSION__
+
+# Language runtimes installed inside the dev-container. Pick the ones your
+# projects build against. The catalog of available runtimes is shown by
+# `monoceros list-components`.
+languages:
+  # Node.js: Built into the runtime image. A bare `node` installs nothing
+  # extra; pin a different major with `node:<version>`.
+  # https://getmonoceros.build/docs/languages/node/
+  - node:22
+
+  # Java: A JDK plus Maven and Gradle by default, where the upstream feature
+  # installs only the JDK, so this is build-ready as it stands. The JDK major
+  # is the `version:` field in the yml (`latest`, 21, 17, 11, 8); on the
+  # command line it is `java:21`.
+  # https://getmonoceros.build/docs/languages/java/
+  - java:
+      version: latest
+      installMaven: true
+      installGradle: true
+
+# Sibling containers that run alongside the dev-container (databases,
+# caches, message queues, …). Each service is reachable from inside the
+# dev-container by its name as hostname (e.g. `postgres://postgres:5432`).
+# Activating any service switches the container to docker-compose mode
+# automatically.
+services:
+  # PostgreSQL: Relational database with seeded dev credentials and a
+  # readiness healthcheck. Reachable in-container as host `postgres`.
+  # https://getmonoceros.build/docs/services/postgres/
+  - name: postgres
+    image: postgres:18
+    port: 5432
+    env:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - data:/var/lib/postgresql
+    healthcheck:
+      test:
+        ['CMD', 'pg_isready', '-U', '${POSTGRES_USER}', '-d', '${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    connectionEnv:
+      URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${POSTGRES_DB}'
+      HOST: '${host}'
+      PORT: '${port}'
+      USER: '${POSTGRES_USER}'
+      PASSWORD: '${POSTGRES_PASSWORD}'
+      DB: '${POSTGRES_DB}'
+
+  # Keycloak: Identity and access management (OAuth2 / OpenID Connect / SAML)
+  # for local dev. Reachable in-container as host `keycloak`. Starts in dev
+  # mode and imports realm JSON from a repo you mount, through the commented
+  # volumes below.
+  # https://getmonoceros.build/docs/services/keycloak/
+  - name: keycloak
+    image: quay.io/keycloak/keycloak:26.7
+    port: 8080
+    httpPort: 8080
+    env:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+    command: start-dev --import-realm --proxy-headers=xforwarded
+    connectionEnv:
+      URL: 'http://${host}:${port}'
+      HOST: '${host}'
+      PORT: '${port}'
+      USER: '${KC_BOOTSTRAP_ADMIN_USERNAME}'
+      PASSWORD: '${KC_BOOTSTRAP_ADMIN_PASSWORD}'
+    # volumes:                   # uncomment + edit to mount your own files
+    #   - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro
+    #   - projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>
+
+# A Monoceros dev-container is shaped by features, pluggable units that drop
+# tooling (AI assistants, language CLIs, cloud SDKs) into the container and
+# bring their own options. The features active for this container are listed
+# below; adjust their options as needed. Shared credentials used across
+# containers belong in monoceros-config.yml under `defaults.features.<ref>`
+# rather than here. Full catalog: `monoceros list-components`.
+features:
+  # Claude Code: Anthropic's CLI coding assistant. OAuth/subscription login
+  # persists across container rebuilds.
+  # https://getmonoceros.build/docs/features/claude/
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
+    options:
+      permissionMode: auto
+      apiKey: ${CLAUDE_CODE_API_KEY}
+    # plugins:
+    #   - url: https://github.com/acme/claude-plugins.git
+    #     enable:
+    #       - acme-conventions

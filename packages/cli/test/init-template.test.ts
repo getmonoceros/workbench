@@ -337,23 +337,39 @@ describe('init --template', () => {
     expect(listWorkbenchTemplates()).toContain('discovery-atlassian');
   });
 
-  it('sets every option the shipped template names, and no option the catalog dropped', async () => {
-    const text = await renderWorkbenchTemplate('discovery-atlassian', 'acme');
-    const { config } = parseConfig(text);
-    // A template is a frozen copy of a yml, so a renamed or retired option
-    // would sit in it unnoticed until an apply rejected it. Check the names
-    // against the live descriptors instead of against a second copy.
-    for (const feature of config.features ?? []) {
-      const summary = loadFeatureManifestSummary(feature.ref);
-      expect(summary, `no descriptor for ${feature.ref}`).toBeDefined();
-      for (const key of Object.keys(feature.options ?? {})) {
-        expect(
-          summary!.optionNames,
-          `${feature.ref} has no option '${key}'`,
-        ).toContain(key);
+  it.each(listWorkbenchTemplates())(
+    'renders the shipped template %s into a config the schema accepts',
+    async (name) => {
+      const { config } = parseConfig(
+        await renderWorkbenchTemplate(name, 'acme'),
+      );
+      expect(config.name).toBe('acme');
+      // The runtime placeholder has to be substituted, or apply pulls an image
+      // tagged with the literal placeholder.
+      expect(config.runtimeVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    },
+  );
+
+  it.each(listWorkbenchTemplates())(
+    'names only options the catalog still has, in %s',
+    async (name) => {
+      const { config } = parseConfig(
+        await renderWorkbenchTemplate(name, 'acme'),
+      );
+      // A template is a frozen copy of a yml, so a renamed or retired option
+      // would sit in it unnoticed until an apply rejected it.
+      for (const feature of config.features ?? []) {
+        const summary = loadFeatureManifestSummary(feature.ref);
+        expect(summary, `no descriptor for ${feature.ref}`).toBeDefined();
+        for (const key of Object.keys(feature.options ?? {})) {
+          expect(
+            summary!.optionNames,
+            `${feature.ref} has no option '${key}'`,
+          ).toContain(key);
+        }
       }
-    }
-  });
+    },
+  );
 
   it('gives the roles the models the template recommends', async () => {
     const text = await renderWorkbenchTemplate('discovery-atlassian', 'acme');

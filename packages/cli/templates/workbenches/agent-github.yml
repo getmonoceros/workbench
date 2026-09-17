@@ -1,0 +1,58 @@
+# The workbench `__MONOCEROS_NAME__`, from the `agent-github` template.
+# This file is the source of truth; the container is built from it. Change it
+# here or with `monoceros add-*`, then run `monoceros apply __MONOCEROS_NAME__`.
+# https://getmonoceros.build/docs/concepts/configuration/
+#
+# What is in here: Claude Code with the three build roles, and the GitHub CLI
+# they read issues and open pull requests with. No stack: the languages and
+# services your project needs go in with `monoceros add-*`, and a repo added
+# with `monoceros add-repo` brings its own provider CLI along.
+# https://getmonoceros.build/docs/guides/templates/
+
+schemaVersion: 1
+name: __MONOCEROS_NAME__
+# Pinned runtime base image, reused on every apply (never auto-bumped).
+# `monoceros upgrade __MONOCEROS_NAME__` refreshes the tooling and moves this to the
+# latest runtime when a newer one exists.
+runtimeVersion: __MONOCEROS_RUNTIME_VERSION__
+
+# A Monoceros dev-container is shaped by features, pluggable units that drop
+# tooling (AI assistants, language CLIs, cloud SDKs) into the container and
+# bring their own options. The features active for this container are listed
+# below; adjust their options as needed. Shared credentials used across
+# containers belong in monoceros-config.yml under `defaults.features.<ref>`
+# rather than here. Full catalog: `monoceros list-components`.
+features:
+  # Claude Code: Anthropic's CLI coding assistant. OAuth/subscription login
+  # persists across container rebuilds.
+  # https://getmonoceros.build/docs/features/claude/
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
+    options:
+      permissionMode: auto
+      apiKey: ${CLAUDE_CODE_API_KEY}
+    # plugins:
+    #   - url: https://github.com/acme/claude-plugins.git
+    #     enable:
+    #       - acme-conventions
+
+  # Claude Code roles (plan / implement / review): Three Claude Code roles
+  # that split a task: a planner writes a plan file, an implementer executes
+  # it, a reviewer checks the result against it. Adds `/monoceros-plan`,
+  # `/monoceros-ship` and `/monoceros-review`. Requires the `claude-code`
+  # feature.
+  # https://getmonoceros.build/docs/features/claude-code-roles/
+  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code-roles:1
+    options:
+      plannerModel: opus
+      plannerEffort: high
+      implementModel: sonnet
+      implementEffort: high
+      reviewModel: opus
+      reviewEffort: high
+
+  # GitHub CLI: The official `gh` CLI. Login persists across container
+  # rebuilds.
+  # https://getmonoceros.build/docs/features/github/
+  - ref: ghcr.io/getmonoceros/monoceros-features/github-cli:1
+    options:
+      apiToken: ${GITHUB_API_TOKEN}
