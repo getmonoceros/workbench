@@ -160,15 +160,20 @@ function In-Distro([string]$bash) {
   $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($bash))
   return (wsl.exe -d $DistroName -- bash -lc "echo $b64 | base64 -d | bash") 2>&1 | Out-String
 }
+# Same as install.ps1: no BOM, or Docker Desktop refuses to start.
+function Read-Utf8([string]$Path) { return [IO.File]::ReadAllText($Path) }
+function Write-Utf8NoBom([string]$Path, [string]$Text) {
+  [IO.File]::WriteAllText($Path, $Text, (New-Object System.Text.UTF8Encoding $false))
+}
 function Remove-Integration {
   $local:ErrorActionPreference = 'Continue'
   if (-not (Test-Path $SettingsPath)) { return }
   try {
-    $json = Get-Content $SettingsPath -Raw | ConvertFrom-Json
+    $json = Read-Utf8 $SettingsPath | ConvertFrom-Json
     if ($json.PSObject.Properties.Name -contains 'IntegratedWslDistros') {
       $remaining = @(@($json.IntegratedWslDistros) | Where-Object { $_ -ne $DistroName })
       if ($remaining.Count -eq 0) { $json.PSObject.Properties.Remove('IntegratedWslDistros') } else { $json.IntegratedWslDistros = $remaining }
-      ($json | ConvertTo-Json -Depth 40) | Set-Content -Path $SettingsPath -Encoding UTF8
+      Write-Utf8NoBom $SettingsPath ($json | ConvertTo-Json -Depth 40)
     }
   } catch {}
 }

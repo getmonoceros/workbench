@@ -207,16 +207,24 @@ function Restart-DockerDesktop {
   return 'none'
 }
 
+# Windows PowerShell 5.1 writes a BOM with `-Encoding UTF8`, and Docker Desktop's
+# JSON parser refuses to start on one ("invalid character"). Read and write
+# these JSON files as plain UTF-8 through .NET instead.
+function Read-Utf8([string]$Path) { return [IO.File]::ReadAllText($Path) }
+function Write-Utf8NoBom([string]$Path, [string]$Text) {
+  [IO.File]::WriteAllText($Path, $Text, (New-Object System.Text.UTF8Encoding $false))
+}
+
 function Add-Integration {
   if (-not (Test-Path $SettingsPath)) { return $false }
-  $json = Get-Content $SettingsPath -Raw | ConvertFrom-Json
+  $json = Read-Utf8 $SettingsPath | ConvertFrom-Json
   if ($json.PSObject.Properties.Name -contains 'IntegratedWslDistros') {
     if (@($json.IntegratedWslDistros) -contains $DistroName) { return $true }
     $json.IntegratedWslDistros = @(@($json.IntegratedWslDistros) + $DistroName | Select-Object -Unique)
   } else {
     $json | Add-Member -NotePropertyName 'IntegratedWslDistros' -NotePropertyValue ([string[]]@($DistroName)) -Force
   }
-  ($json | ConvertTo-Json -Depth 40) | Set-Content -Path $SettingsPath -Encoding UTF8
+  Write-Utf8NoBom $SettingsPath ($json | ConvertTo-Json -Depth 40)
   return $false
 }
 
@@ -231,10 +239,10 @@ function Allow-UncHostInEditors {
   foreach ($t in $targets) {
     if (-not (Test-Path (Split-Path $t.path -Parent))) { continue }
     if (-not (Test-Path $t.path)) {
-      Set-Content -Path $t.path -Encoding UTF8 -Value '{ "security.allowedUNCHosts": ["wsl.localhost"] }'
+      Write-Utf8NoBom $t.path '{ "security.allowedUNCHosts": ["wsl.localhost"] }'
       $done += $t.name; continue
     }
-    try { $cfg = Get-Content $t.path -Raw | ConvertFrom-Json }
+    try { $cfg = Read-Utf8 $t.path | ConvertFrom-Json }
     catch { $done += "$($t.name) (manual: tick 'allow host' once)"; continue }
     $list = @()
     if ($cfg.PSObject.Properties.Name -contains 'security.allowedUNCHosts') { $list = @($cfg.'security.allowedUNCHosts') }
@@ -242,7 +250,7 @@ function Allow-UncHostInEditors {
     $list = [string[]]@($list + 'wsl.localhost' | Select-Object -Unique)
     if ($cfg.PSObject.Properties.Name -contains 'security.allowedUNCHosts') { $cfg.'security.allowedUNCHosts' = $list }
     else { $cfg | Add-Member -NotePropertyName 'security.allowedUNCHosts' -NotePropertyValue $list -Force }
-    ($cfg | ConvertTo-Json -Depth 40) | Set-Content -Path $t.path -Encoding UTF8
+    Write-Utf8NoBom $t.path ($cfg | ConvertTo-Json -Depth 40)
     $done += $t.name
   }
   if ($done) { return ($done -join ', ') } else { return 'no VS Code / Codium found' }
