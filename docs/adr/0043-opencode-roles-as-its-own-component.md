@@ -52,6 +52,11 @@ each falling back to the `opencode` feature's own `model` and then to whatever
 OpenCode would pick. **No baked-in model defaults**: model ids age faster than
 releases, and a stale default in a shipped feature is worse than none.
 
+That reason is about `provider/model-id` strings, so it holds for
+`opencode-roles` only. `claude-code-roles` takes aliases that resolve to the
+current model of each family and defaults to `opus`/`high` for the planner and
+the reviewer and `sonnet`/`medium` for the implementer (2026-09-27).
+
 **Names carry a `monoceros-` prefix** — the agents `monoceros-planner`,
 `monoceros-implement`, `monoceros-review`, the commands `/monoceros-plan`,
 `/monoceros-ship`, `/monoceros-review`. OpenCode's agents and commands are one
