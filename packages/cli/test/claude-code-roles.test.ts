@@ -8,11 +8,14 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { loadDescriptorCatalog } from '../src/catalog/load.js';
 import {
   renderRoleTemplate,
   writeClaudeCodeRoles,
 } from '../src/create/claude-code-roles.js';
+import { buildComponentCatalog } from '../src/init/components.js';
 
 const CLAUDE = 'ghcr.io/getmonoceros/monoceros-features/claude-code:1';
 const ROLES = 'ghcr.io/getmonoceros/monoceros-features/claude-code-roles:1';
@@ -263,6 +266,38 @@ describe('writeClaudeCodeRoles', () => {
       `${PLANS}/<app>/<slug>.md`,
     );
     expect(await skill('monoceros-ship')).toContain(PLANS);
+  });
+
+  // The roles used to ship with every option empty, so a fresh workbench ran
+  // all three on the session's model and effort, which nobody had chosen. The
+  // defaults live in the real descriptor and reach the yml through `init` and
+  // `add-feature`, so this reads the catalog the CLI ships, not a fixture.
+  it('writes opus:high / sonnet:medium / opus:high into a new yml', async () => {
+    const componentsRoot = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      '..',
+      'components',
+    );
+    const catalog = buildComponentCatalog(
+      await loadDescriptorCatalog(componentsRoot),
+    );
+    expect(catalog.get('claude-code-roles')?.file.contributes.features).toEqual(
+      [
+        {
+          ref: ROLES,
+          options: {
+            plannerModel: 'opus',
+            plannerEffort: 'high',
+            implementModel: 'sonnet',
+            implementEffort: 'medium',
+            reviewModel: 'opus',
+            reviewEffort: 'high',
+          },
+        },
+      ],
+    );
   });
 
   it('puts each role on its own model', async () => {

@@ -39,11 +39,13 @@ import type { CreateOptions } from './types.js';
  *
  *   - `{{MODEL_LINE}}` — the agent's `model:` frontmatter line, or nothing.
  *     Empty means Claude Code's own default, which is `inherit`: the role runs
- *     on whatever the session runs on. Deliberately no baked-in defaults,
- *     model ids age faster than releases.
+ *     on whatever the session runs on. The defaults (`opus` / `sonnet` /
+ *     `opus`) live in the descriptor and reach the yml through `init` and
+ *     `add-feature`, never here: the yml stays the one place that says which
+ *     model a role runs on. They are aliases, not ids, so they do not age.
  *   - `{{EFFORT_LINE}}` — the agent's `effort:` line, or nothing. Empty means
  *     the role inherits the session's effort, which is what Claude Code does
- *     without the field. Same no-default reasoning as the model.
+ *     without the field. Defaults the same way as the model.
  *   - `{{PLANS_DIR}}` / `{{PLANS_DIR_TILDE}}` — where plans are written, under
  *     the persisted `~/.claude`, so a plan survives an apply and survives
  *     wiping `projects/`.

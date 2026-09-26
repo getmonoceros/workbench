@@ -46,7 +46,7 @@ features:
       plannerModel: opus
       plannerEffort: high
       implementModel: sonnet
-      implementEffort: high
+      implementEffort: medium
       reviewModel: opus
       reviewEffort: high
 
