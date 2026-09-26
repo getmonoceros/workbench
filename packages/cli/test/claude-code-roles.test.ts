@@ -187,6 +187,39 @@ describe('writeClaudeCodeRoles', () => {
     }
   });
 
+  // A story's Design section links the prototype, and reading a Claude Design
+  // link needs design scopes on the claude.ai login that a later `/login` can
+  // drop again. Runs went on without the screens and nobody noticed. So the
+  // session reads the design while the user is still there and stops with the
+  // fix when it cannot, the planner saves a fresh copy next to the plan (not
+  // into the repo, where it would drift from the prototype), and the two roles
+  // after it work from that copy, never from the link. Figma and Figma Make are
+  // read through the catalog's `figma` connector, so a missing one is a host
+  // step naming it, not a vague "export it". A real run saw the `claude.ai
+  // Figma` connector from the account, found no workbench one missing, and sent
+  // the user to `/mcp` for it. So the briefing decides, not the tool list.
+  it('reads the design before planning and hands on a fresh copy', async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+    const plan = await skill('monoceros-plan');
+    expect(plan).toContain('**stop here and plan nothing.**');
+    expect(plan).toContain('`/design-login`');
+    expect(plan).toContain('Read it every time');
+    expect(plan).toContain('monoceros add-mcp-server <name> figma');
+    expect(plan).toContain('`figma.com/make/…`');
+    expect(plan).toContain("only the workbench's own connector counts");
+    expect(plan).toContain('`claude.ai Figma`');
+    const planner = await agent('monoceros-planner');
+    expect(planner).toContain('`claude.ai Figma`');
+    expect(planner).toContain(`\`${PLANS}/<app>/<slug>.design/\``);
+    expect(planner).toContain('## Design');
+    expect(await agent('monoceros-implement')).toContain(
+      'Never open the design link yourself.',
+    );
+    expect(await agent('monoceros-review')).toContain(
+      'Judge against the copy only, never the link',
+    );
+  });
+
   // Every role wires the guard, because it is the only permission layer that
   // survives Auto Mode - where a subagent's `permissionMode` is ignored.
   it('wires the guard hook into all three agents', async () => {

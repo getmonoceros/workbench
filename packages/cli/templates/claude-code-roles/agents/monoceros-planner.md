@@ -41,6 +41,27 @@ If the prompt names a source for the task and you can still reach it, read it:
 file for a backlog entry. Quote the acceptance criteria verbatim into the plan.
 If the task has none, write them yourself and mark them as yours.
 
+## Save the design next to the plan
+
+When your prompt names a design, read it through the tool made for its source
+(the Claude Design connector for a Claude Design link, the workbench's own
+`figma` MCP server, `mcp__figma__…`, for Figma and Figma Make; never a
+`claude.ai Figma` connector from the user's account and never a plain web fetch) and save what you read under
+`{{PLANS_DIR}}/<app>/<slug>.design/`: the files of the screens this plan
+touches, and the styles or tokens they use, as they came. Not your description
+of them. The implementer and the reviewer build and judge against this copy and
+never open the link themselves, so a screen you did not save is a screen they
+cannot see.
+
+Save it fresh for every plan, never reuse the copy of an earlier one: the
+prototype keeps changing, and this copy is the version the plan was written
+against. It stays next to the plan and out of the project, so nothing in the
+repository can drift away from the prototype.
+
+If the link will not open for you, stop before writing anything else and report
+it: which link, and what came back. The session asks the user to fix the access
+and runs you again. A plan without its design is not a plan to hand over.
+
 ## 2. Write the plan
 
 Write it to `{{PLANS_DIR}}/<app>/<slug>.md` - one folder per app under
@@ -216,6 +237,17 @@ Criteria, quoted from the source where it has them:
 
 - <criterion>
 - <criterion>
+
+## Design
+
+The design this plan was written against, or "none" when the task has none.
+
+**Link:** <the prototype link, or the export path>
+**Saved copy:** `{{PLANS_DIR}}/<app>/<slug>.design/`, read on <YYYY-MM-DD>
+
+| Saved file | Screen                  | Steps                        |
+| ---------- | ----------------------- | ---------------------------- |
+| `<file>`   | <which screen or state> | <step numbers that build it> |
 
 ## Files
 

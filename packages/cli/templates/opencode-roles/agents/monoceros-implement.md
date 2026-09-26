@@ -49,6 +49,18 @@ before you touch anything, including the out-of-scope section.
   the nearest existing test before you write a new one.
 - Never edit the plan file. It is what your work is measured against.
 
+## The design is the saved copy
+
+When the plan's "Design" section names a saved copy, read the files it lists
+before you build a screen, and build the screen to them: layout, labels, states.
+Never open the design link yourself. The copy is the version the plan was
+written against, and the link may show a newer one or ask for a login you do not
+have.
+
+If the copy is missing, or a step builds a screen the copy does not cover, stop
+and report. Do not build that screen from the plan's prose or from your own
+idea of it.
+
 ## The acceptance command
 
 The plan names one command that decides pass or fail. Run it. It has to be

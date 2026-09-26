@@ -27,7 +27,61 @@ Fetch it before you plan. A GitHub issue with `gh issue view <n> --json
 title,body,labels,comments`, a backlog entry by reading the file and quoting
 the entry, free text as it stands.
 
-## 2. Grill it, one question at a time
+## 2. Read the design, or stop
+
+If the task links a design - a `## Design` section in a story, a prototype, a
+Claude Design or Figma link - read it now, before the first question. The screens
+answer half of what you would otherwise ask, and a plan for a screen nobody
+looked at gets built against an invented one.
+
+Read it every time, even when an earlier plan read the same link. A prototype
+keeps changing, and the planner saves the version it read next to the plan, so
+yesterday's copy is exactly what this run must not use.
+
+Tell the source by the link's host and read it through the tool made for that
+source. A plain web fetch of a design link returns a sign-in page or a summary,
+never the design itself.
+
+| Source            | Link                                                         | Read it with                      |
+| ----------------- | ------------------------------------------------------------ | --------------------------------- |
+| Claude Design     | `claude.ai/design/…`, `api.anthropic.com/v1/design/…`        | the Claude Design connector       |
+| Figma, Figma Make | `figma.com/design/…`, `figma.com/file/…`, `figma.com/make/…` | the `figma` MCP server            |
+| anything else     | any other host                                               | whatever reads it, else an export |
+
+**For Figma, only the workbench's own connector counts.** Whether the workbench
+has it is decided by the briefing, not by the tools you see: it is there when
+`AGENTS.md` lists `figma` under "MCP servers", and its tools are then
+`mcp__figma__…`. A connector that comes with the user's claude.ai account, such
+as `claude.ai Figma`, is not the workbench's. Do not read through it and do not
+offer signing in to it: the yml is the source of truth for what this container
+connects to, and a sign-in to the account's connector hides that the workbench
+is missing one.
+
+If you cannot read it, **stop here and plan nothing.** A sign-in page instead of
+the prototype, a 401 or 403, `FIRST_PARTY_AUTH_REJECTED`, a Figma link while the
+briefing lists no `figma`: all of them mean the same thing. Tell the user which
+link failed and the fix for its source:
+
+- **Claude Design:** `/design-login` in this session, then run the same
+  `/monoceros-plan` again. The authorization it grants does not always survive a
+  later `/login`, so this is worth trying even when it worked last time.
+- **Figma or Figma Make, the briefing lists no `figma`:** the connector is not
+  in this workbench, whatever the session shows from the account. It is a host step, and a new session afterwards, because the tools
+  are only loaded at start:
+
+      monoceros add-mcp-server <name> figma
+      monoceros apply <name>
+
+- **Figma or Figma Make, the workbench's `figma` reports no authentication:**
+  the sign-in has not happened yet. `/mcp` in this session, sign in to `figma` once, then run
+  the same `/monoceros-plan` again.
+- **Anything else, or when the fix did not help:** an export of the prototype,
+  saved as unpacked files where this container can read them, with the path in
+  the next message.
+
+Never go on without it and never plan from a description of the screens instead.
+
+## 3. Grill it, one question at a time
 
 Nothing of the plan exists yet, and this is the cheapest moment to be wrong.
 The failure this prevents costs a whole run: a plan written confidently under
@@ -63,10 +117,10 @@ The rules matter more than the questions:
   same point.
 - **Ask nothing at all when the task is already unambiguous.** If it names what
   should be true afterwards and how to check it, say so in one line and go
-  straight to step 3. A task that arrives with acceptance criteria has been
+  straight to step 4. A task that arrives with acceptance criteria has been
   grilled already.
 
-## 3. Hand it to the planner
+## 4. Hand it to the planner
 
 Delegate to the `monoceros-planner` subagent. It starts with an empty context:
 it sees your prompt and the files it reads, nothing of this conversation. So
@@ -74,6 +128,7 @@ the prompt has to carry everything, or it is lost.
 
     Write a plan for: <the task, in full, including what you fetched>
     App folder: <the app from the line above, or the one you picked>
+    Design: <the link or the export path you read in step 2, or "none">
     Answers already given by the user:
       - <question> → <answer>
       - <question> → <answer>
@@ -85,7 +140,7 @@ If the working directory has no `projects/` segment, you are not inside a
 project directory. Then use the app the plan is about, the directory under
 `projects/` that will be created or changed, and say which one you picked.
 
-## 4. Show it and stop
+## 5. Show it and stop
 
 Show the user, in their language: the goal in one sentence, the acceptance
 command, the assumptions being worked from, and the plan's host steps if it has
@@ -103,3 +158,6 @@ command that carries on, with the plan filled in as `<app>/<slug>`:
 If the plan came back with anything under "Open questions", say so first: that
 plan is not ready to hand over, and the question is yours to ask before
 anything runs.
+
+If the planner reports that the design would not open for it, there is no plan:
+treat it as the stop in step 2 and tell the user the same two fixes.

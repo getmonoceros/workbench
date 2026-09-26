@@ -630,6 +630,30 @@ describe('writeOpencodeRoles', () => {
     }
   });
 
+  // Same rule as on the Claude side: the design is read before phase 0, a run
+  // that cannot read it stops, and a fresh copy goes next to the plan for the
+  // implementer and the reviewer. `/design-login` is Claude Code's, so the fix
+  // named for Claude Design here is the export. Figma goes through the catalog's
+  // `figma` connector, signed in with OpenCode's own `mcp auth`.
+  it('reads the design before planning and hands on a fresh copy', async () => {
+    await writeOpencodeRoles(dir, { [OPENCODE]: {}, [ROLES]: {} });
+    const planner = await read(path.join(agentsDir(), 'monoceros-planner.md'));
+    expect(planner).toContain('**stop here and plan nothing.**');
+    expect(planner).toContain('Read it every time');
+    expect(planner).toContain(`\`${PLANS}/<app>/<slug>.design/\``);
+    expect(planner).toContain('## Design');
+    expect(planner).not.toContain('/design-login');
+    expect(planner).toContain('monoceros add-mcp-server <name> figma');
+    expect(planner).toContain('`opencode mcp auth figma`');
+    expect(planner).toContain("only the workbench's own connector counts");
+    expect(
+      await read(path.join(agentsDir(), 'monoceros-implement.md')),
+    ).toContain('Never open the design link yourself.');
+    expect(await read(path.join(agentsDir(), 'monoceros-review.md'))).toContain(
+      'Judge against the copy only, never the link',
+    );
+  });
+
   // OpenCode documents `variant` for the JSON config, not for a markdown
   // agent's frontmatter, so writing it into the .md would be a silent no-op.
   // It has to land in opencode.json, merged next to whatever the opencode

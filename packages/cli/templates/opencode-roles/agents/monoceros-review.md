@@ -83,6 +83,11 @@ a review.
    served HTML and then every resource it references, and check the status and
    the content type of each. That is where a white page hides, and a real run
    hid one there behind fifteen green tests.
+   When the plan's "Design" section names a saved copy, read the files it lists
+   and hold every screen the change builds against them. A missing element, a
+   different label or a state the copy shows and the code does not have is a
+   finding. Judge against the copy only, never the link: the link may show a
+   newer version than the one the plan was written for.
 4. **Correctness in the diff.** Error paths, boundary values, an await that is
    missing, a resource that is not released, a check that is now unreachable.
    Name a concrete failing input, not a worry.

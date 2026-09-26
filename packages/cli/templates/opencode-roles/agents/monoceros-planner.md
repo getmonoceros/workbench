@@ -80,6 +80,55 @@ markdown file, or plain text. Fetch it before you plan:
 Quote the acceptance criteria verbatim into the plan. If the task has none,
 write them yourself and mark them as yours.
 
+### Read the design, or stop
+
+If the task links a design - a `## Design` section in a story, a prototype, a
+Claude Design or Figma link - read it now, before phase 0. The screens answer
+half of what you would otherwise ask, and a plan for a screen nobody looked at
+gets built against an invented one.
+
+Read it every time, even when an earlier plan read the same link. A prototype
+keeps changing, and the copy you save next to the plan (section 4) is the
+version this plan is written against.
+
+Tell the source by the link's host and read it through the tool made for that
+source. A plain web fetch of a design link returns a sign-in page or a summary,
+never the design itself.
+
+| Source            | Link                                                         | Read it with                      |
+| ----------------- | ------------------------------------------------------------ | --------------------------------- |
+| Figma, Figma Make | `figma.com/design/…`, `figma.com/file/…`, `figma.com/make/…` | the `figma` MCP server            |
+| Claude Design     | `claude.ai/design/…`, `api.anthropic.com/v1/design/…`        | nothing here: it needs an export  |
+| anything else     | any other host                                               | whatever reads it, else an export |
+
+**For Figma, only the workbench's own connector counts.** Whether the workbench
+has it is decided by the briefing, not by the tools you see: it is there when
+`AGENTS.md` lists `figma` under "MCP servers". The yml is the source of truth
+for what this container connects to, so a Figma server configured anywhere else
+is not one you read through or offer to sign in to.
+
+If you cannot read it, **stop here and plan nothing.** A sign-in page instead of
+the prototype, a 401 or 403, `FIRST_PARTY_AUTH_REJECTED`, a Figma link while the
+briefing lists no `figma`: all of them mean the same thing. Tell the user which
+link failed and the fix for its source:
+
+- **Figma or Figma Make, the briefing lists no `figma`:** the connector is not
+  in this workbench. It is a host step, and a new session afterwards, because the tools
+  are only loaded at start:
+
+      monoceros add-mcp-server <name> figma
+      monoceros apply <name>
+
+- **Figma or Figma Make, the workbench's `figma` reports no authentication:**
+  the sign-in has not happened yet. `opencode mcp auth figma` in a terminal in this container,
+  sign in once, then run the same `/monoceros-plan` again.
+- **Claude Design, anything else, or when the fix did not help:** an export of
+  the prototype, saved as unpacked files where this container can read them,
+  with the path in the next message.
+
+Never go on without it and never plan from a description of the screens
+instead.
+
 ## 2. Explore before you plan
 
 Never plan from file names. Grep for the symbols involved, read the files you
@@ -146,6 +195,16 @@ That path is absolute and spelled out on purpose. Write it exactly like that,
 never as `~/...`: the tilde would be yours to expand, not the shell's, and
 guessing the wrong home is how the write ends up outside what you are allowed
 to touch.
+
+**When the task has a design, save it next to the plan** under
+`{{PLANS_DIR}}/<app>/<slug>.design/`: the files of the screens this plan
+touches, and the styles or tokens they use, as the source's tool returned them
+(the `figma` MCP server for Figma and Figma Make, never a plain web fetch). Not
+your description of them. The implementer and the reviewer build and judge against
+this copy and never open the link themselves, so a screen you did not save is a
+screen they cannot see. Save it fresh for every plan, never reuse the copy of an
+earlier one. It stays next to the plan and out of the project, so nothing in the
+repository can drift away from the prototype.
 
 Rules that make the difference between a plan a smaller model can execute and
 one it cannot:
@@ -381,6 +440,17 @@ Criteria, quoted from the source where it has them:
 
 - <criterion>
 - <criterion>
+
+## Design
+
+The design this plan was written against, or "none" when the task has none.
+
+**Link:** <the prototype link, or the export path>
+**Saved copy:** `{{PLANS_DIR}}/<app>/<slug>.design/`, read on <YYYY-MM-DD>
+
+| Saved file | Screen | Steps |
+| ---------- | ------ | ----- |
+| `<file>` | <which screen or state> | <step numbers that build it> |
 
 ## Files
 
