@@ -166,6 +166,8 @@ export interface RunInitOptions {
   logger?: {
     success: (msg: string) => void;
     info: (msg: string) => void;
+    /** A bare line, for the blank one before "Next steps". */
+    log?: (msg: string) => void;
   };
 }
 
@@ -178,6 +180,7 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   const logger = opts.logger ?? {
     success: (msg) => consola.success(msg),
     info: (msg) => consola.info(msg),
+    log: (msg) => consola.log(msg),
   };
 
   if (!REGEX.solutionName.test(opts.name)) {
@@ -434,20 +437,30 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     opts.name,
     {
       interactive: opts.promptEnv ?? shouldPromptForEnv(opts.yes),
+      name: opts.name,
       globalEnvPath: prettyPath(globalEnvPath(home)),
       containerEnvPath: prettyPath(envPath),
+      globalValues: readEnvFile(globalEnvPath(home)),
       ...(opts.askEnvValue ? { ask: opts.askEnvValue } : {}),
       output: (line) => logger.info(line),
+      success: (line) => logger.success(line),
     },
   );
 
-  // Paths relative to MONOCEROS_HOME keep the line readable (the dev
-  // .local home is deep under the project root).
-  const ymlRel = path.relative(home, dest);
-  const envRel = path.relative(home, envPath);
+  // The full path, shortened to `~/` where it can be: relative to the home it
+  // read as a path under the current directory, and the home itself is not
+  // fixed (`MONOCEROS_HOME`, the dev `.local`, or `~/.monoceros`).
+  const ymlRel = prettyPath(dest);
+  const envRel = prettyPath(envPath);
   logger.success(`Wrote ${ymlRel} and ${envRel}.`);
+  logger.log?.('');
   logger.info(
-    `Add components with \`monoceros add-feature/add-service/add-repo ${opts.name}\` (see \`monoceros list-components\`), then \`monoceros apply ${opts.name}\`.`,
+    [
+      'Next steps:',
+      `  Components  edit ${ymlRel}, or monoceros add-feature/add-service/add-repo ${opts.name}`,
+      `  Values      edit ${envRel}`,
+      `  Build       monoceros apply ${opts.name}`,
+    ].join('\n'),
   );
 
   return { configPath: dest };

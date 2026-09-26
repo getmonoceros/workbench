@@ -18,6 +18,7 @@ import {
   ensureEnvVars,
   hasVarPlaceholder,
   GIT_IDENTITY_VAR,
+  readEnvFile,
 } from '../config/env-file.js';
 import {
   featureOptionHints,
@@ -1038,10 +1039,13 @@ async function promptForNewEnvVars(
     input.name,
     {
       interactive: input.promptEnv ?? shouldPromptForEnv(input.yes),
+      name: input.name,
       globalEnvPath: prettyPath(globalEnvPath(home)),
       containerEnvPath: prettyPath(envPath),
+      globalValues: readEnvFile(globalEnvPath(home)),
       ...(input.askEnvValue ? { ask: input.askEnvValue } : {}),
       output: (line) => (input.logger ?? defaultLogger()).info(line),
+      success: (line) => (input.logger ?? defaultLogger()).success(line),
     },
   );
 }

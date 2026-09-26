@@ -1,5 +1,7 @@
+import { createInterface } from 'node:readline/promises';
 import { consola } from 'consola';
-import { setEnvVarRef } from '../config/env-file.js';
+import { readEnvFile, setEnvVarRef } from '../config/env-file.js';
+import { colorsFor } from '../util/format.js';
 import type { FeatureManifestSummary } from './manifest.js';
 
 /**
@@ -71,9 +73,78 @@ export interface PromptEnvValuesOptions {
    */
   globalEnvPath: string;
   containerEnvPath: string;
-  /** Injected by tests; defaults to a consola text prompt. */
-  ask?: (candidate: EnvPromptCandidate) => Promise<string | undefined>;
+  /** The workbench name, for "acme needs 2 values" and "for acme only". */
+  name: string;
+  /**
+   * What the two files already hold, so each prompt can say whether its value
+   * is set and where. Without this the builder sees the same bare question for
+   * a key they filled in months ago and one they have never heard of, and the
+   * intro line that explained the difference went unread.
+   */
+  globalValues?: Record<string, string>;
+  containerValues?: Record<string, string>;
+  /** Injected by tests; defaults to a readline prompt on stdout. */
+  ask?: (
+    candidate: EnvPromptCandidate,
+    state: EnvValueState,
+  ) => Promise<string | undefined>;
   output?: (line: string) => void;
+  /** The summary line for a value that ends up set. Falls back to `output`. */
+  success?: (line: string) => void;
+}
+
+/** Where a value already is, before the builder answers. */
+export type EnvValueState =
+  | { source: 'container'; tail: string }
+  | { source: 'global'; tail: string }
+  | { source: 'none' };
+
+/**
+ * The container file wins over the global one, blanks fall through: the same
+ * order `mergeEnvLayers` resolves at apply, so what the prompt says is what
+ * apply will do.
+ */
+export function envValueState(
+  envVar: string,
+  globalValues: Record<string, string> = {},
+  containerValues: Record<string, string> = {},
+): EnvValueState {
+  const container = (containerValues[envVar] ?? '').trim();
+  if (container) return { source: 'container', tail: maskedTail(container) };
+  const global = (globalValues[envVar] ?? '').trim();
+  if (global) return { source: 'global', tail: maskedTail(global) };
+  return { source: 'none' };
+}
+
+/**
+ * The last four characters, enough to tell two keys apart. Only for a value
+ * long enough that four characters give nothing away; a short value, a site
+ * name or a flag, shows no tail at all.
+ */
+function maskedTail(value: string): string {
+  return value.length >= 12 ? ` (…${value.slice(-4)})` : '';
+}
+
+/** What one prompt shows: the question with its status, and the hint. */
+export function envPromptText(
+  candidate: EnvPromptCandidate,
+  state: EnvValueState,
+  opts: { name: string; globalEnvPath: string; containerEnvPath: string },
+): { message: string; placeholder: string } {
+  const who = candidate.feature ? ` (${candidate.feature})` : '';
+  const status =
+    state.source === 'container'
+      ? `is set for ${opts.name}${state.tail}`
+      : state.source === 'global'
+        ? `is set in ${opts.globalEnvPath}${state.tail}`
+        : 'is not set yet';
+  const lines = [`${candidate.envVar}${who} ${status}`];
+  if (candidate.description) lines.push(`ℹ ${candidate.description}`);
+  const placeholder =
+    state.source === 'none'
+      ? `Enter skips it, fill it in later in ${opts.containerEnvPath}`
+      : `Enter keeps it, or type a different value for ${opts.name} only`;
+  return { message: lines.join('\n'), placeholder };
 }
 
 /**
@@ -92,19 +163,52 @@ export async function promptForEnvValues(
   if (!opts.interactive || candidates.length === 0) return answers;
 
   const out = opts.output ?? ((line: string) => consola.info(line));
+  const ok = opts.success ?? out;
   out(
-    `${candidates.length} value${candidates.length > 1 ? 's' : ''} the selected features need. ` +
-      `Leave one empty if it is already in ${opts.globalEnvPath}, ` +
-      `or to fill it in later in ${opts.containerEnvPath}.`,
+    `${opts.name} needs ${candidates.length} value${candidates.length > 1 ? 's' : ''}.`,
   );
 
-  const ask = opts.ask ?? defaultAsk;
+  const ask = opts.ask ?? ((c, state) => defaultAsk(c, state, opts));
+  const summary: Array<{ set: boolean; line: string }> = [];
   for (const candidate of candidates) {
-    const answer = await ask(candidate);
+    const state = envValueState(
+      candidate.envVar,
+      opts.globalValues,
+      opts.containerValues,
+    );
+    const answer = await ask(candidate, state);
     const value = typeof answer === 'string' ? answer.trim() : '';
     if (value.length > 0) answers[candidate.envVar] = value;
+    summary.push(summaryLine(candidate.envVar, value, state, opts));
+  }
+  // The summary starts a block of its own, apart from the last question.
+  process.stdout.write('\n');
+  const width = Math.max(...candidates.map((c) => c.envVar.length));
+  for (const { set, line } of summary) {
+    const [key, rest] = line.split('\t') as [string, string];
+    (set ? ok : out)(`${key.padEnd(width)}  ${rest}`);
   }
   return answers;
+}
+
+/** Where the value ended up, one line per key, after all were asked. */
+function summaryLine(
+  envVar: string,
+  answer: string,
+  state: EnvValueState,
+  opts: { name: string; globalEnvPath: string; containerEnvPath: string },
+): { set: boolean; line: string } {
+  if (answer || state.source === 'container')
+    return {
+      set: true,
+      line: `${envVar}\tfor ${opts.name} (${opts.containerEnvPath})`,
+    };
+  if (state.source === 'global')
+    return { set: true, line: `${envVar}\tglobal (${opts.globalEnvPath})` };
+  return {
+    set: false,
+    line: `${envVar}\tempty, fill it in later in ${opts.containerEnvPath}`,
+  };
 }
 
 /**
@@ -117,14 +221,30 @@ export function shouldPromptForEnv(yes: boolean | undefined): boolean {
   return (process.stdin.isTTY ?? false) && (process.stdout.isTTY ?? false);
 }
 
+/**
+ * A plain readline prompt, not `consola.prompt`: consola draws a fixed `❯`
+ * while asking and a green `✔` once answered, and a check mark next to "is not
+ * set yet" read as done. The yellow `?` says the opposite, that this line wants
+ * the builder, and it stays that way after Enter.
+ */
 const defaultAsk = async (
   candidate: EnvPromptCandidate,
+  state: EnvValueState,
+  opts: PromptEnvValuesOptions,
 ): Promise<string | undefined> => {
-  const answer = await consola.prompt(
-    `${candidate.envVar}${candidate.description ? `, ${candidate.description}` : ''}`,
-    { type: 'text', placeholder: 'leave empty to skip' },
+  const c = colorsFor(process.stdout);
+  const { message, placeholder } = envPromptText(candidate, state, opts);
+  const [first, ...rest] = message.split('\n');
+  process.stdout.write(
+    `\n${c.bold(c.yellow('?'))} ${c.bold(first ?? '')}\n` +
+      rest.map((line) => `${line}\n`).join(''),
   );
-  return typeof answer === 'string' ? answer : undefined;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await rl.question(`  ${c.dim(placeholder)}\n  ${c.yellow('›')} `);
+  } finally {
+    rl.close();
+  }
 };
 
 /**
@@ -143,7 +263,10 @@ export async function promptAndWriteEnvValues(
   name: string,
   opts: PromptEnvValuesOptions,
 ): Promise<string[]> {
-  const answers = await promptForEnvValues(candidates, opts);
+  const answers = await promptForEnvValues(candidates, {
+    containerValues: readEnvFile(envPath),
+    ...opts,
+  });
   const written: string[] = [];
   for (const [key, value] of Object.entries(answers)) {
     await setEnvVarRef(envPath, name, key, value);
