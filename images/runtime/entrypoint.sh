@@ -27,8 +27,34 @@ MODE="${MONOCEROS_EGRESS:-off}"
 
 log() { echo "[monoceros-egress] $*" >&2; }
 
+# Bring the builder's app servers back on a container RESTART (#25): a
+# `docker restart`, a Docker Desktop restart or a host reboot restarts PID 1
+# but leaves every app down. `monoceros-ctl reconcile` restarts each "wanted"
+# target (ADR 0028). Skipped on a container's FIRST start (apply, or `start`
+# after `stop --down`): post-create has not run yet then, and the host side
+# reconciles once the container is ready. The marker lives in the container's
+# own layer, so a recreate clears it. Runs as the runtime user, in the
+# background, best-effort: a slow or failing app never holds the container
+# back. Called from drop_to_user_and_exec, i.e. after the egress rules.
+reconcile_apps_on_restart() {
+  local marker=/var/lib/monoceros/started ws
+  if [[ ! -e "$marker" ]]; then
+    mkdir -p "$(dirname "$marker")" && touch "$marker" || true
+    return 0
+  fi
+  [[ -x /usr/local/bin/monoceros-ctl ]] || return 0
+  ws=$(find /workspaces -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1)
+  [[ -n "$ws" && -d "$ws/.monoceros/run" ]] || return 0
+  # mkdir as the runtime user: a root-owned logs/ would lock monoceros-ctl out
+  # of its own log files on Linux (ADR 0042).
+  gosu "$RUNTIME_USER" sh -c \
+    'mkdir -p "$1/logs" && exec monoceros-ctl reconcile >>"$1/logs/reconcile.log" 2>&1' \
+    sh "$ws" </dev/null >/dev/null 2>&1 &
+}
+
 drop_to_user_and_exec() {
   if [[ "$(id -u)" == "0" ]]; then
+    reconcile_apps_on_restart || true
     exec gosu "$RUNTIME_USER" "$@"
   fi
   exec "$@"

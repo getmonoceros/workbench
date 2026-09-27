@@ -166,6 +166,22 @@ pid_alive() { # pid_alive <pidfile>
   [ "$(proc_start "$pid")" = "$start" ]
 }
 
+# Serialises "is it running? no, launch it, stamp its pid" across callers. After
+# a container restart the entrypoint's reconcile and a host-side `monoceros
+# start` can reach the same target at once, and without the lock both would see
+# it down and launch it twice (#25). fd 9 is held from the check until the fresh
+# pid is stamped; the launched command gets it closed, so an app never keeps it.
+lock_launch() {
+  mkdir -p "$WS/.monoceros/run"
+  exec 9>"$WS/.monoceros/run/.lock"
+  flock 9
+}
+
+unlock_launch() {
+  flock -u 9
+  exec 9>&-
+}
+
 # Start an app: with a target, just that one; without, the whole default set in
 # declared order, failing fast if one does not come up.
 cmd_start() {
@@ -201,7 +217,9 @@ start_one() {
   pidf="$(run_dir "$app")/$target.pid"
   logf="$(log_dir "$app")/$target.log"
 
+  lock_launch
   if pid_alive "$pidf"; then
+    unlock_launch
     target_line "${C_GREY}·${C_RESET}" "$target" \
       "${C_GREY}already running    pid $(pid_of "$pidf")${C_RESET}"
     return 0
@@ -245,8 +263,14 @@ start_one() {
 
   # Build the inner launch script. Each interpolated value is %q-quoted so
   # paths, env values and the command survive the nested shells intact.
+  # The new process writes its pid to <target>.pid.new, not over <target>.pid:
+  # during a reconcile the old file is still there, and waiting for it to be
+  # non-empty would read the stale number back (#42). The old file stays as the
+  # "wanted" marker until the fresh pid is stamped into it below.
+  local newpidf="$pidf.new"
+  rm -f "$newpidf"
   local q_pid q_wd q_log q_cmd envstr=""
-  q_pid="$(printf '%q' "$pidf")"
+  q_pid="$(printf '%q' "$newpidf")"
   q_wd="$(printf '%q' "$workdir")"
   q_log="$(printf '%q' "$logf")"
   q_cmd="$(printf '%q' "$command")"
@@ -261,24 +285,28 @@ start_one() {
   # exec's the command, so the recorded pid stays valid for the lifetime.
   setsid sh -c \
     "echo \$\$ >$q_pid; cd $q_wd; exec env${envstr} sh -c $q_cmd >$q_log 2>&1" \
-    </dev/null &
+    </dev/null 9>&- &
 
   # Give the pid file a moment to appear (non-empty: `>` creates it before the
   # echo writes the number).
   local i
   for i in $(seq 1 50); do
-    [ -s "$pidf" ] && break
+    [ -s "$newpidf" ] && break
     sleep 0.1
   done
-  [ -s "$pidf" ] || die "failed to launch $app/$target (no pid recorded)"
+  [ -s "$newpidf" ] || die "failed to launch $app/$target (no pid recorded)"
   local pid start rellog
-  pid="$(pid_of "$pidf")"
+  pid="$(pid_of "$newpidf")"
+  rm -f "$newpidf"
   # Stamp the pid with its start time, the identity pid_alive checks. exec
   # keeps both, so they stay valid for the command's lifetime. If the process
-  # is already gone there is nothing to stamp, and pid_alive reports it dead.
+  # is already gone there is no start time, and pid_alive reports it dead.
   if start="$(proc_start "$pid")" && [ -n "$start" ]; then
     printf '%s %s\n' "$pid" "$start" >"$pidf"
+  else
+    printf '%s\n' "$pid" >"$pidf"
   fi
+  unlock_launch
   rellog="${logf#"$WS"/}"
 
   # No readiness signal without a port: report started, point at the log.
@@ -455,10 +483,19 @@ cmd_reconcile() {
   shopt -s nullglob globstar
   local pidf rel app target file last_app=""
   for pidf in "$runroot"/**/*.pid; do
-    pid_alive "$pidf" && continue
     rel="${pidf#"$runroot"/}"           # <apprel>/<target>.pid
     target="$(basename "$rel" .pid)"
     app="$(dirname "$rel")"
+    # A wanted target that is up is reported, not skipped silently: after a
+    # container restart the entrypoint's pass may have brought it back before
+    # a host-side `monoceros start` reconciles, and that start should still
+    # list every app it restored (#25).
+    if pid_alive "$pidf"; then
+      if [ "$app" != "$last_app" ]; then hdr "$app"; last_app="$app"; fi
+      target_line "${C_GREY}·${C_RESET}" "$target" \
+        "${C_GREY}already running    pid $(pid_of "$pidf")${C_RESET}"
+      continue
+    fi
     file="$(launch_json "$app")"
     if [ ! -f "$file" ] || ! jq -e --arg n "$target" \
         '(.targets // .configurations)[] | select(.name == $n)' "$file" >/dev/null 2>&1; then

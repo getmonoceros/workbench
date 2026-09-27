@@ -10,6 +10,7 @@ import {
   startDeferredServices,
 } from '../devcontainer/compose.js';
 import {
+  runtimeSupportsAppRestart,
   runtimeSupportsBrowserBridge,
   serviceDefersStart,
 } from '../create/catalog.js';
@@ -20,8 +21,10 @@ import { preflightHostPort } from '../proxy/port-check.js';
 import {
   ctlArgs,
   findRunningContainer,
+  hasWantedApps,
   runAppCtl,
 } from '../devcontainer/app-control.js';
+import { dim } from '../util/format.js';
 import { dispatch } from './_dispatch.js';
 
 export const startCommand = defineCommand({
@@ -178,6 +181,7 @@ async function bringContainerUp(
     }
     if (exitCode === 0) {
       consola.success(`Container '${args.name}' is up.`);
+      await restoreWantedApps(args.name, runtimeVersion);
     } else {
       // `quiet` mode already flushed the devcontainer output to stderr; add a
       // one-line verdict so the non-zero exit is never a silent mystery.
@@ -196,5 +200,29 @@ async function bringContainerUp(
       }
     }
     return exitCode;
+  }
+}
+
+/**
+ * Bring back the apps that were running (#25, ADR 0028), after the deferred
+ * services so an app finds its database up. Covers the fresh container a
+ * `start` after `stop --down` creates, whose entrypoint skips the reconcile
+ * on its first start. After a plain `stop` the entrypoint reconciles too; the
+ * runner's launch lock makes the second pass report "already running".
+ * Best-effort, like apply's: a failure warns and the start result stands.
+ */
+async function restoreWantedApps(
+  name: string,
+  runtimeVersion: string | undefined,
+): Promise<void> {
+  if (!runtimeSupportsAppRestart(runtimeVersion)) return;
+  if (!(await hasWantedApps(name))) return;
+  process.stdout.write(`\n  ${dim('restoring apps that were running…')}\n`);
+  try {
+    await runAppCtl(name, ['reconcile']);
+  } catch (err) {
+    consola.warn(
+      `Restoring running apps skipped: ${err instanceof Error ? err.message : String(err)}. Bring them back with \`monoceros start ${name} <app>\`.`,
+    );
   }
 }

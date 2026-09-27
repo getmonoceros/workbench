@@ -81,7 +81,8 @@ alive. `apply` runs it after bring-up.**
   `sleep infinity`; the entrypoint brings sshd back but not apps). Wiring
   `reconcile` into the runtime entrypoint - a sibling of `monoceros-sshd-up.sh`,
   firing on every container start - closes that gap with no new state model.
-  Tracked as a separate issue; out of scope here.
+  Tracked as a separate issue; out of scope here. Done in #25, see
+  [ADR 0059](0059-apps-come-back-after-a-container-restart.md).
 - This supersedes the liveness-snapshot plan in ADR 0027's consequences. That
   plan is not wrong, just heavier than needed: the desired-state already
   persists, so the before/after teardown dance is unnecessary.
