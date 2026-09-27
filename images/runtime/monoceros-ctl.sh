@@ -22,7 +22,9 @@
 # Both dirs are inside the workspace bind-mount, so the host sees them too.
 # The PRESENCE of a pid file doubles as the "wanted" marker (it is written by
 # start and removed only by an explicit stop), which `reconcile` reads to bring
-# back what an `apply` / restart tore down. See ADR 0028.
+# back what an `apply` / restart tore down. See ADR 0028. Its CONTENT is
+# "<pid> <start time>", so a pid reused by another process after a recreate is
+# not taken for the app (#42).
 set -euo pipefail
 
 die() {
@@ -132,12 +134,36 @@ field() { # field <app> <target> <jq-path>
   jq -r --arg n "$2" "(.targets // .configurations)[] | select(.name == \$n) | $3 // empty" "$file"
 }
 
+# The kernel's start time of a process: field 22 of /proc/<pid>/stat, in clock
+# ticks since boot. Everything up to the last ") " is cut first, because the
+# command name in field 2 may itself contain spaces or parentheses.
+proc_start() { # proc_start <pid>
+  local s
+  s="$(cat "/proc/$1/stat" 2>/dev/null)" || return 1
+  s="${s##*) }"
+  # shellcheck disable=SC2086
+  set -- $s
+  printf '%s\n' "${20:-}"
+}
+
+pid_of() { # pid_of <pidfile>: the pid, first field of the file
+  local pid="" _rest
+  read -r pid _rest <"$1" 2>/dev/null || true
+  printf '%s\n' "$pid"
+}
+
+# A pid file holds "<pid> <start time>". The pid alone proves nothing after an
+# apply: the file survives the recreate in the bind mount, and the number can
+# belong to an unrelated process in the new container (#42) - `start` would skip
+# a dead app and `stop` would signal a stranger. So the process only counts as
+# ours when its start time matches too. A file without a start time (written by
+# an older runtime, before the recreate that brought this one) is never trusted.
 pid_alive() { # pid_alive <pidfile>
-  local f="$1" pid
+  local f="$1" pid="" start="" _rest
   [ -f "$f" ] || return 1
-  pid="$(cat "$f" 2>/dev/null || true)"
-  [ -n "$pid" ] || return 1
-  kill -0 "$pid" 2>/dev/null
+  read -r pid start _rest <"$f" 2>/dev/null || true
+  [ -n "$pid" ] && [ -n "$start" ] || return 1
+  [ "$(proc_start "$pid")" = "$start" ]
 }
 
 # Start an app: with a target, just that one; without, the whole default set in
@@ -177,7 +203,7 @@ start_one() {
 
   if pid_alive "$pidf"; then
     target_line "${C_GREY}·${C_RESET}" "$target" \
-      "${C_GREY}already running    pid $(cat "$pidf")${C_RESET}"
+      "${C_GREY}already running    pid $(pid_of "$pidf")${C_RESET}"
     return 0
   fi
 
@@ -237,15 +263,22 @@ start_one() {
     "echo \$\$ >$q_pid; cd $q_wd; exec env${envstr} sh -c $q_cmd >$q_log 2>&1" \
     </dev/null &
 
-  # Give the pid file a moment to appear.
+  # Give the pid file a moment to appear (non-empty: `>` creates it before the
+  # echo writes the number).
   local i
   for i in $(seq 1 50); do
-    [ -f "$pidf" ] && break
+    [ -s "$pidf" ] && break
     sleep 0.1
   done
-  [ -f "$pidf" ] || die "failed to launch $app/$target (no pid recorded)"
-  local pid rellog
-  pid="$(cat "$pidf")"
+  [ -s "$pidf" ] || die "failed to launch $app/$target (no pid recorded)"
+  local pid start rellog
+  pid="$(pid_of "$pidf")"
+  # Stamp the pid with its start time, the identity pid_alive checks. exec
+  # keeps both, so they stay valid for the command's lifetime. If the process
+  # is already gone there is nothing to stamp, and pid_alive reports it dead.
+  if start="$(proc_start "$pid")" && [ -n "$start" ]; then
+    printf '%s %s\n' "$pid" "$start" >"$pidf"
+  fi
   rellog="${logf#"$WS"/}"
 
   # No readiness signal without a port: report started, point at the log.
@@ -320,7 +353,7 @@ stop_one() {
   fi
 
   local pid
-  pid="$(cat "$pidf")"
+  pid="$(pid_of "$pidf")"
   kill -TERM "-$pid" 2>/dev/null || true
   local i
   for i in $(seq 1 50); do
@@ -369,7 +402,7 @@ cmd_list() {
       if [ "$json" = "1" ]; then list_one_json "$file" "$app" "$t" "$pidf" "$isdefault"; continue; fi
       if pid_alive "$pidf"; then
         marker="${C_GREEN}✓${C_RESET}"
-        detail="running    ${C_GREY}pid $(cat "$pidf")${C_RESET}"
+        detail="running    ${C_GREY}pid $(pid_of "$pidf")${C_RESET}"
       else
         marker="${C_GREY}·${C_RESET}"
         detail="${C_GREY}stopped${C_RESET}"
@@ -387,7 +420,7 @@ cmd_list() {
 list_one_json() { # <launch.json> <app> <target> <pidfile> <isdefault>
   local file="$1" app="$2" t="$3" pidf="$4" isdefault="$5"
   local running pid port
-  if pid_alive "$pidf"; then running=true; pid="$(cat "$pidf")"; else running=false; pid=null; fi
+  if pid_alive "$pidf"; then running=true; pid="$(pid_of "$pidf")"; else running=false; pid=null; fi
   port="$(jq -r --arg n "$t" '(.targets // .configurations)[] | select(.name == $n) | .port // empty' "$file")"
   [ -n "$port" ] || port=null
   [ "$isdefault" = "true" ] || isdefault=false
@@ -401,7 +434,7 @@ list_one_json() { # <launch.json> <app> <target> <pidfile> <isdefault>
 # a <target>.pid file is the want-marker: it is written by `start`, removed only
 # by an explicit `stop`, and left behind (with a now-dead pid) when the process
 # crashed or the container was recreated (`apply`) / restarted. Its CONTENT is
-# the last pid, checked for liveness via `kill -0`. So "pid file present but not
+# the last pid and its start time, checked by pid_alive. So "pid file present but not
 # alive" is exactly the set the builder wanted up that an apply/restart tore
 # down - the set to restore. This is why no pre-teardown liveness snapshot is
 # needed: the intent already persists across the recreate in the bind-mount.
@@ -410,8 +443,10 @@ list_one_json() { # <launch.json> <app> <target> <pidfile> <isdefault>
 # `start`'s fail-fast default set). Orphans are reaped, not resurrected: if the
 # app's launch.json or the target is gone (config changed since it was started),
 # the stale pid file is removed. We never signal an old pid - start_one only
-# reads it to decide "already running", and writes a fresh one when it launches;
-# right after a recreate nothing it manages is up, so that read is a no-op.
+# reads it to decide "already running", and writes a fresh one when it launches.
+# That read is not a no-op after a recreate: a target reconcile restarts first
+# can land on the pid another target's file still names, which is why pid_alive
+# checks the start time too (#42).
 # Across-target ordering is not guaranteed (declared order is `start`'s job);
 # reconcile restores each independently-started server on its own. See ADR 0028.
 cmd_reconcile() {

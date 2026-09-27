@@ -87,3 +87,26 @@ alive. `apply` runs it after bring-up.**
   persists, so the before/after teardown dance is unnecessary.
 - Ships in runtime 1.6.0 (`monoceros-ctl reconcile`) + CLI 1.36.0 (apply
   trigger + runtime gate).
+
+## Update 2026-09-27: a pid is checked with its start time (#42)
+
+The "No signalling of old pids" bullet above was wrong on two counts. The
+hazard is not vanishingly unlikely: `reconcile` restores targets one after the
+other, and a target restored first can land on exactly the number another
+target's stale pid file still names. That happened on the first real two-target
+app (backend restored as pid 882, the frontend's file said 882, `start` then
+reported the dead frontend as "already running"). And `stop` does signal the
+recorded pid, so stopping that frontend would have killed the backend.
+
+The pid file now holds `<pid> <start time>`, the start time being field 22 of
+`/proc/<pid>/stat` (clock ticks since boot). `start` stamps it right after
+launch; exec keeps both values for the command's lifetime. A target counts as
+running only when the pid is alive and its start time matches. A file with a
+pid alone, as older runtimes wrote it, is never trusted; the recreate that
+brings the new runtime has ended those processes anyway. The presence of the
+file stays the "wanted" marker, unchanged.
+
+Comparing the file's mtime with the container's start was the other candidate
+and was rejected: the file sits on the bind mount and gets the host's clock, so
+a few seconds of skew between host and VM would make a freshly started target
+look stale, and `start` would launch it a second time.
