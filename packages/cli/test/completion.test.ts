@@ -217,6 +217,9 @@ describe('the pwsh script', () => {
         await rm(home, { recursive: true, force: true });
       }
     },
+    // A cold pwsh start takes several seconds on the CI runners (7.7s seen),
+    // well past vitest's 5s default.
+    60_000,
   );
 });
 
