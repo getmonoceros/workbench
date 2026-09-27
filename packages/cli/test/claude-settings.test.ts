@@ -48,7 +48,7 @@ describe('writeClaudePermissionMode', () => {
   });
 
   it('defaults to auto + enables it via env when the feature has no option', async () => {
-    await writeClaudePermissionMode(dir, { [CLAUDE_REF]: {} });
+    await writeClaudePermissionMode(dir, 'acme', { [CLAUDE_REF]: {} });
     const cfg = await read();
     expect((cfg.permissions as Record<string, unknown>).defaultMode).toBe(
       'auto',
@@ -66,9 +66,13 @@ describe('writeClaudePermissionMode', () => {
   // what Claude Desktop over SSH does, because it attaches in acceptEdits.
   it('allows the plans directory while the roles are installed', async () => {
     const ROLES = 'ghcr.io/getmonoceros/monoceros-features/claude-code-roles:1';
-    await writeClaudePermissionMode(dir, { [CLAUDE_REF]: {}, [ROLES]: {} });
+    await writeClaudePermissionMode(dir, 'acme', {
+      [CLAUDE_REF]: {},
+      [ROLES]: {},
+    });
     const withRoles = (await read()).permissions as Record<string, unknown>;
     expect(withRoles.additionalDirectories).toEqual([
+      '/workspaces/acme',
       '/home/node/.claude/plans',
     ]);
 
@@ -79,15 +83,27 @@ describe('writeClaudePermissionMode', () => {
       settings(),
       JSON.stringify({ permissions: withRoles }, null, 2),
     );
-    await writeClaudePermissionMode(dir, { [CLAUDE_REF]: {} });
+    await writeClaudePermissionMode(dir, 'acme', { [CLAUDE_REF]: {} });
     expect(
       ((await read()).permissions as Record<string, unknown>)
         .additionalDirectories,
-    ).toEqual(['/opt/shared']);
+    ).toEqual(['/opt/shared', '/workspaces/acme']);
+  });
+
+  // The whole workspace is trusted, but Claude Code only counts the directory
+  // it started in as a working directory. Started in `projects/<app>`, auto
+  // mode asked before reading the `.code-workspace` file one level up.
+  it('makes the workspace root a working directory wherever Claude starts', async () => {
+    await writeClaudePermissionMode(dir, 'acme', { [CLAUDE_REF]: {} });
+    await writeClaudePermissionMode(dir, 'acme', { [CLAUDE_REF]: {} });
+    expect(
+      ((await read()).permissions as Record<string, unknown>)
+        .additionalDirectories,
+    ).toEqual(['/workspaces/acme']);
   });
 
   it('honours an explicit `ask` option (no env, no skip)', async () => {
-    await writeClaudePermissionMode(dir, {
+    await writeClaudePermissionMode(dir, 'acme', {
       [CLAUDE_REF]: { permissionMode: 'ask' },
     });
     const cfg = await read();
@@ -99,7 +115,7 @@ describe('writeClaudePermissionMode', () => {
   });
 
   it('pre-accepts the bypass warning when `bypass` is chosen', async () => {
-    await writeClaudePermissionMode(dir, {
+    await writeClaudePermissionMode(dir, 'acme', {
       [CLAUDE_REF]: { permissionMode: 'bypass' },
     });
     const cfg = await read();
@@ -111,7 +127,7 @@ describe('writeClaudePermissionMode', () => {
   });
 
   it('maps `edits` to acceptEdits', async () => {
-    await writeClaudePermissionMode(dir, {
+    await writeClaudePermissionMode(dir, 'acme', {
       [CLAUDE_REF]: { permissionMode: 'edits' },
     });
     const cfg = await read();
@@ -122,10 +138,10 @@ describe('writeClaudePermissionMode', () => {
 
   it('cleans up the opposite mode’s key when switching mode', async () => {
     // Start in bypass (sets skip), then switch to auto (should set env, drop skip).
-    await writeClaudePermissionMode(dir, {
+    await writeClaudePermissionMode(dir, 'acme', {
       [CLAUDE_REF]: { permissionMode: 'bypass' },
     });
-    await writeClaudePermissionMode(dir, {
+    await writeClaudePermissionMode(dir, 'acme', {
       [CLAUDE_REF]: { permissionMode: 'auto' },
     });
     const cfg = await read();
@@ -147,7 +163,7 @@ describe('writeClaudePermissionMode', () => {
         env: { FOO: 'bar' },
       }),
     );
-    await writeClaudePermissionMode(dir, {
+    await writeClaudePermissionMode(dir, 'acme', {
       [CLAUDE_REF]: { permissionMode: 'auto' },
     });
     const cfg = await read();
@@ -161,7 +177,7 @@ describe('writeClaudePermissionMode', () => {
   });
 
   it('is a no-op when no claude-code feature is present', async () => {
-    await writeClaudePermissionMode(dir, {
+    await writeClaudePermissionMode(dir, 'acme', {
       'ghcr.io/getmonoceros/monoceros-features/github-cli:1': {},
     });
     const { existsSync } = await import('node:fs');
@@ -171,7 +187,7 @@ describe('writeClaudePermissionMode', () => {
   it('does not throw on malformed existing settings.json', async () => {
     await fsp.writeFile(settings(), 'not json {');
     await expect(
-      writeClaudePermissionMode(dir, { [CLAUDE_REF]: {} }),
+      writeClaudePermissionMode(dir, 'acme', { [CLAUDE_REF]: {} }),
     ).resolves.toBeUndefined();
     const cfg = await read();
     expect((cfg.permissions as Record<string, unknown>).defaultMode).toBe(
@@ -216,7 +232,7 @@ describe('graphify PreToolUse hooks', () => {
   });
 
   it('wires search and read when graphify is in the same container', async () => {
-    await writeClaudePermissionMode(dir, {
+    await writeClaudePermissionMode(dir, 'acme', {
       [CLAUDE_REF]: {},
       [GRAPHIFY_REF]: {},
     });
@@ -229,15 +245,15 @@ describe('graphify PreToolUse hooks', () => {
   });
 
   it('writes no hooks without the graphify feature', async () => {
-    await writeClaudePermissionMode(dir, { [CLAUDE_REF]: {} });
+    await writeClaudePermissionMode(dir, 'acme', { [CLAUDE_REF]: {} });
     const cfg = await read();
     expect(cfg.hooks).toBeUndefined();
   });
 
   it('does not duplicate them on re-apply', async () => {
     const features = { [CLAUDE_REF]: {}, [GRAPHIFY_REF]: {} };
-    await writeClaudePermissionMode(dir, features);
-    await writeClaudePermissionMode(dir, features);
+    await writeClaudePermissionMode(dir, 'acme', features);
+    await writeClaudePermissionMode(dir, 'acme', features);
     expect(await preToolUse()).toHaveLength(2);
   });
 
@@ -253,7 +269,7 @@ describe('graphify PreToolUse hooks', () => {
         },
       }),
     );
-    await writeClaudePermissionMode(dir, {
+    await writeClaudePermissionMode(dir, 'acme', {
       [CLAUDE_REF]: {},
       [GRAPHIFY_REF]: {},
     });
@@ -265,7 +281,7 @@ describe('graphify PreToolUse hooks', () => {
 
     // graphify removed from the yml: ours go, the builder's stays, and so does
     // the unrelated event.
-    await writeClaudePermissionMode(dir, { [CLAUDE_REF]: {} });
+    await writeClaudePermissionMode(dir, 'acme', { [CLAUDE_REF]: {} });
     expect((await preToolUse()).map((e) => e.hooks?.[0]?.command)).toEqual([
       'my-own-linter',
     ]);
@@ -274,11 +290,11 @@ describe('graphify PreToolUse hooks', () => {
   });
 
   it('drops the hooks key entirely when nothing is left in it', async () => {
-    await writeClaudePermissionMode(dir, {
+    await writeClaudePermissionMode(dir, 'acme', {
       [CLAUDE_REF]: {},
       [GRAPHIFY_REF]: {},
     });
-    await writeClaudePermissionMode(dir, { [CLAUDE_REF]: {} });
+    await writeClaudePermissionMode(dir, 'acme', { [CLAUDE_REF]: {} });
     const cfg = await read();
     expect(cfg.hooks).toBeUndefined();
   });

@@ -2365,7 +2365,7 @@ export async function writeScaffold(
   // at apply (merged into home/.claude/settings.json) rather than baked into
   // the feature layer, so a yml change takes effect on the next apply and is
   // not frozen by the image cache. No-op without the claude-code feature.
-  await writeClaudePermissionMode(targetDir, opts.features);
+  await writeClaudePermissionMode(targetDir, opts.name, opts.features);
 
   // OpenCode's global config (model + provider key + AGENTS.md/commands
   // instructions), derived from the opencode feature's yml options. Same

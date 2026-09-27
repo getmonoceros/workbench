@@ -64,6 +64,7 @@ export function resolveClaudeDefaultMode(raw: string | undefined): string {
  */
 export async function writeClaudePermissionMode(
   targetDir: string,
+  containerName: string,
   features: CreateOptions['features'],
 ): Promise<void> {
   if (!features) return;
@@ -108,7 +109,11 @@ export async function writeClaudePermissionMode(
       ? (config.permissions as Record<string, unknown>)
       : {};
   permissions.defaultMode = mode;
-  applyPlansDirectory(permissions, hasRoles);
+  applyWorkingDirectories(
+    permissions,
+    `/workspaces/${containerName}`,
+    hasRoles,
+  );
   config.permissions = permissions;
 
   // Auto Mode: enable it via env where the account supports it; otherwise drop
@@ -139,33 +144,43 @@ export async function writeClaudePermissionMode(
 }
 
 /**
- * Put the roles' plans directory on the session's list of allowed working
- * directories, so the skills can read it in every permission mode.
+ * The session's extra working directories that Monoceros owns: the workspace
+ * root, always, and the roles' plans directory while the roles are installed.
  *
- * Plans live under the persisted `~/.claude`, deliberately outside the
- * workspace, so a plan survives an apply. Outside is the problem: Claude Code
+ * The workspace root, because the whole workspace is trusted, but Claude Code
+ * only counts the directory it was started in as a working directory. Started
+ * in `projects/<app>`, it treats `AGENTS.md` and the `.code-workspace` file one
+ * level up as outside, and auto mode then asks whether it may read outside the
+ * working directories.
+ *
+ * The plans directory, because plans live under the persisted `~/.claude`,
+ * deliberately outside the workspace, so a plan survives an apply. Claude Code
  * refuses to list or search a directory that is not a working directory of the
  * session, and refuses it *silently for a skill* - the `!`find …`` line in the
  * skill's preamble is not a prompt the user can approve, so the whole skill
  * aborts before it loads. Auto Mode hid this for months (its classifier lets
  * the read through); Claude Desktop attaches over SSH in `acceptEdits`, where
- * it fails every time.
+ * it fails every time. Only the plans directory, not `~/.claude`: it should
+ * widen by exactly the directory the roles own.
  *
- * Only the plans directory, not `~/.claude`: this widens what a session may
- * read, and it should widen by exactly the directory the roles own.
+ * Entries the builder added themselves are left alone.
  */
-function applyPlansDirectory(
+function applyWorkingDirectories(
   permissions: Record<string, unknown>,
+  workspaceDir: string,
   hasRoles: boolean,
 ): void {
+  const owned = new Set([workspaceDir, PLANS_DIR]);
   const existing = Array.isArray(permissions.additionalDirectories)
     ? (permissions.additionalDirectories as unknown[]).filter(
-        (entry) => typeof entry === 'string' && entry !== PLANS_DIR,
+        (entry) => typeof entry === 'string' && !owned.has(entry),
       )
     : [];
-  const next = hasRoles ? [...existing, PLANS_DIR] : existing;
-  if (next.length > 0) permissions.additionalDirectories = next;
-  else delete permissions.additionalDirectories;
+  permissions.additionalDirectories = [
+    ...existing,
+    workspaceDir,
+    ...(hasRoles ? [PLANS_DIR] : []),
+  ];
 }
 
 /** A Claude Code `PreToolUse` entry, as it sits in settings.json. */
