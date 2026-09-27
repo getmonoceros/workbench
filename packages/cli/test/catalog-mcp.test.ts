@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { parseDescriptorFile } from '../src/catalog/load.js';
 import type { CatalogComponent } from '../src/catalog/load.js';
-import { isInlineMcpEntry, resolveMcpServers } from '../src/catalog/mcp.js';
+import {
+  featureMcpServers,
+  formatFeatureMcpCollision,
+  isInlineMcpEntry,
+  resolveMcpServers,
+} from '../src/catalog/mcp.js';
 import { validateConfig } from '../src/config/schema.js';
 import type { McpEntry } from '../src/config/schema.js';
 
@@ -357,5 +362,87 @@ service:
         catalog,
       ),
     ).toThrow(/ghost[\s\S]*context7/);
+  });
+});
+
+/** A feature that carries its own server, the way the browser feature does. */
+const FEATURE_WITH_SERVER_YML = `
+id: browser
+category: feature
+displayName: Browser
+description: 'Headless Chromium for the agent.'
+feature:
+  version: 1.0.0
+  mcpServer:
+    name: playwright
+    transport: stdio
+    command: playwright-mcp
+    args: ['--headless', '--executable-path', '/usr/bin/chromium']
+`;
+
+const PLAIN_FEATURE_YML = `
+id: github-cli
+category: feature
+displayName: GitHub CLI
+description: 'gh.'
+feature:
+  version: 1.0.0
+`;
+
+describe('featureMcpServers (ADR 0060)', () => {
+  const catalog = new Map<string, CatalogComponent>();
+  for (const [id, yml] of [
+    ['browser', FEATURE_WITH_SERVER_YML],
+    ['github-cli', PLAIN_FEATURE_YML],
+  ] as const) {
+    catalog.set(
+      id,
+      parseDescriptorFile(yml, `/fake/${id}/component.yml`, id, 'feature'),
+    );
+  }
+  const ref = (id: string) => `ghcr.io/getmonoceros/monoceros-features/${id}:1`;
+
+  it('registers the server of a feature that is in the yml', () => {
+    expect(
+      featureMcpServers(
+        { [ref('browser')]: {}, [ref('github-cli')]: {} },
+        catalog,
+      ),
+    ).toEqual([
+      {
+        name: 'playwright',
+        transport: 'stdio',
+        command: 'playwright-mcp',
+        args: ['--headless', '--executable-path', '/usr/bin/chromium'],
+        description: 'Headless Chromium for the agent.',
+        fromCatalog: true,
+      },
+    ]);
+  });
+
+  it('registers nothing when the feature is not in the yml', () => {
+    expect(featureMcpServers({ [ref('github-cli')]: {} }, catalog)).toEqual([]);
+    expect(featureMcpServers(undefined, catalog)).toEqual([]);
+  });
+
+  it('rejects a template in a feature server, which would reach the agent literally', () => {
+    const yml = FEATURE_WITH_SERVER_YML.replace(
+      "'/usr/bin/chromium'",
+      "'${path}'",
+    );
+    expect(() =>
+      parseDescriptorFile(
+        yml,
+        '/fake/browser/component.yml',
+        'browser',
+        'feature',
+      ),
+    ).toThrow(/feature\.mcpServer takes no templates/);
+  });
+
+  it('names the yml entry to remove when it collides with a feature server', () => {
+    const message = formatFeatureMcpCollision(['playwright'], 'acme');
+    expect(message).toContain('playwright');
+    expect(message).toContain('monoceros remove-mcp-server acme playwright');
   });
 });

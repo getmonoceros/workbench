@@ -334,6 +334,44 @@ const WorkspaceEnvBlockSchema = z.object({
 });
 export type WorkspaceEnvBlock = z.infer<typeof WorkspaceEnvBlockSchema>;
 
+/** The fields of an MCP server definition, shared by both places it appears. */
+const McpBlockFields = {
+  transport: McpTransportSchema,
+  /** `stdio`: the executable to run in the container (e.g. `npx`). */
+  command: z.string().min(1).optional(),
+  /** `stdio`: argv after `command`. */
+  args: z.array(z.string()).optional(),
+  /** `stdio`: env for the server process. */
+  env: z.record(z.string(), z.string()).optional(),
+  /** `http` / `sse`: the endpoint. */
+  url: z.string().min(1).optional(),
+  /** `http` / `sse`: request headers, where a bearer token goes. */
+  headers: z.record(z.string(), z.string()).optional(),
+  /**
+   * `oauth`: the server authenticates interactively. There is no credential
+   * to put in the env file; the builder signs in once inside the container
+   * and the agent keeps the grant. Two things follow from the marker: the
+   * yml header says so instead of leaving a credential-less entry
+   * unexplained, and a `${option}` that resolves empty drops its header or
+   * env key rather than failing the apply — which is what lets a connector
+   * offer a token as the alternative route to the same server.
+   */
+  auth: z.literal('oauth').optional(),
+};
+
+/** A feature's own MCP server: the connector shape plus its registered name. */
+export const FeatureMcpServerSchema = z
+  .object({
+    name: z
+      .string()
+      .regex(DESCRIPTOR_ID_RE, 'name must be lowercase letters/digits/hyphens'),
+    ...McpBlockFields,
+  })
+  .superRefine((data, ctx) => {
+    validateMcpTransportFields(data, ctx);
+  });
+export type FeatureMcpServer = z.infer<typeof FeatureMcpServerSchema>;
+
 /** `category: feature` block — a tool we author and publish to GHCR. */
 /**
  * The example marketplace a plugin-hosting feature ships for its commented
@@ -388,6 +426,19 @@ export const FeatureBlockSchema = z.object({
    * file instead of making them look it up.
    */
   examplePlugin: ExamplePluginSchema.optional(),
+  /**
+   * An MCP server that belongs to what this feature installs, registered with
+   * every agent in the container at apply whenever the feature is in the yml
+   * (ADR 0060). For the case where the two are inseparable: the browser
+   * feature installs Chromium, and its server is the only way an agent drives
+   * it, so the builder writes no `mcpServers:` line on top.
+   *
+   * Same canonical shape as a connector's `mcpServer:` block plus the name it
+   * is registered under. Takes no `${option}` tokens (checked below): nothing
+   * so far needs one, and a feature option is not validated the way a
+   * connector's is.
+   */
+  mcpServer: FeatureMcpServerSchema.optional(),
 });
 export type FeatureBlock = z.infer<typeof FeatureBlockSchema>;
 
@@ -405,29 +456,7 @@ export type FeatureBlock = z.infer<typeof FeatureBlockSchema>;
  * never a literal in a descriptor.
  */
 export const McpBlockSchema = z
-  .object({
-    transport: McpTransportSchema,
-    /** `stdio`: the executable to run in the container (e.g. `npx`). */
-    command: z.string().min(1).optional(),
-    /** `stdio`: argv after `command`. */
-    args: z.array(z.string()).optional(),
-    /** `stdio`: env for the server process. */
-    env: z.record(z.string(), z.string()).optional(),
-    /** `http` / `sse`: the endpoint. */
-    url: z.string().min(1).optional(),
-    /** `http` / `sse`: request headers, where a bearer token goes. */
-    headers: z.record(z.string(), z.string()).optional(),
-    /**
-     * `oauth`: the server authenticates interactively. There is no credential
-     * to put in the env file; the builder signs in once inside the container
-     * and the agent keeps the grant. Two things follow from the marker: the
-     * yml header says so instead of leaving a credential-less entry
-     * unexplained, and a `${option}` that resolves empty drops its header or
-     * env key rather than failing the apply — which is what lets a connector
-     * offer a token as the alternative route to the same server.
-     */
-    auth: z.literal('oauth').optional(),
-  })
+  .object(McpBlockFields)
   .superRefine((data, ctx) => {
     validateMcpTransportFields(data, ctx);
   });
@@ -620,6 +649,23 @@ export const DescriptorSchema = z
               message: `mcpServer template references '\${${token}}', which is not a declared option`,
             });
           }
+        }
+      }
+    }
+
+    // A feature's own server is registered as written, so a `${token}` in it
+    // would reach the agent's config literally.
+    if (data.feature?.mcpServer) {
+      for (const { path: field, value } of mcpTemplates(
+        data.feature.mcpServer,
+      )) {
+        const token = optionTokens([value])[0];
+        if (token !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['feature', 'mcpServer', field],
+            message: `feature.mcpServer takes no templates, found '\${${token}}'`,
+          });
         }
       }
     }

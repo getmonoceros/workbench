@@ -1,0 +1,45 @@
+id: browser
+name: browser
+category: feature
+displayName: Browser
+description: "Headless Chromium plus the Playwright MCP server, so the agent can open the app it just built, read the page, click through it and check the console and network. Also runs the project's own Playwright tests."
+documentationURL: https://github.com/microsoft/playwright-mcp
+options:
+  version:
+    type: string
+    default: latest
+    description: 'npm-style version spec for `@playwright/mcp` (`latest`, `0.0.82`). Chromium itself comes from Debian and is updated with the image.'
+    surface: silent
+feature:
+  version: 1.0.0
+  # Installs a global npm package, so it has to run after the node
+  # feature: otherwise npm resolves the version against the Node the
+  # runtime image ships, which a pinned `node:<major>` then replaces.
+  installsAfter: [ghcr.io/devcontainers/features/node]
+  # Where `npx playwright install` puts the browser a project's own
+  # @playwright/test runs against. Playwright pins that browser to its own
+  # release, so the project downloads it rather than reusing the system
+  # Chromium, and without this the download is gone after every apply.
+  persistentHomePaths: [.cache/ms-playwright]
+  # The Debian Chromium, not Playwright's download: `@playwright/mcp` floats
+  # to latest and would otherwise ask for a browser revision the image does
+  # not have. `--no-sandbox` because Chromium's sandbox needs privileges the
+  # container does not grant, and the container is the isolation boundary
+  # (ADR 0060). `--output-dir` keeps screenshots and snapshot files out of
+  # the repository the agent is working in.
+  mcpServer:
+    name: playwright
+    transport: stdio
+    command: playwright-mcp
+    args:
+      - --headless
+      - --isolated
+      - --no-sandbox
+      - --executable-path
+      - /usr/bin/chromium
+      - --output-dir
+      - /tmp/playwright-mcp
+briefing:
+  - text: 'Browser (`playwright` MCP server, headless Chromium at `/usr/bin/chromium`). Open the app you are building at `http://localhost:<port>`: the browser runs in this container, so it reaches the dev server directly, not through the `.localhost` route on the host. Read the page with `browser_snapshot`, act on it with `browser_click` and `browser_type`, and check `browser_console_messages` and `browser_network_requests` before you call a page working.'
+  - text: "Every browser action reports the Playwright code it ran. When you write the project's own Playwright tests, start from that code instead of guessing selectors."
+  - text: "To run the project's own Playwright tests, run `npx playwright install --only-shell chromium` once in the project. The system libraries are already installed, so never add `--with-deps` or reach for sudo. The download is kept across applies."

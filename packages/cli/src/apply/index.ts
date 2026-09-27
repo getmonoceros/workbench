@@ -43,7 +43,11 @@ import {
 import type { SolutionConfig } from '../config/schema.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
 import { loadDescriptorCatalog } from '../catalog/load.js';
-import { resolveMcpServers } from '../catalog/mcp.js';
+import {
+  featureMcpServers,
+  formatFeatureMcpCollision,
+  resolveMcpServers,
+} from '../catalog/mcp.js';
 import {
   agentsPresent,
   formatNoAgentError,
@@ -481,17 +485,25 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       formatMissingVarsError(interpMcp.missing, prettyPath(envPath)),
     );
   }
-  const mcp = resolveMcpServers(
-    interpMcp.entries,
-    await loadDescriptorCatalog(),
-  );
+  const descriptors = await loadDescriptorCatalog();
+  const mcp = resolveMcpServers(interpMcp.entries, descriptors);
   for (const note of mcp.notes) (logger.warn ?? logger.info)(note);
-  if (mcp.servers.length > 0) {
-    if (agentsPresent(createOpts.features).length === 0) {
-      throw new Error(formatNoAgentError(mcp.servers, opts.name));
-    }
-    createOpts.mcpServers = mcp.servers;
+  const hasAgent = agentsPresent(createOpts.features).length > 0;
+  if (mcp.servers.length > 0 && !hasAgent) {
+    throw new Error(formatNoAgentError(mcp.servers, opts.name));
   }
+  // Servers the features carry themselves (ADR 0060). Unlike a yml entry, no
+  // agent is not an error: the browser feature is still a browser for the
+  // project's own tests, the server simply has no one to register with.
+  const fromFeatures = featureMcpServers(createOpts.features, descriptors);
+  const clashes = fromFeatures
+    .map((s) => s.name)
+    .filter((n) => mcp.servers.some((s) => s.name === n));
+  if (clashes.length > 0) {
+    throw new Error(formatFeatureMcpCollision(clashes, opts.name));
+  }
+  const servers = [...mcp.servers, ...(hasAgent ? fromFeatures : [])];
+  if (servers.length > 0) createOpts.mcpServers = servers;
 
   // Resolve `${VAR}` in git identities — the container-level `git.user`
   // and each repo's `git.user` — against the same env file. UNLIKE

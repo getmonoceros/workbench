@@ -1,6 +1,7 @@
 import type { McpEntry, McpTransport } from '../config/schema.js';
 import type { CatalogComponent } from './load.js';
 import type { Descriptor, OptionSpec } from './descriptor.js';
+import { matchMonocerosFeature } from '../util/ref.js';
 
 /**
  * Resolve the container yml's `mcp:` entries into the canonical server
@@ -292,5 +293,52 @@ function unknownConnectorMessage(
     `  - mcp '${name}': unknown connector. Catalog connectors: ${known}. ` +
     `For a server the catalog does not carry, put its own definition in the entry ` +
     `(transport, command/url, …) instead of just a name.`
+  );
+}
+
+/**
+ * The MCP servers the container's features carry themselves (ADR 0060), one
+ * per feature that declares `feature.mcpServer`. Registered like a yml entry,
+ * but without one: the feature being in the yml is the whole opt-in.
+ */
+export function featureMcpServers(
+  features: Record<string, unknown> | undefined,
+  catalog: Map<string, CatalogComponent>,
+): ResolvedMcpServer[] {
+  const servers: ResolvedMcpServer[] = [];
+  for (const ref of Object.keys(features ?? {})) {
+    const id = matchMonocerosFeature(ref)?.name;
+    const descriptor = id ? catalog.get(id)?.descriptor : undefined;
+    const block = descriptor?.feature?.mcpServer;
+    if (!descriptor || !block) continue;
+    const out: ResolvedMcpServer = {
+      name: block.name,
+      transport: block.transport,
+      description: descriptor.description,
+      fromCatalog: true,
+    };
+    if (block.command !== undefined) out.command = block.command;
+    if (block.args !== undefined) out.args = [...block.args];
+    if (block.env !== undefined) out.env = { ...block.env };
+    if (block.url !== undefined) out.url = block.url;
+    if (block.headers !== undefined) out.headers = { ...block.headers };
+    servers.push(out);
+  }
+  return servers;
+}
+
+/**
+ * A yml entry under the same name as a feature's own server. Same stance as a
+ * hand-added server of that name (ADR 0045): no precedence rule is defensible,
+ * so the apply stops and says which line to drop.
+ */
+export function formatFeatureMcpCollision(
+  names: readonly string[],
+  containerName: string,
+): string {
+  const list = names.join(', ');
+  return (
+    `The yml's \`mcpServers:\` block names ${list}, which a feature in this workbench already registers.\n` +
+    `Remove the entry (\`monoceros remove-mcp-server ${containerName} ${names[0]}\`), the feature brings the server itself.`
   );
 }

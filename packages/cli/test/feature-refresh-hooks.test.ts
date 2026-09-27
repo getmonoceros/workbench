@@ -42,6 +42,9 @@ const CLAUDE_INSTALL_SH = fileURLToPath(
 const ATLASSIAN_INSTALL_SH = fileURLToPath(
   new URL('../../../components/features/atlassian/install.sh', import.meta.url),
 );
+const BROWSER_INSTALL_SH = fileURLToPath(
+  new URL('../../../components/features/browser/install.sh', import.meta.url),
+);
 
 let dir: string;
 let binDir: string;
@@ -103,7 +106,8 @@ async function sandboxInstaller(source: string): Promise<string> {
       '/usr/local/share/monoceros/rovodev-billing-site.py',
       path.join(dir, 'billing-site.py'),
     )
-    .replaceAll('/etc/profile.d', profileDir);
+    .replaceAll('/etc/profile.d', profileDir)
+    .replaceAll('/var/lib/apt/lists', path.join(dir, 'apt-lists'));
   const file = path.join(dir, path.basename(source));
   await writeFile(file, patched);
   return file;
@@ -248,6 +252,93 @@ describe('claude-code refresh hook', () => {
     // the builder the update.
     expect(await readFile(path.join(dir, 'npm.log'), 'utf8')).toContain(
       'install -g',
+    );
+  });
+});
+
+describe('browser feature', () => {
+  /** Install the feature with apt and Chromium stubbed, returning the hook path. */
+  async function installFeature(
+    version = 'latest',
+    chromiumExit = 0,
+  ): Promise<{ code: number; stderr: string; hook: string }> {
+    await stub('apt-get', 'exit 0');
+    await stub('update-alternatives', 'exit 0');
+    await stub('chromium', `exit ${chromiumExit}`);
+    await stub('npm', 'exit 0');
+    await stub('playwright-mcp', 'echo "Version 0.0.82"');
+    const installer = await sandboxInstaller(BROWSER_INSTALL_SH);
+    const result = await run(installer, { VERSION: version });
+    return {
+      code: result.code,
+      stderr: result.stderr,
+      hook: path.join(refreshDir, 'browser.sh'),
+    };
+  }
+
+  /** npm answering `view` with `latest` and logging every call. */
+  async function stubNpm(latest: string): Promise<string> {
+    const log = path.join(dir, 'npm.log');
+    await stub(
+      'npm',
+      [
+        `printf '%s\\n' "$*" >> ${log}`,
+        'if [ "$1" = "view" ]; then',
+        `  printf '%s\\n' '${latest}'`,
+        'fi',
+        'exit 0',
+      ].join('\n'),
+    );
+    return log;
+  }
+
+  it('fails the build when Chromium installs but does not start', async () => {
+    // The agent's first page load is the wrong place to find out.
+    const { code, stderr } = await installFeature('latest', 1);
+    expect(code).not.toBe(0);
+    expect(stderr).toContain('chromium is installed but does not start');
+  });
+
+  it('writes no refresh hook when the builder pinned a version', async () => {
+    const { code, hook } = await installFeature('0.0.82');
+    expect(code).toBe(0);
+    expect(existsSync(hook)).toBe(false);
+  });
+
+  it('updates the MCP server when a newer one is published', async () => {
+    const { hook } = await installFeature();
+    const npmLog = await stubNpm('0.0.83');
+    const log = path.join(dir, 'refresh.log');
+
+    expect((await run(hook, { MONOCEROS_REFRESH_LOG: log })).code).toBe(0);
+    expect(await readFile(npmLog, 'utf8')).toContain(
+      'install -g --no-audit --no-fund @playwright/mcp@0.0.83',
+    );
+    expect(await readFile(log, 'utf8')).toContain(
+      'playwright-mcp 0.0.83 (updated from 0.0.82)',
+    );
+  });
+
+  it('does not install when the installed version is current', async () => {
+    const { hook } = await installFeature();
+    const npmLog = await stubNpm('0.0.82');
+    const log = path.join(dir, 'refresh.log');
+
+    expect((await run(hook, { MONOCEROS_REFRESH_LOG: log })).code).toBe(0);
+    expect(await readFile(npmLog, 'utf8')).not.toContain('install');
+    expect(await readFile(log, 'utf8')).toContain(
+      'playwright-mcp 0.0.82 (already current)',
+    );
+  });
+
+  it('succeeds and keeps the image version when the registry is unreachable', async () => {
+    const { hook } = await installFeature();
+    await stub('npm', 'exit 1');
+    const log = path.join(dir, 'refresh.log');
+
+    expect((await run(hook, { MONOCEROS_REFRESH_LOG: log })).code).toBe(0);
+    expect(await readFile(log, 'utf8')).toContain(
+      'playwright-mcp: could not reach the npm registry, keeping 0.0.82',
     );
   });
 });

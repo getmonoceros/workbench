@@ -363,6 +363,14 @@
       ]
     },
     {
+      "name": "browser",
+      "displayName": "Browser",
+      "description": "Headless Chromium plus the Playwright MCP server, so the agent can open the app it just built, read the page, click through it and check the console and network. Also runs the project's own Playwright tests.",
+      "options": [],
+      "documentationURL": "https://github.com/microsoft/playwright-mcp",
+      "presets": []
+    },
+    {
       "name": "claude",
       "displayName": "Claude Code",
       "description": "Anthropic's CLI coding assistant. OAuth/subscription login persists across container rebuilds.",
