@@ -7,7 +7,8 @@
 #   2. Verifies Node >= 20 is on PATH (with npm).
 #   3. Runs `npm install -g @getmonoceros/workbench`.
 #   4. Seeds ~/.monoceros with the two config templates.
-#   5. Drops a shell-completion file in the right place for your shell.
+#   5. Drops a shell-completion file in the right place for your shell
+#      (on macOS for both zsh and bash).
 #
 # Steps 1-4 are critical: failing one aborts the install with a reason.
 # Step 5 is optional and only ever warns. See "Step contract" below -
@@ -18,8 +19,8 @@
 #   - Install Docker.
 #   - Install Node.
 #   - Touch your system beyond an `npm install -g` and one rc-file
-#     append for shell-completion bootstrap (guarded; repeat runs
-#     don't duplicate).
+#     append per shell for shell-completion bootstrap (guarded; repeat
+#     runs don't duplicate).
 #
 # If either prerequisite is missing the script prints an explanation
 # and exits non-zero. Install the missing piece yourself, then re-run.
@@ -935,15 +936,23 @@ install_bash_completion() {
   fi
 }
 
-case "$user_shell" in
-  zsh)  install_zsh_completion ;;
-  bash) install_bash_completion ;;
-  *)
-    warn "shell '$user_shell' not auto-supported — install completion manually:"
-    say "    $(cmd 'monoceros completion bash') > ~/.bash_completion.d/monoceros"
-    say "    $(cmd 'monoceros completion zsh')  > ~/.zsh/completions/_monoceros"
-    ;;
-esac
+if [[ "$PLATFORM" == "macos" ]]; then
+  # Both, whatever $SHELL says (#115). Terminal.app and iTerm2 can open
+  # bash via their own "Shells open with" setting while $SHELL stays
+  # /bin/zsh, and zsh ships with every Mac, so neither file is wasted.
+  install_zsh_completion
+  install_bash_completion
+else
+  case "$user_shell" in
+    zsh)  install_zsh_completion ;;
+    bash) install_bash_completion ;;
+    *)
+      warn "shell '$user_shell' not auto-supported — install completion manually:"
+      say "    $(cmd 'monoceros completion bash') > ~/.bash_completion.d/monoceros"
+      say "    $(cmd 'monoceros completion zsh')  > ~/.zsh/completions/_monoceros"
+      ;;
+  esac
+fi
 
 # ── 5. Next steps ──────────────────────────────────────────────────
 section "Next steps"
