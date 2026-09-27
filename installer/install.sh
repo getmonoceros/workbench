@@ -128,6 +128,26 @@ esac
 # per-user npm prefix.
 user_shell="${SHELL##*/}"
 
+# The startup file bash actually reads in a new terminal (#115). On
+# Linux a terminal tab is an interactive non-login shell, which reads
+# ~/.bashrc. macOS terminals (Terminal.app, iTerm2) start every window
+# as a login shell, which reads the first of ~/.bash_profile,
+# ~/.bash_login, ~/.profile and never ~/.bashrc.
+bash_rc_file() {
+  if [[ "$PLATFORM" != "macos" ]]; then
+    echo "$HOME/.bashrc"
+    return 0
+  fi
+  local f
+  for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+    if [[ -f "$f" ]]; then
+      echo "$f"
+      return 0
+    fi
+  done
+  echo "$HOME/.bash_profile"
+}
+
 # ── Pretty printing ────────────────────────────────────────────────
 # Colors are gated on stderr being a TTY (the script prints to
 # stderr so `curl … | sh` still shows the output). Palette matches
@@ -637,7 +657,7 @@ section "Installing CLI"
 persist_path_line() {
   local dir="$1" rc_file="" path_marker
   case "$user_shell" in
-    bash) rc_file="$HOME/.bashrc" ;;
+    bash) rc_file="$(bash_rc_file)" ;;
     zsh)  rc_file="$HOME/.zshrc" ;;
   esac
   path_marker="# monoceros: per-user npm prefix on PATH"
@@ -898,11 +918,11 @@ install_bash_completion() {
     return 0
   fi
 
-  rc_file="$HOME/.bashrc"
+  rc_file="$(bash_rc_file)"
   source_line="source $target"
 
   if [[ -f "$rc_file" ]] && grep -qF "$marker" "$rc_file"; then
-    ok "bash $(dim "→") $(dim "$target") $(dim "(.bashrc already wired)")"
+    ok "bash $(dim "→") $(dim "$target") $(dim "(${rc_file##*/} already wired)")"
   else
     {
       echo ""
@@ -943,7 +963,7 @@ say ""
 say "  Activate in this shell $(dim '(or just open a new terminal):')"
 case "$user_shell" in
   zsh)  say "      $(cmd 'rehash && compinit')" ;;
-  bash) say "      $(cmd 'hash -r && source ~/.bashrc')" ;;
+  bash) say "      $(cmd "hash -r && source ~/$(basename "$(bash_rc_file)")")" ;;
   *)    say "      $(dim '(open a new terminal)')" ;;
 esac
 say ""

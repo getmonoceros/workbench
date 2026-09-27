@@ -161,6 +161,8 @@ strip_rc() {
   cat "$tmp" > "$rc"; rm -f "$tmp"
 }
 strip_rc "$HOME/.bashrc"; strip_rc "$HOME/.zshrc"
+# On macOS install.sh writes to the bash login-shell file instead (#115).
+strip_rc "$HOME/.bash_profile"; strip_rc "$HOME/.bash_login"; strip_rc "$HOME/.profile"
 ok "Removed the CLI's PATH/completion lines."
 
 # ── 4. Data — kept unless purge ────────────────────────────────────

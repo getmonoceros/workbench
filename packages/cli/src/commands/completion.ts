@@ -35,7 +35,8 @@ type Shell = (typeof SHELLS)[number];
 function renderBashScript(): string {
   return [
     '# bash completion for monoceros',
-    '# install: source this file from .bashrc, e.g.',
+    '# install: source this file from .bashrc (on macOS from .bash_profile,',
+    '# since macOS terminals start bash as a login shell), e.g.',
     '#   monoceros completion bash > ~/.bash_completion.d/monoceros',
     '#   echo "source ~/.bash_completion.d/monoceros" >> ~/.bashrc',
     '#',
@@ -51,8 +52,10 @@ function renderBashScript(): string {
     '  # Suppress the trailing space when bash narrowed the candidate',
     '  # set to a single token that ends with `=` — those are value-',
     '  # flags (`--with-features=`, `--with-ports=`, …) where the user types the',
-    '  # value immediately after.',
-    '  if [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == *= ]]; then',
+    '  # value immediately after. compopt arrived in bash 4.0; macOS still',
+    '  # ships bash 3.2, which keeps the space but must not print an error.',
+    '  if [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == *= ]] \\',
+    '     && type compopt >/dev/null 2>&1; then',
     '    compopt -o nospace',
     '  fi',
     '}',

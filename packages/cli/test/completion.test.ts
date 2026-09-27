@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -39,6 +40,28 @@ describe('renderCompletionScript', () => {
     // `--with-ports =3000` after Tab + manual `=3000`.
     expect(bash).toContain('compopt -o nospace');
     expect(bash).toContain('"${COMPREPLY[0]}" == *=');
+  });
+
+  it('bash wrapper runs clean without `compopt` (macOS bash 3.2, #115)', async () => {
+    const bash = await renderCompletionScript('bash');
+    // On bash 4+ `enable -n compopt` takes the builtin away, which is
+    // what macOS's /bin/bash 3.2 looks like (there it simply isn't one).
+    // `monoceros` is stubbed as a function so the wrapper gets a single
+    // `=`-terminated candidate.
+    const script = [
+      'enable -n compopt 2>/dev/null || true',
+      bash,
+      'monoceros() { echo "--with-languages="; }',
+      'COMP_LINE="monoceros init x --with-lang"',
+      'COMP_POINT=${#COMP_LINE}',
+      'COMP_WORDS=(monoceros init x --with-lang)',
+      'COMP_CWORD=3',
+      '_monoceros',
+      'echo "reply:${COMPREPLY[*]}"',
+    ].join('\n');
+    const result = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+    expect(result.stderr).toBe('');
+    expect(result.stdout.trim()).toBe('reply:--with-languages=');
   });
 
   it("zsh wrapper applies `-S ''` (no suffix) to candidates ending in `=`", async () => {
