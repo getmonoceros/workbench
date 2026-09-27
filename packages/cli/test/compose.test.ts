@@ -7,6 +7,7 @@ import {
   composeProjectName,
   resolveCompose,
   runContainerCycle,
+  runDown,
   runLogs,
   runStart,
   runStatus,
@@ -611,5 +612,84 @@ describe('image-mode lifecycle (no compose.yaml)', () => {
     expect(infos.join('\n')).toMatch(
       /does not exist.*monoceros apply sandbox/s,
     );
+  });
+});
+
+describe('runDown (stop --down, #114)', () => {
+  let tmp: string;
+  let root: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), 'monoceros-down-'));
+    root = path.join(tmp, 'acme');
+    await fs.mkdir(path.join(root, '.devcontainer'), { recursive: true });
+    await fs.writeFile(
+      path.join(root, '.devcontainer', 'compose.yaml'),
+      'services:\n  workspace:\n    container_name: monoceros-acme\n',
+    );
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('removes the containers and the network, and leaves volumes and files alone', async () => {
+    const calls: string[][] = [];
+    const code = await runDown({
+      root,
+      logger: { info: () => {} },
+      dockerExec: async (args) => {
+        calls.push([...args]);
+        const filter = args[args.indexOf('--filter') + 1] ?? '';
+        const hit =
+          args[0] === 'ps' &&
+          filter === 'label=com.docker.compose.project=acme_devcontainer';
+        return { exitCode: 0, stdout: hit ? 'aaa\nbbb\n' : '', stderr: '' };
+      },
+    });
+
+    expect(code).toBe(0);
+    const filters = calls
+      .filter((c) => c[0] === 'ps')
+      .map((c) => c[c.indexOf('--filter') + 1]);
+    expect(filters).toEqual([
+      'label=com.docker.compose.project=acme_devcontainer',
+      `label=devcontainer.local_folder=${root}`,
+      'name=^acme_devcontainer-',
+      'name=^vsc-acme-',
+    ]);
+    expect(calls).toContainEqual(['rm', '-f', 'aaa', 'bbb']);
+    expect(calls).toContainEqual([
+      'network',
+      'rm',
+      'acme_devcontainer_default',
+    ]);
+    // Volumes hold the service data and the IDE state: never touched.
+    expect(calls.some((c) => c[0] === 'volume')).toBe(false);
+    await expect(
+      fs.access(path.join(root, '.devcontainer', 'compose.yaml')),
+    ).resolves.toBeUndefined();
+  });
+
+  it("returns docker's exit code and passes on its error when rm fails", async () => {
+    const infos: string[] = [];
+    const code = await runDown({
+      root,
+      logger: { info: (m) => infos.push(m) },
+      dockerExec: async (args) => {
+        if (args[0] === 'ps')
+          return { exitCode: 0, stdout: 'aaa\n', stderr: '' };
+        if (args[0] === 'rm') {
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr: 'Error response from daemon: permission denied',
+          };
+        }
+        return { exitCode: 0, stdout: '', stderr: '' };
+      },
+    });
+    expect(code).toBe(1);
+    expect(infos.join('\n')).toContain('permission denied');
   });
 });

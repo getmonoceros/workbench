@@ -841,6 +841,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     positionals: [containerName, appCandidates],
     flags: {
       '--target': { type: 'value', values: targetCandidates },
+      '--down': { type: 'boolean' },
     },
   },
   status: {

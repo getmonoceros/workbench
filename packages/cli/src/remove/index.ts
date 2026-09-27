@@ -13,6 +13,7 @@ import {
   cleanupDockerObjects,
   composeProjectName,
   spawnDocker,
+  workbenchContainerFilters,
   type DockerExec,
 } from '../devcontainer/compose.js';
 import { ideStateVolumes } from '../create/scaffold.js';
@@ -121,29 +122,15 @@ export async function runRemove(
   }
 
   // ── Step 1: stop + remove docker objects ────────────────────────
-  // Four overlapping filters because devcontainer-cli ranges over
-  // multiple naming/labeling schemes depending on container mode:
-  //   1. compose-mode containers carry the compose project label
-  //   2. image-mode + feature-build intermediates carry the
-  //      devcontainer.local_folder label — the most reliable anchor,
-  //      because @devcontainers/cli lets Docker assign random names
-  //      like 'kind_cerf' that neither name-prefix filter catches.
-  //   3. container-name prefix as a fallback for half-broken state
-  //   4. deterministic `vsc-<name>-` prefix from older
-  //      devcontainer-cli versions
-  // All four are union'd, deduplicated, and `docker rm -f`-ed
-  // together via cleanupDockerObjects() (direct Node spawn of docker,
-  // no shell wrapper).
+  // The filters (see workbenchContainerFilters) are union'd,
+  // deduplicated, and `docker rm -f`-ed together via
+  // cleanupDockerObjects() (direct Node spawn of docker, no shell
+  // wrapper).
   const projectName = composeProjectName(containerPath);
   const dockerExec = opts.dockerExec ?? spawnDocker;
   const { exitCode: dockerExitCode } = await cleanupDockerObjects({
     projectName,
-    filters: [
-      `label=com.docker.compose.project=${projectName}`,
-      `label=devcontainer.local_folder=${containerPath}`,
-      `name=^${projectName}-`,
-      `name=^vsc-${opts.name}-`,
-    ],
+    filters: workbenchContainerFilters(containerPath),
     network: `${projectName}_default`,
     logTag: 'remove',
     logger,

@@ -750,6 +750,50 @@ export function runStop(opts: ComposeActionOptions): Promise<number> {
   return stopImageContainer(opts);
 }
 
+/**
+ * Docker filters that together find every container of one workbench,
+ * in compose and image mode alike. Shared by `remove` and `stop --down`
+ * so both tear down the same set. Four overlapping filters because
+ * devcontainer-cli ranges over multiple naming/labeling schemes:
+ *   1. compose-mode containers carry the compose project label
+ *   2. image-mode + feature-build intermediates carry the
+ *      devcontainer.local_folder label, the most reliable anchor,
+ *      because @devcontainers/cli lets Docker assign random names
+ *      like 'kind_cerf' that neither name-prefix filter catches
+ *   3. container-name prefix as a fallback for half-broken state
+ *   4. deterministic `vsc-<name>-` prefix from older
+ *      devcontainer-cli versions
+ */
+export function workbenchContainerFilters(root: string): string[] {
+  const projectName = composeProjectName(root);
+  return [
+    `label=com.docker.compose.project=${projectName}`,
+    `label=devcontainer.local_folder=${root}`,
+    `name=^${projectName}-`,
+    `name=^vsc-${path.basename(root)}-`,
+  ];
+}
+
+/**
+ * `monoceros stop <name> --down`: what `docker compose down` does.
+ * Removes the workbench's containers and its project network; the yml,
+ * the container directory and every volume stay, so `start` brings the
+ * workbench back as it was (#114).
+ */
+export async function runDown(opts: ComposeActionOptions): Promise<number> {
+  assertDevcontainer(opts.root);
+  const projectName = composeProjectName(opts.root);
+  const { exitCode } = await cleanupDockerObjects({
+    projectName,
+    filters: workbenchContainerFilters(opts.root),
+    network: `${projectName}_default`,
+    logTag: 'down',
+    logger: opts.logger ?? { info: (msg) => consola.info(msg) },
+    ...(opts.dockerExec ? { exec: opts.dockerExec } : {}),
+  });
+  return exitCode;
+}
+
 export function runStatus(opts: ComposeActionOptions): Promise<number> {
   assertDevcontainer(opts.root);
   if (isComposeMode(opts.root)) {
