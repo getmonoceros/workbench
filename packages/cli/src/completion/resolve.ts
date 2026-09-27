@@ -163,6 +163,7 @@ export type PwshValueKind =
   | 'containerName'
   | 'app'
   | 'appOrService'
+  | 'service'
   | 'runInDir'
   | 'target'
   | 'workbenchTemplate';
@@ -472,18 +473,25 @@ async function listAppOrServiceCandidates(ctx: Ctx): Promise<string[]> {
   const name = containerNameFromCtx(ctx);
   if (!name) return [];
   const apps = await listApps(name, ctx.opts.monocerosHome).catch(() => []);
-  let services: string[] = [];
+  const services = await listServiceCandidates(ctx);
+  return [...new Set([...apps, ...services])].sort();
+}
+
+/** The services the named workbench's yml declares (`stop --service`). */
+async function listServiceCandidates(ctx: Ctx): Promise<string[]> {
+  const name = containerNameFromCtx(ctx);
+  if (!name) return [];
   try {
     const parsed = await readConfig(
       containerConfigPath(name, ctx.opts.monocerosHome),
     );
-    services = solutionConfigToCreateOptions(parsed.config).services.map(
-      (s) => s.name,
-    );
+    return solutionConfigToCreateOptions(parsed.config)
+      .services.map((s) => s.name)
+      .sort();
   } catch {
-    // no yml, or it doesn't parse — offer apps only
+    // no yml, or it doesn't parse — nothing to offer
+    return [];
   }
-  return [...new Set([...apps, ...services])].sort();
 }
 
 /**
@@ -754,6 +762,9 @@ const appCandidates = dynamicSource('app', (ctx) => listAppCandidates(ctx));
 const appOrServiceCandidates = dynamicSource('appOrService', (ctx) =>
   listAppOrServiceCandidates(ctx),
 );
+const workbenchServices = dynamicSource('service', (ctx) =>
+  listServiceCandidates(ctx),
+);
 const targetCandidates = dynamicSource('target', (ctx) =>
   listTargetCandidates(ctx),
 );
@@ -841,6 +852,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     positionals: [containerName, appCandidates],
     flags: {
       '--target': { type: 'value', values: targetCandidates },
+      '--service': { type: 'value', values: workbenchServices },
       '--down': { type: 'boolean' },
     },
   },

@@ -156,6 +156,68 @@ describe('the pwsh script', () => {
       );
     }
   });
+
+  // Runs the generated script for real where pwsh exists (the GitHub
+  // ubuntu runners ship it). The service lookup is a line scan of the yml,
+  // so it is logic worth executing, not just grepping for (#118).
+  it.skipIf(spawnSync('pwsh', ['-v']).status !== 0)(
+    'completes stop --service and status from the declared services',
+    async () => {
+      const home = await mkdtemp(path.join(tmpdir(), 'monoceros-pwsh-'));
+      try {
+        await mkdir(path.join(home, 'container-configs'), { recursive: true });
+        await writeFile(
+          path.join(home, 'container-configs', 'sandbox.yml'),
+          [
+            'name: sandbox',
+            'services:',
+            '',
+            '  # Keycloak: a comment block like the CLI writes',
+            '  - name: keycloak',
+            '    image: quay.io/keycloak/keycloak:26',
+            '    # volumes:',
+            '    #   - projects/<app>/realm.json:/import.json:ro',
+            '    volumes:',
+            '      - name: not-a-service',
+            '  - image: redis:7',
+            "    name: 'redis'",
+            'features:',
+            '  - name: not-a-service-either',
+            '',
+          ].join('\n'),
+        );
+        const web = path.join(home, 'container', 'sandbox', 'projects', 'web');
+        await mkdir(path.join(web, '.monoceros'), { recursive: true });
+        await writeFile(
+          path.join(web, '.monoceros', 'launch.json'),
+          JSON.stringify({ configurations: [{ name: 'dev', command: 'x' }] }),
+        );
+        const scriptPath = path.join(home, 'completion.ps1');
+        await writeFile(scriptPath, await renderPwshScript());
+        const probe = [
+          `. '${scriptPath}'`,
+          'foreach ($line in @(',
+          "  'monoceros stop sandbox --service ',",
+          "  'monoceros status sandbox '",
+          ')) {',
+          '  $r = TabExpansion2 -inputScript $line -cursorColumn $line.Length',
+          "  ($r.CompletionMatches | ForEach-Object CompletionText) -join ' '",
+          '}',
+        ].join('\n');
+        const result = spawnSync('pwsh', ['-NoProfile', '-Command', probe], {
+          encoding: 'utf8',
+          env: { ...process.env, MONOCEROS_HOME: home },
+        });
+        expect(result.stderr).toBe('');
+        expect(result.stdout.trim().split('\n')).toEqual([
+          'keycloak redis',
+          'keycloak redis web',
+        ]);
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe('buildPwshCompletionModel', () => {
@@ -474,6 +536,46 @@ describe('resolveCompletions', () => {
     );
     expect(r).toContain('web'); // app
     expect(r).toContain('postgres'); // declared service
+  });
+
+  it('completes `stop <name> --service` with the declared services only (#118)', async () => {
+    await writeFile(
+      path.join(home, 'container-configs', 'sandbox.yml'),
+      [
+        'schemaVersion: 1',
+        'runtimeVersion: 1.6.0',
+        'name: sandbox',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:16',
+        '  - name: redis',
+        '    image: redis:7',
+        '',
+      ].join('\n'),
+    );
+    const ws = path.join(home, 'container', 'sandbox');
+    await mkdir(path.join(ws, 'projects', 'web', '.monoceros'), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(ws, 'projects', 'web', '.monoceros', 'launch.json'),
+      JSON.stringify({ configurations: [{ name: 'dev', command: 'x' }] }),
+    );
+
+    const flags = await resolveCompletions(
+      'monoceros stop sandbox --s',
+      'monoceros stop sandbox --s'.length,
+      { monocerosHome: home },
+    );
+    expect(flags).toContain('--service=');
+
+    const r = await resolveCompletions(
+      'monoceros stop sandbox --service ',
+      'monoceros stop sandbox --service '.length,
+      { monocerosHome: home },
+    );
+    // Only what this workbench declares: no app, no catalog service.
+    expect(r).toEqual(['postgres', 'redis']);
   });
 
   it("completes --target from the already-typed app's launch config", async () => {

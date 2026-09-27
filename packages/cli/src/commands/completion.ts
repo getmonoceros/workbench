@@ -199,6 +199,32 @@ function __Monoceros_Apps($name) {
   @($acc | Sort-Object)
 }
 
+# Service names from the workbench yml's top-level \`services:\` list. There
+# is no YAML parser here, but the CLI writes every entry as a \`- name: x\`
+# item, so scanning that block line by line is enough.
+function __Monoceros_Services($name) {
+  if (-not $name) { return @() }
+  $file = Join-Path (Join-Path (__Monoceros_Home) 'container-configs') "$($name).yml"
+  if (-not (Test-Path -LiteralPath $file)) { return @() }
+  $inBlock = $false
+  $indent = $null
+  $out = @()
+  foreach ($line in (Get-Content -LiteralPath $file -ErrorAction SilentlyContinue)) {
+    if ($line -match '^services:\\s*$') { $inBlock = $true; continue }
+    if (-not $inBlock) { continue }
+    if ($line -match '^[^\\s#]') { break }
+    if ($line -match '^(\\s*)-\\s') {
+      if ($null -eq $indent) { $indent = $Matches[1].Length }
+      if ($Matches[1].Length -ne $indent) { continue }
+    }
+    if ($null -eq $indent) { continue }
+    if ($line -match "^\\s{$indent}-\\s+name:\\s*(.+?)\\s*$" -or $line -match "^\\s{$($indent + 2)}name:\\s*(.+?)\\s*$") {
+      $out += ($Matches[1] -replace '^[''"]|[''"]$', '')
+    }
+  }
+  @($out | Sort-Object -Unique)
+}
+
 # Workbench templates the builder put in MONOCEROS_HOME. Merged with the names
 # baked into this script, which are the ones shipped with the CLI.
 function __Monoceros_Templates($bundled) {
@@ -247,7 +273,8 @@ function __Monoceros_Values($desc, $argTokens) {
     switch ($desc.kind) {
       'containerName' { return (__Monoceros_ContainerNames) }
       'app'           { return (__Monoceros_Apps $name) }
-      'appOrService'  { return (__Monoceros_Apps $name) }
+      'appOrService'  { return @(@(__Monoceros_Apps $name) + @(__Monoceros_Services $name) | Sort-Object -Unique) }
+      'service'       { return (__Monoceros_Services $name) }
       'runInDir'      { return (__Monoceros_WorkspaceDirs $name) }
       'target'        { return (__Monoceros_Targets $name $app) }
       'workbenchTemplate' { return (__Monoceros_Templates $desc.values) }
