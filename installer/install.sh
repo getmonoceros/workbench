@@ -393,6 +393,128 @@ EOF
   exit 1
 fi
 
+# Compose and Buildx. The same diagnosis as probeDockerPlugin() in the CLI
+# (packages/cli/src/devcontainer/docker-plugins.ts), because "docker compose
+# does not work" has several causes with different fixes (#111): installed
+# where the Docker CLI does not look (Homebrew next to Colima), a link to a
+# file that is gone, a plugin the CLI finds but cannot run, or not installed
+# at all. Warn only: a workbench without services needs neither, and apply
+# stops with the same diagnosis before a build that would fail.
+docker_plugin_dir="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
+docker_plugin_dir_shown="${docker_plugin_dir/#$HOME/\~}"
+docker_broken_plugins="$(docker info --format '{{range .ClientInfo.Plugins}}{{if .Err}}{{.Name}}|{{.Path}}|{{.Err}}{{"\n"}}{{end}}{{end}}' 2>/dev/null || true)"
+
+docker_plugin_install_hint() {
+  local bin="docker-$1" prefix
+  case "$PLATFORM" in
+    macos)
+      prefix="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
+      cat >&2 <<EOF
+
+Install it with Homebrew and link it where the Docker CLI looks:
+
+  ${CYAN}brew install $bin${RESET}
+  ${CYAN}mkdir -p $docker_plugin_dir_shown${RESET}
+  ${CYAN}ln -sfn $prefix/lib/docker/cli-plugins/$bin $docker_plugin_dir_shown/$bin${RESET}
+
+EOF
+      ;;
+    linux)
+      cat >&2 <<EOF
+
+Install it from Docker's own package repository (get.docker.com sets it up):
+
+  ${CYAN}sudo apt-get install $bin-plugin${RESET}
+
+EOF
+      ;;
+    wsl)
+      cat >&2 <<EOF
+
+Docker Desktop comes with it. Turn on WSL integration for this distro:
+
+  Docker Desktop > Settings > Resources > WSL integration
+
+EOF
+      ;;
+    *)
+      cat >&2 <<EOF
+
+See $(dim "https://docs.docker.com/engine/install/") for your platform.
+
+EOF
+      ;;
+  esac
+}
+
+check_docker_plugin() {
+  local plugin="$1" label="$2" consequence="$3"
+  local bin="docker-$1" link="$docker_plugin_dir/docker-$1" installed="" d broken bpath berr
+  if docker "$plugin" version >/dev/null 2>&1; then
+    ok "$label available"
+    return 0
+  fi
+  # devcontainer-cli falls back to a standalone docker-compose on PATH.
+  if [[ "$plugin" == compose ]] && docker-compose version >/dev/null 2>&1; then
+    ok "$label available (standalone docker-compose)"
+    return 0
+  fi
+  for d in /opt/homebrew/lib/docker/cli-plugins /usr/local/lib/docker/cli-plugins \
+           /home/linuxbrew/.linuxbrew/lib/docker/cli-plugins \
+           /Applications/Docker.app/Contents/Resources/cli-plugins; do
+    if [[ -f "$d/$bin" ]]; then installed="$d/$bin"; break; fi
+  done
+  broken="$(printf '%s\n' "$docker_broken_plugins" | grep "^$plugin|" | head -n 1 || true)"
+
+  warn "$label is not available. $consequence"
+  if [[ -n "$broken" ]]; then
+    IFS='|' read -r _ bpath berr <<<"$broken"
+    cat >&2 <<EOF
+
+The Docker CLI finds $label at $bpath
+but cannot run it: $berr
+
+Reinstall it with the package manager you installed it with.
+
+EOF
+  elif [[ -L "$link" && ! -e "$link" ]]; then
+    if [[ -n "$installed" ]]; then
+      cat >&2 <<EOF
+
+$docker_plugin_dir_shown/$bin points to $(readlink "$link"),
+which does not exist anymore. Point it at the installed one:
+
+  ${CYAN}ln -sfn $installed $docker_plugin_dir_shown/$bin${RESET}
+
+EOF
+    else
+      cat >&2 <<EOF
+
+$docker_plugin_dir_shown/$bin points to $(readlink "$link"),
+which does not exist anymore. Remove the link:
+
+  ${CYAN}rm $docker_plugin_dir_shown/$bin${RESET}
+EOF
+      docker_plugin_install_hint "$plugin"
+    fi
+  elif [[ -n "$installed" ]]; then
+    cat >&2 <<EOF
+
+$label is installed at $installed,
+but the Docker CLI does not look for plugins there. Link it:
+
+  ${CYAN}mkdir -p $docker_plugin_dir_shown${RESET}
+  ${CYAN}ln -sfn $installed $docker_plugin_dir_shown/$bin${RESET}
+
+EOF
+  else
+    docker_plugin_install_hint "$plugin"
+  fi
+}
+
+check_docker_plugin compose "Docker Compose" "Workbenches with services need it."
+check_docker_plugin buildx "Docker Buildx" "Without it, images build with Docker's deprecated legacy builder."
+
 # WSL footgun: when install.sh runs inside WSL and Linux-side Node is
 # missing, PATH-interop surfaces the Windows install's node from
 # /mnt/c/.../node-vXX-win-x64/. Invoked from Linux bash, npm then

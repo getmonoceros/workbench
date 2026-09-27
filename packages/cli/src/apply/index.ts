@@ -123,6 +123,12 @@ import {
 import { type DevcontainerSpawn } from '../devcontainer/cli.js';
 import { waitForDockerDaemon } from '../devcontainer/daemon-ready.js';
 import {
+  type CommandRun,
+  formatBuildxUnavailableWarning,
+  formatComposeUnavailableError,
+  probeDockerPlugin,
+} from '../devcontainer/docker-plugins.js';
+import {
   ensureProxy,
   defaultDockerExec,
   type DockerExec as ProxyDockerExec,
@@ -214,6 +220,8 @@ export interface RunApplyOptions {
   /** `docker compose` spawn for the service image pull. Tests inject. */
   composeSpawn?: ComposeSpawn;
   dockerInfoSpawn?: DockerInfoSpawn;
+  /** Runs the standalone `docker-compose` in the plugin preflight. Tests inject. */
+  pluginRun?: CommandRun;
   identitySpawn?: IdentitySpawn;
   identityPrompt?: IdentityPrompt;
   identityScopePrompt?: IdentityScopePrompt;
@@ -767,6 +775,27 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   });
   if (dockerMode === 'rootless') {
     throw new Error(formatRootlessNotSupportedError());
+  }
+
+  // Compose and Buildx, diagnosed before the build instead of failing inside
+  // devcontainer-cli with `spawn docker-compose ENOENT` (#111). Compose is
+  // fatal, and only for a workbench with services; without Buildx Docker
+  // still builds, on its deprecated legacy builder.
+  const pluginProbe = {
+    exec: opts.dockerExec ?? defaultDockerExec,
+    ...(opts.pluginRun ? { run: opts.pluginRun } : {}),
+  };
+  if (needsCompose(createOpts)) {
+    const compose = await probeDockerPlugin('compose', pluginProbe);
+    if (compose.kind !== 'ok' && compose.kind !== 'unknown') {
+      throw new Error(
+        formatComposeUnavailableError(opts.name, ymlPath, compose),
+      );
+    }
+  }
+  const buildx = await probeDockerPlugin('buildx', pluginProbe);
+  if (buildx.kind !== 'ok' && buildx.kind !== 'unknown') {
+    (logger.warn ?? logger.info)(formatBuildxUnavailableWarning(buildx));
   }
 
   await fs.mkdir(targetDir, { recursive: true });

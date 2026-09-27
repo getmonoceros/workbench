@@ -1876,6 +1876,61 @@ describe('runApply', () => {
     expect(devcontainerCalled).toBe(false);
   });
 
+  // A Docker CLI without the compose and buildx plugins (#111).
+  const noPluginsDockerExec = async (args: string[]) =>
+    args[0] === 'compose' || args[0] === 'buildx'
+      ? { exitCode: 1, stdout: '', stderr: 'unknown command' }
+      : { exitCode: 0, stdout: args[0] === 'info' ? '[]' : '', stderr: '' };
+  const noStandaloneCompose = async () => ({ exitCode: 127 });
+
+  it('refuses a workbench with services before the build when Compose is unavailable', async () => {
+    await writeYml(
+      'no-compose',
+      [
+        'schemaVersion: 1',
+        'name: no-compose',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '',
+      ].join('\n'),
+    );
+    let devcontainerCalled = false;
+    await expect(
+      runApply({
+        ...baseRunOpts,
+        dockerExec: noPluginsDockerExec,
+        pluginRun: noStandaloneCompose,
+        devcontainerSpawn: async () => {
+          devcontainerCalled = true;
+          return 0;
+        },
+        name: 'no-compose',
+        monocerosHome: home,
+      }),
+    ).rejects.toThrow(
+      /Docker Compose is not available[\s\S]*The workbench no-compose has services in .*container-configs\/no-compose\.yml/,
+    );
+    expect(devcontainerCalled).toBe(false);
+  });
+
+  it('builds a workbench without services without Compose, and only warns about Buildx', async () => {
+    await writeYml('no-plugins', 'schemaVersion: 1\nname: no-plugins\n');
+    const warnings: string[] = [];
+    await runApply({
+      ...baseRunOpts,
+      logger: { ...silentLogger, warn: (m: string) => warnings.push(m) },
+      dockerExec: noPluginsDockerExec,
+      pluginRun: noStandaloneCompose,
+      name: 'no-plugins',
+      monocerosHome: home,
+    });
+    expect(
+      warnings.some((w) => w.includes('Docker Buildx is not available')),
+    ).toBe(true);
+    expect(warnings.some((w) => w.includes('Docker Compose'))).toBe(false);
+  });
+
   it('does NOT emit idmap on bind mounts (docker --mount does not accept it)', async () => {
     // Earlier attempts (1.6.3 / 1.6.5) tried `,idmap` and `,idmap=true`
     // as bind-mount options, on the (wrong) assumption that Docker
