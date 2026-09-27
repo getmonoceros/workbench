@@ -4,7 +4,11 @@ import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
 import { readConfig } from '../config/io.js';
 import { containerConfigPath, containerDir } from '../config/paths.js';
 import { spawnBridgeDaemon } from '../devcontainer/bridge-daemon.js';
-import { runStart, startDeferredServices } from '../devcontainer/compose.js';
+import {
+  collectOutput,
+  runStart,
+  startDeferredServices,
+} from '../devcontainer/compose.js';
 import {
   runtimeSupportsBrowserBridge,
   serviceDefersStart,
@@ -148,15 +152,22 @@ async function bringContainerUp(
     // Second wave (ADR 0025): start deferred services after the workspace
     // is up. Best-effort — a failure is surfaced but the start result stands.
     if (exitCode === 0 && deferred.length > 0) {
+      // Keep compose's own Creating/Starting/Started lines off the screen, as
+      // for `devcontainer up` above; they are shown only when the wave fails,
+      // because then they carry docker's reason.
+      const output = collectOutput();
       try {
         const deferExit = await startDeferredServices({
           root: containerDir(args.name),
           services: deferred,
-          logger: consola,
+          logSink: output.sink,
+          silent: true,
         });
         if (deferExit !== 0) {
+          const detail = output.text();
           consola.warn(
-            `Deferred service(s) ${deferred.join(', ')} did not start cleanly (exit ${deferExit}).`,
+            `Deferred service(s) ${deferred.join(', ')} did not start cleanly (exit ${deferExit}).` +
+              (detail ? `\n${detail}` : ''),
           );
         }
       } catch (err) {

@@ -36,7 +36,7 @@ export const spawnDockerCompose: ComposeSpawn = (args, cwd) => {
 // lines would litter the screen after "container ready" — they belong in
 // the log file, like the main devcontainer-cli stream (ADR 0013). In
 // verbose mode (no spinner) silent is false, so it streams live as usual.
-function spawnDockerComposeTo(opts: {
+export function spawnDockerComposeTo(opts: {
   logSink?: NodeJS.WritableStream;
   silent?: boolean;
 }): ComposeSpawn {
@@ -61,6 +61,25 @@ function spawnDockerComposeTo(opts: {
       child.on('error', reject);
       child.on('exit', (code) => resolve(code ?? 0));
     });
+}
+
+/**
+ * A sink that keeps compose's output instead of printing it, for commands
+ * whose screen shows one status line. `text()` returns what was written, to
+ * show when the command failed and the lines carry docker's reason.
+ */
+export function collectOutput(): {
+  sink: NodeJS.WritableStream;
+  text: () => string;
+} {
+  const chunks: Buffer[] = [];
+  const sink = new Writable({
+    write(chunk: Buffer, _enc, done) {
+      chunks.push(chunk);
+      done();
+    },
+  });
+  return { sink, text: () => Buffer.concat(chunks).toString('utf8').trim() };
 }
 
 // Direct invocation of `docker <args>` with no shell wrapper.

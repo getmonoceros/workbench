@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  collectOutput,
   composeProjectName,
   resolveCompose,
   runContainerCycle,
@@ -691,5 +692,17 @@ describe('runDown (stop --down, #114)', () => {
     });
     expect(code).toBe(1);
     expect(infos.join('\n')).toContain('permission denied');
+  });
+});
+
+describe('collectOutput', () => {
+  it('keeps what was written and hands it back trimmed', async () => {
+    const out = collectOutput();
+    out.sink.write(' Container acme-keycloak-1 Stopping \n');
+    out.sink.write(Buffer.from('Error: no such service: nosuch\n'));
+    await new Promise<void>((resolve) => out.sink.end(resolve));
+    expect(out.text()).toBe(
+      'Container acme-keycloak-1 Stopping \nError: no such service: nosuch',
+    );
   });
 });

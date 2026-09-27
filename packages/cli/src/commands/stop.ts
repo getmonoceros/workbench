@@ -1,7 +1,12 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
 import { containerDir } from '../config/paths.js';
-import { runDown, runStop } from '../devcontainer/compose.js';
+import {
+  collectOutput,
+  runDown,
+  runStop,
+  spawnDockerComposeTo,
+} from '../devcontainer/compose.js';
 import { maybeStopProxy } from '../proxy/index.js';
 import { ctlArgs, runAppCtl } from '../devcontainer/app-control.js';
 import { dispatch } from './_dispatch.js';
@@ -98,11 +103,15 @@ export const stopCommand = defineCommand({
           for (const line of lines) consola.error(line);
         }
       } else {
-        // Drop runStop's own "Stopped 'name'." line; print a clean status
-        // line below instead (consistent with `start`).
+        // Drop runStop's own "Stopped 'name'." line and compose's
+        // Stopping/Stopped lines; print a clean status line below instead
+        // (consistent with `start`). Compose's output is shown only on a
+        // failure, where it carries docker's reason.
+        const output = collectOutput();
         exit = await runStop({
           root: containerDir(args.name),
           ...(service ? { service } : {}),
+          spawn: spawnDockerComposeTo({ logSink: output.sink, silent: true }),
           logger: { info: () => {} },
         });
         if (exit === 0) {
@@ -111,6 +120,8 @@ export const stopCommand = defineCommand({
               ? `Container '${args.name}' service '${service}' stopped.`
               : `Container '${args.name}' stopped.`,
           );
+        } else if (output.text()) {
+          consola.error(output.text());
         }
       }
       // Tear down the Traefik singleton if this was the last container
