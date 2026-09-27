@@ -66,13 +66,18 @@ const SYSTEM_PLUGIN_DIRS = [
 ];
 
 // Homebrew (Apple silicon, Intel, Linux) links its plugin formulae here,
-// and Docker Desktop ships them inside its app bundle.
-const INSTALL_DIRS = [
-  '/opt/homebrew/lib/docker/cli-plugins',
-  '/usr/local/lib/docker/cli-plugins',
-  '/home/linuxbrew/.linuxbrew/lib/docker/cli-plugins',
-  '/Applications/Docker.app/Contents/Resources/cli-plugins',
-];
+// Docker Desktop and Rancher Desktop ship them inside their app bundles, and
+// Rancher Desktop's `cli-plugins` links point into `~/.rd/bin`.
+export function defaultInstallDirs(env: NodeJS.ProcessEnv): string[] {
+  return [
+    '/opt/homebrew/lib/docker/cli-plugins',
+    '/usr/local/lib/docker/cli-plugins',
+    '/home/linuxbrew/.linuxbrew/lib/docker/cli-plugins',
+    '/Applications/Docker.app/Contents/Resources/cli-plugins',
+    path.join(env['HOME'] || homedir(), '.rd', 'bin'),
+    '/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin',
+  ];
+}
 
 const LABEL: Record<DockerPlugin, string> = {
   compose: 'Docker Compose',
@@ -171,7 +176,7 @@ export async function probeDockerPlugin(
     ...extraPluginDirs(configDir),
     ...(options.systemDirs ?? SYSTEM_PLUGIN_DIRS),
   ];
-  const installed = (options.installDirs ?? INSTALL_DIRS)
+  const installed = (options.installDirs ?? defaultInstallDirs(env))
     .map((d) => path.join(d, bin))
     .find(isFile);
 
@@ -200,6 +205,17 @@ interface RenderContext {
   platform?: NodeJS.Platform;
 }
 
+/**
+ * Quote a path for a pasted command, only when it needs it: Rancher Desktop's
+ * bundle is `Rancher Desktop.app`. A leading `~/` stays outside the quotes so
+ * the shell still expands it.
+ */
+function sh(p: string): string {
+  if (/^[\w@%+=:,./~-]+$/.test(p)) return p;
+  const home = p.startsWith('~/') ? '~/' : '';
+  return `${home}'${p.slice(home.length).replace(/'/g, `'\\''`)}'`;
+}
+
 function brewPrefix(): string {
   return process.arch === 'arm64' ? '/opt/homebrew' : '/usr/local';
 }
@@ -224,8 +240,8 @@ function diagnose(
   const bin = `docker-${plugin}`;
   const pluginDir = prettyPath(path.join(dockerConfigDir(env), 'cli-plugins'));
   const linkInto = (target: string) => [
-    `mkdir -p ${pluginDir}`,
-    `ln -sfn ${target} ${pluginDir}/${bin}`,
+    `mkdir -p ${sh(pluginDir)}`,
+    `ln -sfn ${sh(target)} ${sh(`${pluginDir}/${bin}`)}`,
   ];
 
   switch (state.kind) {
@@ -258,14 +274,16 @@ function diagnose(
       if (state.installed) {
         return {
           cause,
-          commands: [`ln -sfn ${state.installed} ${prettyPath(state.link)}`],
+          commands: [
+            `ln -sfn ${sh(state.installed)} ${sh(prettyPath(state.link))}`,
+          ],
         };
       }
       const install = installHint(plugin, platform, env, linkInto);
       return {
         ...install,
         cause,
-        commands: [`rm ${prettyPath(state.link)}`, ...install.commands],
+        commands: [`rm ${sh(prettyPath(state.link))}`, ...install.commands],
       };
     }
     case 'unregistered':

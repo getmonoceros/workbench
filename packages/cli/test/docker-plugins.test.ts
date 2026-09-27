@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   type PluginProbeOptions,
+  defaultInstallDirs,
   formatBuildxUnavailableWarning,
   formatComposeUnavailableError,
   probeDockerPlugin,
@@ -132,6 +133,15 @@ describe('probeDockerPlugin', () => {
       kind: 'missing',
     });
   });
+
+  it('knows where Rancher Desktop keeps its plugins', () => {
+    expect(defaultInstallDirs({ HOME: '/Users/kim' })).toEqual(
+      expect.arrayContaining([
+        '/Users/kim/.rd/bin',
+        '/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin',
+      ]),
+    );
+  });
 });
 
 describe('formatComposeUnavailableError', () => {
@@ -166,6 +176,24 @@ describe('formatComposeUnavailableError', () => {
       '  ln -sfn /opt/homebrew/lib/docker/cli-plugins/docker-compose ~/.docker/cli-plugins/docker-compose',
     );
     expect(msg).toContain('re-run monoceros apply acme');
+  });
+
+  it('quotes a path with a space, so the pasted command works (Rancher Desktop)', () => {
+    const msg = plain(
+      formatComposeUnavailableError(
+        'acme',
+        yml,
+        {
+          kind: 'unregistered',
+          installed:
+            '/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin/docker-compose',
+        },
+        { env },
+      ),
+    );
+    expect(msg).toContain(
+      "  ln -sfn '/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin/docker-compose' ~/.docker/cli-plugins/docker-compose",
+    );
   });
 
   it('honours DOCKER_CONFIG for the plugin dir', () => {

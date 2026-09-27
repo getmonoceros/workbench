@@ -422,7 +422,11 @@ fi
 # at all. Warn only: a workbench without services needs neither, and apply
 # stops with the same diagnosis before a build that would fail.
 docker_plugin_dir="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
-docker_plugin_dir_shown="${docker_plugin_dir/#$HOME/\~}"
+# `~` for the home part. Not `${var/#$HOME/\~}`: macOS bash 3.2 keeps the backslash.
+case "$docker_plugin_dir" in
+  "$HOME"/*) docker_plugin_dir_shown="~${docker_plugin_dir#"$HOME"}" ;;
+  *) docker_plugin_dir_shown="$docker_plugin_dir" ;;
+esac
 docker_broken_plugins="$(docker info --format '{{range .ClientInfo.Plugins}}{{if .Err}}{{.Name}}|{{.Path}}|{{.Err}}{{"\n"}}{{end}}{{end}}' 2>/dev/null || true)"
 
 docker_plugin_install_hint() {
@@ -470,7 +474,7 @@ EOF
 
 check_docker_plugin() {
   local plugin="$1" label="$2" consequence="$3"
-  local bin="docker-$1" link="$docker_plugin_dir/docker-$1" installed="" d broken bpath berr
+  local bin="docker-$1" link="$docker_plugin_dir/docker-$1" installed="" installed_q d broken bpath berr
   if docker "$plugin" version >/dev/null 2>&1; then
     ok "$label available"
     return 0
@@ -482,9 +486,13 @@ check_docker_plugin() {
   fi
   for d in /opt/homebrew/lib/docker/cli-plugins /usr/local/lib/docker/cli-plugins \
            /home/linuxbrew/.linuxbrew/lib/docker/cli-plugins \
-           /Applications/Docker.app/Contents/Resources/cli-plugins; do
+           /Applications/Docker.app/Contents/Resources/cli-plugins \
+           "$HOME/.rd/bin" \
+           "/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin"; do
     if [[ -f "$d/$bin" ]]; then installed="$d/$bin"; break; fi
   done
+  # Quoted for the pasted command: Rancher's bundle has a space in its name.
+  installed_q="$(printf '%q' "$installed")"
   broken="$(printf '%s\n' "$docker_broken_plugins" | grep "^$plugin|" | head -n 1 || true)"
 
   warn "$label is not available. $consequence"
@@ -505,7 +513,7 @@ EOF
 $docker_plugin_dir_shown/$bin points to $(readlink "$link"),
 which does not exist anymore. Point it at the installed one:
 
-  ${CYAN}ln -sfn $installed $docker_plugin_dir_shown/$bin${RESET}
+  ${CYAN}ln -sfn $installed_q $docker_plugin_dir_shown/$bin${RESET}
 
 EOF
     else
@@ -525,7 +533,7 @@ $label is installed at $installed,
 but the Docker CLI does not look for plugins there. Link it:
 
   ${CYAN}mkdir -p $docker_plugin_dir_shown${RESET}
-  ${CYAN}ln -sfn $installed $docker_plugin_dir_shown/$bin${RESET}
+  ${CYAN}ln -sfn $installed_q $docker_plugin_dir_shown/$bin${RESET}
 
 EOF
   else
@@ -861,7 +869,7 @@ install_zsh_completion() {
       warn "could not generate zsh completion — skipping"
       return 0
     fi
-    ok "zsh $(dim "→") $(dim "$target") $(dim "(Oh-My-Zsh)")"
+    ok "zsh $(dim "→") Monoceros completion installed"
     return 0
   fi
 
@@ -889,9 +897,7 @@ install_zsh_completion() {
   menu_line="zstyle ':completion:*' menu select"
   list_line="unsetopt LIST_AMBIGUOUS"
 
-  if [[ -f "$rc_file" ]] && grep -qF "$marker" "$rc_file"; then
-    ok "zsh $(dim "→") $(dim "$target") $(dim "(.zshrc already wired)")"
-  else
+  if [[ ! -f "$rc_file" ]] || ! grep -qF "$marker" "$rc_file"; then
     {
       echo ""
       echo "$marker"
@@ -901,9 +907,8 @@ install_zsh_completion() {
       echo "$list_line"
       echo ""
     } >> "$rc_file"
-    ok "zsh $(dim "→") $(dim "$target")"
-    ok "$(dim "appended fpath + compinit + menu-completion lines to $rc_file")"
   fi
+  ok "zsh $(dim "→") Monoceros completion installed"
 }
 
 install_bash_completion() {
@@ -922,18 +927,15 @@ install_bash_completion() {
   rc_file="$(bash_rc_file)"
   source_line="source $target"
 
-  if [[ -f "$rc_file" ]] && grep -qF "$marker" "$rc_file"; then
-    ok "bash $(dim "→") $(dim "$target") $(dim "(${rc_file##*/} already wired)")"
-  else
+  if [[ ! -f "$rc_file" ]] || ! grep -qF "$marker" "$rc_file"; then
     {
       echo ""
       echo "$marker"
       echo "$source_line"
       echo ""
     } >> "$rc_file"
-    ok "bash $(dim "→") $(dim "$target")"
-    ok "$(dim "appended source line to $rc_file")"
   fi
+  ok "bash $(dim "→") Monoceros completion installed"
 }
 
 if [[ "$PLATFORM" == "macos" ]]; then
