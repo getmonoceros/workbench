@@ -205,7 +205,8 @@ async function bringContainerUp(
 
 /**
  * Bring back the apps that were running (#25, ADR 0028), after the deferred
- * services so an app finds its database up. Covers the fresh container a
+ * services. A service may still be starting then; the runner retries a target
+ * that exits too early, whichever service it waits for. Covers the fresh container a
  * `start` after `stop --down` creates, whose entrypoint skips the reconcile
  * on its first start. After a plain `stop` the entrypoint reconciles too; the
  * runner's launch lock makes the second pass report "already running".

@@ -37,8 +37,8 @@ new, plus a lock so they can overlap.**
 
 - **Host side, after the container is ready.** `apply` already reconciles
   after bring-up. `monoceros start` now does the same, after the deferred
-  services (ADR 0025), so an app finds its database up. It is gated like
-  apply's: runtime >= 1.6.0, and only when a wanted pid file exists.
+  services (ADR 0025). It is gated like apply's: runtime >= 1.6.0, and only
+  when a wanted pid file exists.
 
 - **A launch lock.** After a plain `stop` + `start` both triggers run at once.
   `monoceros-ctl` serialises "is it running, launch it, stamp its pid" with a
@@ -53,10 +53,19 @@ new, plus a lock so they can overlap.**
   #42). The old file stays as the wanted marker until the fresh pid is stamped
   into it.
 
-Ordering against services stays best-effort, as #25 proposed: on a reboot the
-services and the workspace come up in parallel, and an app that needs its
-database may crash and has to be started again. `reconcile` probes only the
-app's own port.
+- **A bounded retry for an early exit.** Being started after the services is
+  not the same as finding them ready: `docker compose up` returns once a
+  service's container runs, not once it answers, and on a reboot the services
+  and the workspace come up in parallel anyway. Any app that needs a service at
+  boot dies until that service answers. `reconcile` therefore retries a target
+  that exits too early (before binding its port, or within a few seconds of its
+  start when it has none), every 5 seconds for up to 2 minutes, with one line
+  saying so. It does not know which service the app waits for and does not
+  need to: the early exit is the signal, whatever the dependency. An explicit
+  `monoceros start <name> <app>` does not retry; there the failure is shown at
+  once. This is the "light bounded retry" #25 left open, chosen over waiting
+  for each service's port, which would need the list of services inside the
+  container and still miss a service that listens before it is ready.
 
 ## Consequences
 
@@ -64,7 +73,9 @@ app's own port.
   every `monoceros start`, until an explicit `monoceros stop <name> <app>`.
   This is the `unless-stopped` contract of ADR 0026, extended to the apps.
 - `monoceros start` takes longer when apps are wanted: each ported target
-  waits for its port, as in `apply`.
+  waits for its port, as in `apply`, and a target whose service is slow to
+  answer is retried for up to 2 minutes. A target that is broken for good
+  costs those 2 minutes on every start until it is fixed or stopped.
 - The entrypoint part needs the runtime that ships it. The host part in
   `start` works with any runtime from 1.6.0 on; without the lock it never
   overlaps with an entrypoint pass, because older runtimes have none.

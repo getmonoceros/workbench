@@ -39,6 +39,25 @@ die() {
 # up). A target overrides it with `readyTimeout` in its launch config.
 READY_TIMEOUT_DEFAULT=20
 
+# How long `reconcile` keeps restarting a target that exits too early, and how
+# long it waits between tries. After a restart the services come up alongside
+# the workspace, and `docker compose up` returns once their containers run, not
+# once they answer. Any app that needs one of them at boot dies until it does
+# (#25). reconcile does not know which service that is, and does not need to:
+# the early exit is the signal, whatever the app is waiting for.
+RECONCILE_RETRY_SECONDS=120
+RECONCILE_RETRY_INTERVAL=5
+
+# A target without a port has no readiness signal. While reconciling it gets
+# this many seconds, and dying within them counts as exiting too early.
+RECONCILE_NOPORT_GRACE=3
+
+# Set by reconcile around every try (RECONCILING) and around every try but the
+# last (EARLY_EXIT_QUIET). start_one then reports an early exit with status 2,
+# and prints nothing while quiet, so a try that is retried stays off screen.
+RECONCILING=0
+EARLY_EXIT_QUIET=0
+
 # The workspace root is the sole directory under /workspaces. The script is
 # generic (one image, many containers), so it discovers the name rather than
 # hard-coding it.
@@ -311,6 +330,15 @@ start_one() {
 
   # No readiness signal without a port: report started, point at the log.
   if [ -z "$port" ]; then
+    if [ "$RECONCILING" = 1 ]; then
+      sleep "$RECONCILE_NOPORT_GRACE"
+      if ! pid_alive "$pidf"; then
+        [ "$EARLY_EXIT_QUIET" = 1 ] && return 2
+        target_line "${C_RED}✗${C_RESET}" "$target" \
+          "exited right after start - see $rellog"
+        return 2
+      fi
+    fi
     target_line "${C_GREEN}✓${C_RESET}" "$target" \
       "${C_GREY}started (no port to check)    pid $pid${C_RESET}"
     return 0
@@ -322,9 +350,10 @@ start_one() {
   # every 0.2s, hence five ticks per declared second.
   for i in $(seq 1 $((ready_timeout * 5))); do
     if ! pid_alive "$pidf"; then
+      [ "$EARLY_EXIT_QUIET" = 1 ] && return 2
       target_line "${C_RED}✗${C_RESET}" "$target" \
         "exited before binding port $port - see $rellog"
-      return 1
+      return 2
     fi
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
       exec 3>&- 2>/dev/null || true
@@ -503,8 +532,30 @@ cmd_reconcile() {
       continue
     fi
     if [ "$app" != "$last_app" ]; then hdr "$app"; last_app="$app"; fi
-    start_one "$app" "$target" || true
+    reconcile_one "$app" "$target"
   done
+}
+
+# Restore one target, retrying while it exits too early (before binding its
+# port, or right after start without one): the sign of a service it needs that
+# does not answer yet, whichever service that is. One grey line announces the
+# wait; only the last try prints its result. Any other outcome (up, or a failure
+# of another kind) ends it at once. Best-effort, never fails reconcile.
+reconcile_one() {
+  local app="$1" target="$2" deadline=$((SECONDS + RECONCILE_RETRY_SECONDS))
+  local announced=0 rc
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    rc=0
+    RECONCILING=1 EARLY_EXIT_QUIET=1 start_one "$app" "$target" || rc=$?
+    [ "$rc" = 2 ] || return 0
+    if [ "$announced" = 0 ]; then
+      target_line "${C_GREY}·${C_RESET}" "$target" \
+        "${C_GREY}exited too early, retrying while the services start (up to ${RECONCILE_RETRY_SECONDS}s)${C_RESET}"
+      announced=1
+    fi
+    sleep "$RECONCILE_RETRY_INTERVAL"
+  done
+  RECONCILING=1 start_one "$app" "$target" || true
 }
 
 main() {
