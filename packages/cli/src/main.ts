@@ -13,6 +13,7 @@ import { completionCommand } from './commands/completion.js';
 import { __bridgeCommand } from './commands/__bridge.js';
 import { __completeCommand } from './commands/__complete.js';
 import { __updateCheckCommand } from './commands/__update-check.js';
+import { __migrateConfigCommand } from './commands/__migrate-config.js';
 import { initCommand } from './commands/init.js';
 import { listAppsCommand } from './commands/list-apps.js';
 import { listComponentsCommand } from './commands/list-components.js';
@@ -84,6 +85,7 @@ export const main = defineCommand({
     completion: completionCommand,
     __complete: __completeCommand,
     '__update-check': __updateCheckCommand,
+    '__migrate-config': __migrateConfigCommand,
     __bridge: __bridgeCommand,
   },
 });

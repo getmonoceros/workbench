@@ -53,6 +53,9 @@ describe('monoceros main command', () => {
       // Internal background worker for the self-update notice (ADR-less);
       // hidden, spawned detached by scheduleUpdateNotice.
       '__update-check',
+      // Internal: the install script moves a legacy monoceros-config.yml
+      // into the env with it (ADR 0061); hidden.
+      '__migrate-config',
       // Internal host-side browser-bridge daemon (ADR 0022 follow-up);
       // hidden, spawned detached by apply/start.
       '__bridge',

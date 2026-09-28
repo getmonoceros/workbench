@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runMain } from 'citty';
 import { consola } from 'consola';
+import { migrateOnStartup } from './config/global-yml-migration.js';
 import { bootstrapDockerGroup } from './devcontainer/docker-group-bootstrap.js';
 import { maybeRenderHelp } from './help.js';
 import { consumeInnerArgsFromProcessArgv } from './inner-args.js';
@@ -44,6 +45,12 @@ async function entry(): Promise<void> {
     currentVersion: CLI_VERSION,
     commandName: process.argv.slice(2).find((a) => !a.startsWith('-')),
   });
+
+  // Move a legacy monoceros-config.yml into the env before any command reads
+  // anything (ADR 0061). Usually the install script already did it; this is
+  // for an update that went another way. Skips completion, internal commands
+  // and --help / --version.
+  await migrateOnStartup(process.argv.slice(2), (m) => consola.warn(m));
 
   // We render `--help` ourselves so the USAGE line shows positional
   // arguments *before* `[OPTIONS]`, matching the

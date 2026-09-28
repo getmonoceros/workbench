@@ -7,17 +7,27 @@ import { featureOptionVarName } from '../init/feature-doc.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 import { parseEnvFile, setEnvVarRef } from './env-file.js';
 import { DEFAULT_UPGRADE_STALE_DAYS } from './machine-state.js';
-import { globalEnvPath, prettyPath, workbenchRoot } from './paths.js';
+import {
+  globalEnvPath,
+  monocerosHome,
+  prettyPath,
+  workbenchRoot,
+} from './paths.js';
 
 /**
  * One-time migration of the retired `<MONOCEROS_HOME>/monoceros-config.yml`
  * into `monoceros-config.env` (ADR 0061).
  *
- * Runs from `readMachineSettings`, so every command that needs a machine-wide
- * setting does it: apply, start, status, port, add-port and remove-port. The
- * other add-* commands read none and leave the yml for the next apply. Afterwards the yml is
- * renamed to `monoceros-config.yml.migrated`, and every later run finds no
- * yml and does nothing.
+ * Three places run it, and all three call `migrateGlobalYml`, so the rules
+ * below hold wherever it happens:
+ *   - the install script, through the hidden `__migrate-config` command, so a
+ *     builder who updates sees the message right there;
+ *   - the CLI's start, before every command a builder types (`bin.ts`), for an
+ *     update that did not go through the install script;
+ *   - `readMachineSettings`, for code that reads the settings without going
+ *     through the CLI entry point (tests, `runApply` called directly).
+ * Afterwards the yml is renamed to `monoceros-config.yml.migrated`, and every
+ * later run finds no yml and does nothing.
  *
  * What moves, and what does not:
  *   - Every key whose value differs from its default moves into the env:
@@ -264,4 +274,35 @@ function formatNotice(r: {
     `The old file is now ${prettyPath(r.migratedPath)}. You can delete it.`,
   );
   return lines.join('\n');
+}
+
+/**
+ * Commands the start-up migration leaves alone: completion runs on every Tab
+ * press, the `__` commands are internal plumbing, and `--help` / `--version`
+ * only print. A bare `monoceros` prints help too.
+ */
+export function shouldMigrateOnStartup(argv: readonly string[]): boolean {
+  const command = argv.find((a) => !a.startsWith('-'));
+  if (command === undefined) return false;
+  if (command === 'completion' || command.startsWith('__')) return false;
+  return !argv.some((a) => ['--help', '-h', '--version', '-v'].includes(a));
+}
+
+/**
+ * The migration at CLI start (`bin.ts`). A yml it cannot read is reported and
+ * the command carries on: most commands never needed the file, and the ones
+ * that read a machine-wide setting stop on it through `readMachineSettings`.
+ */
+export async function migrateOnStartup(
+  argv: readonly string[],
+  notify: (message: string) => void,
+  home: string = monocerosHome(),
+): Promise<void> {
+  if (!shouldMigrateOnStartup(argv)) return;
+  try {
+    const notice = await migrateGlobalYml(home);
+    if (notice) notify(notice);
+  } catch (err) {
+    notify(err instanceof Error ? err.message : String(err));
+  }
 }

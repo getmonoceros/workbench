@@ -795,15 +795,29 @@ fi
 # ── 3. User home ───────────────────────────────────────────────────
 # Ensure ~/.monoceros/ exists. Its one config file is monoceros-config.env,
 # seeded below. The machine-wide yml it replaced (monoceros-config.yml) is
-# no longer seeded: the CLI moves an existing one into the env on its first
-# run and leaves monoceros-config.yml.migrated behind (ADR 0061).
+# no longer seeded, and an existing one is moved into the env right here,
+# by the CLI that was just installed (ADR 0061): an update is when the
+# builder looks at this output, so that is where they learn what moved.
+#
+# A yml the CLI cannot read only warns, although this step is critical:
+# the install itself is complete, Monoceros no longer needs that file, and
+# the CLI reports it again on the next command until it is fixed.
 section "User home"
 
 monoceros_home="$HOME/.monoceros"
 
 mkdir -p "$monoceros_home"
 
-if [[ -f "$monoceros_home/monoceros-config.yml.migrated" ]]; then
+if [[ -f "$monoceros_home/monoceros-config.yml" ]]; then
+  if migrate_out=$(MONOCEROS_HOME="$monoceros_home" "$cli_path" __migrate-config 2>&1); then
+    ok "moved $(dim "$monoceros_home/monoceros-config.yml") into monoceros-config.env"
+  else
+    warn "could not move $(dim "$monoceros_home/monoceros-config.yml") into monoceros-config.env"
+  fi
+  while IFS= read -r line; do
+    if [[ -n "$line" ]]; then say "    $(dim "$line")"; fi
+  done <<<"$migrate_out"
+elif [[ -f "$monoceros_home/monoceros-config.yml.migrated" ]]; then
   warn "$(dim "$monoceros_home/monoceros-config.yml.migrated") is no longer used."
   say "    $(dim 'Its settings are in monoceros-config.env now. You can delete it.')"
 fi

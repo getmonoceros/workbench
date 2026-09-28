@@ -4,6 +4,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readMachineSettings } from '../src/config/global.js';
+import {
+  migrateOnStartup,
+  shouldMigrateOnStartup,
+} from '../src/config/global-yml-migration.js';
+import { _resetPathCachesForTests } from '../src/config/paths.js';
+import { __migrateConfigCommand } from '../src/commands/__migrate-config.js';
 
 /**
  * Machine-global settings live in `monoceros-config.env` (ADR 0061), and a
@@ -161,5 +167,91 @@ describe('migrating a legacy monoceros-config.yml', () => {
       /Could not migrate .*monoceros-config\.yml/,
     );
     expect(existsSync(ymlPath())).toBe(true);
+  });
+});
+
+describe('migrating at CLI start and from the install script', () => {
+  it('runs before a command a builder types, and stays out of the rest', () => {
+    expect(shouldMigrateOnStartup(['add-feature', 'acme', 'claude'])).toBe(
+      true,
+    );
+    expect(shouldMigrateOnStartup(['apply', 'acme', '--yes'])).toBe(true);
+    // Completion runs on every Tab press, internal commands are plumbing,
+    // and help or version only print.
+    expect(shouldMigrateOnStartup(['completion', 'zsh'])).toBe(false);
+    expect(shouldMigrateOnStartup(['__complete', 'apply'])).toBe(false);
+    expect(shouldMigrateOnStartup(['apply', '--help'])).toBe(false);
+    expect(shouldMigrateOnStartup(['--version'])).toBe(false);
+    expect(shouldMigrateOnStartup([])).toBe(false);
+  });
+
+  // `add-feature` reads no machine-wide setting, so before this the yml sat
+  // there until the next apply.
+  it('migrates on a command that reads no machine-wide setting', async () => {
+    await writeFile(
+      ymlPath(),
+      'schemaVersion: 1\nrouting:\n  hostPort: 8080\n',
+    );
+    await migrateOnStartup(
+      ['add-feature', 'acme', 'claude'],
+      (m) => notices.push(m),
+      home,
+    );
+    expect(existsSync(ymlPath())).toBe(false);
+    expect(await readFile(envPath(), 'utf8')).toMatch(
+      /^MONOCEROS_HOST_PORT=8080$/m,
+    );
+    expect(notices[0]).toMatch(/no longer used/);
+  });
+
+  // Most commands never needed the file, so a broken one must not stop them.
+  it('reports a yml it cannot read and lets the command carry on', async () => {
+    await writeFile(ymlPath(), 'schemaVersion: 1\n  bad: indent\n');
+    await migrateOnStartup(
+      ['add-feature', 'acme', 'claude'],
+      (m) => notices.push(m),
+      home,
+    );
+    expect(notices[0]).toMatch(/Could not migrate/);
+    expect(existsSync(ymlPath())).toBe(true);
+  });
+
+  it('gives the install script the notice on stdout, and nothing when there is nothing to do', async () => {
+    const saved = process.env.MONOCEROS_HOME;
+    process.env.MONOCEROS_HOME = home;
+    _resetPathCachesForTests();
+    const out: string[] = [];
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      out.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      await writeFile(
+        ymlPath(),
+        'schemaVersion: 1\nupgrade:\n  staleDays: 7\n',
+      );
+      const run = __migrateConfigCommand.run!;
+      await run({
+        args: { _: [] },
+        rawArgs: [],
+        cmd: __migrateConfigCommand,
+      } as never);
+      expect(out.join('')).toMatch(
+        /upgrade\.staleDays -> MONOCEROS_UPGRADE_STALE_DAYS/,
+      );
+      out.length = 0;
+      await run({
+        args: { _: [] },
+        rawArgs: [],
+        cmd: __migrateConfigCommand,
+      } as never);
+      expect(out.join('')).toBe('');
+    } finally {
+      process.stdout.write = write;
+      if (saved === undefined) delete process.env.MONOCEROS_HOME;
+      else process.env.MONOCEROS_HOME = saved;
+      _resetPathCachesForTests();
+    }
   });
 });

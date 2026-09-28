@@ -41,11 +41,21 @@ place outside an env file where Monoceros asked for personal data.
   the global env already does. What it could do beyond that, a global default
   for a non-credential option, had no known user.
 
-**An existing yml is migrated once, by the CLI.** The code that reads the
-machine-wide settings runs the migration first. So every command that needs
-one of them does it: `apply`, `start`, `status`, `port`, `add-port` and
-`remove-port`. The other `add-*` commands read no machine-wide setting and
-leave the yml alone until the next `apply`.
+**An existing yml is migrated once, by the CLI, as early as possible.**
+
+- The install script runs it through the hidden `__migrate-config` command,
+  right after installing the new CLI. An update is when the builder reads the
+  output, so that is where they learn what moved. A yml the CLI cannot read
+  only warns: the install is complete without it.
+- The CLI runs it at start, before every command a builder types, for an
+  update that did not go through the install script. It skips completion,
+  the internal `__` commands, `--help` and `--version`. A broken yml is
+  reported there and the command carries on, because most commands never
+  needed the file.
+- The code that reads the machine-wide settings runs it too, for callers that
+  do not go through the CLI entry point.
+
+All three call the same function, so the rules below hold wherever it runs:
 
 - A key whose value differs from its default moves into the global env.
 - A `defaults.features` credential (`surface: env`) moves under the variable
@@ -60,10 +70,11 @@ leave the yml alone until the next `apply`.
   finds no yml and does nothing.
 - Values are never printed. A moved key may be a token.
 
-The CLI and not the installer does it, because the CLI has the yml parser, the
-catalog that says which option is a credential, and runs where the settings are
-read. The installers stop seeding the yml and, while a `.migrated` file exists,
-say that it can be deleted.
+The CLI does the work even when the install script triggers it, because the
+CLI has the yml parser and the catalog that says which option is a credential.
+The installers stop seeding the yml and, while a `.migrated` file exists, say
+that it can be deleted. On Windows the migration runs inside the distro, where
+`install.ps1` calls the same `install.sh`.
 
 **The home marker moves with it.** `monoceros-config.sample.yml` was also what
 tells the CLI where its bundle is and that `.local` is the dev home. Both
