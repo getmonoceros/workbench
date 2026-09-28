@@ -21,12 +21,12 @@ import {
   readEnvFile,
 } from '../config/env-file.js';
 import {
-  featureOptionHints,
   featureOptionVarName,
   FEATURE_HEADER_WIDTH,
 } from '../init/feature-doc.js';
 import { loadFeatureManifestSummary } from '../init/manifest.js';
 import {
+  collectEnvPromptCandidates,
   envCandidatesForVars,
   promptAndWriteEnvValues,
   shouldPromptForEnv,
@@ -902,42 +902,50 @@ export async function runAddFeature(
 
   // Seed the feature's credential vars into <name>.env (the same
   // ${VAR} placeholders addFeatureToDoc just wrote into the yml), so
-  // the builder only fills values. Skips keys already set with an
-  // active `-- key=value`. Mirrors init; remove-feature does NOT touch
-  // the env file.
+  // the builder only fills values. Read off the written entry, as init
+  // does: after a sub-tool merge it carries the toggles of both, and
+  // an active `-- key=value` is no placeholder. Mirrors init;
+  // remove-feature does NOT touch the env file.
   if (result.status === 'updated') {
-    const summary = loadFeatureManifestSummary(resolved.ref);
-    const vars = featureOptionHints(
-      summary,
-      resolved.ref,
-      Object.keys(merged),
-    ).map((h) => h.envVar);
+    const home = input.monocerosHome ?? defaultMonocerosHome();
+    const parsed = await readConfig(containerConfigPath(input.name, home));
+    const candidates = collectEnvPromptCandidates(
+      (parsed.config.features ?? []).filter((f) => f.ref === resolved.ref),
+      loadFeatureManifestSummary,
+    );
+    const vars = candidates.map((c) => c.envVar);
     if (vars.length > 0) {
-      const home = input.monocerosHome ?? defaultMonocerosHome();
       await ensureEnvGitignored(containerConfigsDir(home));
       const seeded = await ensureEnvVars(
         containerEnvPath(input.name, home),
         input.name,
         vars,
       );
+      const logger = input.logger ?? defaultLogger();
+      let named = false;
       if (seeded.added.length > 0) {
-        const logger = input.logger ?? defaultLogger();
         const written = await promptForNewEnvVars(
           input,
           seeded.added,
-          summary?.name ?? resolved.ref,
+          candidates[0]!.feature,
           (envVar) =>
-            featureOptionHints(summary, resolved.ref)
-              .filter((h) => h.envVar === envVar)
-              .map((h) => summary?.optionDescriptions[h.key] ?? '')[0] ?? '',
+            candidates.find((c) => c.envVar === envVar)?.description ?? '',
         );
-        const left = seeded.added.filter((v) => !written.includes(v));
-        if (left.length > 0) {
+        const global = readEnvFile(globalEnvPath(home));
+        const left = seeded.added.filter(
+          (v) => !written.includes(v) && !(global[v] ?? '').trim(),
+        );
+        // The prompt's own summary already names the keys still empty.
+        if (left.length > 0 && !envPromptRan(input)) {
           logger.info(
             `Seeded ${left.join(', ')} into ${input.name}.env, fill in the values.`,
           );
+          named = true;
         }
       }
+      // Also when nothing was new to ask: the prompt no longer offers to
+      // override a shared value, so the builder needs to know where that goes.
+      if (!named) logger.info(envFileHint(input));
     }
   }
   return result;
@@ -990,8 +998,9 @@ export async function runAddMcpServer(
         input.name,
         vars,
       );
+      const logger = input.logger ?? defaultLogger();
+      let named = false;
       if (seeded.added.length > 0) {
-        const logger = input.logger ?? defaultLogger();
         const written = await promptForNewEnvVars(
           input,
           seeded.added,
@@ -1000,13 +1009,21 @@ export async function runAddMcpServer(
             descriptor.options[varOptionKey(descriptor, envVar)]?.description ??
             '',
         );
-        const left = seeded.added.filter((v) => !written.includes(v));
-        if (left.length > 0) {
+        const global = readEnvFile(globalEnvPath(home));
+        const left = seeded.added.filter(
+          (v) => !written.includes(v) && !(global[v] ?? '').trim(),
+        );
+        // The prompt's own summary already names the keys still empty.
+        if (left.length > 0 && !envPromptRan(input)) {
           logger.info(
             `Seeded ${left.join(', ')} into ${input.name}.env, fill in the values before the next apply.`,
           );
+          named = true;
         }
       }
+      // Also when nothing was new to ask: the prompt no longer offers to
+      // override a shared value, so the builder needs to know where that goes.
+      if (!named) logger.info(envFileHint(input));
     }
   }
   return result;
@@ -1034,7 +1051,7 @@ async function promptForNewEnvVars(
     envPath,
     input.name,
     {
-      interactive: input.promptEnv ?? shouldPromptForEnv(input.yes),
+      interactive: envPromptRan(input),
       name: input.name,
       globalEnvPath: prettyPath(globalEnvPath(home)),
       containerEnvPath: prettyPath(envPath),
@@ -1044,6 +1061,18 @@ async function promptForNewEnvVars(
       success: (line) => (input.logger ?? defaultLogger()).success(line),
     },
   );
+}
+
+/** Where a workbench's own values go, after an add-* that brought some. */
+function envFileHint(input: ModifyOptions): string {
+  const home = input.monocerosHome ?? defaultMonocerosHome();
+  const envPath = prettyPath(containerEnvPath(input.name, home));
+  return `To change any settings for this workbench "${input.name}", edit ${envPath}.`;
+}
+
+/** Whether `promptForNewEnvVars` asked, and so printed its summary. */
+function envPromptRan(input: ModifyOptions): boolean {
+  return input.promptEnv ?? shouldPromptForEnv(input.yes);
 }
 
 /** The option key an mcp connector's derived env var came from. */

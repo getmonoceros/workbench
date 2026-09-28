@@ -475,6 +475,31 @@ describe('init env prompt', () => {
     expect(asked).toContain('CLAUDE_CODE_API_KEY');
   });
 
+  it('asks twg only for what twg reads, and nothing monoceros-config.env holds', async () => {
+    await mkdir(monocerosHome, { recursive: true });
+    await writeFile(
+      path.join(monocerosHome, 'monoceros-config.env'),
+      'ATLASSIAN_EMAIL=me@acme.com\n',
+    );
+    const asked: string[] = [];
+    await runInit({
+      name: 'plain',
+      features: ['atlassian/twg'],
+      monocerosHome,
+      promptEnv: true,
+      askEnvValue: async (c) => {
+        asked.push(c.envVar);
+        return '';
+      },
+      logger: silentLogger,
+    });
+    expect(asked).toEqual([
+      'ATLASSIAN_INSTANCE',
+      'ATLASSIAN_API_TOKEN',
+      'ATLASSIAN_BITBUCKET_TOKEN',
+    ]);
+  });
+
   it('asks for a credential an added component brought in, in the same block', async () => {
     const asked: string[] = [];
     await runInit({

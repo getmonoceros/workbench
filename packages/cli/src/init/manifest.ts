@@ -48,6 +48,12 @@ export interface FeatureManifestSummary {
   docsSlug: string;
   /** Names of options to render as commented hints in the init output. */
   optionHints: string[];
+  /**
+   * The sub-tool toggles a hint is used under, for a hint that only gated
+   * `workspaceEnv` blocks read (atlassian's `rovodevToken` → `['rovodev']`).
+   * A hint missing here is needed whatever the toggles say.
+   */
+  optionHintGates?: Record<string, string[]>;
   /** `description` from each option, keyed by name. */
   optionDescriptions: Record<string, string>;
   /** ALL option keys, in declaration order (used by completion). */
@@ -128,6 +134,27 @@ export function loadFeatureManifestSummary(
     }
   }
 
+  // A hint that only gated workspaceEnv blocks read is dead weight while all
+  // of its toggles are off: `atlassian/twg` never reads the Rovo Dev token.
+  // One ungated reference makes it always needed.
+  const optionHintGates: Record<string, string[]> = {};
+  const ungated = new Set<string>();
+  for (const block of descriptor.feature?.workspaceEnv ?? []) {
+    for (const template of Object.values(block.vars)) {
+      for (const m of template.matchAll(/\$\{([A-Za-z0-9_]+)\}/g)) {
+        const key = m[1]!;
+        if (!optionHints.includes(key)) continue;
+        if (block.whenOption === undefined) {
+          ungated.add(key);
+          continue;
+        }
+        const gates = (optionHintGates[key] ??= []);
+        if (!gates.includes(block.whenOption)) gates.push(block.whenOption);
+      }
+    }
+  }
+  for (const key of ungated) delete optionHintGates[key];
+
   const rawUrl = descriptor.documentationURL?.trim() ?? '';
   const documentationURL =
     rawUrl.length > 0 && rawUrl.toLowerCase() !== 'tbd' ? rawUrl : undefined;
@@ -151,6 +178,7 @@ export function loadFeatureManifestSummary(
     // resolves to its base feature here, which is also where its page is.
     docsSlug: descriptor.name ?? descriptor.id,
     optionHints,
+    optionHintGates,
     optionDescriptions,
     optionNames,
     optionTypes,

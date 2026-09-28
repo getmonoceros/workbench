@@ -18,9 +18,10 @@ const PATHS = {
 };
 
 // Builders kept asking "but it is already in monoceros-config.env?" at this
-// prompt: the one intro line that explained it went unread, and every key got
-// the same bare question. So each prompt now says where its value already is,
-// in the order apply resolves it.
+// prompt, first because every key got the same bare question, then because a
+// key they keep in the shared file was still asked on every init and add-*.
+// So a value that is already set is not asked again; the summary says where it
+// comes from, in the order apply resolves it.
 describe('envValueState', () => {
   it('prefers the container file, as apply does', () => {
     expect(
@@ -29,20 +30,13 @@ describe('envValueState', () => {
         { K: 'global-value-1234' },
         { K: 'container-value-9876' },
       ),
-    ).toEqual({ source: 'container', tail: ' (…9876)' });
+    ).toEqual({ source: 'container' });
   });
 
   it('falls through a blank container key to the global one', () => {
     expect(envValueState('K', { K: 'global-value-1234' }, { K: '  ' })).toEqual(
-      { source: 'global', tail: ' (…1234)' },
+      { source: 'global' },
     );
-  });
-
-  it('shows no tail for a short value', () => {
-    expect(envValueState('K', { K: 'acme' }, {})).toEqual({
-      source: 'global',
-      tail: '',
-    });
   });
 
   it('is none when neither file has it', () => {
@@ -51,28 +45,12 @@ describe('envValueState', () => {
 });
 
 describe('envPromptText', () => {
-  it('says a global value is kept on Enter, and keeps the description', () => {
-    const { message, placeholder } = envPromptText(
-      KEY,
-      { source: 'global', tail: ' (…a1b2)' },
-      PATHS,
-    );
+  it('says where to fill in a value that is not set anywhere', () => {
+    const { message, placeholder } = envPromptText(KEY, PATHS);
     expect(message).toBe(
-      'CLAUDE_CODE_API_KEY (Claude Code) is set in ~/.monoceros/monoceros-config.env (…a1b2)\n' +
+      'CLAUDE_CODE_API_KEY (Claude Code) is not set yet\n' +
         'ℹ `sk-ant-…` for API auth; empty for OAuth login on first run.',
     );
-    expect(placeholder).toBe(
-      'Enter keeps it, or type a different value for ccr only',
-    );
-  });
-
-  it('says where to fill in a value that is not set anywhere', () => {
-    const { message, placeholder } = envPromptText(
-      KEY,
-      { source: 'none' },
-      PATHS,
-    );
-    expect(message).toContain('is not set yet');
     expect(placeholder).toBe(
       'Enter skips it, fill it in later in ~/.monoceros/container-configs/ccr.env',
     );
@@ -80,22 +58,27 @@ describe('envPromptText', () => {
 });
 
 describe('promptForEnvValues', () => {
-  it('ends with where each value came from', async () => {
+  it('asks only for what is not set, and says where the rest comes from', async () => {
     const info: string[] = [];
     const ok: string[] = [];
+    const asked: string[] = [];
     const answers = await promptForEnvValues(
       [KEY, { envVar: 'GH_TOKEN', feature: 'GitHub CLI', description: '' }],
       {
         interactive: true,
         ...PATHS,
         globalValues: { CLAUDE_CODE_API_KEY: 'sk-ant-global-a1b2' },
-        ask: async () => '',
+        ask: async (c) => {
+          asked.push(c.envVar);
+          return '';
+        },
         output: (l) => info.push(l),
         success: (l) => ok.push(l),
       },
     );
+    expect(asked).toEqual(['GH_TOKEN']);
     expect(answers).toEqual({});
-    expect(info[0]).toBe('ccr needs 2 values.');
+    expect(info[0]).toBe('ccr needs 1 value.');
     expect(ok).toEqual([
       'CLAUDE_CODE_API_KEY  global (~/.monoceros/monoceros-config.env)',
     ]);
@@ -104,19 +87,39 @@ describe('promptForEnvValues', () => {
     );
   });
 
-  it('reports a typed value as the workbench own', async () => {
+  it('asks nothing when every value is already set', async () => {
+    const info: string[] = [];
     const ok: string[] = [];
-    const answers = await promptForEnvValues([KEY], {
+    await promptForEnvValues([KEY], {
       interactive: true,
       ...PATHS,
       globalValues: { CLAUDE_CODE_API_KEY: 'sk-ant-global-a1b2' },
+      ask: async () => {
+        throw new Error('asked for a value that is already set');
+      },
+      output: (l) => info.push(l),
+      success: (l) => ok.push(l),
+    });
+    expect(info).toEqual([]);
+    expect(ok).toEqual([
+      'CLAUDE_CODE_API_KEY  global (~/.monoceros/monoceros-config.env)',
+    ]);
+  });
+
+  it('reports a typed value as the workbench own', async () => {
+    const ok: string[] = [];
+    const info: string[] = [];
+    const answers = await promptForEnvValues([KEY], {
+      interactive: true,
+      ...PATHS,
       ask: async () => 'sk-ant-other-z9y8',
-      output: () => {},
+      output: (l) => info.push(l),
       success: (l) => ok.push(l),
     });
     expect(answers).toEqual({ CLAUDE_CODE_API_KEY: 'sk-ant-other-z9y8' });
     expect(ok).toEqual([
       'CLAUDE_CODE_API_KEY  for ccr (~/.monoceros/container-configs/ccr.env)',
     ]);
+    expect(info).toEqual(['ccr needs 1 value.']);
   });
 });

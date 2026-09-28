@@ -166,23 +166,42 @@ export interface FeatureOptionHint {
 
 /**
  * The credential-bearing option hints for a feature (from the manifest's
- * `x-monoceros.optionHints`), minus any keys already set with an active
- * value. Shared by the init generator (renders `${VAR}` hint lines) and
- * `add-feature` (renders the same as a node comment) and the `.env`
- * seeding (uses `envVar`). Empty for unknown/third-party refs (no
- * manifest → no hints).
+ * `x-monoceros.optionHints`), minus any keys already set in `options` and
+ * any hint only a switched-off sub-tool reads. Shared by the init generator
+ * (renders `${VAR}` hint lines) and `add-feature` (renders the same as a
+ * node comment) and the `.env` seeding (uses `envVar`). Empty for
+ * unknown/third-party refs (no manifest → no hints).
  */
 export function featureOptionHints(
   summary: FeatureManifestSummary | undefined,
   ref: string,
-  activeKeys: readonly string[] = [],
+  options: Readonly<Record<string, unknown>> = {},
 ): FeatureOptionHint[] {
   return (summary?.optionHints ?? [])
-    .filter((key) => !activeKeys.includes(key))
+    .filter((key) => !(key in options))
+    .filter((key) => optionHintNeeded(summary, key, options))
     .map((key) => {
       const envVar = featureOptionVarName(ref, key);
       return { key, envVar, placeholder: `\${${envVar}}` };
     });
+}
+
+/**
+ * Whether a feature with these options reads the hint at all. A hint gated on
+ * sub-tool toggles is needed while at least one of them is on; an unset
+ * toggle counts at its descriptor default, as apply resolves it.
+ */
+export function optionHintNeeded(
+  summary: FeatureManifestSummary | undefined,
+  key: string,
+  options: Readonly<Record<string, unknown>>,
+): boolean {
+  const gates = summary?.optionHintGates?.[key];
+  if (!gates) return true;
+  return gates.some((gate) => {
+    const value = options[gate] ?? summary?.optionDefaults[gate];
+    return value === true || value === 'true';
+  });
 }
 
 /**

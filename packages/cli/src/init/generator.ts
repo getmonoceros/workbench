@@ -364,7 +364,7 @@ function renderFeatureBlock(
   // Hint keys carry a `${VAR}` placeholder so the builder sees exactly
   // which env var to fill (and `init` / `add-feature` seed the same var
   // into <name>.env). Derivation is shared via featureOptionHints.
-  const hints = featureOptionHints(summary, feature.ref, Object.keys(options));
+  const hints = featureOptionHints(summary, feature.ref, options);
 
   // Commented (documented-template) mode gets no plugins scaffold: the whole
   // entry is already commented out, so a second scaffold inside it would

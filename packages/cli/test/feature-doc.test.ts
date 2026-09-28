@@ -64,8 +64,27 @@ describe('featureOptionHints', () => {
   });
 
   it('excludes keys already set with an active value', () => {
-    const hints = featureOptionHints(summary, ref, ['apiToken', 'email']);
+    const hints = featureOptionHints(summary, ref, {
+      apiToken: 'x',
+      email: 'y',
+    });
     expect(hints.map((h) => h.key)).toEqual(['instance', 'bitbucketToken']);
+  });
+
+  // `atlassian/twg` asked for the Rovo Dev token: every env option became a
+  // hint, whichever sub-tool was switched on.
+  it('drops a hint only switched-off sub-tools read', () => {
+    const gated: FeatureManifestSummary = {
+      ...summary,
+      optionHints: ['email', 'rovodevToken'],
+      optionHintGates: { email: ['twg', 'rovodev'], rovodevToken: ['rovodev'] },
+      optionDefaults: { twg: true, rovodev: true },
+    };
+    const keys = (o: Record<string, unknown>) =>
+      featureOptionHints(gated, ref, o).map((h) => h.key);
+    expect(keys({ twg: true, rovodev: false })).toEqual(['email']);
+    expect(keys({ twg: false, rovodev: false })).toEqual([]);
+    expect(keys({})).toEqual(['email', 'rovodevToken']);
   });
 
   it('returns [] for an unknown/third-party ref (no manifest)', () => {

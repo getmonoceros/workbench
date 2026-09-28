@@ -573,7 +573,7 @@ export function addFeatureToDoc(
   const summary = loadFeatureManifestSummary(ref);
   const withHints = (o: FeatureOptions): FeatureOptions => {
     const out: FeatureOptions = { ...o };
-    for (const h of featureOptionHints(summary, ref, Object.keys(out))) {
+    for (const h of featureOptionHints(summary, ref, out)) {
       out[h.key] = h.placeholder;
     }
     return out;

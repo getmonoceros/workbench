@@ -595,6 +595,84 @@ describe('add-*/remove-* against the yml', () => {
     expect(env).toContain('ATLASSIAN_INSTANCE=acme.atlassian.net');
   });
 
+  // `add-feature atlassian/twg` asked for the Rovo Dev token, and for every
+  // value the builder already keeps in monoceros-config.env.
+  it('runAddFeature asks only what the added sub-tool reads and nothing already set', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await fs.writeFile(
+      path.join(home, 'monoceros-config.env'),
+      'ATLASSIAN_EMAIL=me@acme.com\n',
+    );
+    const asked: string[] = [];
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian/twg',
+      monocerosHome: home,
+      promptEnv: true,
+      askEnvValue: async (c) => {
+        asked.push(c.envVar);
+        return '';
+      },
+    });
+    expect(asked).toEqual([
+      'ATLASSIAN_INSTANCE',
+      'ATLASSIAN_API_TOKEN',
+      'ATLASSIAN_BITBUCKET_TOKEN',
+    ]);
+    const yml = await ymlOf('demo');
+    expect(yml).not.toContain('rovodevToken');
+
+    // Switching Rovo Dev on later brings its token, and asks for it then.
+    asked.length = 0;
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian/rovodev',
+      monocerosHome: home,
+      promptEnv: true,
+      askEnvValue: async (c) => {
+        asked.push(c.envVar);
+        return '';
+      },
+    });
+    expect(asked).toEqual(['ATLASSIAN_ROVODEV_TOKEN']);
+  });
+
+  // The keys were already in the env file, so nothing was asked and the
+  // builder never learned where a value for this workbench alone goes.
+  it('runAddFeature names the env file even when there is nothing to ask', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await fs.writeFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      [
+        'ATLASSIAN_INSTANCE=acme.atlassian.net',
+        'ATLASSIAN_EMAIL=',
+        'ATLASSIAN_API_TOKEN=',
+        'ATLASSIAN_BITBUCKET_TOKEN=',
+        '',
+      ].join('\n'),
+    );
+    const infos: string[] = [];
+    await runAddFeature({
+      ...baseOpts,
+      logger: { info: (m) => infos.push(m), success: () => {}, warn: () => {} },
+      name: 'demo',
+      ref: 'atlassian/twg',
+      monocerosHome: home,
+      promptEnv: true,
+      askEnvValue: async () => {
+        throw new Error('nothing new to ask');
+      },
+    });
+    expect(
+      infos.filter((m) => m.startsWith('To change any settings')),
+    ).toHaveLength(1);
+    expect(infos.at(-1)).toMatch(
+      /^To change any settings for this workbench "demo", edit .*demo\.env\.$/,
+    );
+  });
+
   it('runAddFeature ships claude with the same commented plugins example as init', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     await runAddFeature({
