@@ -516,7 +516,12 @@ describe('writeOpencodeRoles', () => {
     // A missing identity is a container problem, not the agent's, and it
     // must not be papered over with a guessed name in the user's history.
     expect(impl).toContain('Please tell me who you are');
-    expect(impl).toContain('defaults.git.user');
+    // The fix it names is the one that exists: the retired global yml sent
+    // the user to a file Monoceros no longer reads (ADR 0061).
+    expect(impl).toMatch(
+      /GIT_USER_NAME` and `GIT_USER_EMAIL` in\s+`monoceros-config\.env`/,
+    );
+    expect(impl).not.toContain('monoceros-config.yml');
   });
 
   // A review that only checks the plan misses what the plan never mentioned.

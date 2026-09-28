@@ -4,6 +4,8 @@
 - Date: 2026-08-01
 - Builds on: [ADR 0031](0031-pat-based-repo-auth.md) (the env file as the
   home for per-builder credentials)
+- Amended by: [ADR 0061](0061-machine-wide-settings-live-in-the-global-env.md):
+  source 4, `defaults.git.user`, is gone with the global yml
 
 ## Context
 

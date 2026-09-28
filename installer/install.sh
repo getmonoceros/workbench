@@ -793,38 +793,25 @@ else
 fi
 
 # ── 3. User home ───────────────────────────────────────────────────
-# Ensure ~/.monoceros/ exists with an all-commented monoceros-config.yml
-# template. The template ships as-is (no placeholder values active);
-# the user uncomments the sections they need. No "copy the sample and
-# rename it" ritual — the file is already in the right place under the
-# right name, and being all-commented means it's a no-op until edited.
+# Ensure ~/.monoceros/ exists. Its one config file is monoceros-config.env,
+# seeded below. The machine-wide yml it replaced (monoceros-config.yml) is
+# no longer seeded: the CLI moves an existing one into the env on its first
+# run and leaves monoceros-config.yml.migrated behind (ADR 0061).
 section "User home"
 
 monoceros_home="$HOME/.monoceros"
 
-config_src="$npm_global_root/@getmonoceros/workbench/templates/monoceros-config.sample.yml"
-config_dst="$monoceros_home/monoceros-config.yml"
-
 mkdir -p "$monoceros_home"
 
-if [[ -f "$config_src" ]]; then
-  if [[ -f "$config_dst" ]]; then
-    ok "config $(dim '→') $(dim "$config_dst") $(dim '(already present, left alone)')"
-  else
-    cp "$config_src" "$config_dst"
-    ok "config $(dim '→') $(dim "$config_dst")"
-    say "  $(dim "All entries are commented out - uncomment what you need")"
-    say "  $(dim "(git identity, feature API keys, etc).")"
-  fi
-else
-  abort "the config template is missing from the installed package." \
-        "Looked for $(dim "$config_src")." \
-        "The npm package is incomplete - please report this."
+if [[ -f "$monoceros_home/monoceros-config.yml.migrated" ]]; then
+  warn "$(dim "$monoceros_home/monoceros-config.yml.migrated") is no longer used."
+  say "    $(dim 'Its settings are in monoceros-config.env now. You can delete it.')"
 fi
 
-# Same treatment for the global secrets file: an all-commented
+# The global settings and secrets file: an all-commented
 # monoceros-config.env template so the builder can discover where repo
-# access tokens (PATs) go without hunting through docs. All-commented =
+# access tokens (PATs) and the machine-wide settings go without hunting
+# through docs. All-commented =
 # a no-op until edited; public repos need no token at all.
 env_src="$npm_global_root/@getmonoceros/workbench/templates/monoceros-config.sample.env"
 env_dst="$monoceros_home/monoceros-config.env"

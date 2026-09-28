@@ -71,7 +71,7 @@ describe('runPortListing', () => {
     ]);
   });
 
-  it('appends the host-port suffix when routing.hostPort != 80', async () => {
+  it('appends the host-port suffix when MONOCEROS_HOST_PORT != 80', async () => {
     await writeFile(
       path.join(home, 'container-configs', 'demo.yml'),
       [
@@ -84,8 +84,8 @@ describe('runPortListing', () => {
       ].join('\n'),
     );
     await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      ['schemaVersion: 1', 'routing:', '  hostPort: 8080', ''].join('\n'),
+      path.join(home, 'monoceros-config.env'),
+      'MONOCEROS_HOST_PORT=8080\n',
     );
     const { stream, read } = captureStream(false);
     await runPortListing({ name: 'demo', monocerosHome: home, out: stream });

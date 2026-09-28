@@ -32,7 +32,6 @@ export {
   containerConfigsDir,
   containerDir,
   containersDir,
-  monocerosConfigPath,
   monocerosHome,
   workbenchRoot,
 } from './paths.js';
@@ -44,9 +43,5 @@ export {
 } from './state.js';
 export type { StateFile } from './state.js';
 export { solutionConfigToCreateOptions } from './transform.js';
-export {
-  DEFAULT_PROXY_HOST_PORT,
-  proxyHostPort,
-  readMonocerosConfig,
-} from './global.js';
-export type { MonocerosConfig } from './global.js';
+export { DEFAULT_PROXY_HOST_PORT, readMachineSettings } from './global.js';
+export type { MachineSettings } from './global.js';

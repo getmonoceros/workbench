@@ -47,31 +47,19 @@ function normalizeLanguages(entries: SolutionConfig['languages']): {
  * existing `add-feature` command uses when a builder re-adds with new
  * options.
  *
- * `featureDefaults` (optional) — `defaults.features` from
- * `monoceros-config.yml`. Per-container options always override these;
- * keys not set per-container fall back to the default. A feature ref
- * that exists only in `featureDefaults` (not in the container yml)
- * does NOT get included — the container yml is what decides whether
- * a feature is active at all; the defaults only fill in option values.
+ * An option whose value is the empty string is left out. A bare `apiKey:`
+ * in the yml parses to null and the schema relaxes that to `""`, and an
+ * unfilled `${VAR}` resolves to `""` too. In both cases the builder means
+ * "unset", so the feature's own default applies.
  */
 export function solutionConfigToCreateOptions(
   config: SolutionConfig,
-  featureDefaults: Record<string, FeatureOptions> = {},
 ): CreateOptions {
   const featureRecord: Record<string, FeatureOptions> = {};
   for (const entry of config.features) {
-    const defaults = featureDefaults[entry.ref] ?? {};
-    // Per-container options override defaults, EXCEPT when the
-    // container value is the empty string. A bare `apiKey:` in the
-    // yml parses to null and the schema relaxes that to `""`; the
-    // init-generator also writes hint keys without a value. In both
-    // cases the builder's intent is "leave this unset, fall through
-    // to the global default" — not "explicitly clear the default".
-    // Skip empty strings so the merge respects that.
-    const containerOpts = Object.fromEntries(
+    featureRecord[entry.ref] = Object.fromEntries(
       Object.entries(entry.options ?? {}).filter(([, v]) => v !== ''),
     );
-    featureRecord[entry.ref] = { ...defaults, ...containerOpts };
   }
 
   const { languages, languageOptions } = normalizeLanguages(config.languages);

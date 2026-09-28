@@ -172,6 +172,20 @@ describe('writeClaudeCodeRoles', () => {
     );
   });
 
+  // A missing git identity is a container problem, not the agent's. The fix it
+  // names has to be the one that exists: the retired global yml sent the user
+  // to a file Monoceros no longer reads (ADR 0061). Same rule in the OpenCode
+  // set, pinned in its own suite.
+  it('names the env as the fix for a missing git identity', async () => {
+    await writeClaudeCodeRoles(dir, { [CLAUDE]: {}, [ROLES]: {} });
+    const impl = await agent('monoceros-implement');
+    expect(impl).toContain('Please tell me who you are');
+    expect(impl).toMatch(
+      /GIT_USER_NAME` and `GIT_USER_EMAIL` in\s+`monoceros-config\.env`/,
+    );
+    expect(impl).not.toContain('monoceros-config.yml');
+  });
+
   // A dev server answers `/` with the page shell whether the app loads or not,
   // so a status check there cannot fail. A real run shipped a white page behind
   // fifteen green tests: a `web/api.js` collided with a Vite proxy keyed on

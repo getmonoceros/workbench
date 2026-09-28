@@ -82,7 +82,7 @@ monoceros shell hello
 ```
 
 `init` writes a yml profile to `~/.monoceros/container-configs/`; tokens
-and defaults go in `~/.monoceros/monoceros-config.yml`. Full workflow
+and machine-wide settings go in `~/.monoceros/monoceros-config.env`. Full workflow
 and every flag at
 [getmonoceros.build/docs](https://getmonoceros.build/docs/).
 
@@ -100,7 +100,7 @@ Created automatically on first use:
 
 ```
 ~/.monoceros/
-├── monoceros-config.yml          ← global: git identity, default token, …
+├── monoceros-config.env          ← global: git identity, tokens, proxy port, …
 ├── container-configs/
 │   ├── <name>.yml                ← yml profile (init writes here)
 │   └── <name>.env                ← secrets for ${VAR} references (gitignored)

@@ -279,14 +279,14 @@ interface FeatureLike {
 
 /**
  * Resolve `${VAR}` in feature option *string* values against the env
- * file, BEFORE the options are merged with the monoceros-config
- * `defaults.features` cascade (config/transform.ts).
+ * file, BEFORE the transform turns them into the container's feature
+ * record (config/transform.ts).
  *
  * Unlike services, an unresolved/empty feature option is NOT an error:
  * a string value that references a missing var, OR resolves to
  * empty/whitespace, becomes `""`. The transform's merge then skips
  * empty-string container options, so the option falls through to the
- * global default (or stays unset — e.g. an empty `apiKey` means the
+ * feature's own default (or stays unset — e.g. an empty `apiKey` means the
  * feature uses its OAuth/login path). A resolved non-empty value
  * overrides the default. This is why feature credential placeholders
  * can be rendered ACTIVE in the yml (`apiKey: ${VAR}`) with a blank

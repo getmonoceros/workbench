@@ -337,8 +337,8 @@ export const PortEntrySchema = z.union([
  *     the primary entry rather than `<name>.localhost`.
  *
  * Host-port for the Traefik singleton itself is global (one Traefik
- * per machine), not per container — it lives in `monoceros-config.yml`
- * under `routing.hostPort`. See ADR 0007.
+ * per machine), not per container — it is `MONOCEROS_HOST_PORT` in
+ * `monoceros-config.env`. See ADR 0007 and ADR 0061.
  */
 export const RoutingSchema = z.object({
   ports: z.array(PortEntrySchema).default([]),

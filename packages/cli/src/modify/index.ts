@@ -63,7 +63,7 @@ import {
   type ContainerExec,
   type DockerLookupExec,
 } from '../devcontainer/locate-running.js';
-import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
+import { readMachineSettings } from '../config/global.js';
 import {
   KNOWN_PROVIDER_HOSTS,
   PROVIDER_FEATURE_SELECTOR,
@@ -450,12 +450,8 @@ async function refreshBriefingFromYml(
   }
   try {
     const parsed = await readConfig(containerConfigPath(name, home));
-    const globalConfig = await readMonocerosConfig({ monocerosHome: home });
     const createOpts = normalizeOptions(
-      solutionConfigToCreateOptions(
-        parsed.config,
-        globalConfig?.defaults?.features ?? {},
-      ),
+      solutionConfigToCreateOptions(parsed.config),
     );
     const components = await loadComponentCatalog();
     await writeBriefing({ targetDir, createOpts, components });
@@ -1360,16 +1356,19 @@ async function syncPortsToProxy(
   }
 
   // Effective host port for the Traefik singleton — falls back to 80
-  // when monoceros-config.yml has no `routing.hostPort`. Read once per
+  // when monoceros-config.env has no `MONOCEROS_HOST_PORT`. Read once per
   // sync so we have the right value for both ensureProxy and the URLs
   // we print back.
   let hostPort = 80;
   try {
-    const globalConfig = await readMonocerosConfig({ monocerosHome: home });
-    hostPort = proxyHostPort(globalConfig);
-  } catch {
-    // Bad monoceros-config.yml is the user's problem to fix; don't
-    // strand the sync over it. Default 80 is the right fallback.
+    ({ hostPort } = await readMachineSettings({
+      monocerosHome: home,
+      notify: logger.warn,
+    }));
+  } catch (err) {
+    // A bad value is the builder's to fix; don't strand the sync over
+    // it. Default 80 is the right fallback, and the next apply names it.
+    logger.warn(err instanceof Error ? err.message : String(err));
   }
 
   // Pre-flight outside the warn-only try/catch: a held host port is

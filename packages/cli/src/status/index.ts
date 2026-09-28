@@ -1,6 +1,6 @@
 import { readConfig } from '../config/io.js';
 import { containerConfigPath, containerDir } from '../config/paths.js';
-import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
+import { readMachineSettings } from '../config/global.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
 import { listApps, readLaunchConfig } from '../config/launch-config.js';
 import { runtimeSupportsAppStatus } from '../create/catalog.js';
@@ -200,11 +200,9 @@ export async function gatherStatus(
   // the Ports section further down spell it out when it is not the default 80.
   let hostPort = 80;
   try {
-    hostPort = proxyHostPort(
-      await readMonocerosConfig({
-        ...(opts.home ? { monocerosHome: opts.home } : {}),
-      }),
-    );
+    ({ hostPort } = await readMachineSettings({
+      ...(opts.home ? { monocerosHome: opts.home } : {}),
+    }));
   } catch {
     // default host port
   }

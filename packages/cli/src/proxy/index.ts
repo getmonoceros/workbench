@@ -91,8 +91,8 @@ export interface ProxyOptions {
   /** Override the resolved MONOCEROS_HOME (tests inject a tmpdir). */
   monocerosHome?: string;
   /**
-   * Host port Traefik binds. Read from `monoceros-config.yml`'s
-   * `routing.hostPort` by callers; the proxy module itself just gets
+   * Host port Traefik binds. Read from `MONOCEROS_HOST_PORT` in
+   * `monoceros-config.env` by callers; the proxy module itself just gets
    * a number and uses it for the `-p` mapping. Defaults to 80 (see
    * `config/global.ts → DEFAULT_PROXY_HOST_PORT`) when omitted.
    */
@@ -174,8 +174,8 @@ export async function ensureProxy(opts: ProxyOptions = {}): Promise<void> {
   // docker provider is explicitly off — we route via file-provider
   // only, so container labels can't accidentally publish a route.
   // Default 80 — kept as a literal here to avoid a back-reference into
-  // config/global.ts. The authoritative value (and the merge logic
-  // with `monoceros-config.yml`) lives in config/global.ts.
+  // config/global.ts. The authoritative value (read from
+  // `monoceros-config.env`) lives in config/global.ts.
   const hostPort = opts.hostPort ?? 80;
   const run = await docker([
     'run',

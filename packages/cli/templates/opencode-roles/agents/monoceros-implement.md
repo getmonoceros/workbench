@@ -145,8 +145,8 @@ One failure is worth naming exactly, because it looks like your fault and is
 not. `Please tell me who you are` means the container has no git identity, not
 that you did anything wrong. Do not configure one and do not guess a name: it
 would end up in the history of the user's project. Report the line as it stands
-and tell them the fix is `defaults.git.user` in `monoceros-config.yml` followed
-by an apply. Everything else you did still counts, so finish your report.
+and tell them the fix is `GIT_USER_NAME` and `GIT_USER_EMAIL` in
+`monoceros-config.env`, followed by an apply. Everything else you did still counts, so finish your report.
 
 A `git init` is yours to run only when the plan says so, which it does when this
 run created the project. Never initialise a repository in a directory that was

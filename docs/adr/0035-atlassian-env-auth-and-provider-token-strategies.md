@@ -3,6 +3,7 @@
 - Status: accepted
 - Date: 2026-07-22
 - Refs: #36 (reworks the Atlassian feature), amends ADR 0031 (repo auth)
+- §5 completed by: [ADR 0061](0061-machine-wide-settings-live-in-the-global-env.md)
 
 ## Context
 

@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
  *     installed package directory.
  *
  *   - `monocerosHome()` — where **user data** lives: container-configs,
- *     materialized containers, the global `monoceros-config.yml`.
+ *     materialized containers, the global `monoceros-config.env`.
  *
  * The two used to be conflated under one `workbenchRoot()`; splitting
  * them is what lets `monoceros apply <name>` resolve a fixed
@@ -26,12 +26,12 @@ import { fileURLToPath } from 'node:url';
  * Layout under `<MONOCEROS_HOME>/`:
  *   container-configs/<name>.yml          ← yml-Profile (`monoceros init`)
  *   container/<name>/                     ← materialized dev-containers
- *   monoceros-config.yml                  ← optional, user-edited defaults
- *   monoceros-config.sample.yml           ← marker (in dev) + template (in prod)
+ *   monoceros-config.env                  ← optional machine-wide settings + secrets
+ *   monoceros-config.sample.env           ← marker (in dev) + template (in prod)
  */
 
-const MONOCEROS_HOME_MARKER = 'monoceros-config.sample.yml';
-const WORKBENCH_MARKER = path.join('templates', 'monoceros-config.sample.yml');
+const MONOCEROS_HOME_MARKER = 'monoceros-config.sample.env';
+const WORKBENCH_MARKER = path.join('templates', 'monoceros-config.sample.env');
 const CHECKOUT_MARKER = 'pnpm-workspace.yaml';
 
 let cachedWorkbenchRoot: string | null = null;
@@ -40,7 +40,7 @@ let cachedCheckoutRoot: string | null | undefined = undefined;
 
 /**
  * Walk upwards from this module until we find the CLI-bundle marker
- * (`templates/monoceros-config.sample.yml`, shipped in the npm tarball and
+ * (`templates/monoceros-config.sample.env`, shipped in the npm tarball and
  * present in the dev `packages/cli`). In dev that hits the package root
  * reliably; in production it's the installed package dir.
  */
@@ -67,7 +67,7 @@ export function workbenchRoot(): string {
  *
  *   1. Honor the `MONOCEROS_HOME` env-var if set.
  *   2. Walk upwards from this module and accept the first
- *      `<dir>/.local/monoceros-config.sample.yml` we find; the
+ *      `<dir>/.local/monoceros-config.sample.env` we find; the
  *      containing `<dir>/.local` is treated as the home. This is the
  *      dev-workbench detection path.
  *   3. Fall back to `~/.monoceros`.
@@ -228,15 +228,12 @@ export function containerLogsDir(
   return path.join(containerDir(name, home), 'logs');
 }
 
-export function monocerosConfigPath(home: string = monocerosHome()): string {
-  return path.join(home, 'monoceros-config.yml');
-}
-
 /**
- * Global env file beside `monoceros-config.yml`. Holds shared secrets
- * referenced by `${VAR}` across containers (e.g. `GIT_TOKEN__<PROVIDER>_…`
- * repo PATs, ADR 0031). Gitignored; merged under the per-container
- * `<name>.env` at apply time.
+ * The machine-global env file. Holds the machine-wide settings
+ * (`MONOCEROS_HOST_PORT`, ADR 0061) and shared secrets referenced by
+ * `${VAR}` across containers (e.g. `GIT_TOKEN__<PROVIDER>_…` repo PATs,
+ * ADR 0031). Gitignored; merged under the per-container `<name>.env` at
+ * apply time.
  */
 export function globalEnvPath(home: string = monocerosHome()): string {
   return path.join(home, 'monoceros-config.env');

@@ -1,166 +1,92 @@
-import { promises as fs } from 'node:fs';
-import { z } from 'zod';
-import { parseDocument } from 'yaml';
-import {
-  FeatureOptionValueSchema,
-  GitUserSchema,
-  REGEX,
-  isValidEmail,
-} from './schema.js';
-import { monocerosConfigPath, monocerosHome } from './paths.js';
+import { readEnvFile } from './env-file.js';
+import { migrateGlobalYml } from './global-yml-migration.js';
+import { DEFAULT_UPGRADE_STALE_DAYS } from './machine-state.js';
+import { globalEnvPath, monocerosHome, prettyPath } from './paths.js';
 
 /**
- * `<MONOCEROS_HOME>/monoceros-config.yml` — optional builder-owned
- * defaults that apply across every container materialized through
- * this home. Today the only field is git identity; future fields
- * (default editor, Claude auth profile, ...) plug into the same
- * structure.
+ * Machine-global settings, read from `<MONOCEROS_HOME>/monoceros-config.env`
+ * (ADR 0061). One Traefik singleton and one upgrade nudge
+ * per machine, so these live beside the shared secrets rather than in any
+ * workbench yml. The file is optional; every setting has a default.
  *
- * Schema is permissive: missing top-level keys are fine, the file
- * itself is optional. Schema violations surface as a hard error
- * (better to refuse than silently ignore a typo'd key the builder
- * thought was effective).
+ * The env and not a yml of its own: a second config file only for two
+ * scalars was one more place to look, and no yml ever holds personal data.
  */
 
-const SCHEMA_VERSION = 1 as const;
-
-/**
- * `defaults.features` — map of devcontainer feature ref to a default
- * option object. When a container yml references the same feature ref
- * without overriding a specific option, the value from here is used.
- * Per-container options always win.
- *
- * Typical use: stash the Atlassian apiToken / Anthropic apiKey here
- * once globally instead of repeating them in every container yml.
- */
-export const MonocerosConfigSchema = z.object({
-  schemaVersion: z.literal(SCHEMA_VERSION),
-  // .nullish() (= .optional().nullable()) on defaults so the shipped
-  // sample yml — where `defaults:` is uncommented but every sub-block
-  // is commented out — parses cleanly. YAML produces `defaults: null`
-  // in that case; without .nullish() the schema would reject it and
-  // we'd be back to forcing builders to comment-juggle three lines.
-  defaults: z
-    .object({
-      // .nullish() (not just .optional()) so the sample yml can leave
-      // `git:` uncommented as a category marker — YAML produces
-      // `git: null` for an empty mapping, which zod's plain
-      // `.optional()` would reject.
-      git: z
-        .object({
-          // Strict email here: monoceros-config defaults are not tied to
-          // any container `<name>.env`, so `${VAR}` placeholders make no
-          // sense and the format can (and should) be validated at load
-          // time — unlike the container/repo `git.user`, which defers to
-          // apply after interpolation.
-          user: GitUserSchema.optional().refine(
-            (u) => u?.email === undefined || isValidEmail(u.email),
-            { message: 'Invalid email in defaults.git.user', path: ['email'] },
-          ),
-        })
-        .nullish(),
-      // .nullish() for the same reason as `git` — the sample keeps
-      // `features:` uncommented as a category marker.
-      features: z
-        .record(
-          z
-            .string()
-            .regex(
-              REGEX.featureRef,
-              "Invalid feature ref. Expected an OCI-image-style ref like 'ghcr.io/getmonoceros/monoceros-features/<name>:<tag>'.",
-            ),
-          z.record(z.string(), FeatureOptionValueSchema),
-        )
-        .nullish(),
-    })
-    .nullish(),
-  // Machine-global routing settings — one Traefik per builder, so
-  // host-port and similar live here rather than in any container yml.
-  // See ADR 0007.
-  routing: z
-    .object({
-      hostPort: z
-        .number()
-        .int()
-        .min(1)
-        .max(65535)
-        .optional()
-        .describe(
-          'Host port the Traefik singleton binds. Default 80. Set this when 80 is held by another service on your machine — URLs then become http://<name>.localhost:<port>/.',
-        ),
-    })
-    .nullish(),
-  // Tool-freshness settings (ADR 0018). One machine-global knob.
-  upgrade: z
-    .object({
-      staleDays: z
-        .number()
-        .int()
-        .min(1)
-        .optional()
-        .describe(
-          'Days after the last `monoceros upgrade` before `apply` nudges you to refresh tooling. Default 30.',
-        ),
-    })
-    .nullish(),
-});
-
-export type MonocerosConfig = z.infer<typeof MonocerosConfigSchema>;
-
-export interface ReadMonocerosConfigOptions {
-  /** Override of the user-data home. Tests inject a tmpdir. */
-  monocerosHome?: string;
-}
-
-/**
- * Read `<home>/monoceros-config.yml`. Returns `undefined` if the file
- * isn't there (the normal case for a fresh setup). Throws on a parse
- * or schema error — the builder explicitly created the file, so a
- * silent ignore would be worse than a loud abort.
- */
-export async function readMonocerosConfig(
-  opts: ReadMonocerosConfigOptions = {},
-): Promise<MonocerosConfig | undefined> {
-  const home = opts.monocerosHome ?? monocerosHome();
-  const filePath = monocerosConfigPath(home);
-  let text: string;
-  try {
-    text = await fs.readFile(filePath, 'utf8');
-  } catch {
-    return undefined;
-  }
-  const doc = parseDocument(text, { prettyErrors: true });
-  if (doc.errors.length > 0) {
-    throw new Error(
-      `yaml parse error in ${filePath}: ${doc.errors[0]!.message}`,
-    );
-  }
-  const result = MonocerosConfigSchema.safeParse(doc.toJS());
-  if (!result.success) {
-    const issues = result.error.issues
-      .map((issue) => {
-        const where = issue.path.length > 0 ? issue.path.join('.') : '(root)';
-        return `  - ${where}: ${issue.message}`;
-      })
-      .join('\n');
-    throw new Error(
-      `Invalid ${filePath}:\n${issues}\n\nSee ${filePath.replace(
-        /\.yml$/,
-        '.sample.yml',
-      )} for a valid example.`,
-    );
-  }
-  return result.data;
-}
-
-/** Default Traefik host port when `routing.hostPort` is unset. */
+/** Default Traefik host port when `MONOCEROS_HOST_PORT` is unset. */
 export const DEFAULT_PROXY_HOST_PORT = 80;
 
+export const HOST_PORT_VAR = 'MONOCEROS_HOST_PORT';
+export const UPGRADE_STALE_DAYS_VAR = 'MONOCEROS_UPGRADE_STALE_DAYS';
+
+export interface MachineSettings {
+  /** Host port the Traefik singleton binds (ADR 0007). */
+  hostPort: number;
+  /** Days after the last `monoceros upgrade` before apply nudges (ADR 0018). */
+  upgradeStaleDays: number;
+}
+
+export interface ReadMachineSettingsOptions {
+  /** Override of the user-data home. Tests inject a tmpdir. */
+  monocerosHome?: string;
+  /**
+   * Where the one-time migration of a legacy `monoceros-config.yml` reports
+   * what it did. The caller's logger, so the message lands in its output.
+   */
+  notify?: (message: string) => void;
+}
+
 /**
- * Effective host port the Traefik singleton should bind. Falls back
- * to `DEFAULT_PROXY_HOST_PORT` (80) when the global config or its
- * `routing.hostPort` field is absent.
+ * Read the machine-global settings. Migrates a legacy `monoceros-config.yml`
+ * first, once, so a value the builder set there is not silently lost.
+ *
+ * Throws on a value that is set but not a number in range: the builder wrote
+ * it on purpose, and falling back to the default would put the proxy on a
+ * port they did not choose.
  */
-export function proxyHostPort(config?: MonocerosConfig | undefined): number {
-  return config?.routing?.hostPort ?? DEFAULT_PROXY_HOST_PORT;
+export async function readMachineSettings(
+  opts: ReadMachineSettingsOptions = {},
+): Promise<MachineSettings> {
+  const home = opts.monocerosHome ?? monocerosHome();
+  const notice = await migrateGlobalYml(home);
+  if (notice) (opts.notify ?? console.warn)(notice);
+
+  const envPath = globalEnvPath(home);
+  const env = readEnvFile(envPath);
+  return {
+    hostPort: intSetting(env, HOST_PORT_VAR, envPath, {
+      fallback: DEFAULT_PROXY_HOST_PORT,
+      min: 1,
+      max: 65535,
+    }),
+    upgradeStaleDays: intSetting(env, UPGRADE_STALE_DAYS_VAR, envPath, {
+      fallback: DEFAULT_UPGRADE_STALE_DAYS,
+      min: 1,
+    }),
+  };
+}
+
+function intSetting(
+  env: Record<string, string>,
+  key: string,
+  envPath: string,
+  range: { fallback: number; min: number; max?: number },
+): number {
+  const raw = env[key]?.trim() ?? '';
+  if (raw === '') return range.fallback;
+  const value = Number(raw);
+  const inRange =
+    Number.isInteger(value) &&
+    value >= range.min &&
+    (range.max === undefined || value <= range.max);
+  if (!inRange) {
+    const bounds =
+      range.max === undefined
+        ? `a whole number from ${range.min}`
+        : `a whole number from ${range.min} to ${range.max}`;
+    throw new Error(
+      `${key} in ${prettyPath(envPath)} must be ${bounds}, got "${raw}".`,
+    );
+  }
+  return value;
 }

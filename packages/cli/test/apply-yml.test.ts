@@ -486,106 +486,12 @@ describe('runApply', () => {
     expect(postCreate).toMatch(/for hook in .*post-create\.d\/\*\.sh/);
   });
 
-  it('merges defaults.features from monoceros-config.yml into per-container options', async () => {
+  // Shared credentials live in monoceros-config.env: a `${VAR}` left blank in
+  // the workbench's own env falls through to the global one (ADR 0061).
+  it('an empty ${VAR} in the workbench env takes the value from monoceros-config.env', async () => {
     await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      [
-        'schemaVersion: 1',
-        'defaults:',
-        '  features:',
-        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
-        '      apiKey: sk-ant-from-defaults',
-        '',
-      ].join('\n'),
-    );
-    await writeYml(
-      'merged',
-      [
-        'schemaVersion: 1',
-        'name: merged',
-        'features:',
-        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
-        '    options:',
-        '      version: "0.5.1"',
-        '',
-      ].join('\n'),
-    );
-    await runApply({ ...baseRunOpts, name: 'merged', monocerosHome: home });
-    const devcontainer = JSON.parse(
-      await readFile(
-        path.join(
-          home,
-          'container',
-          'merged',
-          '.devcontainer',
-          'devcontainer.json',
-        ),
-        'utf8',
-      ),
-    );
-    // apiKey came from defaults, version was overridden per-container.
-    expect(devcontainer.features['./features/claude-code']).toEqual({
-      apiKey: 'sk-ant-from-defaults',
-      version: '0.5.1',
-    });
-  });
-
-  it('per-container options win over defaults.features for the same key', async () => {
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      [
-        'schemaVersion: 1',
-        'defaults:',
-        '  features:',
-        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
-        '      apiKey: sk-ant-default',
-        '',
-      ].join('\n'),
-    );
-    await writeYml(
-      'override',
-      [
-        'schemaVersion: 1',
-        'name: override',
-        'features:',
-        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
-        '    options:',
-        '      apiKey: sk-ant-per-container',
-        '',
-      ].join('\n'),
-    );
-    await runApply({ ...baseRunOpts, name: 'override', monocerosHome: home });
-    const devcontainer = JSON.parse(
-      await readFile(
-        path.join(
-          home,
-          'container',
-          'override',
-          '.devcontainer',
-          'devcontainer.json',
-        ),
-        'utf8',
-      ),
-    );
-    expect(devcontainer.features['./features/claude-code']).toEqual({
-      apiKey: 'sk-ant-per-container',
-    });
-  });
-
-  it('an empty ${VAR} feature option inherits the defaults.features value', async () => {
-    // The active placeholder `apiKey: ${CLAUDE_CODE_API_KEY}` with a blank
-    // .env must NOT clobber the global default — it resolves to "" before
-    // the merge, so the transform skips it and the default flows through.
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      [
-        'schemaVersion: 1',
-        'defaults:',
-        '  features:',
-        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
-        '      apiKey: sk-ant-from-defaults',
-        '',
-      ].join('\n'),
+      path.join(home, 'monoceros-config.env'),
+      'CLAUDE_CODE_API_KEY=sk-ant-from-global\n',
     );
     await writeYml(
       'inherit',
@@ -617,11 +523,13 @@ describe('runApply', () => {
       ),
     );
     expect(devcontainer.features['./features/claude-code']).toEqual({
-      apiKey: 'sk-ant-from-defaults',
+      apiKey: 'sk-ant-from-global',
     });
   });
 
-  it('a filled ${VAR} feature option overrides the defaults.features value', async () => {
+  // The builder who kept a credential under `defaults.features` must not lose
+  // it on the first apply of the new CLI.
+  it('a credential from a legacy monoceros-config.yml keeps working after the migration', async () => {
     await writeFile(
       path.join(home, 'monoceros-config.yml'),
       [
@@ -629,15 +537,15 @@ describe('runApply', () => {
         'defaults:',
         '  features:',
         '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
-        '      apiKey: sk-ant-from-defaults',
+        '      apiKey: sk-ant-from-legacy',
         '',
       ].join('\n'),
     );
     await writeYml(
-      'filled',
+      'legacy',
       [
         'schemaVersion: 1',
-        'name: filled',
+        'name: legacy',
         'features:',
         '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
         '    options:',
@@ -646,16 +554,16 @@ describe('runApply', () => {
       ].join('\n'),
     );
     await writeFile(
-      path.join(home, 'container-configs', 'filled.env'),
-      'CLAUDE_CODE_API_KEY=sk-ant-real\n',
+      path.join(home, 'container-configs', 'legacy.env'),
+      'CLAUDE_CODE_API_KEY=\n',
     );
-    await runApply({ ...baseRunOpts, name: 'filled', monocerosHome: home });
+    await runApply({ ...baseRunOpts, name: 'legacy', monocerosHome: home });
     const devcontainer = JSON.parse(
       await readFile(
         path.join(
           home,
           'container',
-          'filled',
+          'legacy',
           '.devcontainer',
           'devcontainer.json',
         ),
@@ -663,38 +571,9 @@ describe('runApply', () => {
       ),
     );
     expect(devcontainer.features['./features/claude-code']).toEqual({
-      apiKey: 'sk-ant-real',
+      apiKey: 'sk-ant-from-legacy',
     });
-  });
-
-  it("does not include a defaults-only feature that's not in the container yml", async () => {
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      [
-        'schemaVersion: 1',
-        'defaults:',
-        '  features:',
-        '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
-        '      apiKey: sk-ant-default',
-        '',
-      ].join('\n'),
-    );
-    // No features: at all in the container yml.
-    await writeYml('bare', 'schemaVersion: 1\nname: bare\n');
-    await runApply({ ...baseRunOpts, name: 'bare', monocerosHome: home });
-    const devcontainer = JSON.parse(
-      await readFile(
-        path.join(
-          home,
-          'container',
-          'bare',
-          '.devcontainer',
-          'devcontainer.json',
-        ),
-        'utf8',
-      ),
-    );
-    expect(devcontainer.features).toBeUndefined();
+    expect(existsSync(path.join(home, 'monoceros-config.yml'))).toBe(false);
   });
 
   it('passes through Monoceros feature refs verbatim when the local copy is absent', async () => {
@@ -1498,13 +1377,9 @@ describe('runApply', () => {
     );
   });
 
-  it('does NOT prompt when monoceros-config defaults.git.user is a blank block and every repo self-identifies', async () => {
-    // Regression: the global-config generator always emits
-    // `defaults.git.user: { name: '', email: '' }`. GitUserSchema maps
-    // the empty strings to undefined per field, but the block itself
-    // stays present — so the "does a default identity exist?" gate keyed
-    // off mere presence fired even though it resolves to nothing,
-    // forcing the prompt despite the repo carrying its own identity.
+  // A committer identity kept under `defaults.git.user` moves into the env
+  // and is used by the same apply, without asking again.
+  it('uses the git identity from a legacy monoceros-config.yml without prompting', async () => {
     await writeFile(
       path.join(home, 'monoceros-config.yml'),
       [
@@ -1512,37 +1387,25 @@ describe('runApply', () => {
         'defaults:',
         '  git:',
         '    user:',
-        "      name: ''",
-        "      email: ''",
+        '      name: Legacy Builder',
+        '      email: legacy@example.com',
         '',
       ].join('\n'),
     );
     await writeYml(
-      'blank-defaults-id',
+      'legacy-id',
       [
         'schemaVersion: 1',
-        'name: blank-defaults-id',
-        'git:',
-        '  user:',
-        '    name: ${GIT_USER_NAME}',
-        '    email: ${GIT_USER_EMAIL}',
+        'name: legacy-id',
         'repos:',
         '  - url: https://github.com/work/api.git',
-        '    git:',
-        '      user:',
-        '        name: Thorsten Kamann',
-        '        email: tk@conciso.de',
         '',
       ].join('\n'),
-    );
-    await writeFile(
-      path.join(home, 'container-configs', 'blank-defaults-id.env'),
-      'GIT_USER_NAME=\nGIT_USER_EMAIL=\n',
     );
     const promptedKeys: string[] = [];
     await runApply({
       ...baseRunOpts,
-      name: 'blank-defaults-id',
+      name: 'legacy-id',
       monocerosHome: home,
       identityPrompt: async (key: string) => {
         promptedKeys.push(key);
@@ -1550,6 +1413,12 @@ describe('runApply', () => {
       },
     });
     expect(promptedKeys).toEqual([]);
+    const gitconfig = await readFile(
+      path.join(home, 'container', 'legacy-id', '.monoceros', 'gitconfig'),
+      'utf8',
+    );
+    expect(gitconfig).toContain('name = Legacy Builder');
+    expect(gitconfig).toContain('email = legacy@example.com');
   });
 
   it('still prompts for a container identity when a repo lacks its own git.user', async () => {

@@ -1,238 +1,165 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  DEFAULT_PROXY_HOST_PORT,
-  proxyHostPort,
-  readMonocerosConfig,
-} from '../src/config/global.js';
+import { readMachineSettings } from '../src/config/global.js';
 
-describe('readMonocerosConfig', () => {
-  let home: string;
+/**
+ * Machine-global settings live in `monoceros-config.env` (ADR 0061), and a
+ * legacy `monoceros-config.yml` is migrated into it once, by whichever command
+ * reads the settings first.
+ */
 
-  beforeEach(async () => {
-    home = await mkdtemp(path.join(tmpdir(), 'monoceros-global-config-'));
+let home: string;
+let notices: string[];
+const envPath = (): string => path.join(home, 'monoceros-config.env');
+const ymlPath = (): string => path.join(home, 'monoceros-config.yml');
+const read = () =>
+  readMachineSettings({
+    monocerosHome: home,
+    notify: (m) => notices.push(m),
   });
 
-  afterEach(async () => {
-    await rm(home, { recursive: true, force: true });
+beforeEach(async () => {
+  home = await mkdtemp(path.join(tmpdir(), 'monoceros-machine-'));
+  notices = [];
+});
+
+afterEach(async () => {
+  await rm(home, { recursive: true, force: true });
+});
+
+describe('readMachineSettings', () => {
+  it('falls back to the defaults without a global env', async () => {
+    expect(await read()).toEqual({ hostPort: 80, upgradeStaleDays: 30 });
+    expect(notices).toEqual([]);
   });
 
-  it('returns undefined when no monoceros-config.yml exists', async () => {
-    const result = await readMonocerosConfig({ monocerosHome: home });
-    expect(result).toBeUndefined();
-  });
-
-  it('parses a minimal config without defaults', async () => {
+  it('reads the host port and the upgrade nudge from the env', async () => {
     await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      'schemaVersion: 1\n',
+      envPath(),
+      'MONOCEROS_HOST_PORT=8080\nMONOCEROS_UPGRADE_STALE_DAYS=14\n',
     );
-    const result = await readMonocerosConfig({ monocerosHome: home });
-    expect(result).toEqual({ schemaVersion: 1 });
+    expect(await read()).toEqual({ hostPort: 8080, upgradeStaleDays: 14 });
   });
 
-  it('parses defaults as null (shipped template with everything commented)', async () => {
-    // The shipped monoceros-config.yml has `defaults:` uncommented as
-    // a structural anchor, with every sub-block commented out. YAML
-    // parses that as { schemaVersion: 1, defaults: null }. The schema
-    // accepts null via .nullish() so users don't have to uncomment
-    // three spatially-separated lines to get a working config.
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      ['schemaVersion: 1', 'defaults:', '  # only comments below', ''].join(
-        '\n',
-      ),
+  it('treats a blank value as unset', async () => {
+    await writeFile(envPath(), 'MONOCEROS_HOST_PORT=\n');
+    expect((await read()).hostPort).toBe(80);
+  });
+
+  // A port the builder typed on purpose must not silently become 80.
+  it('rejects a value that is not a port, and names the key and the file', async () => {
+    await writeFile(envPath(), 'MONOCEROS_HOST_PORT=eighty\n');
+    await expect(read()).rejects.toThrow(
+      /MONOCEROS_HOST_PORT in .*monoceros-config\.env must be a whole number from 1 to 65535, got "eighty"/,
     );
-    const result = await readMonocerosConfig({ monocerosHome: home });
-    expect(result?.schemaVersion).toBe(1);
-    expect(result?.defaults).toBeNull();
   });
+});
 
-  it('parses defaults.git.user', async () => {
+describe('migrating a legacy monoceros-config.yml', () => {
+  it('retires a yml that holds only defaults, and moves nothing', async () => {
     await writeFile(
-      path.join(home, 'monoceros-config.yml'),
+      ymlPath(),
       [
         'schemaVersion: 1',
         'defaults:',
         '  git:',
         '    user:',
-        '      name: Your Name',
-        '      email: you@example.com',
+        "      name: ''",
+        "      email: ''",
+        '  features:',
+        'routing:',
+        '  hostPort: 80',
         '',
       ].join('\n'),
     );
-    const result = await readMonocerosConfig({ monocerosHome: home });
-    expect(result?.defaults?.git?.user).toEqual({
-      name: 'Your Name',
-      email: 'you@example.com',
-    });
+    await read();
+    expect(existsSync(ymlPath())).toBe(false);
+    expect(existsSync(`${ymlPath()}.migrated`)).toBe(true);
+    expect(existsSync(envPath())).toBe(false);
+    expect(notices[0]).toMatch(/only default values/);
   });
 
-  it('parses defaults.features with per-feature option maps', async () => {
+  it('moves every changed value into the env, once', async () => {
     await writeFile(
-      path.join(home, 'monoceros-config.yml'),
+      ymlPath(),
+      [
+        'schemaVersion: 1',
+        'defaults:',
+        '  git:',
+        '    user:',
+        '      name: Ada Lovelace',
+        '      email: ada@example.com',
+        'routing:',
+        '  hostPort: 8080',
+        'upgrade:',
+        '  staleDays: 14',
+        '',
+      ].join('\n'),
+    );
+    expect(await read()).toEqual({ hostPort: 8080, upgradeStaleDays: 14 });
+
+    const env = await readFile(envPath(), 'utf8');
+    expect(env).toMatch(/^MONOCEROS_HOST_PORT=8080$/m);
+    expect(env).toMatch(/^MONOCEROS_UPGRADE_STALE_DAYS=14$/m);
+    expect(env).toMatch(/^GIT_USER_NAME=Ada Lovelace$/m);
+    expect(env).toMatch(/^GIT_USER_EMAIL=ada@example.com$/m);
+    expect(notices[0]).toMatch(/routing\.hostPort -> MONOCEROS_HOST_PORT/);
+    expect(notices[0]).toMatch(/monoceros-config\.yml\.migrated/);
+
+    // The second run finds no yml and says nothing.
+    notices = [];
+    await read();
+    expect(notices).toEqual([]);
+  });
+
+  it('keeps what the env already sets and says the yml value was dropped', async () => {
+    await writeFile(envPath(), 'MONOCEROS_HOST_PORT=9090\n');
+    await writeFile(
+      ymlPath(),
+      'schemaVersion: 1\nrouting:\n  hostPort: 8080\n',
+    );
+    expect((await read()).hostPort).toBe(9090);
+    expect(notices[0]).toMatch(/Already set .*dropped/);
+    expect(notices[0]).toMatch(
+      /MONOCEROS_HOST_PORT \(from routing\.hostPort\)/,
+    );
+  });
+
+  it('moves a credential under the variable the workbench yml references, and lists the rest', async () => {
+    await writeFile(
+      ymlPath(),
       [
         'schemaVersion: 1',
         'defaults:',
         '  features:',
         '    ghcr.io/getmonoceros/monoceros-features/claude-code:1:',
-        '      apiKey: sk-ant-1',
-        '    ghcr.io/getmonoceros/monoceros-features/atlassian:1:',
-        '      instance: yoursite.atlassian.net',
-        '      email: you@example.com',
-        '      apiToken: ATATT3xFf-default',
+        '      apiKey: sk-ant-secret',
+        '      permissionMode: ask',
+        '    ghcr.io/acme/features/thing:1:',
+        '      flavour: spicy',
         '',
       ].join('\n'),
     );
-    const result = await readMonocerosConfig({ monocerosHome: home });
-    expect(result?.defaults?.features).toEqual({
-      'ghcr.io/getmonoceros/monoceros-features/claude-code:1': {
-        apiKey: 'sk-ant-1',
-      },
-      'ghcr.io/getmonoceros/monoceros-features/atlassian:1': {
-        instance: 'yoursite.atlassian.net',
-        email: 'you@example.com',
-        apiToken: 'ATATT3xFf-default',
-      },
-    });
+    await read();
+    const env = await readFile(envPath(), 'utf8');
+    expect(env).toMatch(/^CLAUDE_CODE_API_KEY=sk-ant-secret$/m);
+    // A yml-surfaced option and a third-party one have no place in the env.
+    expect(env).not.toMatch(/permissionMode|flavour/);
+    expect(notices[0]).toMatch(
+      /claude-code:1: permissionMode: ask[\s\S]*thing:1: flavour: spicy/,
+    );
+    // A moved value may be a token, so it is never printed.
+    expect(notices[0]).not.toContain('sk-ant-secret');
   });
 
-  it('rejects a defaults.features key that is not a valid feature ref', async () => {
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      [
-        'schemaVersion: 1',
-        'defaults:',
-        '  features:',
-        '    not-a-ref:',
-        '      foo: bar',
-        '',
-      ].join('\n'),
+  it('stops on a yml it cannot read, and leaves the file where it is', async () => {
+    await writeFile(ymlPath(), 'schemaVersion: 1\n  bad: indent\n');
+    await expect(read()).rejects.toThrow(
+      /Could not migrate .*monoceros-config\.yml/,
     );
-    await expect(readMonocerosConfig({ monocerosHome: home })).rejects.toThrow(
-      /defaults\.features\.not-a-ref/,
-    );
-  });
-
-  it('throws on a wrong schemaVersion', async () => {
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      'schemaVersion: 99\n',
-    );
-    await expect(readMonocerosConfig({ monocerosHome: home })).rejects.toThrow(
-      /schemaVersion/,
-    );
-  });
-
-  it('throws on malformed email', async () => {
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      [
-        'schemaVersion: 1',
-        'defaults:',
-        '  git:',
-        '    user:',
-        '      name: X',
-        '      email: not-an-email',
-        '',
-      ].join('\n'),
-    );
-    await expect(readMonocerosConfig({ monocerosHome: home })).rejects.toThrow(
-      /email/,
-    );
-  });
-
-  it('throws on yaml parse error with the file path in the message', async () => {
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      'schemaVersion: 1\n  bad: indent\n',
-    );
-    await expect(readMonocerosConfig({ monocerosHome: home })).rejects.toThrow(
-      /monoceros-config\.yml/,
-    );
-  });
-
-  it('accepts uncommented `git:` and `features:` category markers without contents', async () => {
-    // Regression for the "all categories visible" sample-yml pattern:
-    // `git:` and `features:` are uncommented as structure markers even
-    // when nothing is configured under them. YAML parses both as null,
-    // schema must accept that via .nullish() rather than throwing.
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      ['schemaVersion: 1', 'defaults:', '  git:', '  features:', ''].join('\n'),
-    );
-    const result = await readMonocerosConfig({ monocerosHome: home });
-    expect(result?.schemaVersion).toBe(1);
-    expect(result?.defaults?.git).toBeNull();
-    expect(result?.defaults?.features).toBeNull();
-  });
-
-  it('accepts and surfaces routing.hostPort', async () => {
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      ['schemaVersion: 1', 'routing:', '  hostPort: 8080', ''].join('\n'),
-    );
-    const result = await readMonocerosConfig({ monocerosHome: home });
-    expect(result?.routing?.hostPort).toBe(8080);
-    expect(proxyHostPort(result)).toBe(8080);
-  });
-
-  it('rejects out-of-range routing.hostPort values', async () => {
-    await writeFile(
-      path.join(home, 'monoceros-config.yml'),
-      ['schemaVersion: 1', 'routing:', '  hostPort: 70000', ''].join('\n'),
-    );
-    await expect(readMonocerosConfig({ monocerosHome: home })).rejects.toThrow(
-      /hostPort|less than or equal/i,
-    );
-  });
-});
-
-describe('proxyHostPort', () => {
-  it('falls back to 80 when the config is undefined', () => {
-    expect(proxyHostPort(undefined)).toBe(DEFAULT_PROXY_HOST_PORT);
-    expect(DEFAULT_PROXY_HOST_PORT).toBe(80);
-  });
-
-  it('falls back to 80 when routing.hostPort is unset', () => {
-    expect(proxyHostPort({ schemaVersion: 1 })).toBe(80);
-  });
-});
-
-// Regression guard: the shipped sample yml must parse cleanly — it
-// gets dropped verbatim into ~/.monoceros/ by install.sh / install.ps1
-// for fresh installs. A typo in the sample would only surface when an
-// actual builder tries to use it, which is too late.
-describe('monoceros-config.sample.yml', () => {
-  let home: string;
-  beforeEach(async () => {
-    home = await mkdtemp(path.join(tmpdir(), 'monoceros-sample-'));
-  });
-  afterEach(async () => {
-    await rm(home, { recursive: true, force: true });
-  });
-
-  it('the shipped sample parses against the schema', async () => {
-    const sample = await import('node:fs').then((m) =>
-      m.promises.readFile(
-        path.resolve(
-          __dirname,
-          '..',
-          'templates',
-          'monoceros-config.sample.yml',
-        ),
-        'utf8',
-      ),
-    );
-    await writeFile(path.join(home, 'monoceros-config.yml'), sample);
-    // With every actual setting commented out, the parsed shape is
-    // schemaVersion + the bare `defaults:`/`routing:` containers
-    // (which become null thanks to .nullish() on those fields). The
-    // important assertion is just that readMonocerosConfig doesn't
-    // throw a schema error.
-    const result = await readMonocerosConfig({ monocerosHome: home });
-    expect(result?.schemaVersion).toBe(1);
+    expect(existsSync(ymlPath())).toBe(true);
   });
 });

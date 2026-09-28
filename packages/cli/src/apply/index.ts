@@ -1,11 +1,7 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
-import {
-  type MonocerosConfig,
-  proxyHostPort,
-  readMonocerosConfig,
-} from '../config/global.js';
+import { readMachineSettings } from '../config/global.js';
 import { readConfig } from '../config/io.js';
 import {
   containerConfigPath,
@@ -102,7 +98,6 @@ import {
 } from '../devcontainer/compose.js';
 import { resolveContainerImageId } from '../devcontainer/images.js';
 import {
-  DEFAULT_UPGRADE_STALE_DAYS,
   readMachineState,
   recordBuiltImage,
   upgradeNudge,
@@ -341,11 +336,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     );
   }
 
-  // Read global defaults early — feature option defaults from
-  // `monoceros-config.yml` need to be merged before scaffold codegen,
-  // and the git identity logic later in this function also needs the
-  // global config.
-  const globalConfig = await readMonocerosConfig({ monocerosHome: home });
+  // Machine-global settings (proxy host port, upgrade nudge) from
+  // `monoceros-config.env`. Also migrates a legacy `monoceros-config.yml`
+  // once, before anything below reads the env (ADR 0061).
+  const machine = await readMachineSettings({
+    monocerosHome: home,
+    notify: logger.warn ?? logger.info,
+  });
 
   // Pre-M4 the canonical feature namespace was
   // `ghcr.io/monoceros/features/…`. After the M4 cut it moved to
@@ -354,12 +351,12 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // try to pull them from GHCR and 404. Warn loudly and tell the
   // builder what to write instead — but don't rewrite their yml or
   // fail the apply, so they stay in control of the migration.
-  warnOnDeprecatedFeatureRefs(parsed.config.features, globalConfig, logger);
+  warnOnDeprecatedFeatureRefs(parsed.config.features, logger);
 
   // Read the per-container env file (container-configs/<name>.env) — the
   // source for `${VAR}` references — BEFORE the transform, because
-  // feature options must be resolved before they're merged with the
-  // monoceros-config `defaults.features` cascade.
+  // feature options must be resolved before they become the container's
+  // feature record.
   const envPath = containerEnvPath(opts.name, home);
   await ensureEnvGitignored(containerConfigsDir(home));
   // Merge the global env (shared `${VAR}` values — repo PATs, ADR 0031)
@@ -451,10 +448,10 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // (which language/service exists) happens here against
   // create/scaffold's known set.
   const createOpts = normalizeOptions(
-    solutionConfigToCreateOptions(
-      { ...parsed.config, features: resolvedFeatures },
-      globalConfig?.defaults?.features ?? {},
-    ),
+    solutionConfigToCreateOptions({
+      ...parsed.config,
+      features: resolvedFeatures,
+    }),
   );
 
   // Resolve `${VAR}` in SERVICE fields (post-transform — services don't
@@ -471,7 +468,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // The workspace env spells out each reachable service's host-side address, so
   // it needs the port Traefik really binds (default 80, `routing.hostPort`
   // otherwise) - the same value the routes and the printed URLs use.
-  createOpts.proxyHostPort = proxyHostPort(globalConfig);
+  createOpts.proxyHostPort = machine.hostPort;
 
   // Resolve the `mcpServers:` block: `${VAR}` from the env file first, then the
   // catalog lookup that turns a bare `name:` into a full server definition
@@ -566,12 +563,11 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
   // Refresh host git identity and HTTPS credentials before the
   // container teardown so they're in place when post-create.sh runs.
-  // Identity resolution priority: yml override → monoceros-config.yml
-  // defaults → host global → persisted .monoceros/gitconfig → prompt.
+  // Identity resolution priority: yml override → env → host global →
+  // prompt (ADR 0044).
   //
   // Skip identity collection entirely when there's no obvious reason
-  // to need one: no repos to clone, no resolved yml.git.user, no
-  // defaults.git.user. Without those, asking the builder for a
+  // to need one: no repos to clone, no resolved yml.git.user. Without those, asking the builder for a
   // committer identity is pure friction — they didn't ask for git
   // and might just want a sandbox container. They can `monoceros
   // add-repo` later, at which point the next apply re-evaluates and
@@ -586,27 +582,22 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // container identity is the same pure friction as the no-repos
   // case.
   //
-  // The container `git.user` and monoceros-config `defaults.git.user`
-  // drivers key off whether they RESOLVED to a value, not whether the
-  // block textually exists. `init` always emits `git.user:
-  // ${GIT_USER_NAME}/…` and the global-config generator always emits a
-  // `defaults.git.user: { name: '', email: '' }` block, so mere presence
-  // is meaningless — a block that resolves to nothing (blank env, empty
-  // strings → undefined per GitUserSchema) is effectively absent. It must
-  // not force a prompt on its own; only a genuinely resolved value (or a
-  // repo needing the fallback) does.
+  // The container `git.user` driver keys off whether it RESOLVED to a
+  // value, not whether the block textually exists. `init` always emits
+  // `git.user: ${GIT_USER_NAME}/…`, so mere presence is meaningless — a
+  // block that resolves to nothing (blank env → undefined per
+  // GitUserSchema) is effectively absent. It must not force a prompt on
+  // its own; only a genuinely resolved value (or a repo needing the
+  // fallback) does.
   const reposNeedingContainerIdentity = (createOpts.repos ?? []).some(
     (repo) => !repo.gitUser,
   );
   const hasResolvedContainerGitUser = containerGitOverride !== undefined;
-  const defaultGitUser = globalConfig?.defaults?.git?.user;
-  const hasDefaultGitUser =
-    defaultGitUser?.name !== undefined || defaultGitUser?.email !== undefined;
   const idLogger = {
     info: logger.info,
     warn: logger.warn ?? logger.info,
   };
-  // Those three decide whether we may ASK, not whether we collect.
+  // Those two decide whether we may ASK, not whether we collect.
   // Collection is unconditional: post-create points the container's
   // `~/.gitconfig` at `.monoceros/gitconfig` for every container, so
   // skipping the write leaves a dangling include and a container whose
@@ -614,8 +605,8 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   // with an AI agent and no repos used to land exactly there.
   //
   // What the conditions still gate is the interaction. Without one of
-  // them we resolve in silence: the container override, the global
-  // defaults, the host git config and a previously persisted value all
+  // them we resolve in silence: the container override, the env, the
+  // host git config and a previously persisted value all
   // still apply, we just never open a prompt for a container that may
   // have no interest in git.
   //
@@ -633,9 +624,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       : {}),
   };
   const mayPromptForIdentity =
-    reposNeedingContainerIdentity ||
-    hasResolvedContainerGitUser ||
-    hasDefaultGitUser;
+    reposNeedingContainerIdentity || hasResolvedContainerGitUser;
   const silentPrompt = async () => undefined;
   const identity = await collectGitIdentity(targetDir, {
     ...(opts.identitySpawn ? { spawn: opts.identitySpawn } : {}),
@@ -651,16 +640,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     ...(containerGitOverride
       ? { containerOverride: containerGitOverride }
       : {}),
-    ...(globalConfig?.defaults?.git?.user
-      ? { defaults: globalConfig.defaults.git.user }
-      : {}),
     logger: idLogger,
   });
 
   // Persist a freshly-prompted identity to whichever scope the
-  // builder picked. Scope `g` writes monoceros-config.yml's
-  // `defaults.git.user`; `c` writes this container yml's
-  // `git.user`; `b` does both. The `.monoceros/gitconfig` file
+  // builder picked. Scope `g` writes `GIT_USER_NAME` / `GIT_USER_EMAIL`
+  // into `monoceros-config.env`; `c` into this container's `<name>.env`;
+  // `b` does both. The `.monoceros/gitconfig` file
   // collectGitIdentity already wrote stays the in-container
   // mechanism — these writes are about making the value
   // recoverable on the next apply / next container without
@@ -881,7 +867,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       targetDir,
       createOpts,
       components,
-      hostPort: proxyHostPort(globalConfig),
+      hostPort: machine.hostPort,
     });
   } catch (err) {
     const msg = `briefing files not written: ${err instanceof Error ? err.message : String(err)}`;
@@ -1006,7 +992,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       // tries to bind a held port. Throws on conflict — the message
       // names the routing.hostPort escape hatch and asks the builder
       // to either free the port or set a different one.
-      await preflightHostPort(proxyHostPort(globalConfig), {
+      await preflightHostPort(machine.hostPort, {
         ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
       });
     }
@@ -1020,7 +1006,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         await ensureProxy({
           ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),
           monocerosHome: home,
-          hostPort: proxyHostPort(globalConfig),
+          hostPort: machine.hostPort,
           logger: containerLogger,
         });
       } else {
@@ -1349,7 +1335,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       const nudge = upgradeNudge(
         await readMachineState(home),
         now,
-        globalConfig?.upgrade?.staleDays ?? DEFAULT_UPGRADE_STALE_DAYS,
+        machine.upgradeStaleDays,
       );
       if (nudge) {
         progressOut.write(`\n  ${dim(nudge)}\n`);
@@ -1456,7 +1442,6 @@ interface MigrationLogger {
 
 function warnOnDeprecatedFeatureRefs(
   containerFeatures: SolutionConfig['features'],
-  globalConfig: MonocerosConfig | undefined,
   logger: MigrationLogger,
 ): void {
   const warn = logger.warn ?? logger.info;
@@ -1475,12 +1460,6 @@ function warnOnDeprecatedFeatureRefs(
 
   for (const entry of containerFeatures) {
     emit(entry.ref, 'container yml');
-  }
-  const globalDefaults = globalConfig?.defaults?.features;
-  if (globalDefaults) {
-    for (const ref of Object.keys(globalDefaults)) {
-      emit(ref, 'monoceros-config.yml');
-    }
   }
 }
 

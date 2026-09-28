@@ -72,6 +72,7 @@ $DistroUser    = 'ubuntu'  # default non-root user in the stand-in image (uid 10
 $script:MonoBin = "/home/$DistroUser/.local/bin/monoceros"
 $script:Warnings = @()
 $script:Version = ''
+$script:LegacyYml = $false
 
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
@@ -315,17 +316,16 @@ curl -fsSL https://raw.githubusercontent.com/getmonoceros/workbench/main/install
 BIN="$HOME/.local/bin/monoceros"
 TPLDIR="$HOME/.local/lib/node_modules/@getmonoceros/workbench/templates"
 mkdir -p "$HOME/.monoceros"
-if [ -f "$TPLDIR/monoceros-config.sample.yml" ] && [ ! -f "$HOME/.monoceros/monoceros-config.yml" ]; then cp "$TPLDIR/monoceros-config.sample.yml" "$HOME/.monoceros/monoceros-config.yml"; fi
 if [ -f "$TPLDIR/monoceros-config.sample.env" ] && [ ! -f "$HOME/.monoceros/monoceros-config.env" ]; then cp "$TPLDIR/monoceros-config.sample.env" "$HOME/.monoceros/monoceros-config.env"; fi
 [ -x "$BIN" ] && echo "MONO_BIN=$BIN" || echo "CLI-NOT-READY"
 [ -x "$BIN" ] && echo "MONO_VER=$("$BIN" --version 2>/dev/null | head -n1 | tr -d '\r')"
-[ -f "$HOME/.monoceros/monoceros-config.yml" ] && echo "CONFIG-OK" || echo "CONFIG-MISSING"
+[ -f "$HOME/.monoceros/monoceros-config.yml.migrated" ] && echo "LEGACY-YML"
 [ -f "$HOME/.monoceros/monoceros-config.env" ] && echo "ENV-OK" || echo "ENV-MISSING"
 '@ $DistroUser
       if ($r -match 'CLI-NOT-READY') { throw "CLI did not install as the user. Output:`n$r" }
       $bm = [regex]::Match($r, 'MONO_BIN=(\S+)'); if ($bm.Success) { $script:MonoBin = $bm.Groups[1].Value }
       $vm = [regex]::Match($r, 'MONO_VER=(.+)'); if ($vm.Success) { $script:Version = $vm.Groups[1].Value.Trim() }
-      if ($r -match 'CONFIG-MISSING') { throw 'monoceros-config.yml was not seeded into the home.' }
+      if ($r -match 'LEGACY-YML') { $script:LegacyYml = $true }
       if ($r -match 'ENV-MISSING') { throw 'monoceros-config.env was not seeded into the home.' }
       'CLI + config seeded'
     }
@@ -411,6 +411,12 @@ if [ -f "$TPLDIR/monoceros-config.sample.env" ] && [ ! -f "$HOME/.monoceros/mono
   Write-Host '   Then gh, glab and clone/push are authenticated.' -ForegroundColor DarkGray
   Write-Host '   Details: https://getmonoceros.build/docs/concepts/git-and-repos/' -ForegroundColor DarkGray
   Write-Host ''
+  if ($script:LegacyYml) {
+    Write-Host '   This file is no longer used:' -ForegroundColor Gray
+    Write-Host "       $LinkPath\monoceros-config.yml.migrated" -ForegroundColor Cyan
+    Write-Host '   Its settings are in monoceros-config.env now. You can delete it.' -ForegroundColor DarkGray
+    Write-Host ''
+  }
   Write-Host '   Help        ' -ForegroundColor Gray -NoNewline; Write-Host 'monoceros --help' -ForegroundColor Cyan
   Write-Host '   Docs        ' -ForegroundColor Gray -NoNewline; Write-Host 'https://getmonoceros.build/docs' -ForegroundColor Cyan
   Write-Host "   What's new  " -ForegroundColor Gray -NoNewline; Write-Host 'https://getmonoceros.build/changelog' -ForegroundColor Cyan

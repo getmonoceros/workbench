@@ -419,7 +419,7 @@ describe('add-*/remove-* against the yml', () => {
     // parse → transform → serviceConnectionEnv.
     expect(yml.match(/connectionEnv:/g)).toHaveLength(2);
     const parsed = parseConfig(yml);
-    const opts = solutionConfigToCreateOptions(parsed.config, {});
+    const opts = solutionConfigToCreateOptions(parsed.config);
     const env = serviceConnectionEnv(opts.services);
     expect(env.POSTGRES_APP_URL).toContain('@postgres-app:5432/');
     expect(env.POSTGRES_ANALYTICS_URL).toContain('@postgres-analytics:5432/');

@@ -2,6 +2,8 @@
 
 - Status: partly superseded by [ADR 0054](0054-apply-delivers-current-tools-upgrade-moves-the-services.md)
 - Date: 2026-06-10
+- Amended by: [ADR 0061](0061-machine-wide-settings-live-in-the-global-env.md):
+  the threshold is `MONOCEROS_UPGRADE_STALE_DAYS` in `monoceros-config.env` now
 
 > **Decisions 1 and 3 no longer hold.** `apply` does not just reuse the
 > cache: tool features refresh themselves on every apply through a

@@ -5,6 +5,7 @@ import {
   type DockerExec,
   type ProxyLogger,
 } from './index.js';
+import { globalEnvPath, prettyPath } from '../config/paths.js';
 import { cyan, dim } from '../util/format.js';
 
 /**
@@ -200,11 +201,9 @@ async function containersPublishing(
 function hostPortFallbackLines(hostPort: number): string[] {
   return [
     dim('Or set a different proxy port in ') +
-      cyan('~/.monoceros/monoceros-config.yml') +
+      cyan(prettyPath(globalEnvPath())) +
       dim(':'),
-    '    ' + cyan('schemaVersion: 1'),
-    '    ' + cyan('routing:'),
-    '    ' + cyan('  hostPort: 8080'),
+    '    ' + cyan('MONOCEROS_HOST_PORT=8080'),
     '',
     dim(
       `Aborting. Re-run once port ${hostPort} is free or a different port is set.`,
@@ -275,9 +274,9 @@ export function formatHostPortHeldError(
     dim('loopback connects.'),
     '',
     dim('Workaround: move Monoceros off this port by setting ') +
-      cyan('routing.hostPort') +
+      cyan('MONOCEROS_HOST_PORT') +
       dim(' in ') +
-      cyan('~/.monoceros/monoceros-config.yml') +
+      cyan(prettyPath(globalEnvPath())) +
       dim('.'),
     '',
     dim('Aborting. Re-run after the issue is resolved.'),

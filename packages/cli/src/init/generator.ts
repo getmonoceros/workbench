@@ -285,7 +285,7 @@ function pushServiceEntry(out: string[], svc: InitService): void {
 }
 
 const FEATURES_HEADER_ACTIVE =
-  'A Monoceros dev-container is shaped by features, pluggable units that drop tooling (AI assistants, language CLIs, cloud SDKs) into the container and bring their own options. The features active for this container are listed below; adjust their options as needed. Shared credentials used across containers belong in monoceros-config.yml under `defaults.features.<ref>` rather than here. Full catalog: `monoceros list-components`.';
+  "A Monoceros dev-container is shaped by features, pluggable units that drop tooling (AI assistants, language CLIs, cloud SDKs) into the container and bring their own options. The features active for this container are listed below; adjust their options as needed. Credentials stay `${VAR}` references here. Their values go in this workbench's .env file, or in monoceros-config.env to share them across workbenches. Full catalog: `monoceros list-components`.";
 
 const MCP_HEADER =
   'MCP servers the agents in this container can reach. A catalog connector is one line plus its options (`monoceros add-mcp-server <name> <connector>`, see `monoceros list-components`). A server the catalog does not carry goes in with the config its provider publishes (`name:` plus `transport:` and `command:`/`url:`), and is then just as reproducible. Credentials belong in <name>.env behind the ${VAR} placeholders, never here.';

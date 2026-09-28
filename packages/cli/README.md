@@ -33,7 +33,7 @@ The script checks Docker + Node, installs the package globally via
 
 ```sh
 monoceros init hello --with-languages=node --with-features=claude
-# Add tokens / defaults to ~/.monoceros/monoceros-config.yml
+# Add tokens and settings to ~/.monoceros/monoceros-config.env
 monoceros apply hello
 monoceros shell hello
 ```

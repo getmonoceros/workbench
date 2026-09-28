@@ -6,7 +6,7 @@ workbench repo itself. Everything inside is ephemeral and gitignored —
 
 When you run `monoceros …` from the workbench checkout, the CLI
 searches upward from the binary for a file named
-`monoceros-config.sample.yml`; if it finds that file, the containing
+`monoceros-config.sample.env`; if it finds that file, the containing
 folder is treated as `MONOCEROS_HOME`. Outside the workbench checkout
 (e.g. after `npm install -g @getmonoceros/workbench`) this marker file
 does not exist; in that case the `MONOCEROS_HOME` env var applies, or
@@ -17,8 +17,8 @@ the fallback `~/.monoceros`.
 ```
 .local/
 ├── README.md                          ← this file (committed)
-├── monoceros-config.yml               ← your personal defaults (gitignored)
-├── monoceros-config.sample.yml        ← sample/marker (committed)
+├── monoceros-config.env               ← your settings and secrets (gitignored)
+├── monoceros-config.sample.env        ← sample/marker (committed)
 ├── container-configs/
 │   └── <name>.yml                     ← yml profiles (`monoceros init`)
 └── container/
@@ -31,7 +31,7 @@ the fallback `~/.monoceros`.
 Clean up completely:
 
 ```sh
-rm -rf .local/container .local/container-configs .local/monoceros-config.yml
+rm -rf .local/container .local/container-configs .local/monoceros-config.env
 ```
 
 The committed files (README, sample) are kept, as long as you do not

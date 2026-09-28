@@ -183,8 +183,8 @@ export interface MergedComponents {
  *       - booleans: OR (true wins)
  *       - strings + numbers: later component overrides (rare in
  *         practice — components should set activation flags, not
- *         credentials; credentials come from monoceros-config.yml
- *         defaults.features or the user editing the yml directly).
+ *         credentials; credentials come from the env files through
+ *         `${VAR}` references in the yml).
  *
  * The OR-merge for booleans is what makes
  * `--with-features=atlassian/rovodev,atlassian/twg` yield both `true` even

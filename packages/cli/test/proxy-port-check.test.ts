@@ -117,9 +117,8 @@ describe('preflightHostPort', () => {
       const msg = err instanceof Error ? err.message : String(err);
       expect(msg).toContain('docker-proxy');
       expect(msg).toContain('systemctl restart docker');
-      expect(msg).toContain('routing:');
-      expect(msg).toContain('hostPort');
-      expect(msg).toContain('monoceros-config.yml');
+      expect(msg).toContain('MONOCEROS_HOST_PORT=8080');
+      expect(msg).toContain('monoceros-config.env');
     }
   });
 
@@ -163,7 +162,7 @@ describe('preflightHostPort', () => {
     // override returns EACCES — assert it doesn't blame Docker.
     const msg = formatHostPortHeldError(80, 'EACCES', 'permission denied');
     expect(msg).not.toContain('current Docker setup');
-    expect(msg).toContain('routing.hostPort');
+    expect(msg).toContain('MONOCEROS_HOST_PORT');
   });
 });
 

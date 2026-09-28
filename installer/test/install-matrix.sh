@@ -88,7 +88,6 @@ else
   rc=1
 fi
 
-check "global config"  "$HOME/.monoceros/monoceros-config.yml"
 check "global secrets" "$HOME/.monoceros/monoceros-config.env"
 
 if [ "$want_completion" = "yes" ]; then

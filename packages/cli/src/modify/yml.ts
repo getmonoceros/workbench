@@ -199,7 +199,7 @@ export function addAptPackagesToDoc(
  * When `git` is newly created (didn't exist before this call) the
  * block lands right after `name:` at the top of the document — same
  * "identity is the first thing under the container's own intro"
- * layout used by monoceros-config's `defaults.git`. A pre-existing
+ * layout. A pre-existing
  * `git:` key keeps its position; the builder's manual reorderings
  * are respected.
  *
@@ -352,8 +352,7 @@ function takeTrailingLeafComment(node: unknown): string | null {
  * Insert a new top-level key into the document, positioned right
  * after `name:` (or at index 1 if `name:` isn't there). Used so newly-
  * persisted `git:` lands at the top of the yml where the builder
- * expects to find it — mirrors the `defaults.git.user` placement in
- * monoceros-config.sample.yml.
+ * expects to find it.
  *
  * If `comment` is given, it's attached as the new pair's
  * `commentBefore` so the section gets the same explanatory line the
@@ -390,9 +389,9 @@ function insertTopLevelAfterName(
 }
 
 const GIT_USER_HEADER_COMMENT = [
-  ' Git committer identity for this container. Overrides',
-  " monoceros-config.yml's defaults.git.user. Applies to every repo",
-  ' below unless that repo declares its own `git.user` override.',
+  ' Git committer identity for this container. Wins over the identity',
+  ' in monoceros-config.env. Applies to every repo below unless that',
+  ' repo declares its own `git.user` override.',
 ].join('\n');
 
 /**

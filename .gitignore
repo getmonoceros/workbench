@@ -45,12 +45,12 @@ components/features/*/devcontainer-feature.json
 
 # Local scratch space — during development this folder doubles as the
 # dev-time MONOCEROS_HOME (container-configs/, container/, the user's
-# monoceros-config.yml). Almost everything in here is ephemeral and
+# monoceros-config.env). Almost everything in here is ephemeral and
 # gitignored, EXCEPT the README + sample-config that mark the folder
 # as the workbench-internal home.
 .local/*
 !.local/README.md
-!.local/monoceros-config.sample.yml
+!.local/monoceros-config.sample.env
 
 # Private notes — strategic / monetization ideas, competitor research,
 # pre-1.0 thinking that doesn't belong in the public docs/ tree.

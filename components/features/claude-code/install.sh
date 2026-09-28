@@ -6,8 +6,8 @@
 # from <container-dir>/home/.claude on the host so it survives apply
 # rebuilds.
 #
-# If the optional `apiKey` option was passed in the container yml (or
-# inherited from monoceros-config.yml defaults.features), this script
+# If the optional `apiKey` option was passed in the container yml (usually
+# as a `${VAR}` resolved from the env files), this script
 # writes a profile.d snippet that exports ANTHROPIC_API_KEY for every
 # shell — Claude Code picks that up and skips the OAuth flow.
 

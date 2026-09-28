@@ -57,8 +57,8 @@ Layout under `$MONOCEROS_HOME` (dev: `<workbench>/.local`, prod:
 ```
 container-configs/<name>.yml   ← yml profile (source of truth)
 container/<name>/              ← materialized dev container
-monoceros-config.yml           ← optional global defaults
-monoceros-config.sample.yml    ← marker + template (committed in dev)
+monoceros-config.env           ← optional machine-wide settings + secrets
+monoceros-config.sample.env    ← marker + template (committed in dev)
 ```
 
 Workflow:

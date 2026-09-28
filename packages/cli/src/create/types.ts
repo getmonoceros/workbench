@@ -179,8 +179,8 @@ export interface CreateOptions {
    */
   ports?: number[];
   /**
-   * Effective Traefik host port (`routing.hostPort`, default 80), resolved by
-   * the caller from `monoceros-config.yml`. Only used to spell out the
+   * Effective Traefik host port (`MONOCEROS_HOST_PORT`, default 80), resolved
+   * by the caller from `monoceros-config.env`. Only used to spell out the
    * `<SERVICE>_PUBLIC_URL` addresses when it is not the default, so the value
    * the workspace reads matches the address the browser has to use.
    */

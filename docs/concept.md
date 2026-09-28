@@ -175,21 +175,14 @@ Same idea as everywhere else: the yml says what is in the container, and
 apply makes it so. Monoceros does not write the agent's own config for
 this, it runs the agent's plugin commands inside the container (ADR 0053).
 
-So the same Atlassian/Anthropic data doesn't have to be repeated in
-every container yml, `monoceros-config.yml` holds defaults per feature
-ref:
-
-```yaml
-defaults:
-  features:
-    ghcr.io/getmonoceros/monoceros-features/atlassian:1:
-      email: you@example.com
-      apiToken: ATATT3xFf…
-```
-
-`monoceros apply` merges per-container options over the global
-defaults — the container yml wins, missing values are filled from the
-global block.
+So the same credentials don't have to be repeated for every container,
+the yml only references them as `${VAR}`, and the values live in env
+files: the container's own `<name>.env`, and `monoceros-config.env` for
+everything shared across the machine. The container's value wins, a blank
+one falls through to the global file. The global env also holds the
+machine-wide settings, such as the proxy port
+([ADR 0061](./adr/0061-machine-wide-settings-live-in-the-global-env.md)).
+No yml holds personal data.
 
 **The container explains itself.** So the AI tools know which stack
 actually lives in the container (languages, services, feature tools),
@@ -271,7 +264,7 @@ monoceros-workbench/
   stay minimal; what's in the container is assembled by the builder
   via `add-*` commands or hand edits
 - **Own auth infrastructure** — a bind mount of `~/.claude/` plus
-  optional `monoceros-config.yml` defaults are enough
+  the credentials in the env files are enough
 
 ```
 

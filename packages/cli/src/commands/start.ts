@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
-import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
+import { readMachineSettings } from '../config/global.js';
 import { readConfig } from '../config/io.js';
 import { containerConfigPath, containerDir } from '../config/paths.js';
 import { spawnBridgeDaemon } from '../devcontainer/bridge-daemon.js';
@@ -121,8 +121,9 @@ async function bringContainerUp(
         httpServices(parsed.config.services).length > 0;
       if (hasRoutes) {
         needsProxy = true;
-        const global = await readMonocerosConfig();
-        hostPort = proxyHostPort(global);
+        ({ hostPort } = await readMachineSettings({
+          notify: (m) => consola.warn(m),
+        }));
       }
       deferred = (parsed.config.services ?? [])
         .filter((s) => serviceDefersStart(s.name))

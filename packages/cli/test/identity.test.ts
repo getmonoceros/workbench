@@ -168,10 +168,10 @@ describe('collectGitIdentity', () => {
     expect(result.email).toBe('fresh@example.com');
   });
 
-  it('container override wins over defaults and host global', async () => {
+  it('container override wins over the env and host global', async () => {
     const result = await collectGitIdentity(cwd, {
       containerOverride: { name: 'Yml Override', email: 'yml@example.com' },
-      defaults: { name: 'Default Name', email: 'default@example.com' },
+      env: { name: 'Env Name', email: 'env@example.com' },
       spawn: async (key) => ({
         value: key === 'user.name' ? 'Host Name' : 'host@example.com',
         exitCode: 0,
@@ -182,9 +182,9 @@ describe('collectGitIdentity', () => {
     expect(result.email).toBe('yml@example.com');
   });
 
-  it('monoceros-config defaults win over host global', async () => {
+  it('the env wins over host global', async () => {
     const result = await collectGitIdentity(cwd, {
-      defaults: { name: 'From Config', email: 'config@example.com' },
+      env: { name: 'From Config', email: 'config@example.com' },
       spawn: async (key) => ({
         value: key === 'user.name' ? 'Host Name' : 'host@example.com',
         exitCode: 0,
@@ -195,9 +195,9 @@ describe('collectGitIdentity', () => {
     expect(result.email).toBe('config@example.com');
   });
 
-  it('falls through to host global when defaults only cover one key', async () => {
+  it('falls through to host global when the env only covers one key', async () => {
     const result = await collectGitIdentity(cwd, {
-      defaults: { email: 'config@example.com' }, // only email
+      env: { email: 'config@example.com' }, // only email
       spawn: async (key) => ({
         value: key === 'user.name' ? 'Host Name' : 'host@example.com',
         exitCode: 0,

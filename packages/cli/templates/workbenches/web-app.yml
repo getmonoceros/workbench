@@ -93,9 +93,10 @@ services:
 # A Monoceros dev-container is shaped by features, pluggable units that drop
 # tooling (AI assistants, language CLIs, cloud SDKs) into the container and
 # bring their own options. The features active for this container are listed
-# below; adjust their options as needed. Shared credentials used across
-# containers belong in monoceros-config.yml under `defaults.features.<ref>`
-# rather than here. Full catalog: `monoceros list-components`.
+# below; adjust their options as needed. Credentials stay `${VAR}` references
+# here. Their values go in this workbench's .env file, or in
+# monoceros-config.env to share them across workbenches. Full catalog:
+# `monoceros list-components`.
 features:
   # Claude Code: Anthropic's CLI coding assistant. OAuth/subscription login
   # persists across container rebuilds.

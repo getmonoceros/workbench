@@ -2,6 +2,8 @@
 
 - Status: accepted
 - Date: 2026-05-24
+- Amended by: [ADR 0061](0061-machine-wide-settings-live-in-the-global-env.md):
+  the host port is `MONOCEROS_HOST_PORT` in `monoceros-config.env` now
 - Updated: 2026-05-24 — Schema structure refined during
   implementation. The container-yml fields `ports:` (flat) and
   `ide.vscodeAutoForwardPorts` were consolidated into a single

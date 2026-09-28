@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
-import { proxyHostPort, readMonocerosConfig } from '../config/global.js';
+import { readMachineSettings } from '../config/global.js';
 import { readConfig } from '../config/io.js';
 import { containerConfigPath } from '../config/paths.js';
 import { portNumber } from '../config/schema.js';
@@ -42,10 +42,10 @@ export async function runPortListing(
     return 0;
   }
   const ports = portEntries.map(portNumber);
-  const globalConfig = await readMonocerosConfig({
+  const { hostPort } = await readMachineSettings({
     ...(opts.monocerosHome ? { monocerosHome: opts.monocerosHome } : {}),
+    notify: info,
   });
-  const hostPort = proxyHostPort(globalConfig);
   const urls = proxyUrlsFor(opts.name, ports, hostPort);
 
   const isTty = out.isTTY ?? false;
@@ -90,7 +90,7 @@ export const portCommand = defineCommand({
     name: 'port',
     group: 'discovery',
     description:
-      'List the Traefik URLs for a container. Reads ports from `routing.ports` in the container yml and the host port from `routing.hostPort` in monoceros-config.yml (default 80). When piped, drops formatting and emits `port<TAB>url<TAB>tag` per line for grep/awk consumption.',
+      'List the Traefik URLs for a container. Reads ports from `routing.ports` in the container yml and the host port from `MONOCEROS_HOST_PORT` in monoceros-config.env (default 80). When piped, drops formatting and emits `port<TAB>url<TAB>tag` per line for grep/awk consumption.',
   },
   args: {
     name: {

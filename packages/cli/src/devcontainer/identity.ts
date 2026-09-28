@@ -139,8 +139,7 @@ export interface CollectIdentityOptions {
   scopePrompt?: IdentityScopePrompt;
   /**
    * Per-container override from the container's yml `git.user`. Wins
-   * over everything else (env, workbench-wide defaults, host global,
-   * interactive prompt).
+   * over everything else (env, host global, interactive prompt).
    */
   containerOverride?: { name?: string; email?: string };
   /**
@@ -154,14 +153,6 @@ export interface CollectIdentityOptions {
    * repos, because only `init --with-repos` ever wrote that line.
    */
   env?: { name?: string; email?: string };
-  /**
-   * Workbench-wide defaults from `<MONOCEROS_HOME>/monoceros-config.yml`
-   * `defaults.git.user`. Wins over host global git config (the
-   * monoceros-config.yml is an explicit builder choice for Monoceros
-   * containers; host global is the catch-all default), loses to the
-   * per-container override and to the env.
-   */
-  defaults?: { name?: string; email?: string };
   logger?: { info: (msg: string) => void; warn: (msg: string) => void };
 }
 
@@ -202,7 +193,7 @@ export interface CollectIdentityResult {
  */
 /**
  * Resolve an identity by walking the precedence chain (override → env →
- * defaults → host → prompt). Pure as far as Monoceros state goes:
+ * host → prompt). Pure as far as Monoceros state goes:
  * doesn't write the `.monoceros/gitconfig` file - `collectGitIdentity`
  * is the wrapper that does.
  *
@@ -234,7 +225,6 @@ export async function resolveIdentityWithPrompt(
   const name = await resolveKey('user.name', {
     override: options.containerOverride?.name,
     envValue: options.env?.name,
-    defaultValue: options.defaults?.name,
     spawnFn,
     promptFn,
     logger,
@@ -242,7 +232,6 @@ export async function resolveIdentityWithPrompt(
   const email = await resolveKey('user.email', {
     override: options.containerOverride?.email,
     envValue: options.env?.email,
-    defaultValue: options.defaults?.email,
     spawnFn,
     promptFn,
     logger,
@@ -259,9 +248,7 @@ export async function resolveIdentityWithPrompt(
     !!options.containerOverride?.name ||
     !!options.containerOverride?.email ||
     !!options.env?.name ||
-    !!options.env?.email ||
-    !!options.defaults?.name ||
-    !!options.defaults?.email;
+    !!options.env?.email;
   const promptableSources: ReadonlyArray<IdentitySource> = ['prompt'];
   const bothPromotable =
     name?.source !== undefined &&
@@ -325,13 +312,12 @@ export async function collectGitIdentity(
 interface ResolveKeyOpts {
   override?: string;
   envValue?: string;
-  defaultValue?: string;
   spawnFn: IdentitySpawn;
   promptFn: IdentityPrompt;
   logger: { warn: (msg: string) => void };
 }
 
-type IdentitySource = 'container' | 'env' | 'defaults' | 'host' | 'prompt';
+type IdentitySource = 'container' | 'env' | 'host' | 'prompt';
 
 interface ResolvedKey {
   value: string;
@@ -349,15 +335,12 @@ async function resolveKey(
   if (envValue !== undefined && envValue.length > 0) {
     return { value: envValue, source: 'env' };
   }
-  if (opts.defaultValue !== undefined && opts.defaultValue.length > 0) {
-    return { value: opts.defaultValue, source: 'defaults' };
-  }
   const hostValue = await readKeyFromHost(opts.spawnFn, key, opts.logger);
   if (hostValue !== undefined) return { value: hostValue, source: 'host' };
   const prompted = await opts.promptFn(key);
   if (prompted !== undefined) return { value: prompted, source: 'prompt' };
   opts.logger.warn(
-    `No ${key} resolvable (env ${key === 'user.name' ? GIT_IDENTITY_VAR.name : GIT_IDENTITY_VAR.email}, yml override, monoceros-config.yml defaults, host \`git config --global\`, prompt). Container git will have no ${key} until set explicitly.`,
+    `No ${key} resolvable (env ${key === 'user.name' ? GIT_IDENTITY_VAR.name : GIT_IDENTITY_VAR.email}, yml override, host \`git config --global\`, prompt). Container git will have no ${key} until set explicitly.`,
   );
   return undefined;
 }

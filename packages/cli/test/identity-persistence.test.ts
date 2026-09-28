@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -7,7 +8,6 @@ import {
   writeDescriptor,
   nodeLanguageDescriptor,
 } from './helpers/fake-workbench.js';
-import { readMonocerosConfig } from '../src/config/global.js';
 import { parseConfig } from '../src/config/io.js';
 import { setContainerGitUserInDoc } from '../src/modify/yml.js';
 import {
@@ -17,8 +17,8 @@ import {
 
 /**
  * Persistence flow for an identity that came from the apply / init
- * prompt: scope `g` writes monoceros-config defaults, `c` writes the
- * container yml's git.user, `b` does both. These tests pin the
+ * prompt: scope `g` writes the global `monoceros-config.env`, `c` the
+ * container's `<name>.env`, `b` does both. These tests pin the
  * round-trip — schema-validate the written files via the real
  * readers, not just string matches, so a typo in our setters surfaces.
  */
@@ -194,14 +194,14 @@ describe('resolveIdentityWithPrompt — scope prompt only when both keys come fr
     expect(result.prompted).toBeUndefined();
   });
 
-  it('skips the scope prompt when defaults already cover the identity', async () => {
+  it('skips the scope prompt when the env already covers the identity', async () => {
     let scopeCalled = 0;
     const result = await resolveIdentityWithPrompt({
       spawn: async () => ({ value: '', exitCode: 1 }),
       prompt: async () => {
         throw new Error('prompt should not be called');
       },
-      defaults: { name: 'Default Name', email: 'default@example.com' },
+      env: { name: 'Default Name', email: 'default@example.com' },
       scopePrompt: async () => {
         scopeCalled++;
         return 'g';
@@ -286,9 +286,8 @@ describe('init scaffolds a ${VAR} git.user + seeds <name>.env when --with-repo',
     );
     expect(envText).toMatch(/^GIT_USER_NAME=$/m);
     expect(envText).toMatch(/^GIT_USER_EMAIL=$/m);
-    // No monoceros-config written — identity is env/cascade-resolved.
-    const globalConfig = await readMonocerosConfig({ monocerosHome: home });
-    expect(globalConfig).toBeUndefined();
+    // Nothing global written — identity is env/cascade-resolved.
+    expect(existsSync(path.join(home, 'monoceros-config.yml'))).toBe(false);
   });
 
   it('renders no git block and seeds no GIT_USER_* when there are no repos', async () => {
