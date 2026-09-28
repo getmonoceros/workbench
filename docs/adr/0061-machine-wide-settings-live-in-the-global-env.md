@@ -41,9 +41,11 @@ place outside an env file where Monoceros asked for personal data.
   the global env already does. What it could do beyond that, a global default
   for a non-credential option, had no known user.
 
-**An existing yml is migrated once, by the CLI, on the first run.** The code
-that reads the settings runs the migration first, so whichever command a
-builder runs after the update does it, not only `apply`.
+**An existing yml is migrated once, by the CLI.** The code that reads the
+machine-wide settings runs the migration first. So every command that needs
+one of them does it: `apply`, `start`, `status`, `port`, `add-port` and
+`remove-port`. The other `add-*` commands read no machine-wide setting and
+leave the yml alone until the next `apply`.
 
 - A key whose value differs from its default moves into the global env.
 - A `defaults.features` credential (`surface: env`) moves under the variable

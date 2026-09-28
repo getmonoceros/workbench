@@ -13,8 +13,9 @@ import { globalEnvPath, prettyPath, workbenchRoot } from './paths.js';
  * One-time migration of the retired `<MONOCEROS_HOME>/monoceros-config.yml`
  * into `monoceros-config.env` (ADR 0061).
  *
- * Runs from `readMachineSettings`, which every command that used to read the
- * yml calls, so the first run of a new CLI does it. Afterwards the yml is
+ * Runs from `readMachineSettings`, so every command that needs a machine-wide
+ * setting does it: apply, start, status, port, add-port and remove-port. The
+ * other add-* commands read none and leave the yml for the next apply. Afterwards the yml is
  * renamed to `monoceros-config.yml.migrated`, and every later run finds no
  * yml and does nothing.
  *
