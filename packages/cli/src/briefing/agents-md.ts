@@ -65,7 +65,7 @@ export interface AgentsMdInput {
   mcp?: readonly ResolvedMcpServer[];
   ports: readonly number[];
   /**
-   * Host port the Traefik proxy binds (`routing.hostPort`, default 80).
+   * Host port the Traefik proxy binds (`MONOCEROS_HOST_PORT`, default 80).
    * Anything other than 80 surfaces in the `.localhost` URLs as a
    * `:<port>` suffix — without it the agent would be told the wrong URL
    * and hit a dead `:80`. Optional so direct callers/tests default to 80.
@@ -113,7 +113,7 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   const lines: string[] = [];
 
   // `.localhost` URLs carry the proxy host port only when it isn't the
-  // default 80 — so `routing.hostPort: 8080` yields `…localhost:8080`,
+  // default 80 — so `MONOCEROS_HOST_PORT=8080` yields `…localhost:8080`,
   // and the common case stays a clean port-less URL.
   const hostPort = input.hostPort ?? 80;
   const portSuffix = hostPort === 80 ? '' : `:${hostPort}`;

@@ -105,7 +105,7 @@ export interface WriteBriefingInput {
   /** Loaded component catalog — used to map feature refs to display names. */
   components: ReadonlyMap<string, Component>;
   /**
-   * Resolved Traefik host port (`routing.hostPort`, default 80). Flows
+   * Resolved Traefik host port (`MONOCEROS_HOST_PORT`, default 80). Flows
    * into the briefing's `.localhost` URLs so a non-80 proxy port shows
    * the correct `:<port>` suffix. Optional; defaults to 80.
    */

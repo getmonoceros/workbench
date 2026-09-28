@@ -102,7 +102,7 @@ describe('preflightHostPort', () => {
     ).rejects.toThrow(/Host port 80 is in use, but no running container/);
   });
 
-  it('recommends a daemon restart and the routing.hostPort fallback for a leftover holder', async () => {
+  it('recommends a daemon restart and the MONOCEROS_HOST_PORT fallback for a leftover holder', async () => {
     try {
       await preflightHostPort(80, {
         docker: dockerStubs.proxyAbsent(),

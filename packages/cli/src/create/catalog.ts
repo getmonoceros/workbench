@@ -825,7 +825,7 @@ export function curatedServiceEnvDefaults(
 export interface ServiceConnectionEnvOptions {
   /** Workbench name, needed for the `<NAME>_PUBLIC_URL` proxy address. */
   containerName?: string;
-  /** Traefik host port (`routing.hostPort`); spelled out when not 80. */
+  /** Traefik host port (`MONOCEROS_HOST_PORT`); spelled out when not 80. */
   hostPort?: number;
 }
 

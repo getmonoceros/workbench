@@ -98,7 +98,7 @@ async function bringContainerUp(
     // Re-establish the Traefik singleton before bringing the
     // container up when the yml declares ports. The pre-flight
     // host-port check fails hard with an actionable hint if port
-    // 80 (or the configured `routing.hostPort`) is held by
+    // 80 (or the configured `MONOCEROS_HOST_PORT`) is held by
     // somebody else; ensureProxy itself is idempotent and safe to
     // call when the proxy is already up. See ADR 0007.
     let needsProxy = false;

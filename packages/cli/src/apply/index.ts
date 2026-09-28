@@ -466,7 +466,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   }
   createOpts.services = interpServices.services;
   // The workspace env spells out each reachable service's host-side address, so
-  // it needs the port Traefik really binds (default 80, `routing.hostPort`
+  // it needs the port Traefik really binds (default 80, `MONOCEROS_HOST_PORT`
   // otherwise) - the same value the routes and the printed URLs use.
   createOpts.proxyHostPort = machine.hostPort;
 
@@ -990,7 +990,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     if (hasRoutes) {
       // Pre-flight: bail with an actionable hint before `docker run`
       // tries to bind a held port. Throws on conflict — the message
-      // names the routing.hostPort escape hatch and asks the builder
+      // names the MONOCEROS_HOST_PORT escape hatch and asks the builder
       // to either free the port or set a different one.
       await preflightHostPort(machine.hostPort, {
         ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}),

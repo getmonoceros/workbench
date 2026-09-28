@@ -71,7 +71,7 @@ reused **by container name** - not per home and not per port. Whoever
 starts it first wins; the other context reuses the same container, which
 then watches the wrong `traefik/dynamic` directory, so port routes
 return `404` (Traefik runs but doesn't know the route). A
-`routing.hostPort` change does **not** help while the container name is
+`MONOCEROS_HOST_PORT` change does **not** help while the container name is
 shared. When switching context:
 
 ```sh
