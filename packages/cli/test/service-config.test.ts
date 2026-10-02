@@ -11,6 +11,7 @@ import {
   serviceDefersStart,
   curatedServiceExampleVolumes,
   curatedServiceExampleEnv,
+  serviceArchitectureWarning,
 } from '../src/create/catalog.js';
 import { curatedScaffoldComment } from '../src/init/service-doc.js';
 import {
@@ -292,7 +293,7 @@ describe('serviceDefersStart (ADR 0025)', () => {
   it('does not defer the ordinary infra services', () => {
     // Deferral is opt-in per descriptor; backing stores must come up with
     // the workspace so post-create (migrations/seeds) can reach them.
-    for (const svc of ['postgres', 'mysql', 'mongodb', 'redis']) {
+    for (const svc of ['postgres', 'mysql', 'mssql', 'mongodb', 'redis']) {
       expect(serviceDefersStart(svc)).toBe(false);
     }
   });
@@ -957,6 +958,88 @@ describe('serviceConnectionEnv', () => {
     expect(env.RUSTFS_URL).toBe('http://rustfs:9000');
     expect(env.RUSTFS_ACCESS_KEY).toBe('ak');
     expect(env.RUSTFS_SECRET_KEY).toBe('sk');
+  });
+
+  it('mssql runs as root so a restored data volume still starts', () => {
+    // The image runs as uid 10001 and never fixes its data dir's ownership;
+    // `restore` writes the files back root-owned and sqlservr then exits with
+    // "Permission denied". Catalog pins user 0:0.
+    const mssql = expandCuratedService('mssql');
+    expect(mssql.user).toBe('0:0');
+    expect(mssql.volumes).toEqual(['data:/var/opt/mssql']);
+  });
+
+  it('mssql seeds a policy-compliant password and accepts the EULA', () => {
+    // A password that fails SQL Server's policy makes the server exit on start.
+    const env = curatedServiceEnvDefaults('mssql');
+    expect(env.MSSQL_SA_PASSWORD).toBe('Monoceros-dev1');
+    expect(env.ACCEPT_EULA).toBe('Y');
+    expect(env.MSSQL_PID).toBe('Developer');
+    expect(env.MSSQL_DATABASE).toBe('monoceros');
+  });
+
+  it('mssql healthcheck creates the database the image cannot create itself', () => {
+    const test = expandCuratedService('mssql').healthcheck?.test ?? [];
+    expect(test.at(-1)).toBe(
+      "IF DB_ID(N'${MSSQL_DATABASE}') IS NULL CREATE DATABASE [${MSSQL_DATABASE}]",
+    );
+    expect(test).toContain('-b');
+  });
+
+  it('mssql emits MSSQL_* and has no workspace client', () => {
+    const mssql = resolveService(expandCuratedService('mssql'));
+    const env = serviceConnectionEnv([
+      {
+        ...mssql,
+        env: { MSSQL_SA_PASSWORD: 'Monoceros-dev1', MSSQL_DATABASE: 'shop' },
+      },
+    ]);
+    expect(env.MSSQL_URL).toBe(
+      'sqlserver://sa:Monoceros-dev1@mssql:1433?database=shop&TrustServerCertificate=true',
+    );
+    expect(env.MSSQL_USER).toBe('sa');
+    expect(env.MSSQL_DB).toBe('shop');
+    expect(serviceClientAptPackages([mssql])).toEqual([]);
+    expect(serviceClientNpmPackages([mssql])).toEqual([]);
+  });
+});
+
+describe('serviceArchitectureWarning', () => {
+  const mac = { platform: 'darwin', arch: 'arm64' };
+  const armLinux = { platform: 'linux', arch: 'arm64' };
+  const x64 = { platform: 'linux', arch: 'x64' };
+  const image = expandCuratedService('mssql').image;
+
+  it('tells an Apple Silicon host to turn on Rosetta for the amd64-only image', () => {
+    const warning = serviceArchitectureWarning(image, mac);
+    expect(warning).toContain('SQL Server is built for amd64 only');
+    expect(warning).toContain('Use Rosetta for x86_64/amd64 emulation');
+    expect(warning).toContain(
+      'https://getmonoceros.build/docs/services/mssql/#check-your-platform-first',
+    );
+  });
+
+  it('tells an arm64 Linux host the image cannot run there', () => {
+    expect(serviceArchitectureWarning(image, armLinux)).toContain(
+      'There is no image it can run here',
+    );
+  });
+
+  it('stays quiet on an amd64 host and for images built for arm64', () => {
+    expect(serviceArchitectureWarning(image, x64)).toBeUndefined();
+    expect(serviceArchitectureWarning('postgres:18', mac)).toBeUndefined();
+    expect(
+      serviceArchitectureWarning('rustfs/rustfs:latest', mac),
+    ).toBeUndefined();
+  });
+
+  it('matches by image repository, so another tag still warns', () => {
+    expect(
+      serviceArchitectureWarning(
+        'mcr.microsoft.com/mssql/server:2022-CU25-ubuntu-22.04',
+        mac,
+      ),
+    ).toContain('Rosetta');
   });
 });
 

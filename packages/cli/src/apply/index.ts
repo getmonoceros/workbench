@@ -54,6 +54,7 @@ import {
   runtimeSupportsBrowserBridge,
   runtimeSupportsHostKeyPinning,
   runtimeSupportsSshAttach,
+  serviceArchitectureWarning,
   serviceDefersStart,
 } from '../create/catalog.js';
 import { hasWantedApps, runAppCtl } from '../devcontainer/app-control.js';
@@ -794,6 +795,10 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   const buildx = await probeDockerPlugin('buildx', pluginProbe);
   if (buildx.kind !== 'ok' && buildx.kind !== 'unknown') {
     (logger.warn ?? logger.info)(formatBuildxUnavailableWarning(buildx));
+  }
+  for (const svc of createOpts.services) {
+    const archWarning = serviceArchitectureWarning(svc.image);
+    if (archWarning) (logger.warn ?? logger.info)(archWarning);
   }
 
   await fs.mkdir(targetDir, { recursive: true });

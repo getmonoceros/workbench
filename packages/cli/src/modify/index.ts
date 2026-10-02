@@ -91,6 +91,7 @@ import {
   BUILTIN_LANGUAGES,
   LANGUAGE_CATALOG,
   curatedServiceEnvDefaults,
+  serviceArchitectureWarning,
   deriveServiceName,
   expandCuratedService,
   curatedServiceExampleEnv,
@@ -410,6 +411,8 @@ export async function runAddService(
     } else {
       (input.logger ?? defaultLogger()).info(customServiceHint(name));
     }
+    const archWarning = serviceArchitectureWarning(image);
+    if (archWarning) (input.logger ?? defaultLogger()).warn(archWarning);
   }
   return result;
 }

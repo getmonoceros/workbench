@@ -9,6 +9,7 @@ import type { ServiceHealthcheck, ServiceObject } from '../config/schema.js';
 import type { ResolvedService } from './types.js';
 import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { serviceProxyAlias } from '../config/http-services.js';
+import { componentDocsURL } from '../init/docs-url.js';
 import type { CatalogComponent } from '../catalog/load.js';
 import type { BriefingLine } from '../catalog/descriptor.js';
 
@@ -405,6 +406,8 @@ export interface ServiceEntry {
   /** One-or-two-sentence descriptor prose for the yml header. */
   description: string;
   image: string;
+  /** CPU architectures the image is built for; absent = all. */
+  architectures?: readonly ('amd64' | 'arm64')[];
   /**
    * Literal dev-default values for the service's env vars. These are
    * rendered as `${KEY}` *placeholders* into the yml (expandCuratedService)
@@ -414,9 +417,8 @@ export interface ServiceEntry {
    */
   env?: Readonly<Record<string, string>>;
   /**
-   * Readiness probe. Curated services ship one so the workspace's
-   * `depends_on` gates on `service_healthy` (actually accepting
-   * connections) rather than just `service_started`. `${VAR}` in the
+   * Readiness probe (the service shows as healthy once it accepts
+   * connections). The workspace does not depend on it. `${VAR}` in the
    * test resolves from `<name>.env` at apply time like any other field.
    */
   healthcheck?: ServiceHealthcheck;
@@ -562,6 +564,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
         const entry: ServiceEntry = {
           id: key,
           image: svc.image,
+          ...(svc.architectures ? { architectures: svc.architectures } : {}),
           ...(Object.keys(env).length > 0 ? { env } : {}),
           ...(svc.healthcheck
             ? { healthcheck: svc.healthcheck as ServiceHealthcheck }
@@ -701,6 +704,48 @@ export function curatedServiceDeploy(name: string): string | undefined {
   return SERVICE_CATALOG[name]?.deploy;
 }
 
+/** `mcr.microsoft.com/mssql/server:2022-latest` → `mcr.microsoft.com/mssql/server`. */
+function imageRepository(image: string): string {
+  const withoutDigest = image.split('@')[0]!;
+  const slash = withoutDigest.lastIndexOf('/');
+  const colon = withoutDigest.lastIndexOf(':');
+  return colon > slash ? withoutDigest.slice(0, colon) : withoutDigest;
+}
+
+/**
+ * Why a service's image does not run as-is on this host, or undefined when it
+ * does. Matched by image repository rather than service name, so an instance
+ * renamed with `--as` or pinned to another tag still gets the warning.
+ */
+export function serviceArchitectureWarning(
+  image: string,
+  host: { platform: string; arch: string } = {
+    platform: process.platform,
+    arch: process.arch,
+  },
+): string | undefined {
+  if (host.arch !== 'arm64') return undefined;
+  const repo = imageRepository(image);
+  const entry = Object.values(SERVICE_CATALOG).find(
+    (e) => imageRepository(e.image) === repo,
+  );
+  if (!entry?.architectures || entry.architectures.includes('arm64')) {
+    return undefined;
+  }
+  // The service page of an image with `architectures` carries this section.
+  const docs = `${componentDocsURL('service', entry.id)}#check-your-platform-first`;
+  if (host.platform === 'darwin') {
+    return [
+      `${entry.displayName} is built for amd64 only. On Apple Silicon it needs Rosetta in your Docker runtime, or it stops right after it starts:`,
+      '  Docker Desktop  Settings > General: Apple Virtualization framework + "Use Rosetta for x86_64/amd64 emulation" (not Docker VMM)',
+      '  OrbStack        Rosetta is on by default',
+      '  Colima          a VM started with --vm-type=vz --vz-rosetta',
+      `See ${docs}`,
+    ].join('\n');
+  }
+  return `${entry.displayName} is built for amd64 only, and this host is arm64. There is no image it can run here. See ${docs}`;
+}
+
 /**
  * Compose fragment for what a curated service needs beside itself
  * (`deploy.requires`), e.g. Keycloak's own database. Undefined when the
@@ -777,13 +822,9 @@ export function expandCuratedService(name: string): ServiceObject {
     // they travel with the service: a renamed/duplicated instance keeps them,
     // and `serviceConnectionEnv` prefixes by the instance's current name.
     ...(def.connectionEnv ? { connectionEnv: { ...def.connectionEnv } } : {}),
-    // No `restart:` default on purpose (issue #19). The workspace container
-    // carries no restart policy, so on a Docker/host restart it stays down
-    // until `monoceros start`; defaulting services to `unless-stopped` made
-    // them auto-start ALONE, without the workbench they belong to. Leaving it
-    // off keeps the whole compose group's restart behavior uniform - nothing
-    // comes back on its own. `restart` stays a per-service opt-in in the yml
-    // (schema.ts) for builders who deliberately want a policy.
+    // No `restart:` in the yml: buildComposeYaml gives the whole group,
+    // workspace included, `unless-stopped` (issue #22), so a service never
+    // comes back alone. A per-service `restart` in the yml overrides it.
   };
 }
 

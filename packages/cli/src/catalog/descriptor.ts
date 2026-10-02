@@ -185,6 +185,15 @@ export type LanguageBlock = z.infer<typeof LanguageBlockSchema>;
 /** `category: service` block — a backing container the workspace talks to. */
 export const ServiceBlockSchema = z.object({
   image: z.string().min(1),
+  /**
+   * CPU architectures the image is built for. Absent means it runs everywhere
+   * Docker does. Set it for an image without an arm64 build (SQL Server), so
+   * `init`, `add-service` and `apply` warn on a host it cannot run on as-is.
+   */
+  architectures: z
+    .array(z.enum(['amd64', 'arm64']))
+    .min(1)
+    .optional(),
   defaultPort: z.number().int().positive().optional(),
   /**
    * The one HTTP port of this service that may leave the container: what

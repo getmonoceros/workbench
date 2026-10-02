@@ -59,6 +59,7 @@ import {
 } from './env-prompt.js';
 import {
   curatedServiceEnvDefaults,
+  serviceArchitectureWarning,
   deriveServiceName,
   isCuratedService,
   knownLanguages,
@@ -166,6 +167,7 @@ export interface RunInitOptions {
   logger?: {
     success: (msg: string) => void;
     info: (msg: string) => void;
+    warn?: (msg: string) => void;
     /** A bare line, for the blank one before "Next steps". */
     log?: (msg: string) => void;
   };
@@ -180,6 +182,7 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   const logger = opts.logger ?? {
     success: (msg) => consola.success(msg),
     info: (msg) => consola.info(msg),
+    warn: (msg) => consola.warn(msg),
     log: (msg) => consola.log(msg),
   };
 
@@ -453,6 +456,10 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   const ymlRel = prettyPath(dest);
   const envRel = prettyPath(envPath);
   logger.success(`Wrote ${ymlRel} and ${envRel}.`);
+  for (const svc of finalConfig.config.services ?? []) {
+    const archWarning = serviceArchitectureWarning(svc.image);
+    if (archWarning) (logger.warn ?? logger.info)(archWarning);
+  }
   logger.log?.('');
   logger.info(
     [

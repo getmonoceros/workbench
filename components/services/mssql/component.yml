@@ -1,0 +1,95 @@
+id: mssql
+category: service
+displayName: SQL Server
+description: 'Microsoft SQL Server (Developer edition) with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mssql`. amd64-only image: on Apple Silicon it needs Rosetta in the Docker runtime.'
+documentationURL: https://learn.microsoft.com/sql/linux/quickstart-install-connect-docker
+service:
+  image: mcr.microsoft.com/mssql/server:2025-latest
+  # Microsoft builds no arm64 image: on Apple Silicon it needs Rosetta, on an
+  # arm64 Linux host it does not run at all. init, add-service and apply warn.
+  architectures: [amd64]
+  defaultPort: 1433
+  dataMount: /var/opt/mssql
+  # The image runs as uid 10001 and, unlike postgres and mysql, has no
+  # root-started entrypoint that fixes the data dir's ownership. A fresh
+  # volume inherits the right owner, but `restore` writes the files back as
+  # root (a macOS backup cannot keep the uid, ADR 0042), and sqlservr then exits
+  # with "The system directory [/.system] could not be created ... Permission
+  # denied". Running as root, which the image supports, reads either.
+  user: '0:0'
+  healthcheck:
+    # Unlike postgres and mysql, the image cannot create a database on start,
+    # so the probe does it: idempotent, and "healthy" then means the database
+    # exists. -C trusts the server's self-signed certificate, -b turns a SQL
+    # error into a non-zero exit.
+    test:
+      [
+        CMD,
+        /opt/mssql-tools18/bin/sqlcmd,
+        -C,
+        -S,
+        127.0.0.1,
+        -U,
+        sa,
+        '-P${MSSQL_SA_PASSWORD}',
+        -b,
+        -Q,
+        "IF DB_ID(N'${MSSQL_DATABASE}') IS NULL CREATE DATABASE [${MSSQL_DATABASE}]",
+      ]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    startPeriod: 30s
+  vscodeExtensions: [cweijan.vscode-database-client2]
+  # No workspace client: sqlcmd (mssql-tools18) ships only from Microsoft's
+  # own apt repository, which `client.apt` cannot add.
+  connectionEnv:
+    URL: sqlserver://sa:${MSSQL_SA_PASSWORD}@${host}:${port}?database=${MSSQL_DATABASE}&TrustServerCertificate=true
+    HOST: ${host}
+    PORT: ${port}
+    USER: sa
+    PASSWORD: ${MSSQL_SA_PASSWORD}
+    DB: ${MSSQL_DATABASE}
+options:
+  MSSQL_SA_PASSWORD:
+    type: string
+    # SQL Server enforces a password policy (8+ characters, three of upper,
+    # lower, digit, symbol); the usual `monoceros` makes the server exit.
+    default: Monoceros-dev1
+    surface: env
+  MSSQL_DATABASE:
+    type: string
+    default: monoceros
+    surface: env
+  # Choosing the component is the acceptance of the SQL Server EULA; the
+  # image refuses to start without it.
+  ACCEPT_EULA:
+    type: string
+    default: 'Y'
+    surface: env
+  # The free edition licensed for development and test.
+  MSSQL_PID:
+    type: string
+    default: Developer
+    surface: env
+usageNotes:
+  - 'The database named by `MSSQL_DATABASE` is created by the service healthcheck within a few seconds of the server coming up; it is not there the instant the port opens.'
+  - "There is no `sqlcmd` in the workspace. Query the database through the project's own driver, or from the host with `monoceros tunnel <name> mssql`."
+  - "Drivers that encrypt by default (Microsoft.Data.SqlClient, JDBC) reject the server's self-signed certificate; set `TrustServerCertificate=true` in the connection string."
+# The service block for the project's pipeline compose file, verbatim.
+deploy:
+  compose: |-
+    image: mcr.microsoft.com/mssql/server:2025-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set it as a pipeline secret}
+      MSSQL_DATABASE: ${MSSQL_DATABASE:?set it as a pipeline secret}
+    healthcheck:
+      # The image cannot create a database on start; the probe does it, so
+      # healthy means the database exists.
+      test: [CMD, /opt/mssql-tools18/bin/sqlcmd, -C, -S, 127.0.0.1, -U, sa, "-P${MSSQL_SA_PASSWORD}", -b, -Q, "IF DB_ID(N'${MSSQL_DATABASE}') IS NULL CREATE DATABASE [${MSSQL_DATABASE}]"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # No volume: each run starts empty, the schema comes from the project's migrations.

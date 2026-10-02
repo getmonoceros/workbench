@@ -193,6 +193,44 @@
       "defaultPort": 27017
     },
     {
+      "name": "mssql",
+      "displayName": "SQL Server",
+      "description": "Microsoft SQL Server (Developer edition) with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mssql`. amd64-only image: on Apple Silicon it needs Rosetta in the Docker runtime.",
+      "options": [
+        {
+          "key": "ACCEPT_EULA",
+          "type": "string",
+          "surface": "env",
+          "default": "Y"
+        },
+        {
+          "key": "MSSQL_DATABASE",
+          "type": "string",
+          "surface": "env",
+          "default": "monoceros"
+        },
+        {
+          "key": "MSSQL_PID",
+          "type": "string",
+          "surface": "env",
+          "default": "Developer"
+        },
+        {
+          "key": "MSSQL_SA_PASSWORD",
+          "type": "string",
+          "surface": "env",
+          "default": "Monoceros-dev1"
+        }
+      ],
+      "documentationURL": "https://learn.microsoft.com/sql/linux/quickstart-install-connect-docker",
+      "usageNotes": [
+        "The database named by `MSSQL_DATABASE` is created by the service healthcheck within a few seconds of the server coming up; it is not there the instant the port opens.",
+        "There is no `sqlcmd` in the workspace. Query the database through the project's own driver, or from the host with `monoceros tunnel <name> mssql`.",
+        "Drivers that encrypt by default (Microsoft.Data.SqlClient, JDBC) reject the server's self-signed certificate; set `TrustServerCertificate=true` in the connection string."
+      ],
+      "defaultPort": 1433
+    },
+    {
       "name": "mysql",
       "displayName": "MySQL",
       "description": "Relational database with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mysql`.",
