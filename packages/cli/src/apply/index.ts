@@ -324,6 +324,20 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
   const parsed = await readConfig(ymlPath);
 
+  // The yml's `name:` names the container, its volumes and its proxy
+  // aliases; the file name names the directory and the compose project. A
+  // yml copied from another workbench keeps the old `name:`, so its apply
+  // would grab that workbench's container name and data volumes. Docker
+  // refuses the name clash, but the devcontainer CLI drops compose's
+  // stderr, so the builder only ever saw "apply failed (exit 1)".
+  if (parsed.config.name !== opts.name) {
+    throw new Error(
+      `${ymlPath} says \`name: ${parsed.config.name}\`, but the file is named '${opts.name}'. ` +
+        `The name must match the file name, or this workbench takes over the container ` +
+        `and data volumes of '${parsed.config.name}'. Change it to \`name: ${opts.name}\`, then re-apply.`,
+    );
+  }
+
   // The runtime image version must be pinned in the yml (ADR 0017). We
   // never silently adopt a default and re-image an existing container —
   // an unpinned yml is rejected with an actionable hint. `init` writes
@@ -431,8 +445,9 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     );
   }
 
-  for (const use of repoTokens.used) {
-    logger.info(formatTokenUse(use));
+  // One entry per repo, but several repos on one host share a token: say it once.
+  for (const line of new Set(repoTokens.used.map(formatTokenUse))) {
+    logger.info(line);
   }
 
   // Resolve `${VAR}` in FEATURE options first. A missing/empty value

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { Writable } from 'node:stream';
 import { consola } from 'consola';
 import { type DockerExec } from '../proxy/index.js';
-import { createSecretMaskStream } from '../util/mask-secrets.js';
+import { createSecretMaskStream, maskSecrets } from '../util/mask-secrets.js';
 import { DEFERRED_SERVICE_PROFILE } from '../create/catalog.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
 
@@ -595,11 +595,12 @@ async function runUpWithBindRetry(
   baseSink: NodeJS.WritableStream | undefined,
   logger: { info: (m: string) => void },
   opts: BindRetryOptions = {},
-): Promise<number> {
+): Promise<{ code: number; output: string }> {
   const delayMs = opts.delayMs ?? BIND_RETRY_DELAY_MS;
   let code = 0;
+  let captured = '';
   for (let i = 1; i <= BIND_RETRY_ATTEMPTS; i += 1) {
-    let captured = '';
+    captured = '';
     const sink = new Writable({
       write(chunk, _enc, cb) {
         captured += chunk.toString();
@@ -608,7 +609,7 @@ async function runUpWithBindRetry(
       },
     });
     code = await attempt(sink);
-    if (code === 0) return 0;
+    if (code === 0) return { code, output: captured };
     if (i < BIND_RETRY_ATTEMPTS && BIND_SOURCE_MISSING_RE.test(captured)) {
       logger.info(
         `Bind source not visible yet (Docker Desktop file sync); nudging + retrying… (${i}/${BIND_RETRY_ATTEMPTS - 1})`,
@@ -623,9 +624,69 @@ async function runUpWithBindRetry(
       if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
       continue;
     }
-    return code;
+    return { code, output: captured };
   }
-  return code;
+  return { code, output: captured };
+}
+
+/**
+ * The devcontainer CLI runs the compose `up` with its output buffered and,
+ * when it fails, reports only "An error occurred starting Docker Compose
+ * up." Docker's own reason (a container name already in use, a taken port,
+ * a missing mount source) is thrown away, so the builder saw nothing but
+ * "apply failed (exit 1)". On exactly that failure we run the same command
+ * once more ourselves and keep its stderr. The workbench is already in a
+ * failed state and the next apply tears the project down first, so the
+ * re-run changes nothing that matters.
+ */
+const COMPOSE_UP_FAILED = 'An error occurred starting Docker Compose up.';
+const COMPOSE_UP_RUN_RE = /Start: Run: docker compose (--project-name .+)$/gm;
+
+/**
+ * The args of the last compose `up` the devcontainer CLI announced in
+ * `output`, or null. The announced line is space-joined, so the `-f` paths
+ * are split on ` -f ` rather than on spaces: a path with a space survives.
+ */
+export function failedComposeUpArgs(output: string): string[] | null {
+  if (!output.includes(COMPOSE_UP_FAILED)) return null;
+  const last = [...output.matchAll(COMPOSE_UP_RUN_RE)].at(-1)?.[1];
+  const m = last?.match(/^--project-name (\S+) (-f .+?) up (.+)$/);
+  if (!m) return null;
+  const files = ` ${m[2]}`.split(' -f ').slice(1);
+  return [
+    'compose',
+    '--project-name',
+    m[1]!,
+    ...files.flatMap((f) => ['-f', f]),
+    'up',
+    ...m[3]!.trim().split(/\s+/),
+  ];
+}
+
+async function explainComposeUpFailure(
+  output: string,
+  exec: DockerExec,
+  opts: Pick<RunContainerCycleOptions, 'logSink' | 'progressSink' | 'logger'>,
+): Promise<void> {
+  const args = failedComposeUpArgs(output);
+  if (!args) return;
+  const rerun = await exec(args);
+  if (rerun.exitCode === 0) {
+    opts.logSink?.write(
+      '[info] The compose up passed when re-run, so the failure was transient.\n',
+    );
+    return;
+  }
+  const reason = maskSecrets(
+    (rerun.stderr.trim() ? rerun.stderr : rerun.stdout)
+      .replace(/^\s*\n/, '')
+      .trimEnd(),
+  );
+  if (!reason) return;
+  const text = `docker compose up failed:\n${reason}\n`;
+  opts.logSink?.write(text);
+  if (opts.progressSink) opts.progressSink.write(text);
+  else (opts.logger.warn ?? opts.logger.info)(text.trimEnd());
 }
 
 /**
@@ -715,7 +776,7 @@ export async function runContainerCycle(
       return 1;
     }
 
-    return runUpWithBindRetry(
+    const up = await runUpWithBindRetry(
       (logSink) =>
         runStart({
           root,
@@ -730,11 +791,13 @@ export async function runContainerCycle(
       logger,
       bindRetry,
     );
+    if (up.code !== 0) await explainComposeUpFailure(up.output, exec, opts);
+    return up.code;
   }
 
   logger.info(`Recreating image-mode devcontainer at ${root}…`);
   const spawnFn = opts.devcontainerSpawn ?? spawnDevcontainer;
-  return runUpWithBindRetry(
+  const up = await runUpWithBindRetry(
     (logSink) =>
       spawnFn(
         [
@@ -756,6 +819,7 @@ export async function runContainerCycle(
     logger,
     bindRetry,
   );
+  return up.code;
 }
 
 export function runStop(opts: ComposeActionOptions): Promise<number> {

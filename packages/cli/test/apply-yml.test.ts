@@ -1053,6 +1053,15 @@ describe('runApply', () => {
     ).rejects.toThrow(/No runtime pinned.*runtimeVersion/s);
   });
 
+  it('errors when the yml name does not match the file name', async () => {
+    // A yml copied from another workbench keeps that workbench's name, and
+    // with it its container name and data volumes.
+    await writeYml('copy', 'schemaVersion: 1\nname: original\n');
+    await expect(
+      runApply({ ...baseRunOpts, name: 'copy', monocerosHome: home }),
+    ).rejects.toThrow(/name: original.*named 'copy'.*name: copy/s);
+  });
+
   it('errors when the yml fails schema validation', async () => {
     await writeYml('demo', 'schemaVersion: 99\nname: demo\n');
     await expect(
@@ -2088,6 +2097,35 @@ describe('runApply', () => {
     expect(prompted).toBe(false);
     const envText = await readFile(envFile, 'utf8');
     expect(envText).toContain('GITHUB_API_TOKEN=ghp_direct');
+  });
+
+  it('names a token shared by several repos on one host once', async () => {
+    await writeYml(
+      'tworepos',
+      [
+        'schemaVersion: 1',
+        'name: tworepos',
+        'repos:',
+        '  - url: https://github.com/acme/one.git',
+        '  - url: https://github.com/acme/two.git',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      path.join(home, 'container-configs', 'tworepos.env'),
+      'GITHUB_API_TOKEN=ghp_direct\n',
+    );
+    const infos: string[] = [];
+    await runApply({
+      ...baseRunOpts,
+      name: 'tworepos',
+      monocerosHome: home,
+      env: {},
+      logger: { ...silentLogger, info: (m: string) => infos.push(m) },
+    });
+    expect(
+      infos.filter((m) => m === 'Using GITHUB_API_TOKEN for github.com'),
+    ).toHaveLength(1);
   });
 
   it('skipping an ambiguous feature token leaves it unauthenticated (non-fatal)', async () => {

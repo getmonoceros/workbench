@@ -2,10 +2,12 @@ import { promises as fs } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   collectOutput,
   composeProjectName,
+  failedComposeUpArgs,
   resolveCompose,
   runContainerCycle,
   runDown,
@@ -516,6 +518,88 @@ describe('runContainerCycle — compose cleanup catches the fixed container_name
     expect(code).toBe(0);
     expect(filters).toContain('name=^monoceros-acme$');
     expect(removed).toContainEqual(['deadbeef']);
+  });
+});
+
+describe("runContainerCycle: compose up failure names docker's reason", () => {
+  // The devcontainer CLI announces the up, then drops compose's stderr and
+  // ends with this result blob. Replayed from a real apply log.
+  const devcontainerFailure = [
+    '[2026-10-05T16:26:34.057Z] Start: Run: docker compose --project-name acme_devcontainer -f /home/u/my stuff/compose.yaml -f /tmp/build.yml up -d postgres workspace',
+    'Error: Command failed: docker compose --project-name acme_devcontainer -f /home/u/my stuff/compose.yaml -f /tmp/build.yml up -d postgres workspace',
+    '    at RV (/x/devContainersSpecCLI.js:432:3342)',
+    '{"outcome":"error","message":"Command failed: docker compose","description":"An error occurred starting Docker Compose up."}',
+    '',
+  ].join('\n');
+  const conflict =
+    'Error response from daemon: Conflict. The container name "/monoceros-acme" is already in use by container "c71e".';
+
+  let tmp: string;
+  let root: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), 'monoceros-upfail-'));
+    root = path.join(tmp, 'acme');
+    await fs.mkdir(path.join(root, '.devcontainer'), { recursive: true });
+    await fs.writeFile(
+      path.join(root, '.devcontainer', 'compose.yaml'),
+      'services:\n  workspace: {}\n',
+    );
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('parses the announced up, keeping a path with a space whole', () => {
+    expect(failedComposeUpArgs(devcontainerFailure)).toEqual([
+      'compose',
+      '--project-name',
+      'acme_devcontainer',
+      '-f',
+      '/home/u/my stuff/compose.yaml',
+      '-f',
+      '/tmp/build.yml',
+      'up',
+      '-d',
+      'postgres',
+      'workspace',
+    ]);
+  });
+
+  it('ignores any other failure', () => {
+    expect(failedComposeUpArgs('some other build error\n')).toBeNull();
+  });
+
+  it("re-runs the up and writes docker's stderr to the progress tail", async () => {
+    const reruns: string[][] = [];
+    let tail = '';
+    const code = await runContainerCycle(root, {
+      hasCompose: true,
+      bindRetryDelayMs: 0,
+      logger: { info: () => {} },
+      dockerExec: async (args) => {
+        if (args[0] === 'compose') {
+          reruns.push([...args]);
+          return { exitCode: 1, stdout: '', stderr: `${conflict}\n` };
+        }
+        return { exitCode: 0, stdout: '', stderr: '' };
+      },
+      devcontainerSpawn: async (_args, _cwd, options) => {
+        options?.logSink?.write(devcontainerFailure);
+        return 1;
+      },
+      progressSink: new Writable({
+        write(chunk, _enc, cb) {
+          tail += chunk.toString();
+          cb();
+        },
+      }),
+    });
+    expect(code).toBe(1);
+    expect(reruns).toHaveLength(1);
+    expect(reruns[0]!.slice(-4)).toEqual(['up', '-d', 'postgres', 'workspace']);
+    expect(tail).toContain(conflict);
   });
 });
 
