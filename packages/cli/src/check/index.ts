@@ -985,10 +985,10 @@ async function checkProxyAttachment(
  * container has to sit on the `monoceros-proxy` network for Traefik to resolve
  * the alias behind it.
  *
- * How a workbench gets there: network membership is fixed when the container is
- * created, so a service that gained its `httpPort` after the last apply is
- * running on the compose default network only, and the route answers 502. The
- * fix is an apply, which is also the only thing that can change a compose file.
+ * How a workbench gets there: apply and start join the exposed services after
+ * bringing them up (#124), so a service that gained its `httpPort` after the
+ * last apply, or one recreated outside Monoceros, runs on the compose default
+ * network only, and the route answers 502. An apply covers both cases.
  *
  * Silent when the service is not running, and when docker cannot answer.
  */

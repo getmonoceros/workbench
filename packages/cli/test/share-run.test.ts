@@ -7,6 +7,9 @@ import type { DockerSpawn, DockerSpawnHandle } from '../src/tunnel/run.js';
 import type { ResolvedTarget } from '../src/tunnel/resolve.js';
 import type { PortProbe } from '../src/tunnel/port-check.js';
 import { CADDY_IMAGE } from '../src/share/caddy.js';
+import { readConfig } from '../src/config/io.js';
+import { solutionConfigToCreateOptions } from '../src/config/transform.js';
+import { buildComposeYaml } from '../src/create/scaffold.js';
 
 let home: string;
 
@@ -616,6 +619,107 @@ describe('runShare', () => {
     expect(caddyfile).toContain(':18080 {');
     expect(caddyfile).toContain('reverse_proxy http://keycloak:8080');
     expect(caddyfile).toContain('reverse_proxy http://ws:8080');
+
+    handler?.();
+    await expect(p).resolves.toBe(0);
+  });
+});
+
+/**
+ * #124 took the workspace and the exposed services out of compose.yaml's
+ * `monoceros-proxy` membership. The share terminator never used that network:
+ * it joins the compose default network and dials the plain names there. These
+ * tests run the real resolver against the real generated compose file, so a
+ * change that moves those names off the default network fails here.
+ */
+describe('runShare against a generated compose workbench (#124)', () => {
+  async function materialize(): Promise<void> {
+    await mkdir(path.join(home, 'container-configs'), { recursive: true });
+    const ymlPath = path.join(home, 'container-configs', 'acme.yml');
+    await writeFile(
+      ymlPath,
+      [
+        'schemaVersion: 1',
+        'name: acme',
+        'routing:',
+        '  ports:',
+        '    - 5173',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:17',
+        '    port: 5432',
+        '  - name: keycloak',
+        '    image: quay.io/keycloak/keycloak:26.7',
+        '    port: 8080',
+        '    httpPort: 8080',
+        '  - name: caddy',
+        '    image: caddy:2',
+        '    port: 81',
+        '    httpPort: 81',
+        '',
+      ].join('\n'),
+    );
+    const { config } = await readConfig(ymlPath);
+    const devcontainer = path.join(home, 'container', 'acme', '.devcontainer');
+    await mkdir(devcontainer, { recursive: true });
+    await writeFile(
+      path.join(devcontainer, 'compose.yaml'),
+      buildComposeYaml(solutionConfigToCreateOptions(config)),
+    );
+    await writeLaunch('web', {
+      version: 1,
+      configurations: [{ name: 'dev', command: 'x', port: 5173 }],
+    });
+  }
+
+  it('dials the workspace and each exposed service by plain name on the compose default network', async () => {
+    await materialize();
+    const compose = await readFile(
+      path.join(home, 'container', 'acme', '.devcontainer', 'compose.yaml'),
+      'utf8',
+    );
+    // the generated file puts nobody on a second network, so the plain names
+    // the terminator dials below exist on the default network and only there
+    expect(compose).not.toMatch(/^\s*networks:/m);
+
+    const rec = recordingSpawn();
+    let handler: (() => void) | undefined;
+    const p = runShare({
+      name: 'acme',
+      app: 'web',
+      monocerosHome: home,
+      dockerSpawn: rec.spawn,
+      probe: probeFree,
+      hostAddresses: hostStub,
+      provisionTls: tlsStub,
+      ensureImage: async () => {},
+      installSignalHandler: (h) => {
+        handler = h;
+        return () => {};
+      },
+      logger: { info: () => {}, warn: () => {} },
+    });
+    await waitFor(() => rec.calls.length >= 1);
+
+    const argv = rec.calls[0]!;
+    expect(argv).toContain('--network=acme_devcontainer_default');
+    expect(argv).not.toContain('--network=monoceros-proxy');
+    const flat = argv.join(' ');
+    expect(flat).toContain('-p 0.0.0.0:5173:5173');
+    expect(flat).toContain('-p 0.0.0.0:8080:8080');
+    expect(flat).toContain('-p 0.0.0.0:81:81');
+    // no database on the LAN
+    expect(flat).not.toContain(':5432');
+
+    const caddyfile = await readFile(
+      path.join(home, 'share', 'acme__web.Caddyfile'),
+      'utf8',
+    );
+    expect(caddyfile).toContain('reverse_proxy http://workspace:5173');
+    expect(caddyfile).toContain('reverse_proxy http://keycloak:8080');
+    expect(caddyfile).toContain('reverse_proxy http://caddy:81');
+    // never the proxy-network aliases, which other workbenches can see
+    expect(caddyfile).not.toMatch(/acme-(keycloak|caddy)/);
 
     handler?.();
     await expect(p).resolves.toBe(0);

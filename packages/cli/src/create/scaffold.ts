@@ -1,7 +1,6 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { componentsRootDir, workbenchCheckoutRoot } from '../config/paths.js';
-import { httpServices, serviceProxyAlias } from '../config/http-services.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { descriptorToFeatureManifest } from '../catalog/generate-manifest.js';
@@ -1093,9 +1092,9 @@ export function buildDevcontainerJson(
 
     // Compose-mode: per-feature persistent home mounts go onto the
     // workspace service in compose.yaml (see buildComposeYaml). The
-    // devcontainer.json just references compose. Network membership
-    // (`monoceros-proxy`) lives in compose.yaml's `networks:` block,
-    // not here.
+    // devcontainer.json just references compose. Membership of
+    // `monoceros-proxy` is in neither file: apply and start connect the
+    // running containers to it (see attachWorkbenchToProxy, #124).
     return {
       name: opts.name,
       dockerComposeFile: 'compose.yaml',
@@ -1388,14 +1387,13 @@ export function buildComposeYaml(
   dockerMode: DockerMode = 'rootful',
 ): string {
   void dockerMode;
-  const hasPorts = (opts.ports?.length ?? 0) > 0;
-  // Services the catalog marks reachable (`httpPort`) get a Traefik route of
-  // their own, which means their container has to sit on the machine-wide
-  // proxy network too. So the network block below is needed as soon as EITHER
-  // exists: a workbench that only fronts a service (a reverse proxy, a mail
-  // inbox) declares no `routing.ports` at all.
-  const exposed = httpServices(opts.services);
-  const needsProxyNetwork = hasPorts || exposed.length > 0;
+  // No container joins `monoceros-proxy` here, although the workspace (with
+  // ports) and every exposed service (`httpPort`) sit on it. Compose adds the
+  // service name as an alias on every network a service joins, so two
+  // workbenches running keycloak would both answer to `keycloak` on that
+  // machine-wide network, whatever alias is declared next to it (#124). Apply
+  // and start connect the running containers instead, under the prefixed alias
+  // only (attachWorkbenchToProxy).
   const sshBridgePort = windowsBridgePort(opts);
   const lines: string[] = ['services:'];
 
@@ -1427,22 +1425,6 @@ export function buildComposeYaml(
   if (sshBridgePort !== null) {
     lines.push('    ports:');
     lines.push(`      - "127.0.0.1:${sshBridgePort}:${sshBridgePort}"`);
-  }
-  if (hasPorts) {
-    // Workspace joins both the compose-default network (so it can
-    // reach postgres/redis/… that share the project) and the
-    // monoceros-proxy network (so Traefik can route to it). Use the
-    // long form so we can pin a stable DNS alias on monoceros-proxy:
-    // without the alias every compose-mode container would show up
-    // as `workspace` (compose service name) and collide between
-    // multiple monoceros containers. The alias is the yml name; the
-    // dynamic config writes routes against `http://<name>:<port>`.
-    // See ADR 0007.
-    lines.push('    networks:');
-    lines.push('      default: {}');
-    lines.push('      monoceros-proxy:');
-    lines.push('        aliases:');
-    lines.push(`          - ${opts.name}`);
   }
   lines.push('    volumes:');
   lines.push(`      - ..:/workspaces/${opts.name}:cached`);
@@ -1535,18 +1517,6 @@ export function buildComposeYaml(
         lines.push(`      - ${composeVolumeSource(vol, svc.name, opts.name)}`);
       }
     }
-    // An exposed service is reached by Traefik, which lives on the machine-wide
-    // `monoceros-proxy` network - so the container joins it in addition to the
-    // compose default it shares with the workspace. The alias carries the
-    // workbench name because that network is shared by every workbench: two of
-    // them running keycloak would otherwise both answer to `keycloak` on it.
-    if (svc.httpPort !== undefined) {
-      lines.push('    networks:');
-      lines.push('      default: {}');
-      lines.push('      monoceros-proxy:');
-      lines.push('        aliases:');
-      lines.push(`          - ${serviceProxyAlias(opts.name, svc.name)}`);
-    }
     if (svc.healthcheck) {
       const hc = svc.healthcheck;
       lines.push('    healthcheck:');
@@ -1581,17 +1551,6 @@ export function buildComposeYaml(
       lines.push(`  ${volume}:`);
       lines.push(`    name: ${volume}`);
     }
-  }
-
-  if (needsProxyNetwork) {
-    // `external: true` tells compose that `monoceros-proxy` is managed
-    // outside this stack (Monoceros's proxy module creates it via
-    // `docker network create`). Without this declaration compose would
-    // try to create its own scoped network with the same name and
-    // collide.
-    lines.push('networks:');
-    lines.push('  monoceros-proxy:');
-    lines.push('    external: true');
   }
 
   return lines.join('\n') + '\n';

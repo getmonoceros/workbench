@@ -434,21 +434,28 @@ describe('buildComposeYaml — ports & networks', () => {
     expect(yaml).not.toMatch(/^networks:/m);
   });
 
-  it('attaches the workspace to default + monoceros-proxy with the yml name as alias', () => {
+  // #124: compose adds the service name as an alias on every network a service
+  // joins. Declaring `monoceros-proxy` here made every workspace answer to
+  // `workspace` and every keycloak to `keycloak` on that machine-wide network,
+  // whatever alias sat next to it. apply/start join the containers instead.
+  it('keeps the workspace and exposed services off monoceros-proxy, ports or not', () => {
     const yaml = buildComposeYaml({
       ...base,
-      services: [resolveService(expandCuratedService('postgres'))],
+      services: [
+        resolveService(expandCuratedService('postgres')),
+        resolveService(expandCuratedService('keycloak')),
+        resolveService(expandCuratedService('caddy')),
+      ],
       ports: [3000],
     });
-    expect(yaml).toMatch(/workspace:/);
-    // service-level networks list — long form so we can pin the alias
-    expect(yaml).toMatch(
-      /networks:\s*\n\s+default: \{\}\s*\n\s+monoceros-proxy:\s*\n\s+aliases:\s*\n\s+- sandbox/,
-    );
-    // top-level networks block with external
-    expect(yaml).toMatch(
-      /^networks:\s*\n\s+monoceros-proxy:\s*\n\s+external: true/m,
-    );
+    expect(yaml).toMatch(/^ {2}workspace:/m);
+    expect(yaml).toMatch(/^ {2}keycloak:/m);
+    expect(yaml).toMatch(/^ {2}caddy:/m);
+    // every container stays on the compose default network only, under its
+    // plain name: no per-service `networks:`, no top-level declaration
+    expect(yaml).not.toContain('monoceros-proxy');
+    expect(yaml).not.toMatch(/^\s*networks:/m);
+    expect(yaml).not.toMatch(/aliases:/);
   });
 });
 

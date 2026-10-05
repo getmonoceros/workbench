@@ -6,6 +6,7 @@ import {
   PROXY_CONTAINER_NAME,
   PROXY_NETWORK_NAME,
   attachToProxyNetwork,
+  attachWorkbenchToProxy,
   ensureProxy,
   isAttachedToProxyNetwork,
   maybeStopProxy,
@@ -348,6 +349,123 @@ describe('attachToProxyNetwork (#74)', () => {
     await expect(
       attachToProxyNetwork('abc123', 'oct', { docker: docker.exec }),
     ).resolves.toBe('attached');
+  });
+});
+
+describe('attachWorkbenchToProxy (#124)', () => {
+  /**
+   * A docker that runs one container per compose service of project `acme`
+   * (keycloak → kc1, caddy → cd1), none of them on the proxy network yet.
+   */
+  function workbenchDocker(running: Record<string, string>) {
+    return fakeDocker((args) => {
+      if (args[0] === 'ps') {
+        const svc = args
+          .find((a) => a.startsWith('label=com.docker.compose.service='))
+          ?.split('=')[2];
+        const project = args.includes('label=com.docker.compose.project=acme');
+        return ok(project && svc && running[svc] ? `${running[svc]}\n` : '');
+      }
+      if (args[0] === 'inspect') return ok('{"acme_default":{}}');
+      return ok();
+    });
+  }
+
+  const connects = (calls: string[][]) =>
+    calls.filter((c) => c[0] === 'network' && c[1] === 'connect');
+
+  it('joins the workspace and each exposed service under its prefixed alias only', async () => {
+    const docker = workbenchDocker({ keycloak: 'kc1', caddy: 'cd1' });
+    await attachWorkbenchToProxy(
+      {
+        name: 'acme',
+        composeProject: 'acme',
+        hasPorts: true,
+        services: ['keycloak', 'caddy'],
+      },
+      { docker: docker.exec },
+    );
+    // one `--alias` per container, and never the bare compose name: that is
+    // what made `keycloak` resolve to another workbench's instance
+    expect(connects(docker.calls)).toEqual([
+      [
+        'network',
+        'connect',
+        '--alias',
+        'acme',
+        PROXY_NETWORK_NAME,
+        'monoceros-acme',
+      ],
+      [
+        'network',
+        'connect',
+        '--alias',
+        'acme-keycloak',
+        PROXY_NETWORK_NAME,
+        'kc1',
+      ],
+      [
+        'network',
+        'connect',
+        '--alias',
+        'acme-caddy',
+        PROXY_NETWORK_NAME,
+        'cd1',
+      ],
+    ]);
+  });
+
+  it('leaves a workspace without ports off the network', async () => {
+    const docker = workbenchDocker({ keycloak: 'kc1' });
+    await attachWorkbenchToProxy(
+      {
+        name: 'acme',
+        composeProject: 'acme',
+        hasPorts: false,
+        services: ['keycloak'],
+      },
+      { docker: docker.exec },
+    );
+    expect(connects(docker.calls).map((c) => c[5])).toEqual(['kc1']);
+  });
+
+  it('skips a service that is not running and still joins the others', async () => {
+    const docker = workbenchDocker({ caddy: 'cd1' });
+    await attachWorkbenchToProxy(
+      {
+        name: 'acme',
+        composeProject: 'acme',
+        hasPorts: false,
+        services: ['keycloak', 'caddy'],
+      },
+      { docker: docker.exec },
+    );
+    expect(connects(docker.calls).map((c) => c[3])).toEqual(['acme-caddy']);
+  });
+
+  it('tries every container and names each one that failed', async () => {
+    const docker = fakeDocker((args) => {
+      if (args[0] === 'ps') return ok('kc1\n');
+      if (args[0] === 'inspect') return ok('{}');
+      if (args.includes('monoceros-acme')) return fail('No such container');
+      return ok();
+    });
+    await expect(
+      attachWorkbenchToProxy(
+        {
+          name: 'acme',
+          composeProject: 'acme',
+          hasPorts: true,
+          services: ['keycloak'],
+        },
+        { docker: docker.exec },
+      ),
+    ).rejects.toThrow(/acme: .*No such container/);
+    // the service was still joined after the workspace failed
+    expect(connects(docker.calls).map((c) => c[3])).toEqual([
+      'acme',
+      'acme-keycloak',
+    ]);
   });
 });
 

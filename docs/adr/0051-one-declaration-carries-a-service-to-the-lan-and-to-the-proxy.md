@@ -1,6 +1,6 @@
 # ADR 0051: One declaration carries a service to the LAN and to the proxy
 
-- Status: accepted
+- Status: accepted, amended 2026-10-05 (see [Amendment](#amendment-2026-10-05-the-alias-is-the-only-name-on-the-proxy-network))
 - Date: 2026-08-18
 - Relates to: [ADR 0007](0007-port-management-traefik.md) (the shared
   Traefik singleton and the routing model this extends),
@@ -88,3 +88,30 @@ in is written at apply anyway.
 
 A deferred service (ADR 0025, Keycloak) has its route before it finishes
 starting, so the address answers 502 for a few seconds after an apply.
+
+## Amendment (2026-10-05): the alias is the only name on the proxy network
+
+The prefixed alias did not prevent the collision it was introduced for
+([#124](https://github.com/getmonoceros/workbench/issues/124)). Membership was
+declared in compose.yaml, and compose adds the service name as an alias on every
+network a service joins, so on `monoceros-proxy` the prefix sat next to the bare
+name instead of replacing it. Two workbenches with Keycloak both answered to
+`keycloak`, and an app reached the other workbench's instance about every second
+request. The workspace had carried the same defect since ADR 0007: every
+compose-mode workspace with ports answered to `workspace` there, which started
+to matter once the Caddy service resolved that name from the same network.
+
+The decision stands; the mechanism changes. compose.yaml no longer mentions
+`monoceros-proxy`. `apply` and `start` join the running containers to it with
+`docker network connect --alias`, after the deferred services are up: the
+workspace as `<name>` when it has ports, each exposed service as
+`<workbench>-<service>`. That adds no compose service name, and the membership
+survives a stop/start and a docker restart. Inside the workbench nothing moves:
+`keycloak`, `workspace` and the share terminator stay on the compose default
+network.
+
+This replaces the paragraph above that called a hot path unnecessary: joining
+is now always a step after the container exists. A container compose recreates
+outside Monoceros loses the membership until the next `apply` or `start`, the
+case `check` reports. Existing containers keep the bare alias until their next
+apply.

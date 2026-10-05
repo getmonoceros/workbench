@@ -6,6 +6,8 @@ import { containerConfigPath, containerDir } from '../config/paths.js';
 import { spawnBridgeDaemon } from '../devcontainer/bridge-daemon.js';
 import {
   collectOutput,
+  composeProjectName,
+  isComposeMode,
   runStart,
   startDeferredServices,
 } from '../devcontainer/compose.js';
@@ -15,7 +17,7 @@ import {
   serviceDefersStart,
 } from '../create/catalog.js';
 import { OPEN_TOOLS, runOpen } from '../open/index.js';
-import { ensureProxy } from '../proxy/index.js';
+import { attachWorkbenchToProxy, ensureProxy } from '../proxy/index.js';
 import { httpServices } from '../config/http-services.js';
 import { preflightHostPort } from '../proxy/port-check.js';
 import {
@@ -103,6 +105,8 @@ async function bringContainerUp(
     // call when the proxy is already up. See ADR 0007.
     let needsProxy = false;
     let hostPort = 80;
+    let hasPorts = false;
+    let exposed: string[] = [];
     // Services deferred out of the initial `devcontainer up` (ADR 0025),
     // resolved by catalog name from the yml. Brought up in a second wave
     // after `runStart` so a service bind-mounting a cloned repo file finds
@@ -116,9 +120,9 @@ async function bringContainerUp(
       // reverse proxy answers at `<name>-caddy.localhost` declares no
       // `routing.ports` at all, and starting it without Traefik would leave
       // that address dead.
-      const hasRoutes =
-        (parsed.config.routing?.ports ?? []).length > 0 ||
-        httpServices(parsed.config.services).length > 0;
+      hasPorts = (parsed.config.routing?.ports ?? []).length > 0;
+      exposed = httpServices(parsed.config.services).map((s) => s.name);
+      const hasRoutes = hasPorts || exposed.length > 0;
       if (hasRoutes) {
         needsProxy = true;
         ({ hostPort } = await readMachineSettings({
@@ -177,6 +181,25 @@ async function bringContainerUp(
       } catch (err) {
         consola.warn(
           `Could not start deferred service(s) ${deferred.join(', ')}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    // Join the routed containers to `monoceros-proxy` under their prefixed
+    // aliases (#124), after the deferred wave so those are included. A no-op
+    // for a container that kept its membership; needed for one compose
+    // recreated, e.g. after `stop --down`. Image mode has it from its run args.
+    const root = containerDir(args.name);
+    if (exitCode === 0 && needsProxy && isComposeMode(root)) {
+      try {
+        await attachWorkbenchToProxy({
+          name: args.name,
+          composeProject: composeProjectName(root),
+          hasPorts,
+          services: exposed,
+        });
+      } catch (err) {
+        consola.warn(
+          `Could not join the proxy network, so the \`.localhost\` routes answer 502: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }

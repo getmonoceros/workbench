@@ -93,6 +93,7 @@ import { loadComponentCatalog } from '../init/components.js';
 import {
   type ComposeSpawn,
   type DockerExec,
+  composeProjectName,
   pullServiceImages,
   runContainerCycle,
   startDeferredServices,
@@ -129,6 +130,7 @@ import {
   probeDockerPlugin,
 } from '../devcontainer/docker-plugins.js';
 import {
+  attachWorkbenchToProxy,
   ensureProxy,
   defaultDockerExec,
   type DockerExec as ProxyDockerExec,
@@ -1133,6 +1135,28 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
             `Could not start deferred service(s) ${deferred.join(', ')}: ${err instanceof Error ? err.message : String(err)}. The workspace is up.`,
           );
         }
+      }
+    }
+
+    // Join the routed containers to `monoceros-proxy` under their prefixed
+    // aliases, now that the deferred ones are up too. Compose mode only: an
+    // image-mode workspace gets the network from its run args. A failure costs
+    // the `.localhost` routes, not the workbench, so it warns (#124).
+    if (exitCode === 0 && hasRoutes && needsCompose(createOpts)) {
+      try {
+        await attachWorkbenchToProxy(
+          {
+            name: opts.name,
+            composeProject: composeProjectName(targetDir),
+            hasPorts: ports.length > 0,
+            services: exposedServices.map((s) => s.name),
+          },
+          { ...(opts.proxyDocker ? { docker: opts.proxyDocker } : {}) },
+        );
+      } catch (err) {
+        containerLogger.warn?.(
+          `Could not join the proxy network, so the \`.localhost\` routes answer 502: ${err instanceof Error ? err.message : String(err)}. Run \`monoceros start ${opts.name}\` to retry.`,
+        );
       }
     }
 

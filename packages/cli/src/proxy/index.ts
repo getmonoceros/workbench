@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { serviceProxyAlias } from '../config/http-services.js';
 import { monocerosHome as defaultMonocerosHome } from '../config/paths.js';
 
 /**
@@ -277,6 +278,73 @@ export async function attachToProxyNetwork(
     );
   }
   return 'attached';
+}
+
+export interface WorkbenchProxyMembers {
+  /** Workbench (yml) name: the workspace's alias and the services' prefix. */
+  name: string;
+  /** Compose project the workbench's containers carry as a label. */
+  composeProject: string;
+  /** Whether the workspace has `routing.ports`, i.e. a route of its own. */
+  hasPorts: boolean;
+  /** Compose names of the services with an `httpPort`. */
+  services: readonly string[];
+}
+
+/**
+ * Join a compose-mode workbench's routed containers to `monoceros-proxy`: the
+ * workspace as `<name>` when it has ports, each exposed service as
+ * `<name>-<service>`. Runs after the containers are up, in `apply` and `start`.
+ *
+ * Done here and not in compose.yaml because compose adds the service name as
+ * an alias on every network a service joins. On this machine-wide network that
+ * made two workbenches' keycloaks both answer to `keycloak`, and every
+ * workspace to `workspace` (#124). `docker network connect` adds only the alias
+ * it is given, and the membership survives a stop/start or a docker restart;
+ * a container compose recreates is joined again by the next apply or start.
+ *
+ * A service that is not running (deferred and failed, or removed by hand) is
+ * skipped. Every container is tried; failures come back as one error.
+ */
+export async function attachWorkbenchToProxy(
+  members: WorkbenchProxyMembers,
+  opts: ProxyOptions = {},
+): Promise<void> {
+  const docker = opts.docker ?? realDocker;
+  const targets: { container: string; alias: string }[] = [];
+  if (members.hasPorts) {
+    targets.push({
+      container: `monoceros-${members.name}`,
+      alias: members.name,
+    });
+  }
+  for (const service of members.services) {
+    const ps = await docker([
+      'ps',
+      '-q',
+      '--filter',
+      `label=com.docker.compose.project=${members.composeProject}`,
+      '--filter',
+      `label=com.docker.compose.service=${service}`,
+    ]);
+    const id = ps.stdout.trim().split('\n')[0]?.trim() ?? '';
+    if (ps.exitCode !== 0 || !id) continue;
+    targets.push({
+      container: id,
+      alias: serviceProxyAlias(members.name, service),
+    });
+  }
+  const failures: string[] = [];
+  for (const target of targets) {
+    try {
+      await attachToProxyNetwork(target.container, target.alias, opts);
+    } catch (err) {
+      failures.push(
+        `${target.alias}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  if (failures.length > 0) throw new Error(failures.join('\n'));
 }
 
 /**
