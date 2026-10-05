@@ -105,7 +105,8 @@ describe('expandCuratedService / isCuratedService', () => {
   it('exposes keycloak example volumes as a commented scaffold, not active (ADR 0025)', () => {
     const ex = curatedServiceExampleVolumes('keycloak');
     expect(ex).toEqual([
-      'projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro',
+      'projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro',
+      'projects/<app>/keycloak/users.json:/opt/keycloak/data/import/<realm>-users-0.json:ro',
       'projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>',
     ]);
     // ordinary services ship none
@@ -115,7 +116,7 @@ describe('expandCuratedService / isCuratedService', () => {
     const comment = curatedScaffoldComment(ex);
     expect(comment).toMatch(/^ volumes:/);
     expect(comment).toContain(
-      '   - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro',
+      '   - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro',
     );
     // keycloak's env keys are fixed and therefore ACTIVE options, not a
     // scaffold - nothing commented follows the volumes.

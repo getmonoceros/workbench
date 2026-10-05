@@ -265,7 +265,7 @@ export const ServiceBlockSchema = z.object({
    * edit. NOT active volumes — the catalog can't know the builder's repo
    * path. Used by services that need a project file but can't auto-wire it
    * (e.g. Keycloak's realm.json / theme). Each entry is a compose volume
-   * spec, e.g. `projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro`.
+   * spec, e.g. `projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro`.
    */
   exampleVolumes: z.array(z.string()).optional(),
   /**

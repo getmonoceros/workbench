@@ -87,7 +87,8 @@ services:
       USER: '${KC_BOOTSTRAP_ADMIN_USERNAME}'
       PASSWORD: '${KC_BOOTSTRAP_ADMIN_PASSWORD}'
     # volumes:                   # uncomment + edit to mount your own files
-    #   - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro
+    #   - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro
+    #   - projects/<app>/keycloak/users.json:/opt/keycloak/data/import/<realm>-users-0.json:ro
     #   - projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>
 
 # A Monoceros dev-container is shaped by features, pluggable units that drop

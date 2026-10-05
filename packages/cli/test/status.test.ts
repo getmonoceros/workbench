@@ -258,7 +258,7 @@ describe('renderStatus', () => {
     const out = renderStatus(m, plain);
     expect(out).toContain('⚠ realm.json not mounted');
     expect(out).toContain(
-      '- projects/web/keycloak/realm.json:/opt/keycloak/data/import/web.json:ro',
+      '- projects/web/keycloak/realm.json:/opt/keycloak/data/import/web-realm.json:ro',
     );
     // A volume needs the container recreated, so here the apply is real.
     expect(out).toContain('monoceros apply acme');

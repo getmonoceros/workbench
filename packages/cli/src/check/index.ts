@@ -463,12 +463,13 @@ export async function findUnmountedServiceConfigs(
           if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
           const fileRel = `${rel}/${entry.name}`;
           if (mounted.has(fileRel)) continue;
+          const json = await readJson(path.join(root, fileRel));
           out.push({
             service: svc.name,
             project,
             file: fileRel,
-            mountSpec: `${fileRel}:${mountTargetFor(svc.name, project, pattern)}`,
-            describes: await describeJson(path.join(root, fileRel)),
+            mountSpec: `${fileRel}:${mountTargetFor(svc.name, project, `${pattern}/${entry.name}`, json.realm)}`,
+            describes: describeJson(json),
           });
         }
       }
@@ -490,42 +491,68 @@ async function checkServiceConfigFiles(
   }));
 }
 
+interface ServiceJson {
+  /** The `realm` field, when the file names one. */
+  realm?: string;
+  /** Only `realm` and `users`: a Keycloak users file, not a realm. */
+  usersOnly: boolean;
+}
+
+async function readJson(file: string): Promise<ServiceJson> {
+  try {
+    const parsed: unknown = JSON.parse(await fs.readFile(file, 'utf8'));
+    if (parsed && typeof parsed === 'object') {
+      const { realm } = parsed as { realm?: unknown };
+      const keys = Object.keys(parsed);
+      return {
+        realm:
+          typeof realm === 'string' && realm.length > 0 ? realm : undefined,
+        usersOnly:
+          keys.includes('users') &&
+          keys.every((k) => k === 'realm' || k === 'users'),
+      };
+    }
+  } catch {
+    // Unreadable or not JSON after all — fall through to the plain wording.
+  }
+  return { usersOnly: false };
+}
+
 /**
  * What the file is, read from the file itself rather than from its name:
  * a Keycloak realm export names its realm, and quoting it makes the
  * finding checkable at a glance.
  */
-async function describeJson(file: string): Promise<string> {
-  try {
-    const parsed: unknown = JSON.parse(await fs.readFile(file, 'utf8'));
-    const realm =
-      parsed && typeof parsed === 'object'
-        ? (parsed as { realm?: unknown }).realm
-        : undefined;
-    if (typeof realm === 'string' && realm.length > 0) {
-      return `Declares the realm \`${realm}\``;
-    }
-  } catch {
-    // Unreadable or not JSON after all — fall through to the plain wording.
+function describeJson(json: ServiceJson): string {
+  if (json.realm && json.usersOnly) {
+    return `Holds users for the realm \`${json.realm}\``;
   }
+  if (json.realm) return `Declares the realm \`${json.realm}\``;
   return 'Sits at the standard location for this service';
 }
 
 /**
  * The container path the descriptor's example maps this file to, with
- * `<app>` filled in — so the fix line is a volume spec the builder can
- * paste rather than a shape to work out.
+ * `<app>` and `<realm>` filled in — so the fix line is a volume spec the
+ * builder can paste rather than a shape to work out. The example for that
+ * exact file name wins (`users.json` has its own target); any other file
+ * in the directory gets the directory's first example. Without a realm in
+ * the file, `<realm>` stays for the builder to fill.
  */
 function mountTargetFor(
   service: string,
   project: string,
-  sourceDir: string,
+  sourcePattern: string,
+  realm: string | undefined,
 ): string {
-  const example = curatedServiceExampleVolumes(service).find((spec) =>
-    (spec.split(':')[0] ?? '').startsWith(sourceDir),
-  );
+  const examples = curatedServiceExampleVolumes(service);
+  const sourceDir = sourcePattern.slice(0, sourcePattern.lastIndexOf('/'));
+  const example =
+    examples.find((spec) => spec.split(':')[0] === sourcePattern) ??
+    examples.find((spec) => (spec.split(':')[0] ?? '').startsWith(sourceDir));
   const target = example?.split(':').slice(1).join(':') ?? '';
-  return target.replaceAll('<app>', project);
+  const filled = target.replaceAll('<app>', project);
+  return realm ? filled.replaceAll('<realm>', realm) : filled;
 }
 
 /** Compose files under `projects/`, container-relative, sorted. */

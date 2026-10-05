@@ -274,7 +274,12 @@ describe('AGENTS.md generator', () => {
     // agent relays it verbatim instead of reshaping it into a directory mount.
     expect(md).toContain('```yaml');
     expect(md).toContain(
-      'projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro',
+      'projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro',
+    );
+    // Dev users live in their own file, so production's realm import
+    // (realm.json only) does not get them.
+    expect(md).toContain(
+      'projects/<app>/keycloak/users.json:/opt/keycloak/data/import/<realm>-users-0.json:ro',
     );
     // A service with no descriptor briefing (redis) adds no extra lines.
     const redis = generateAgentsMd({

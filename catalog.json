@@ -146,16 +146,18 @@
       ],
       "documentationURL": "https://www.keycloak.org/",
       "usageNotes": [
-        "Realm import: keep your realm export(s) in the repo and bind-mount them into `/opt/keycloak/data/import`. Add an entry to the service `volumes:`, e.g. `projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro`. With no mount, Keycloak starts with an empty realm.",
-        "Multiple realms from different projects: one file-mount per realm to a distinct target name (two directories cannot mount onto the same target). Keycloak imports every *.json in the import dir.",
+        "Realm import: keep your realm export in the repo and bind-mount it into `/opt/keycloak/data/import` as `<realm>-realm.json`, where `<realm>` is the realm name in the file, e.g. `projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro`. A mismatched name stops Keycloak from starting. With no mount, Keycloak starts with an empty realm.",
+        "Dev users: keep them out of realm.json, in `projects/<app>/keycloak/users.json` (`{\"realm\": \"<realm>\", \"users\": [...]}`), mounted as `/opt/keycloak/data/import/<realm>-users-0.json`. Keycloak imports them into the realm, and production, which mounts only realm.json, gets the realm without them.",
+        "Multiple realms from different projects: one file-mount per realm (and per users file), each named after its realm (two directories cannot mount onto the same target).",
         "Custom theme: bind-mount it into `/opt/keycloak/themes/<name>`, e.g. `projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>`, then set `loginTheme`/`accountTheme` to `<name>` in the realm. In dev mode themes are not cached, so edits show on reload.",
         "Paths are relative to the container root (`projects/<app>/...`); Monoceros resolves the bind source for you. Do not turn off the deferred start while mounting a repo file - the file would not exist at boot.",
         "Import is one-way: admin-UI changes live in the Keycloak database, not the file. To keep them, export the realm and overwrite the committed JSON.",
-        "The boot import only fills an EMPTY database, so a changed realm file does nothing until apply recreates the service. To apply it to the running Keycloak, run `.monoceros/bin/keycloak-realm <path/to/realm.json>` in the container."
+        "The boot import only fills an EMPTY database, so a changed realm file does nothing until apply recreates the service. To apply it to the running Keycloak, run `.monoceros/bin/keycloak-realm <path/to/realm.json> [<path/to/users.json>]` in the container."
       ],
       "defaultPort": 8080,
       "exampleVolumes": [
-        "projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro",
+        "projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro",
+        "projects/<app>/keycloak/users.json:/opt/keycloak/data/import/<realm>-users-0.json:ro",
         "projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>"
       ]
     },

@@ -32,8 +32,13 @@ service:
   tools: [keycloak-realm]
   # Rendered as a COMMENTED volumes: scaffold in the yml (the catalog
   # can't know your repo path). Uncomment + edit to mount realm/theme.
+  # The import targets follow Keycloak's export naming: `<realm>-realm.json`
+  # is the realm, `<realm>-users-0.json` its users, and `<realm>` has to be
+  # the realm's name (a mismatch stops Keycloak from starting). Keeping the
+  # dev users in their own file keeps them out of the deploy block's mount.
   exampleVolumes:
-    - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro
+    - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro
+    - projects/<app>/keycloak/users.json:/opt/keycloak/data/import/<realm>-users-0.json:ro
     - projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>
   connectionEnv:
     URL: http://${host}:${port}
@@ -51,12 +56,13 @@ options:
     default: admin
     surface: env
 usageNotes:
-  - 'Realm import: keep your realm export(s) in the repo and bind-mount them into `/opt/keycloak/data/import`. Add an entry to the service `volumes:`, e.g. `projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro`. With no mount, Keycloak starts with an empty realm.'
-  - 'Multiple realms from different projects: one file-mount per realm to a distinct target name (two directories cannot mount onto the same target). Keycloak imports every *.json in the import dir.'
+  - 'Realm import: keep your realm export in the repo and bind-mount it into `/opt/keycloak/data/import` as `<realm>-realm.json`, where `<realm>` is the realm name in the file, e.g. `projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro`. A mismatched name stops Keycloak from starting. With no mount, Keycloak starts with an empty realm.'
+  - 'Dev users: keep them out of realm.json, in `projects/<app>/keycloak/users.json` (`{"realm": "<realm>", "users": [...]}`), mounted as `/opt/keycloak/data/import/<realm>-users-0.json`. Keycloak imports them into the realm, and production, which mounts only realm.json, gets the realm without them.'
+  - 'Multiple realms from different projects: one file-mount per realm (and per users file), each named after its realm (two directories cannot mount onto the same target).'
   - 'Custom theme: bind-mount it into `/opt/keycloak/themes/<name>`, e.g. `projects/<app>/keycloak/theme:/opt/keycloak/themes/<app>`, then set `loginTheme`/`accountTheme` to `<name>` in the realm. In dev mode themes are not cached, so edits show on reload.'
   - 'Paths are relative to the container root (`projects/<app>/...`); Monoceros resolves the bind source for you. Do not turn off the deferred start while mounting a repo file - the file would not exist at boot.'
   - 'Import is one-way: admin-UI changes live in the Keycloak database, not the file. To keep them, export the realm and overwrite the committed JSON.'
-  - 'The boot import only fills an EMPTY database, so a changed realm file does nothing until apply recreates the service. To apply it to the running Keycloak, run `.monoceros/bin/keycloak-realm <path/to/realm.json>` in the container.'
+  - 'The boot import only fills an EMPTY database, so a changed realm file does nothing until apply recreates the service. To apply it to the running Keycloak, run `.monoceros/bin/keycloak-realm <path/to/realm.json> [<path/to/users.json>]` in the container.'
 # The service block for the project's pipeline compose file, verbatim.
 deploy:
   compose: |-
@@ -87,7 +93,7 @@ deploy:
     volumes:
       # The realm is a repo artifact. It installs an empty environment once;
       # a later change needs its own step, the boot import skips an existing
-      # realm.
+      # realm. Only the realm: the dev users in keycloak/users.json stay out.
       - ./keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
     healthcheck:
       # The image has no curl; bash opens the socket itself. /health/ready
@@ -121,20 +127,22 @@ deploy:
 briefing:
   - text: 'Identity & access management, reached in-container as host `keycloak`. Admin console + API at `$KEYCLOAK_URL` (admin `$KEYCLOAK_USER` / `$KEYCLOAK_PASSWORD`).'
   - text: 'Keycloak auto-imports realms at startup (`--import-realm`) from `/opt/keycloak/data/import`, and its database is ephemeral - it re-seeds from those files on every apply. So keep the realm as a file in the repo at `projects/<app>/keycloak/realm.json`; do NOT configure it by hand in the admin UI, that is lost on the next apply.'
+  - text: 'Keep dev and test users OUT of realm.json: production imports the same realm.json and must not get them. Put them in `projects/<app>/keycloak/users.json` as `{"realm": "<realm>", "users": [...]}`, same user format as in a realm export.'
   - text: |-
-      You can create/edit that realm.json, but the bind-mount that feeds it to Keycloak lives in the container yml on the host, which you cannot edit from inside. Give the user this exact block to add under the `keycloak` service in the container yml, with `<app>` replaced by the real project name in BOTH places (the source path and the import target filename):
+      You can create/edit those files, but the bind-mount that feeds them to Keycloak lives in the container yml on the host, which you cannot edit from inside. Give the user this exact block to add under the `keycloak` service in the container yml, with `<app>` replaced by the real project name and `<realm>` by the realm name exactly as in the file's `"realm"` field:
 
       ```yaml
       volumes:
-        - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<app>.json:ro
+        - projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro
+        - projects/<app>/keycloak/users.json:/opt/keycloak/data/import/<realm>-users-0.json:ro
       ```
 
-      Mount the single realm.json to a distinctly-named `*.json` target under the import dir. Do NOT mount the whole `keycloak/` directory onto `/opt/keycloak/data/import`, and do NOT prefix the source with `./`. Then have the user run `monoceros apply <name>` on the host.
+      The target names are Keycloak's own convention and not optional: the users file is only imported next to a `<realm>-realm.json`, and a `<realm>` that differs from the realm name stops Keycloak from starting. Leave out the users line if there is no users.json. Do NOT mount the whole `keycloak/` directory onto `/opt/keycloak/data/import`, and do NOT prefix the source with `./`. Then have the user run `monoceros apply <name>` on the host.
   - text: |-
-      The boot import only fills an EMPTY database, so editing that file changes nothing until the next apply recreates the service. To apply a changed realm file to the RUNNING Keycloak, from the workspace root:
+      The boot import only fills an EMPTY database, so editing those files changes nothing until the next apply recreates the service. To apply them to the RUNNING Keycloak, from the workspace root:
 
       ```
-      .monoceros/bin/keycloak-realm projects/<app>/keycloak/realm.json
+      .monoceros/bin/keycloak-realm projects/<app>/keycloak/realm.json projects/<app>/keycloak/users.json
       ```
 
       It replaces the realm from the file, so the file always wins: anything created at runtime, all sessions, and the generated secrets of confidential clients are gone afterwards. Do not write your own import script for this, and never point one at anything but this container.

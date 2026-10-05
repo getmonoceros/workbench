@@ -357,7 +357,8 @@ describe('add-*/remove-* against the yml', () => {
     // is commented too, because an active but empty `volumes:` parses to
     // null and apply rejects it.
     expect(yml).toMatch(/#\s*volumes:/);
-    expect(yml).toContain('/opt/keycloak/data/import/<app>.json:ro');
+    expect(yml).toContain('/opt/keycloak/data/import/<realm>-realm.json:ro');
+    expect(yml).toContain('/opt/keycloak/data/import/<realm>-users-0.json:ro');
     expect(yml).toContain('/opt/keycloak/themes/<app>');
     // No active (null) volumes key leaked in — the yml still validates.
     const { validateConfig } = await import('../src/config/schema.js');

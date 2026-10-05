@@ -574,9 +574,38 @@ describe('runCheck', () => {
     expect(found[0]!.where).toBe('projects/shop/keycloak/realm.json');
     // Read from the file, not guessed from its name.
     expect(found[0]!.what).toContain('Declares the realm `shop`');
-    // Paste-ready volume spec, with <app> filled in on both sides.
+    // Paste-ready volume spec, with <app> and <realm> filled in.
     expect(found[0]!.fix).toContain(
-      'projects/shop/keycloak/realm.json:/opt/keycloak/data/import/shop.json:ro',
+      'projects/shop/keycloak/realm.json:/opt/keycloak/data/import/shop-realm.json:ro',
+    );
+  });
+
+  it('gives an unmounted users file its own import target, named after its realm', async () => {
+    // Keycloak only imports `<realm>-users-N.json` next to a
+    // `<realm>-realm.json`, so the realm's target would be wrong here.
+    await scaffold(
+      'schemaVersion: 1\nname: acme\nlanguages:\n  - node\nservices:\n  - name: keycloak\n    image: quay.io/keycloak/keycloak:26.6\n    volumes:\n      - projects/shop/keycloak/realm.json:/opt/keycloak/data/import/store-realm.json:ro\n',
+    );
+    await workspace([
+      { path: '.', name: 'workspace' },
+      { path: 'projects/shop', name: 'shop' },
+    ]);
+    await file(
+      'projects/shop/keycloak/realm.json',
+      JSON.stringify({ realm: 'store' }),
+    );
+    await file(
+      'projects/shop/keycloak/users.json',
+      JSON.stringify({ realm: 'store', users: [] }),
+    );
+
+    const report = await runCheck(NAME, checkOpts());
+    const found = report.findings.filter((f) => f.rule === 'service-config');
+    expect(found).toHaveLength(1);
+    expect(found[0]!.where).toBe('projects/shop/keycloak/users.json');
+    expect(found[0]!.what).toContain('Holds users for the realm `store`');
+    expect(found[0]!.fix).toContain(
+      'projects/shop/keycloak/users.json:/opt/keycloak/data/import/store-users-0.json:ro',
     );
   });
 

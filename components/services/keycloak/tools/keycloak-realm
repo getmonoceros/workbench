@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Replace this container's Keycloak realm with the contents of a realm JSON
-# file, without recreating the container.
+# file, without recreating the container. Users files given after it
+# (`{"realm": ..., "users": [...]}`, the dev users kept out of the realm file
+# so production does not get them) are imported into the same realm.
 #
 # Why this exists: Keycloak's boot import only fills an EMPTY database, so a
 # changed realm file does nothing until `monoceros apply` recreates the
@@ -10,14 +12,14 @@
 # the file always wins. Gone afterwards are anything created at runtime
 # (users you clicked together), all sessions (the new realm has new signing
 # keys, so everyone logs in again) and the generated secrets of confidential
-# clients. Whatever is not in the file does not survive.
+# clients. Whatever is not in the files does not survive.
 #
 # It can only ever reach this container's Keycloak: the URL comes from the
 # environment, there is no way to point it somewhere else.
 set -euo pipefail
 
 usage() {
-  echo "usage: keycloak-realm <path/to/realm.json>" >&2
+  echo "usage: keycloak-realm <path/to/realm.json> [<path/to/users.json> ...]" >&2
 }
 
 file=${1:-}
@@ -26,10 +28,13 @@ if [ -z "$file" ] || [ "$file" = '-h' ] || [ "$file" = '--help' ]; then
   [ -n "$file" ] && exit 0
   exit 64
 fi
-if [ ! -f "$file" ]; then
-  echo "keycloak-realm: no such file: $file" >&2
-  exit 66
-fi
+shift
+for f in "$file" "$@"; do
+  if [ ! -f "$f" ]; then
+    echo "keycloak-realm: no such file: $f" >&2
+    exit 66
+  fi
+done
 
 : "${KEYCLOAK_URL:?not set, is the keycloak service configured in this container?}"
 : "${KEYCLOAK_USER:?not set, is the keycloak service configured in this container?}"
@@ -40,6 +45,19 @@ if [ -z "$realm" ]; then
   echo "keycloak-realm: $file has no top-level \"realm\" field." >&2
   exit 65
 fi
+for f in "$@"; do
+  if ! jq -e '.users | type == "array"' "$f" >/dev/null; then
+    echo "keycloak-realm: $f has no top-level \"users\" array." >&2
+    exit 65
+  fi
+done
+
+# One document, so the realm and its users go in with a single POST: the
+# realm's own users (if any) followed by those of every users file.
+payload=$(mktemp)
+trap 'rm -f "$payload"' EXIT
+jq -s '.[0] + {users: ((.[0].users // []) + ([.[1:][].users] | add // []))}' \
+  "$file" "$@" >"$payload"
 
 token=$(
   curl -sS --fail-with-body \
@@ -66,12 +84,12 @@ fi
 curl -sS --fail-with-body -X POST \
   -H "Authorization: Bearer $token" \
   -H 'Content-Type: application/json' \
-  --data-binary "@$file" \
+  --data-binary "@$payload" \
   "$KEYCLOAK_URL/admin/realms" >/dev/null
 
-users=$(jq -r '[.users // [] | .[].username] | join(", ") // ""' "$file")
-clients=$(jq -r '[.clients // [] | .[].clientId] | join(", ")' "$file")
-echo "Realm '$realm' imported from $file."
+users=$(jq -r '[.users[].username] | join(", ")' "$payload")
+clients=$(jq -r '[.clients // [] | .[].clientId] | join(", ")' "$payload")
+echo "Realm '$realm' imported from $file${1:+ with the users from $*}."
 [ -n "$clients" ] && echo "  clients: $clients"
 [ -n "$users" ] && echo "  users:   $users"
 exit 0
