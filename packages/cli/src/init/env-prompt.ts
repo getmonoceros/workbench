@@ -1,9 +1,12 @@
 import { createInterface } from 'node:readline/promises';
 import { consola } from 'consola';
+import type { CatalogComponent } from '../catalog/load.js';
 import { readEnvFile, setEnvVarRef } from '../config/env-file.js';
+import type { McpEntry } from '../config/schema.js';
 import { colorsFor } from '../util/format.js';
 import { optionHintNeeded } from './feature-doc.js';
 import type { FeatureManifestSummary } from './manifest.js';
+import { findMcpConnector } from './mcp-doc.js';
 
 /**
  * One env value to ask the builder for. These are the options a feature marks
@@ -58,6 +61,41 @@ export function collectEnvPromptCandidates(
         envVar,
         feature: summary?.name ?? f.ref,
         description: summary?.optionDescriptions[key] ?? '',
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The `${VAR}` placeholders in the `options` of the given MCP servers, in file
+ * order and deduplicated, described by the connector's own option text. The
+ * same read-it-off-the-values rule as for features, so a server out of a
+ * template is asked about the same way one from `--with-mcp-servers` is.
+ *
+ * Only `options`: the definition fields of an inline server (`headers`, `env`,
+ * …) are a hard apply error when unresolved, and a blank key here would turn
+ * that error into a server registered with an empty credential.
+ */
+export function collectMcpEnvPromptCandidates(
+  servers: readonly McpEntry[],
+  catalog: Map<string, CatalogComponent>,
+): EnvPromptCandidate[] {
+  const out: EnvPromptCandidate[] = [];
+  const seen = new Set<string>();
+  for (const server of servers) {
+    const descriptor = findMcpConnector(catalog, server.name);
+    for (const [key, value] of Object.entries(server.options ?? {})) {
+      if (typeof value !== 'string') continue;
+      const match = ENV_PLACEHOLDER.exec(value);
+      if (!match) continue;
+      const envVar = match[1]!;
+      if (seen.has(envVar)) continue;
+      seen.add(envVar);
+      out.push({
+        envVar,
+        feature: descriptor?.displayName ?? server.name,
+        description: descriptor?.options[key]?.description ?? '',
       });
     }
   }

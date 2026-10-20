@@ -42,6 +42,26 @@ async function writeTemplate(dir: string, name: string): Promise<void> {
   );
 }
 
+/** A builder template that registers context7, in MONOCEROS_HOME. */
+async function writeMcpTemplate(monocerosHome: string): Promise<void> {
+  const userDir = path.join(monocerosHome, 'templates', 'workbenches');
+  await mkdir(userDir, { recursive: true });
+  await writeFile(
+    path.join(userDir, 'withmcp.yml'),
+    [
+      'schemaVersion: 1',
+      'name: __MONOCEROS_NAME__',
+      'runtimeVersion: __MONOCEROS_RUNTIME_VERSION__',
+      'mcpServers:',
+      '  - name: context7',
+      '    options:',
+      '      apiKey: ${CONTEXT7_API_KEY}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
 describe('init --template', () => {
   let root: string;
   let monocerosHome: string;
@@ -203,6 +223,73 @@ describe('init --template', () => {
       logger: silentLogger,
     });
     expect(asked).toEqual(['CLAUDE_CODE_API_KEY']);
+  });
+
+  it('seeds the credential of an MCP server the template carries', async () => {
+    await writeMcpTemplate(monocerosHome);
+    await runInit({
+      name: 'acme',
+      template: 'withmcp',
+      monocerosHome,
+      templatesDir,
+      yes: true,
+      logger: silentLogger,
+    });
+    const env = await readFile(
+      path.join(monocerosHome, 'container-configs', 'acme.env'),
+      'utf8',
+    );
+    expect(env).toContain('CONTEXT7_API_KEY=');
+  });
+
+  it('seeds it too when --with-mcp-servers names the server the template already has', async () => {
+    await writeMcpTemplate(monocerosHome);
+    await runInit({
+      name: 'acme',
+      template: 'withmcp',
+      mcpServers: ['context7'],
+      monocerosHome,
+      templatesDir,
+      yes: true,
+      logger: silentLogger,
+    });
+    const env = await readFile(
+      path.join(monocerosHome, 'container-configs', 'acme.env'),
+      'utf8',
+    );
+    expect(env).toContain('CONTEXT7_API_KEY=');
+  });
+
+  it('leaves neither config nor env file behind when the template fails validation', async () => {
+    const userDir = path.join(monocerosHome, 'templates', 'workbenches');
+    await mkdir(userDir, { recursive: true });
+    await writeFile(
+      path.join(userDir, 'broken.yml'),
+      [
+        'schemaVersion: 1',
+        'name: __MONOCEROS_NAME__',
+        'runtimeVersion: __MONOCEROS_RUNTIME_VERSION__',
+        'services:',
+        '  - postgres',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const opts = {
+      name: 'acme',
+      template: 'broken',
+      monocerosHome,
+      templatesDir,
+      yes: true,
+      logger: silentLogger,
+    };
+    await expect(runInit(opts)).rejects.toThrow(/Invalid solution config/);
+    const configs = path.join(monocerosHome, 'container-configs');
+    expect(existsSync(path.join(configs, 'acme.yml'))).toBe(false);
+    expect(existsSync(path.join(configs, 'acme.env'))).toBe(false);
+    // The point of the rollback: fixing the template and running init again
+    // must not stop at "Config already exists".
+    await expect(runInit(opts)).rejects.toThrow(/Invalid solution config/);
   });
 
   it('rejects an unknown template and names the ones that exist', async () => {
@@ -526,6 +613,43 @@ describe('init env prompt', () => {
       'utf8',
     );
     expect(env).toContain('GITHUB_API_TOKEN=ghp_test');
+  });
+
+  it('asks for an MCP server credential, from --with-mcp-servers and from a template', async () => {
+    const asked: { envVar: string; feature: string }[] = [];
+    const ask = async (c: { envVar: string; feature: string }) => {
+      asked.push({ envVar: c.envVar, feature: c.feature });
+      return c.envVar === 'CONTEXT7_API_KEY' ? 'ctx7-test' : '';
+    };
+    await runInit({
+      name: 'plain',
+      mcpServers: ['context7'],
+      monocerosHome,
+      promptEnv: true,
+      askEnvValue: ask,
+      logger: silentLogger,
+    });
+    await writeMcpTemplate(monocerosHome);
+    await runInit({
+      name: 'fromtpl',
+      template: 'withmcp',
+      monocerosHome,
+      templatesDir,
+      promptEnv: true,
+      askEnvValue: ask,
+      logger: silentLogger,
+    });
+    expect(asked).toEqual([
+      { envVar: 'CONTEXT7_API_KEY', feature: 'Context7' },
+      { envVar: 'CONTEXT7_API_KEY', feature: 'Context7' },
+    ]);
+    for (const name of ['plain', 'fromtpl']) {
+      const env = await readFile(
+        path.join(monocerosHome, 'container-configs', `${name}.env`),
+        'utf8',
+      );
+      expect(env).toContain('CONTEXT7_API_KEY=ctx7-test');
+    }
   });
 
   it('asks nothing under --yes', async () => {

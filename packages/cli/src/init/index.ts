@@ -54,6 +54,7 @@ import { loadFeatureManifestSummary } from './manifest.js';
 import { renderWorkbenchTemplate } from './templates.js';
 import {
   collectEnvPromptCandidates,
+  collectMcpEnvPromptCandidates,
   promptAndWriteEnvValues,
   shouldPromptForEnv,
 } from './env-prompt.js';
@@ -343,20 +344,27 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   // would, which is also where their rules come from: a component already in
   // the template stays as the template set it, and a conflicting one is the
   // same error it is on the command line.
-  if (opts.template) {
-    // A rejected `--with-*` entry must not leave the half-written config
-    // behind: the builder would fix their command line and hit "Config
-    // already exists" for a file they never got to keep.
-    const envExisted = existsSync(containerEnvPath(opts.name, home));
-    try {
-      await applyWithFlagsToTemplate(opts, home);
-    } catch (err) {
-      await fs.rm(dest, { force: true });
-      if (!envExisted) {
-        await fs.rm(containerEnvPath(opts.name, home), { force: true });
-      }
-      throw err;
+  //
+  // A rejected `--with-*` entry, or a template the schema does not accept, must
+  // not leave the half-written config behind: the builder would fix their
+  // command line or their template and hit "Config already exists" for a file
+  // they never got to keep.
+  //
+  // Feature and MCP credentials come off the FINISHED yml rather than the
+  // in-memory composition, so one pass covers a template, the `--with-*`
+  // flags, and the two combined: by now they are all just entries in the same
+  // file.
+  const envExisted = existsSync(containerEnvPath(opts.name, home));
+  let finalConfig: Awaited<ReturnType<typeof readConfig>>;
+  try {
+    if (opts.template) await applyWithFlagsToTemplate(opts, home);
+    finalConfig = await readConfig(dest);
+  } catch (err) {
+    await fs.rm(dest, { force: true });
+    if (!envExisted) {
+      await fs.rm(containerEnvPath(opts.name, home), { force: true });
     }
+    throw err;
   }
 
   // Scaffold the gitignored `<name>.env`: create it with the header
@@ -369,16 +377,13 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   // (unlikely) key collision.
   const envPath = containerEnvPath(opts.name, home);
   const seedVars: Record<string, string> = {};
-  // Feature credentials come off the FINISHED yml rather than the in-memory
-  // composition, so one pass covers a template, the `--with-*` flags, and the
-  // two combined: by now they are all just entries in the same file. These are
-  // also the values the prompt below asks for, so the keys exist either way.
-  const finalConfig = await readConfig(dest);
-  const envCandidates = collectEnvPromptCandidates(
+  // Feature credentials are also the values the prompt below asks for, so the
+  // keys exist either way.
+  const featureCandidates = collectEnvPromptCandidates(
     finalConfig.config.features ?? [],
     lookup,
   );
-  for (const candidate of envCandidates) {
+  for (const candidate of featureCandidates) {
     if (!(candidate.envVar in seedVars)) seedVars[candidate.envVar] = '';
   }
   for (const svc of opts.template ? [] : composed.services) {
@@ -402,17 +407,18 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
       }
     }
   }
-  // MCP server credentials, blank for the builder to fill. Not optional
-  // politeness: apply refuses a connector whose credential resolves empty
-  // rather than registering a server that fails on first use, so the key has
-  // to be waiting in the env file.
-  for (const server of opts.template ? [] : composed.mcpServers) {
-    for (const value of Object.values(server.options)) {
-      if (typeof value !== 'string') continue;
-      const match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
-      if (match && !(match[1]! in seedVars)) seedVars[match[1]!] = '';
-    }
+  // MCP server credentials, blank for the builder to fill and asked for below.
+  // Not optional politeness: apply refuses a connector whose credential
+  // resolves empty rather than registering a server that fails on first use,
+  // so the key has to be waiting in the env file.
+  const mcpCandidates = collectMcpEnvPromptCandidates(
+    finalConfig.config.mcpServers ?? [],
+    descriptors,
+  ).filter((c) => !featureCandidates.some((f) => f.envVar === c.envVar));
+  for (const candidate of mcpCandidates) {
+    if (!(candidate.envVar in seedVars)) seedVars[candidate.envVar] = '';
   }
+  const envCandidates = [...featureCandidates, ...mcpCandidates];
   // When repos are present, the yml carries a container-level
   // `git.user: ${GIT_USER_NAME}/${GIT_USER_EMAIL}` — seed the matching
   // keys BLANK so the builder either fills them or leaves them empty
