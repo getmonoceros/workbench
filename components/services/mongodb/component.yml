@@ -3,7 +3,7 @@ category: service
 displayName: MongoDB
 description: 'Document database with seeded dev credentials and a readiness healthcheck. Reachable in-container as host `mongodb`.'
 service:
-  image: mongo:8
+  image: mongo:9
   defaultPort: 27017
   dataMount: /data/db
   healthcheck:
@@ -37,7 +37,7 @@ options:
 # The service block for the project's pipeline compose file, verbatim.
 deploy:
   compose: |-
-    image: mongo:8
+    image: mongo:9
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?set it as a pipeline secret}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?set it as a pipeline secret}
