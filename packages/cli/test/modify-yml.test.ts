@@ -339,6 +339,35 @@ describe('add-*/remove-* against the yml', () => {
     expect(yml).toContain('image: rustfs/rustfs:latest');
   });
 
+  it('runAddService scaffolds a connectionEnv block for a custom image that reaches the workspace once uncommented', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddService({
+      ...baseOpts,
+      name: 'demo',
+      service: 'confluentinc/cp-kafka:7.7.0',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    // The comment names the prefix the workspace will see, and the env: note
+    // says why `${host}` under env: can't work.
+    expect(yml).toContain('# connectionEnv:');
+    expect(yml).toContain('exported into the workspace as CP_KAFKA_<KEY>');
+    expect(yml).toMatch(/\$\{host\} \/ \$\{port\} do not work here/);
+    // What the builder does with it: uncomment port, env and connectionEnv.
+    const uncommented = yml
+      .replace('# port: 8080', 'port: 9092')
+      .replace('# env:', 'env:')
+      .replace('#   KEY: ${SOME_VAR}', '  KEY: kafka')
+      .replace('# connectionEnv:', 'connectionEnv:')
+      .replace(/# {3}(HOST|PORT|USER): /g, '  $1: ');
+    const opts = solutionConfigToCreateOptions(parseConfig(uncommented).config);
+    expect(serviceConnectionEnv(opts.services)).toEqual({
+      CP_KAFKA_HOST: 'cp-kafka',
+      CP_KAFKA_PORT: '9092',
+      CP_KAFKA_USER: 'kafka',
+    });
+  });
+
   it('runAddService keycloak: deferred command + commented volumes scaffold (ADR 0025)', async () => {
     await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
     const result = await runAddService({

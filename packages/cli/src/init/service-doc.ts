@@ -1,4 +1,5 @@
 import type { ServiceObject } from '../config/schema.js';
+import { envPrefix } from '../create/catalog.js';
 
 /**
  * Renders a `services:` entry as YAML lines for the **map body** at
@@ -83,7 +84,8 @@ export function renderCustomService(
   const bodyLines = [`name: ${name}`, `image: ${image}`];
   const comment = [
     ' port: 8080                 # in-container port → `monoceros tunnel`',
-    ' env:                       # values resolved from <name>.env',
+    ' env:                       # values resolved from <name>.env; reach only',
+    '                            # this service, ${host} / ${port} do not work here',
     '   KEY: ${SOME_VAR}',
     ' volumes:',
     `   - data:/data             # persistent host bind-mount under data/${name}`,
@@ -92,6 +94,13 @@ export function renderCustomService(
     '   test: curl -f http://localhost:8080/health',
     ' restart: unless-stopped     # optional; off by default so the whole',
     '                             # group stays down after a Docker restart',
+    // The only way a custom service's address reaches the workspace. No
+    // guessed keys: only the render tokens that hold for every image, plus
+    // one reference into `env:` (serviceConnectionEnv fills all three).
+    ` connectionEnv:             # exported into the workspace as ${envPrefix(name)}_<KEY>`,
+    '   HOST: ${host}            # the service name on the workbench network',
+    '   PORT: ${port}            # needs port: above',
+    '   USER: ${KEY}             # any key from env: above, after <name>.env resolution',
   ].join('\n');
   return { bodyLines, comment };
 }

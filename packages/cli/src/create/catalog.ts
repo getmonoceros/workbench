@@ -914,7 +914,7 @@ export function serviceConnectionEnv(
 }
 
 /** Env-var prefix for a service: its name, uppercased, non-alphanumerics to `_`. */
-function envPrefix(serviceName: string): string {
+export function envPrefix(serviceName: string): string {
   return serviceName.replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
 }
 
