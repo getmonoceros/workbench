@@ -20,6 +20,8 @@ export interface SelectableComponent {
   componentId: string;
   /** Option overrides for a preset entry; absent on the base entry. */
   presetOptions?: Record<string, string | boolean | number>;
+  /** The builder's own descriptor, from `<MONOCEROS_HOME>` (ADR 0063). */
+  local?: true;
 }
 
 export function expandSelectable(
@@ -34,7 +36,7 @@ export function expandSelectable(
     }
     out.set(entry.name, entry);
   };
-  for (const { descriptor: d } of catalog.values()) {
+  for (const { descriptor: d, local } of catalog.values()) {
     const selector = d.name ?? d.id;
     add({
       name: selector,
@@ -42,6 +44,7 @@ export function expandSelectable(
       displayName: d.displayName,
       description: d.description,
       componentId: d.id,
+      ...(local ? { local } : {}),
     });
     for (const [presetKey, overrides] of Object.entries(d.presets ?? {})) {
       add({

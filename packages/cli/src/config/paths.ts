@@ -183,6 +183,15 @@ export function userWorkbenchTemplatesDir(
   return path.join(home, 'templates', 'workbenches');
 }
 
+/**
+ * `<MONOCEROS_HOME>/templates/` — everything the builder keeps for reuse:
+ * `workbenches/<name>.yml` (ADR 0057) and `services/<id>.yml` (ADR 0063), a
+ * service descriptor that replaces a shipped one of the same id.
+ */
+export function userTemplatesDir(home: string = monocerosHome()): string {
+  return path.join(home, 'templates');
+}
+
 export function containerConfigsDir(home: string = monocerosHome()): string {
   return path.join(home, 'container-configs');
 }

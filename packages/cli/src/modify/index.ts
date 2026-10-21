@@ -328,6 +328,10 @@ export async function runAddService(
   // name from it, and drop in a commented scaffold for the fields
   // Monoceros can't know.
   const arg = input.service;
+  // The catalog behind isCuratedService loaded at import and skipped a broken
+  // descriptor of the builder's (ADR 0063). Load it again here so that file is
+  // reported by path, rather than its name quietly becoming an image ref.
+  await loadDescriptorCatalog();
   const curated = isCuratedService(arg);
 
   // `--as` overrides the compose service name (default: the curated

@@ -9,6 +9,7 @@ import type { ServiceHealthcheck, ServiceObject } from '../config/schema.js';
 import type { ResolvedService } from './types.js';
 import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { serviceProxyAlias } from '../config/http-services.js';
+import { componentsRootDir } from '../config/paths.js';
 import { componentDocsURL } from '../init/docs-url.js';
 import type { CatalogComponent } from '../catalog/load.js';
 import type { BriefingLine } from '../catalog/descriptor.js';
@@ -291,7 +292,21 @@ export interface LanguageEntry {
 // so these eager const exports keep their original shape and every existing
 // consumer keeps working unchanged. The descriptor is the single source of
 // truth (see ADR 0020); these records derive from it.
-const DESCRIPTORS = loadDescriptorCatalogSync();
+//
+// The builder's own services come in here too (ADR 0063). This runs at
+// import, before any command can catch anything, so a broken file of theirs
+// must not take down `--help` or every Tab press: the shipped tree is the
+// fallback, and the commands that work with services load the catalog again
+// and report the broken file by path.
+const DESCRIPTORS = loadCatalogAtImport();
+
+function loadCatalogAtImport(): Map<string, CatalogComponent> {
+  try {
+    return loadDescriptorCatalogSync();
+  } catch {
+    return loadDescriptorCatalogSync(componentsRootDir());
+  }
+}
 
 /** Plain `{ key: defaultValue }` for the options that declare a default. */
 function descriptorOptionDefaults(
@@ -528,6 +543,8 @@ export interface ServiceEntry {
    * `<container>/.monoceros/bin/` (see scaffold.ts#writeServiceTools).
    */
   tools?: readonly string[];
+  /** The builder's own descriptor: it has no page on getmonoceros.build. */
+  local?: true;
 }
 
 // The `monoceros` user/password/db below are deliberate dev-only
@@ -594,6 +611,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
             ? { deployRequires: c.descriptor.deploy.requires }
             : {}),
           ...(svc.tools ? { tools: svc.tools } : {}),
+          ...(c.local ? { local: true as const } : {}),
         };
         return [key, entry];
       }),
@@ -668,10 +686,14 @@ export function curatedLanguageHeader(
  */
 export function curatedServiceHeader(
   name: string,
-): { displayName: string; description: string } | undefined {
+): { displayName: string; description: string; local?: true } | undefined {
   const entry = SERVICE_CATALOG[name];
   if (!entry) return undefined;
-  return { displayName: entry.displayName, description: entry.description };
+  return {
+    displayName: entry.displayName,
+    description: entry.description,
+    ...(entry.local ? { local: entry.local } : {}),
+  };
 }
 
 /**
@@ -733,17 +755,25 @@ export function serviceArchitectureWarning(
     return undefined;
   }
   // The service page of an image with `architectures` carries this section.
-  const docs = `${componentDocsURL('service', entry.id)}#check-your-platform-first`;
+  // The builder's own service has no page, so it gets the steps without one.
+  const see = entry.local
+    ? []
+    : [
+        `See ${componentDocsURL('service', entry.id)}#check-your-platform-first`,
+      ];
   if (host.platform === 'darwin') {
     return [
       `${entry.displayName} is built for amd64 only. On Apple Silicon it needs Rosetta in your Docker runtime, or it stops right after it starts:`,
       '  Docker Desktop  Settings > General: Apple Virtualization framework + "Use Rosetta for x86_64/amd64 emulation" (not Docker VMM)',
       '  OrbStack        Rosetta is on by default',
       '  Colima          a VM started with --vm-type=vz --vz-rosetta',
-      `See ${docs}`,
+      ...see,
     ].join('\n');
   }
-  return `${entry.displayName} is built for amd64 only, and this host is arm64. There is no image it can run here. See ${docs}`;
+  return [
+    `${entry.displayName} is built for amd64 only, and this host is arm64. There is no image it can run here.`,
+    ...see,
+  ].join(' ');
 }
 
 /**

@@ -1,7 +1,7 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { componentsRootDir } from '../config/paths.js';
+import { componentsRootDir, userTemplatesDir } from '../config/paths.js';
 import {
   DescriptorSchema,
   type Descriptor,
@@ -39,9 +39,11 @@ const DIR_FOR_CATEGORY: Readonly<Record<DescriptorCategory, string>> =
 export interface CatalogComponent {
   id: string;
   category: DescriptorCategory;
-  /** Absolute path of the source `component.yml` — used in errors. */
+  /** Absolute path of the source descriptor file — used in errors. */
   sourcePath: string;
   descriptor: Descriptor;
+  /** Read from the builder's `<MONOCEROS_HOME>/templates/`, not shipped. */
+  local?: true;
 }
 
 /**
@@ -49,12 +51,26 @@ export interface CatalogComponent {
  * return an id-keyed map. Throws on the first invalid descriptor with a
  * path-anchored message — refuse rather than load an inconsistent catalog.
  *
- * Defaults to the resolved components root (checkout in dev, bundled copy
- * in prod — see `config/paths.ts#componentsRootDir`). Tests pass an
- * explicit root.
+ * Without `rootDir` this is the catalog a command works with: the resolved
+ * components root (checkout in dev, bundled copy in prod — see
+ * `config/paths.ts#componentsRootDir`) plus the builder's own services from
+ * `<MONOCEROS_HOME>/templates/services/<id>.yml`, which win by id (ADR 0063). An explicit
+ * `rootDir` reads that tree alone, so the scripts that generate the published
+ * catalog never pick up the machine's own descriptors; tests pass `userDir`
+ * to add an overlay to it.
  */
 export async function loadDescriptorCatalog(
-  rootDir: string = componentsRootDir(),
+  rootDir?: string,
+  userDir?: string,
+): Promise<Map<string, CatalogComponent>> {
+  const out = await walkTree(rootDir ?? componentsRootDir());
+  const overlayDir = rootDir === undefined ? userTemplatesDir() : userDir;
+  if (overlayDir) applyOverlay(out, await walkOwnServices(overlayDir));
+  return out;
+}
+
+async function walkTree(
+  rootDir: string,
 ): Promise<Map<string, CatalogComponent>> {
   const out = new Map<string, CatalogComponent>();
   if (!existsSync(rootDir)) {
@@ -70,16 +86,96 @@ export async function loadDescriptorCatalog(
       const sourcePath = path.join(categoryDir, id, 'component.yml');
       if (!existsSync(sourcePath)) continue;
       const component = await loadOne(sourcePath, id, category);
-      if (out.has(component.id)) {
-        const first = out.get(component.id)!;
-        throw new Error(
-          `Duplicate component id '${component.id}': ${first.sourcePath} and ${sourcePath}.`,
-        );
-      }
-      out.set(component.id, component);
+      addUnique(out, component);
     }
   }
   return out;
+}
+
+/**
+ * The builder's own services, `<templatesDir>/services/<id>.yml` (ADR 0063).
+ * One flat file each, like `templates/workbenches/<name>.yml`. Services only:
+ * a service is catalog data alone, while a language or feature also needs an
+ * install script published as an OCI feature.
+ */
+async function walkOwnServices(
+  templatesDir: string,
+): Promise<Map<string, CatalogComponent>> {
+  const out = new Map<string, CatalogComponent>();
+  const dir = path.join(templatesDir, 'services');
+  if (!existsSync(dir)) return out;
+  for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.yml')) continue;
+    const sourcePath = path.join(dir, entry.name);
+    const text = await fs.readFile(sourcePath, 'utf8');
+    addUnique(out, parseOwnService(text, sourcePath, entry.name));
+  }
+  return out;
+}
+
+/** Parse one `templates/services/<id>.yml`; its id is the file name. */
+export function parseOwnService(
+  text: string,
+  sourcePath: string,
+  fileName: string,
+): CatalogComponent {
+  return parseDescriptorFile(
+    text,
+    sourcePath,
+    fileName.slice(0, -'.yml'.length),
+    'service',
+    'file',
+  );
+}
+
+/** Add a component, refusing a second one under the same id. */
+export function addUnique(
+  out: Map<string, CatalogComponent>,
+  component: CatalogComponent,
+): void {
+  if (out.has(component.id)) {
+    const first = out.get(component.id)!;
+    throw new Error(
+      `Duplicate component id '${component.id}': ${first.sourcePath} and ${component.sourcePath}.`,
+    );
+  }
+  out.set(component.id, component);
+}
+
+/**
+ * Lay the builder's own descriptors over the shipped ones (ADR 0063). Same id,
+ * same category: theirs replaces ours. Clashing with a shipped component of
+ * another category, by id or by the name it is selected with (`claude` is the
+ * claude-code feature), is an error, because the one name would then mean a
+ * service in one command and a feature in the next.
+ */
+export function applyOverlay(
+  out: Map<string, CatalogComponent>,
+  own: Map<string, CatalogComponent>,
+): void {
+  const selector = (c: CatalogComponent): string =>
+    c.descriptor.name ?? c.descriptor.id;
+  for (const component of own.values()) {
+    const clash = [...out.values()].find(
+      (shipped) =>
+        shipped.category !== component.category &&
+        (shipped.id === component.id ||
+          selector(shipped) === selector(component)),
+    );
+    if (clash) {
+      throw new Error(
+        `Service '${selector(component)}' (${component.sourcePath}) has the name of the shipped ${clash.category} '${selector(clash)}'. Rename the file and its id.`,
+      );
+    }
+    // `tools` are files next to a descriptor, and a flat yml has nowhere to
+    // keep them. Under a shipped id they still resolve to the shipped ones.
+    if (component.descriptor.service?.tools && !out.has(component.id)) {
+      throw new Error(
+        `Service '${component.id}' (${component.sourcePath}) lists tools, which only a shipped service can carry. Remove the tools entry.`,
+      );
+    }
+    out.set(component.id, { ...component, local: true });
+  }
 }
 
 async function loadOne(
@@ -101,6 +197,7 @@ export function parseDescriptorFile(
   sourcePath: string,
   folderId: string,
   expectedCategory: DescriptorCategory,
+  storedAs: 'folder' | 'file' = 'folder',
 ): CatalogComponent {
   let raw: unknown;
   try {
@@ -123,7 +220,7 @@ export function parseDescriptorFile(
   const descriptor = parsed.data;
   if (descriptor.id !== folderId) {
     throw new Error(
-      `Descriptor id '${descriptor.id}' must match its folder name '${folderId}' (${sourcePath}).`,
+      `Descriptor id '${descriptor.id}' must match its ${storedAs} name '${folderId}' (${sourcePath}).`,
     );
   }
   if (descriptor.category !== expectedCategory) {

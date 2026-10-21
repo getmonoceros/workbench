@@ -237,6 +237,16 @@ function __Monoceros_Templates($bundled) {
   @(@($bundled) + $own | Where-Object { $_ } | Sort-Object -Unique)
 }
 
+function __Monoceros_CatalogServices($bundled) {
+  $dir = Join-Path (Join-Path (__Monoceros_Home) 'templates') 'services'
+  $own = @()
+  if (Test-Path -LiteralPath $dir) {
+    $own = @(Get-ChildItem -LiteralPath $dir -Filter '*.yml' -File -ErrorAction SilentlyContinue |
+      ForEach-Object { $_.BaseName })
+  }
+  @(@($bundled) + $own | Where-Object { $_ } | Sort-Object -Unique)
+}
+
 function __Monoceros_Targets($name, $app) {
   if (-not $name -or -not $app) { return @() }
   $appPath = $app -replace '/', '\\'
@@ -278,6 +288,7 @@ function __Monoceros_Values($desc, $argTokens) {
       'runInDir'      { return (__Monoceros_WorkspaceDirs $name) }
       'target'        { return (__Monoceros_Targets $name $app) }
       'workbenchTemplate' { return (__Monoceros_Templates $desc.values) }
+      'catalogService' { return (__Monoceros_CatalogServices $desc.values) }
     }
   }
   return @()

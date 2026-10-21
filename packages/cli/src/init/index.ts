@@ -202,10 +202,11 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
 
   // Component descriptors live under `<root>/components/` (ADR 0020). In tests
   // the fixture sets `workbenchRoot` to a dir holding the descriptors; honour
-  // that. In real use we resolve checkout-first, bundled-copy fallback.
+  // that. In real use the loader resolves checkout-first, bundled-copy
+  // fallback, plus the builder's own services (ADR 0063).
   const componentsRoot = opts.workbenchRoot
     ? path.join(opts.workbenchRoot, 'components')
-    : componentsRootDir();
+    : undefined;
   // Two views of the same tree: the selectable `Component` map the composed
   // resolution has always used, and the raw descriptors, which MCP servers
   // need because their whole definition lives in the descriptor.
@@ -213,7 +214,7 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   const catalog = buildComponentCatalog(descriptors);
   if (catalog.size === 0) {
     throw new Error(
-      `No components found under ${componentsRoot}. The workbench checkout is incomplete.`,
+      `No components found under ${componentsRoot ?? componentsRootDir()}. The workbench checkout is incomplete.`,
     );
   }
 

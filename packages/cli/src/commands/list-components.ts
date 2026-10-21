@@ -70,7 +70,14 @@ export const listComponentsCommand = defineCommand({
       >();
       for (const c of catalog.values()) {
         const list = byCategory.get(c.category) ?? [];
-        list.push({ name: c.name, label: c.displayName, desc: c.description });
+        // The builder's own descriptor says so, in both outputs: it is the
+        // one entry that exists on this machine and not on a colleague's.
+        const local = c.local ? ' (local)' : '';
+        list.push({
+          name: c.name,
+          label: `${c.displayName}${local}`,
+          desc: `${c.description}${local}`,
+        });
         byCategory.set(c.category, list);
       }
       for (const list of byCategory.values()) {

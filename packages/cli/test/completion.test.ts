@@ -221,6 +221,46 @@ describe('the pwsh script', () => {
     // well past vitest's 5s default.
     60_000,
   );
+  // The builder's own services (ADR 0063) are read off MONOCEROS_HOME at Tab
+  // time and merged with the baked shipped names; only `*.yml` files count.
+  it.skipIf(spawnSync('pwsh', ['-v']).status !== 0)(
+    'completes service names from the shipped catalog and the home',
+    async () => {
+      const home = await mkdtemp(path.join(tmpdir(), 'monoceros-pwsh-'));
+      try {
+        const services = path.join(home, 'templates', 'services');
+        await mkdir(services, { recursive: true });
+        await writeFile(path.join(services, 'kafka.yml'), 'id: kafka\n');
+        await writeFile(path.join(services, 'notes.txt'), 'x');
+        const scriptPath = path.join(home, 'completion.ps1');
+        await writeFile(scriptPath, await renderPwshScript());
+        const probe = [
+          `. '${scriptPath}'`,
+          'foreach ($line in @(',
+          "  'monoceros add-service sandbox ',",
+          "  'monoceros init x --with-services=ka'",
+          ')) {',
+          '  $r = TabExpansion2 -inputScript $line -cursorColumn $line.Length',
+          "  ($r.CompletionMatches | ForEach-Object CompletionText) -join ' '",
+          '}',
+        ].join('\n');
+        const result = spawnSync('pwsh', ['-NoProfile', '-Command', probe], {
+          encoding: 'utf8',
+          env: { ...process.env, MONOCEROS_HOME: home },
+        });
+        expect(result.stderr).toBe('');
+        const [addService, withServices] = result.stdout.trim().split('\n');
+        expect(addService!.split(' ')).toEqual(
+          expect.arrayContaining(['kafka', 'postgres']),
+        );
+        expect(addService!.split(' ')).not.toContain('notes');
+        expect(withServices).toBe('--with-services=kafka');
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
 });
 
 describe('buildPwshCompletionModel', () => {
@@ -258,6 +298,12 @@ describe('buildPwshCompletionModel', () => {
     expect(tplFlag.value && 'kind' in tplFlag.value && tplFlag.value.kind).toBe(
       'workbenchTemplate',
     );
+
+    // Catalog services are hybrid the same way (ADR 0063): shipped names bake
+    // in, the builder's own under templates/services/ are read at Tab time.
+    const svcSlot = model.specs['add-service']!.positionals[1]!;
+    expect('values' in svcSlot && svcSlot.values).toContain('postgres');
+    expect('kind' in svcSlot && svcSlot.kind).toBe('catalogService');
 
     // Dynamic positional: container name is a kind, not baked values.
     expect(model.specs['apply']!.positionals[0]).toEqual({

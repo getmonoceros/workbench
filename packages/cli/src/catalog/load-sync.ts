@@ -1,9 +1,12 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { componentsRootDir } from '../config/paths.js';
+import { componentsRootDir, userTemplatesDir } from '../config/paths.js';
 import {
   CATEGORY_DIRS,
+  addUnique,
+  applyOverlay,
   parseDescriptorFile,
+  parseOwnService,
   type CatalogComponent,
 } from './load.js';
 
@@ -16,8 +19,16 @@ import {
  */
 
 export function loadDescriptorCatalogSync(
-  rootDir: string = componentsRootDir(),
+  rootDir?: string,
+  userDir?: string,
 ): Map<string, CatalogComponent> {
+  const out = walkTreeSync(rootDir ?? componentsRootDir());
+  const overlayDir = rootDir === undefined ? userTemplatesDir() : userDir;
+  if (overlayDir) applyOverlay(out, walkOwnServicesSync(overlayDir));
+  return out;
+}
+
+function walkTreeSync(rootDir: string): Map<string, CatalogComponent> {
   const out = new Map<string, CatalogComponent>();
   if (!existsSync(rootDir)) return out;
   for (const [dirName, category] of Object.entries(CATEGORY_DIRS)) {
@@ -28,20 +39,34 @@ export function loadDescriptorCatalogSync(
       const id = entry.name;
       const sourcePath = path.join(categoryDir, id, 'component.yml');
       if (!existsSync(sourcePath)) continue;
-      const component = parseDescriptorFile(
-        readFileSync(sourcePath, 'utf8'),
-        sourcePath,
-        id,
-        category,
+      addUnique(
+        out,
+        parseDescriptorFile(
+          readFileSync(sourcePath, 'utf8'),
+          sourcePath,
+          id,
+          category,
+        ),
       );
-      if (out.has(component.id)) {
-        const first = out.get(component.id)!;
-        throw new Error(
-          `Duplicate component id '${component.id}': ${first.sourcePath} and ${sourcePath}.`,
-        );
-      }
-      out.set(component.id, component);
     }
+  }
+  return out;
+}
+
+/** Sync twin of `walkOwnServices`: `<templatesDir>/services/<id>.yml`. */
+function walkOwnServicesSync(
+  templatesDir: string,
+): Map<string, CatalogComponent> {
+  const out = new Map<string, CatalogComponent>();
+  const dir = path.join(templatesDir, 'services');
+  if (!existsSync(dir)) return out;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.yml')) continue;
+    const sourcePath = path.join(dir, entry.name);
+    addUnique(
+      out,
+      parseOwnService(readFileSync(sourcePath, 'utf8'), sourcePath, entry.name),
+    );
   }
   return out;
 }

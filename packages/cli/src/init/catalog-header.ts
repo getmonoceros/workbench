@@ -18,7 +18,9 @@ import { wrapToComment } from './feature-doc.js';
 function headerLines(
   section: DocsSection,
   name: string,
-  header: { displayName: string; description: string } | undefined,
+  header:
+    | { displayName: string; description: string; local?: true }
+    | undefined,
   width: number,
 ): string[] {
   if (!header) return [];
@@ -26,7 +28,8 @@ function headerLines(
     `${header.displayName}: ${header.description}`,
     width,
   );
-  out.push(componentDocsURL(section, name));
+  // The builder's own service (ADR 0063) has no page to point at.
+  if (!header.local) out.push(componentDocsURL(section, name));
   return out;
 }
 

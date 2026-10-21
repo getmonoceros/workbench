@@ -166,7 +166,8 @@ export type PwshValueKind =
   | 'service'
   | 'runInDir'
   | 'target'
-  | 'workbenchTemplate';
+  | 'workbenchTemplate'
+  | 'catalogService';
 
 type PwshMeta =
   | { static: true }
@@ -773,7 +774,10 @@ const runInDirs = dynamicSource('runInDir', (ctx) => listRunInDirs(ctx));
 // Static sources — catalog-derived, baked into the pwsh script at
 // generation time.
 const languageValues = staticSource(() => listLanguageNames());
-const serviceValues = staticSource(() => listServiceNames());
+// Hybrid like the templates below: the shipped services bake in, the
+// builder's own under MONOCEROS_HOME/templates/services/ (ADR 0063) are read
+// at Tab time.
+const serviceValues = hybridSource('catalogService', () => listServiceNames());
 const featureValues = staticSource(() => listFeatureComponents());
 const mcpValues = staticSource(() => listMcpServers());
 const providerValues = staticSource(() => listProviders());
