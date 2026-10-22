@@ -225,6 +225,11 @@ describe('runUpgrade', () => {
       await readFile(path.join(home, '.machine-state.json'), 'utf8'),
     );
     expect(state.lastUpgradeAt).toBe('2026-06-10T00:00:00.000Z');
+    // And per workbench, so the apply nudge of each one counts on its own.
+    expect(state.upgradedAt).toEqual({
+      alpha: '2026-06-10T00:00:00.000Z',
+      beta: '2026-06-10T00:00:00.000Z',
+    });
   });
 
   it('global upgrade refreshes only running containers, skips stopped/unbuilt', async () => {

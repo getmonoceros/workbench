@@ -34,8 +34,19 @@ export interface MachineState {
    * network call on the hot path. See update/notifier.ts.
    */
   latestVersion?: string;
+  /**
+   * The latest runtime image version seen on GHCR, cached by the same check,
+   * so a command can tell the builder their workbench runs an older one.
+   */
+  latestRuntimeVersion?: string;
   /** ISO-8601 instant the update check last ran (success OR failure). */
   lastVersionCheckAt?: string;
+  /**
+   * When `monoceros upgrade` last refreshed each workbench, by name. The
+   * `apply` hint counts per workbench; `lastUpgradeAt` is the fallback for a
+   * workbench upgraded before this was recorded.
+   */
+  upgradedAt?: Record<string, string>;
 }
 
 /** Default staleness threshold (days) for the `apply` upgrade nudge. */
@@ -112,22 +123,36 @@ export async function recordBuiltImage(
  * into existing state, never clobbering builtImages / lastUpgradeAt.
  */
 export async function recordVersionCheck(
-  opts: { latestVersion?: string; nowIso: string },
+  opts: {
+    latestVersion?: string;
+    latestRuntimeVersion?: string;
+    nowIso: string;
+  },
   home: string = monocerosHome(),
 ): Promise<void> {
   const state = await readMachineState(home);
   state.lastVersionCheckAt = opts.nowIso;
   if (opts.latestVersion) state.latestVersion = opts.latestVersion;
+  if (opts.latestRuntimeVersion) {
+    state.latestRuntimeVersion = opts.latestRuntimeVersion;
+  }
   await writeMachineState(state, home);
 }
 
-/** Mark a successful `upgrade` at the given ISO instant. */
+/** Mark a successful `upgrade` of these workbenches at the given ISO instant. */
 export async function markUpgraded(
   nowIso: string,
   home: string = monocerosHome(),
+  names: readonly string[] = [],
 ): Promise<void> {
   const state = await readMachineState(home);
   state.lastUpgradeAt = nowIso;
+  if (names.length > 0) {
+    state.upgradedAt = {
+      ...state.upgradedAt,
+      ...Object.fromEntries(names.map((n) => [n, nowIso])),
+    };
+  }
   await writeMachineState(state, home);
 }
 
@@ -151,14 +176,20 @@ export function daysBetween(fromIso: string, now: Date): number {
  * the runtime base image and the service images, so the wording names those
  * instead of "tools" — a builder who read the old line and then saw `claude`
  * update itself had every reason to conclude the nudge was noise.
+ *
+ * Counted per workbench: upgrading one used to silence the nudge for all.
  */
 export function upgradeNudge(
   state: MachineState,
   now: Date,
   thresholdDays: number = DEFAULT_UPGRADE_STALE_DAYS,
+  name?: string,
 ): string | null {
-  if (!state.lastUpgradeAt) return null;
-  const days = daysBetween(state.lastUpgradeAt, now);
+  const last = (name && state.upgradedAt?.[name]) || state.lastUpgradeAt;
+  if (!last) return null;
+  const days = daysBetween(last, now);
   if (days < thresholdDays) return null;
-  return `Base image and service images last updated ${days} days ago. Run \`monoceros upgrade\` to move them.`;
+  return name
+    ? `Base image and service images of ${name} last updated ${days} days ago. Run \`monoceros upgrade ${name}\` to move them.`
+    : `Base image and service images last updated ${days} days ago. Run \`monoceros upgrade\` to move them.`;
 }

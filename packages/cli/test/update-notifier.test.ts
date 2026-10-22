@@ -2,7 +2,9 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import {
+  decideRuntimeNotice,
   decideUpdateAction,
   formatUpdateNotice,
   isNewerVersion,
@@ -133,5 +135,67 @@ describe('runUpdateCheck', () => {
     const state = readState();
     expect(state.lastVersionCheckAt).toBe(now.toISOString());
     expect(state.latestVersion).toBeUndefined();
+  });
+
+  it('caches the latest runtime version too, and keeps it when the lookup fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ version: '9.9.9' }),
+      })),
+    );
+    await runUpdateCheck(now, home, async () => ['1.9.0', '1.10.1']);
+    expect(readState().latestRuntimeVersion).toBe('1.10.1');
+    await runUpdateCheck(now, home, async () => {
+      throw new Error('GHCR down');
+    });
+    expect(readState().latestRuntimeVersion).toBe('1.10.1');
+  });
+});
+
+describe('decideRuntimeNotice', () => {
+  let home: string;
+  const state = { latestRuntimeVersion: '1.10.1' };
+
+  beforeEach(() => {
+    home = mkdtempSync(path.join(tmpdir(), 'monoceros-rt-'));
+    mkdirSync(path.join(home, 'container-configs'));
+    const yml = (v: string) =>
+      `schemaVersion: 1\nname: x\nruntimeVersion: ${v}\n`;
+    writeFileSync(
+      path.join(home, 'container-configs', 'old.yml'),
+      yml('1.9.0'),
+    );
+    writeFileSync(
+      path.join(home, 'container-configs', 'cur.yml'),
+      yml('1.10.1'),
+    );
+  });
+  afterEach(() => rmSync(home, { recursive: true, force: true }));
+
+  it('names the workbench, both versions and its upgrade command', () => {
+    expect(decideRuntimeNotice(state, ['shell', 'old'], home)).toBe(
+      '\n⬆ Runtime 1.10.1 is available for old (it runs 1.9.0).\n' +
+        '  Upgrade:  monoceros upgrade old\n',
+    );
+    // Flags do not shift the workbench out of place.
+    expect(
+      decideRuntimeNotice(state, ['logs', '--follow', 'old', 'app'], home),
+    ).toContain('for old');
+  });
+
+  it('is silent for a current workbench, an unknown name and no cached version', () => {
+    expect(decideRuntimeNotice(state, ['apply', 'cur'], home)).toBeNull();
+    expect(decideRuntimeNotice(state, ['apply', 'nope'], home)).toBeNull();
+    expect(decideRuntimeNotice({}, ['apply', 'old'], home)).toBeNull();
+    expect(decideRuntimeNotice(state, ['list-components'], home)).toBeNull();
+    expect(decideRuntimeNotice(state, ['apply', '../old'], home)).toBeNull();
+  });
+
+  it('stays out of upgrade, init, remove and restore', () => {
+    for (const cmd of ['upgrade', 'init', 'remove', 'restore']) {
+      expect(decideRuntimeNotice(state, [cmd, 'old'], home)).toBeNull();
+    }
   });
 });

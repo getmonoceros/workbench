@@ -1471,6 +1471,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         await readMachineState(home),
         now,
         machine.upgradeStaleDays,
+        opts.name,
       );
       if (nudge) {
         progressOut.write(`\n  ${dim(nudge)}\n`);

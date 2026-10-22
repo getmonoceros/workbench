@@ -1,9 +1,13 @@
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import {
   readMachineStateSync,
   recordVersionCheck,
   type MachineState,
 } from '../config/machine-state.js';
+import { containerConfigPath, monocerosHome } from '../config/paths.js';
+import { REGEX } from '../config/schema.js';
+import { fetchRuntimeVersions } from '../upgrade/index.js';
 import { isManagedWslDistro } from '../util/wsl.js';
 
 // Self-update notice. On every (interactive) command we read a cached
@@ -81,6 +85,53 @@ export function formatUpdateNotice(
 }
 
 /**
+ * Commands that never get the runtime notice: `upgrade` is the fix itself,
+ * `init` names a workbench that has no runtime yet, and `remove` / `restore`
+ * are about to make it moot.
+ */
+const RUNTIME_SKIP_COMMANDS = new Set(['upgrade', 'init', 'remove', 'restore']);
+
+export function formatRuntimeNotice(
+  name: string,
+  latest: string,
+  current: string,
+): string {
+  return (
+    `\n⬆ Runtime ${latest} is available for ${name} (it runs ${current}).\n` +
+    `  Upgrade:  monoceros upgrade ${name}\n`
+  );
+}
+
+/**
+ * The runtime notice for the workbench a command addresses, or null. The
+ * workbench is the first positional after the command (`monoceros <command>
+ * <name>`), and only when a yml of that name exists; its pinned
+ * `runtimeVersion` is compared with the cached latest one. Sync and offline,
+ * like the CLI notice.
+ */
+export function decideRuntimeNotice(
+  state: Pick<MachineState, 'latestRuntimeVersion'>,
+  argv: readonly string[],
+  home: string,
+): string | null {
+  const [command, name] = argv.filter((a) => !a.startsWith('-'));
+  if (!state.latestRuntimeVersion || !command || !name) return null;
+  if (RUNTIME_SKIP_COMMANDS.has(command)) return null;
+  if (!REGEX.solutionName.test(name)) return null;
+  let yml: string;
+  try {
+    yml = readFileSync(containerConfigPath(name, home), 'utf8');
+  } catch {
+    return null; // not a workbench name, or not one on this home
+  }
+  const pinned = /^runtimeVersion:\s*["']?(\d+\.\d+\.\d+)/m.exec(yml)?.[1];
+  if (!pinned || !isNewerVersion(state.latestRuntimeVersion, pinned)) {
+    return null;
+  }
+  return formatRuntimeNotice(name, state.latestRuntimeVersion, pinned);
+}
+
+/**
  * Pure decision from the cached state: what notice (if any) to print, and
  * whether the cache is stale enough to refresh. No I/O — the testable core.
  */
@@ -126,11 +177,15 @@ export function scheduleUpdateNotice(opts: {
     }
 
     const state = readMachineStateSync();
-    const { notice, refresh } = decideUpdateAction(
+    const { notice: cliNotice, refresh } = decideUpdateAction(
       state,
       opts.currentVersion,
       opts.now ?? new Date(),
     );
+    const notice =
+      [cliNotice, decideRuntimeNotice(state, argv, monocerosHome())]
+        .filter(Boolean)
+        .join('') || null;
     if (notice) {
       process.on('exit', () => {
         try {
@@ -170,6 +225,7 @@ function spawnBackgroundCheck(): void {
 export async function runUpdateCheck(
   now: Date = new Date(),
   home?: string,
+  fetchRuntime: () => Promise<string[]> = fetchRuntimeVersions,
 ): Promise<void> {
   let latestVersion: string | undefined;
   try {
@@ -187,10 +243,17 @@ export async function runUpdateCheck(
   } catch {
     /* offline / timeout / parse — fall through, just stamp the time */
   }
+  let latestRuntimeVersion: string | undefined;
+  try {
+    latestRuntimeVersion = (await fetchRuntime()).at(-1);
+  } catch {
+    /* same: a failed lookup keeps the cached runtime version */
+  }
   try {
     await recordVersionCheck(
       {
         ...(latestVersion ? { latestVersion } : {}),
+        ...(latestRuntimeVersion ? { latestRuntimeVersion } : {}),
         nowIso: now.toISOString(),
       },
       home,

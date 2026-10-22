@@ -235,7 +235,7 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
       currentContainerNames: new Set(await listContainerNames(home)),
       exec,
     });
-    await markUpgraded(now.toISOString(), home);
+    await markUpgraded(now.toISOString(), home, targets);
     return result;
   };
 

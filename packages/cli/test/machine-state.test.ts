@@ -112,4 +112,35 @@ describe('upgradeNudge', () => {
   it('default threshold is 30 days', () => {
     expect(DEFAULT_UPGRADE_STALE_DAYS).toBe(30);
   });
+
+  // Upgrading one workbench used to silence the nudge for every other one.
+  it('counts per workbench, falling back to the machine-wide stamp', () => {
+    const state = {
+      lastUpgradeAt: '2026-06-09T00:00:00.000Z',
+      upgradedAt: {
+        fresh: '2026-06-09T00:00:00.000Z',
+        old: '2026-04-01T00:00:00.000Z',
+      },
+    };
+    expect(upgradeNudge(state, now, 30, 'fresh')).toBeNull();
+    expect(upgradeNudge(state, now, 30, 'old')).toBe(
+      'Base image and service images of old last updated 70 days ago. Run `monoceros upgrade old` to move them.',
+    );
+    // Upgraded before names were recorded: the machine-wide stamp stands in.
+    expect(upgradeNudge(state, now, 30, 'legacy')).toBeNull();
+  });
+
+  it('markUpgraded stamps each named workbench and keeps the others', async () => {
+    const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'monoceros-ms-'));
+    try {
+      await markUpgraded('2026-06-01T00:00:00.000Z', home, ['a', 'b']);
+      await markUpgraded('2026-06-10T00:00:00.000Z', home, ['b']);
+      expect((await readMachineState(home)).upgradedAt).toEqual({
+        a: '2026-06-01T00:00:00.000Z',
+        b: '2026-06-10T00:00:00.000Z',
+      });
+    } finally {
+      await fsp.rm(home, { recursive: true, force: true });
+    }
+  });
 });
