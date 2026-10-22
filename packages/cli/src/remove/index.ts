@@ -16,7 +16,10 @@ import {
   workbenchContainerFilters,
   type DockerExec,
 } from '../devcontainer/compose.js';
-import { ideStateVolumes } from '../create/scaffold.js';
+import {
+  containerCacheVolumePrefix,
+  ideStateVolumes,
+} from '../create/scaffold.js';
 import {
   backupServiceDataVolumes,
   composeServiceDataVolumes,
@@ -152,7 +155,22 @@ export async function runRemove(
   const ideVolumes = ideStateVolumes(opts.name)
     .filter((v) => !v.shared)
     .map((v) => v.volume);
-  await dockerExec(['volume', 'rm', '-f', ...ideVolumes]);
+  // The per-workbench toolchain caches (Gradle, #132) go the same way. They
+  // are found by prefix rather than from the yml, which may be gone already;
+  // a cache is rebuilt by the next build, so it is never backed up.
+  const cachePrefix = containerCacheVolumePrefix(opts.name);
+  const listed = await dockerExec([
+    'volume',
+    'ls',
+    '-q',
+    '--filter',
+    `name=${cachePrefix}`,
+  ]);
+  const cacheVolumes = listed.stdout
+    .split('\n')
+    .map((v) => v.trim())
+    .filter((v) => v.startsWith(cachePrefix));
+  await dockerExec(['volume', 'rm', '-f', ...ideVolumes, ...cacheVolumes]);
 
   // The service data volumes (ADR 0036) hold the databases, so unlike the
   // IDE volumes they are NOT deleted here: they get copied into the backup

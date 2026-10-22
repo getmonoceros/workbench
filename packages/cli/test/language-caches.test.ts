@@ -5,6 +5,7 @@ import {
   languageCacheVolumes,
   languageWorkspaceEnv,
 } from '../src/create/scaffold.js';
+import { LANGUAGE_CATALOG } from '../src/create/catalog.js';
 import type { CreateOptions } from '../src/create/types.js';
 
 // Language toolchain caches (issue #71): a compiler's content-addressed caches
@@ -18,7 +19,7 @@ const base: CreateOptions = {
 
 describe('languageCacheVolumes', () => {
   it('gives Go a shared build and module cache, named without the container', () => {
-    expect(languageCacheVolumes(['go:latest'], '1.6.2')).toEqual([
+    expect(languageCacheVolumes('sandbox', ['go:latest'], '1.6.2')).toEqual([
       {
         volume: 'monoceros-cache-go-go-build',
         target: '/home/node/.cache/go-build',
@@ -37,12 +38,58 @@ describe('languageCacheVolumes', () => {
   it('is gated on the runtime that pre-creates the dirs node-owned', () => {
     // 1.6.1 has no node-owned cache dirs, so a fresh volume would initialise
     // root-owned and the toolchain could not write into it.
-    expect(languageCacheVolumes(['go'], '1.6.1')).toEqual([]);
-    expect(languageCacheVolumes(['go'], undefined)).toEqual([]);
+    expect(languageCacheVolumes('sandbox', ['go'], '1.6.1')).toEqual([]);
+    expect(languageCacheVolumes('sandbox', ['go'], undefined)).toEqual([]);
   });
 
   it('contributes nothing for a language that declares no caches', () => {
-    expect(languageCacheVolumes(['node:24.18.0'], '1.6.2')).toEqual([]);
+    expect(languageCacheVolumes('sandbox', ['python'], '1.11.0')).toEqual([]);
+  });
+
+  // #132: the first build after every apply downloaded Gradle and all
+  // dependencies again, because ~/.gradle lived in the container layer.
+  it('keeps Maven and npm machine-wide and Gradle per workbench', () => {
+    expect(
+      languageCacheVolumes('ssp-cs', ['java', 'node:22'], '1.11.0'),
+    ).toEqual([
+      {
+        volume: 'monoceros-cache-java-repository',
+        target: '/home/node/.m2/repository',
+        minRuntime: '1.11.0',
+        shared: true,
+      },
+      {
+        volume: 'monoceros-ssp-cs-cache-java-gradle',
+        target: '/home/node/.gradle',
+        minRuntime: '1.11.0',
+      },
+      {
+        volume: 'monoceros-cache-node-npm',
+        target: '/home/node/.npm',
+        minRuntime: '1.11.0',
+        shared: true,
+      },
+    ]);
+  });
+
+  it('every language with a cache path names the runtime that pre-creates it', () => {
+    // Without one, languageCacheVolumes skips the language and its cache is
+    // silently never mounted.
+    for (const [name, entry] of Object.entries(LANGUAGE_CATALOG)) {
+      const paths = [
+        ...(entry.sharedCachePaths ?? []),
+        ...(entry.containerCachePaths ?? []),
+      ];
+      if (paths.length > 0) expect(entry.cacheMinRuntime, name).toBeDefined();
+    }
+  });
+
+  it('gates each language on its own runtime, so Go keeps its caches on 1.10', () => {
+    const volumes = languageCacheVolumes('x', ['go', 'java', 'node'], '1.10.1');
+    expect(volumes.map((v) => v.target)).toEqual([
+      '/home/node/.cache/go-build',
+      '/home/node/.cache/go-mod',
+    ]);
   });
 });
 
@@ -91,11 +138,25 @@ describe('scaffold wiring', () => {
     expect(yaml).toContain('GOBIN: "/home/node/go/bin"');
   });
 
+  it('declares the per-workbench Gradle volume by name in compose', () => {
+    const yaml = buildComposeYaml({
+      ...base,
+      name: 'ssp-cs',
+      runtimeVersion: '1.11.0',
+      languages: ['java'],
+    });
+    expect(yaml).toContain(
+      '- monoceros-ssp-cs-cache-java-gradle:/home/node/.gradle',
+    );
+    expect(yaml).toContain('    name: monoceros-ssp-cs-cache-java-gradle');
+    expect(yaml).toContain('    name: monoceros-cache-java-repository');
+  });
+
   it('leaves a workbench without Go untouched', () => {
     const dc = buildDevcontainerJson({
       ...base,
       runtimeVersion: '1.6.2',
-      languages: ['node'],
+      languages: ['python'],
     });
     if (!('runArgs' in dc)) throw new Error('expected image-mode shape');
     expect((dc.mounts ?? []).join('\n')).not.toContain('monoceros-cache-');

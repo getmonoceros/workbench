@@ -281,6 +281,13 @@ export interface LanguageEntry {
    * once. See descriptor.ts.
    */
   sharedCachePaths?: readonly string[];
+  /**
+   * Absolute in-container dirs backed by a volume per workbench — a cache
+   * that survives `apply` but cannot be shared (Gradle). See descriptor.ts.
+   */
+  containerCachePaths?: readonly string[];
+  /** The runtime that pre-creates the cache paths node-owned. */
+  cacheMinRuntime?: string;
   /** Literal env injected into the workspace container for this language. */
   workspaceEnv?: Readonly<Record<string, string>>;
 }
@@ -380,6 +387,14 @@ export const LANGUAGE_CATALOG: Readonly<Record<string, LanguageEntry>> =
             : {}),
           ...(c.descriptor.language!.sharedCachePaths
             ? { sharedCachePaths: c.descriptor.language!.sharedCachePaths }
+            : {}),
+          ...(c.descriptor.language!.containerCachePaths
+            ? {
+                containerCachePaths: c.descriptor.language!.containerCachePaths,
+              }
+            : {}),
+          ...(c.descriptor.language!.cacheMinRuntime
+            ? { cacheMinRuntime: c.descriptor.language!.cacheMinRuntime }
             : {}),
           ...(c.descriptor.language!.workspaceEnv
             ? { workspaceEnv: c.descriptor.language!.workspaceEnv }

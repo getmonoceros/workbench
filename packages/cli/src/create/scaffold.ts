@@ -513,37 +513,61 @@ export function languageWorkspaceEnv(
  * Shared is safe here and only here: these caches are keyed by content, built
  * for concurrent use by parallel builds, and identical across containers by
  * construction. Anything a project's version pin can differ on (installed tool
- * binaries) stays per container via `persistentHomePaths`.
+ * binaries) stays per container via `persistentHomePaths`. A cache the tool
+ * locks between processes that must reach each other (Gradle) gets a volume
+ * per workbench instead (`containerCachePaths`, #132): it survives `apply`
+ * all the same, and `monoceros remove` deletes it.
  *
- * Gated on the runtime that pre-creates the targets node-owned: a fresh named
- * volume inherits the mountpoint's ownership from the image, and a root-owned
- * cache dir is unwritable for the `node` user - the same trap the IDE-state
- * volumes had (ADR 0015).
+ * Gated per language on the runtime that pre-creates its targets node-owned
+ * (`cacheMinRuntime`): a fresh named volume inherits the mountpoint's
+ * ownership from the image, and a root-owned cache dir is unwritable for the
+ * `node` user - the same trap the IDE-state volumes had (ADR 0015).
  */
 export function languageCacheVolumes(
+  name: string,
   languages: readonly string[],
   version?: string,
 ): IdeStateVolume[] {
-  if (!version || compareRuntimeVersions(version, '1.6.2') < 0) return [];
+  if (!version) return [];
   const out: IdeStateVolume[] = [];
   const seen = new Set<string>();
   for (const spec of languages) {
     const parsed = parseLanguageSpec(spec);
     const entry = parsed ? LANGUAGE_CATALOG[parsed.name] : undefined;
+    const minRuntime = entry?.cacheMinRuntime;
+    if (!minRuntime || compareRuntimeVersions(version, minRuntime) < 0) {
+      continue;
+    }
+    const cache = (target: string) =>
+      `${parsed!.name}-${path.basename(target).replace(/^\./, '')}`;
     for (const target of entry?.sharedCachePaths ?? []) {
       if (seen.has(target)) continue;
       seen.add(target);
       out.push({
         // Machine-wide, so the name carries the language and the cache, never
         // the container name. `monoceros remove` skips shared volumes.
-        volume: `monoceros-cache-${parsed!.name}-${path.basename(target)}`,
+        volume: `monoceros-cache-${cache(target)}`,
         target,
-        minRuntime: '1.6.2',
+        minRuntime,
         shared: true,
+      });
+    }
+    for (const target of entry?.containerCachePaths ?? []) {
+      if (seen.has(target)) continue;
+      seen.add(target);
+      out.push({
+        volume: `${containerCacheVolumePrefix(name)}${cache(target)}`,
+        target,
+        minRuntime,
       });
     }
   }
   return out;
+}
+
+/** Every per-workbench cache volume starts with this; `remove` deletes by it. */
+export function containerCacheVolumePrefix(name: string): string {
+  return `monoceros-${name}-cache-`;
 }
 
 /**
@@ -1122,7 +1146,7 @@ export function buildDevcontainerJson(
   // break on an image without the node-owned dirs.
   const ideMounts = [
     ...ideStateVolumesForRuntime(opts.name, opts.runtimeVersion),
-    ...languageCacheVolumes(opts.languages, opts.runtimeVersion),
+    ...languageCacheVolumes(opts.name, opts.languages, opts.runtimeVersion),
   ].map((v) => `source=${v.volume},target=${v.target},type=volume`);
   const mounts: string[] = [...homeMounts, ...ideMounts];
   const mountsField = mounts.length > 0 ? { mounts } : {};
@@ -1413,7 +1437,7 @@ export function buildComposeYaml(
 
   const ideVolumes = [
     ...ideStateVolumesForRuntime(opts.name, opts.runtimeVersion),
-    ...languageCacheVolumes(opts.languages, opts.runtimeVersion),
+    ...languageCacheVolumes(opts.name, opts.languages, opts.runtimeVersion),
   ];
 
   lines.push('  workspace:');

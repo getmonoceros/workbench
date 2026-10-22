@@ -133,11 +133,14 @@ COPY egress-allow.default.txt /etc/monoceros/egress-allow.default.txt
 # root-owned - which breaks every tool that writes elsewhere under them
 # (e.g. opencode's ~/.local/share/opencode, which made its feature build
 # fail at the `opencode --version` self-check).
-# The language cache dirs below exist for the same reason: a shared,
-# machine-wide volume per compiler cache (Go's build + module cache today),
-# which must initialise node-owned or the toolchain cannot write into it.
-# Declared in the language descriptor (`sharedCachePaths`), mounted only on
-# a runtime that pre-creates them.
+# The language cache dirs below exist for the same reason: a volume per
+# toolchain cache (Go's build + module cache, Maven's repository and npm's
+# cache machine-wide, Gradle's home per workbench), which must initialise
+# node-owned or the toolchain cannot write into it. Declared in the language
+# descriptor (`sharedCachePaths`, `containerCachePaths`), mounted only on a
+# runtime at or above the language's `cacheMinRuntime`. ~/.m2 itself is
+# node-owned too: the Maven wrapper keeps its distributions next to the
+# mounted repository.
 RUN mkdir -p /home/node/.vscode-server/extensions \
              /home/node/.vscode-server/data/User \
              /home/node/.vscodium-server/extensions \
@@ -149,9 +152,13 @@ RUN mkdir -p /home/node/.vscode-server/extensions \
              /home/node/.cache/go-build \
              /home/node/.cache/go-mod \
              /home/node/go/bin \
+             /home/node/.m2/repository \
+             /home/node/.gradle \
+             /home/node/.npm \
  && chown -R node:node /home/node/.vscode-server /home/node/.vscodium-server \
       /home/node/.cache /home/node/.config /home/node/.local \
-      /home/node/.claude /home/node/go
+      /home/node/.claude /home/node/go \
+      /home/node/.m2 /home/node/.gradle /home/node/.npm
 
 # Put the per-container GOBIN ahead of the Go feature's own /go/bin, so a
 # tool a project pins and installs itself wins over the one the feature

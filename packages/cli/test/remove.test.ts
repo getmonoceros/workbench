@@ -171,6 +171,37 @@ describe('runRemove', () => {
     expect(volumeRm).not.toContain('monoceros-jetbrains-dist');
   });
 
+  it('deletes its own toolchain caches, not the shared ones or another workbench’s (#132)', async () => {
+    await seedContainer('sandbox');
+    const dockerCalls: string[][] = [];
+    const capture = captureDockerExec(dockerCalls);
+    await runRemove({
+      name: 'sandbox',
+      monocerosHome: home,
+      dockerExec: async (args) =>
+        args[0] === 'volume' && args[1] === 'ls'
+          ? {
+              exitCode: 0,
+              stderr: '',
+              // Docker's name filter matches substrings, so a neighbour whose
+              // name contains ours comes back too.
+              stdout:
+                'monoceros-sandbox-cache-java-gradle\nmonoceros-x-monoceros-sandbox-cache-java-gradle\n',
+            }
+          : capture(args),
+      proxyDocker: captureDockerExec([]),
+      logger: silentLogger,
+    });
+    const volumeRm = dockerCalls.find(
+      (c) => c[0] === 'volume' && c[1] === 'rm',
+    )!;
+    expect(volumeRm).toContain('monoceros-sandbox-cache-java-gradle');
+    expect(volumeRm).not.toContain(
+      'monoceros-x-monoceros-sandbox-cache-java-gradle',
+    );
+    expect(volumeRm).not.toContain('monoceros-cache-java-repository');
+  });
+
   it('copies the service data volumes into the backup BEFORE deleting them (ADR 0036)', async () => {
     await seedContainer('sandbox');
     // The compose file is the source of truth for which data volumes exist.

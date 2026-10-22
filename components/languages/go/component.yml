@@ -19,6 +19,7 @@ language:
   # Per container, NOT shared: two workbenches may pin different versions of
   # the same tool, and one directory holds one file per name.
   persistentHomePaths: [go/bin]
+  cacheMinRuntime: 1.6.2
   workspaceEnv:
     GOMODCACHE: /home/node/.cache/go-mod
     GOBIN: /home/node/go/bin

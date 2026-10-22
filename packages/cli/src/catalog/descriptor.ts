@@ -174,6 +174,26 @@ export const LanguageBlockSchema = z.object({
    */
   sharedCachePaths: z.array(z.string().min(1)).optional(),
   /**
+   * Absolute in-container directories backed by a docker volume PER
+   * WORKBENCH: a cache that must survive `apply` but cannot be shared,
+   * because the tool coordinates access to it between processes that can
+   * reach each other, which two containers cannot (Gradle's `~/.gradle`).
+   * A volume, not a home bind, so the many small files stay off the host
+   * file sharing. Deleted by `monoceros remove`, never backed up.
+   */
+  containerCachePaths: z.array(z.string().min(1)).optional(),
+  /**
+   * The runtime that pre-creates this language's cache paths node-owned. A
+   * fresh volume takes the ownership of the image directory it is mounted
+   * on, so on an older runtime it would come up root-owned and the toolchain
+   * could not write into it: the cache volumes are mounted from this version
+   * on. Required when the language declares any cache path.
+   */
+  cacheMinRuntime: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+$/)
+    .optional(),
+  /**
    * Named runtime env injected into the workspace container (compose
    * `environment:` / image-mode `containerEnv`), the language-side sibling of
    * a feature's `workspaceEnv`. Plain literal values, no `${…}` templating:

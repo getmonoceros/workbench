@@ -7,3 +7,9 @@ language:
   builtin: true
   defaultVersion: 22
   versions: [lts, latest, 22, 20]
+  # npm's download cache is content-addressed and safe for concurrent use, so
+  # one copy serves every workbench and survives `apply`. node_modules itself
+  # lives in the project checkout and needs nothing here.
+  sharedCachePaths:
+    - /home/node/.npm
+  cacheMinRuntime: 1.11.0
