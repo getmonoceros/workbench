@@ -48,6 +48,12 @@ export interface GitUser {
   email: string;
 }
 
+/** Memory (`512m`, `2g`) and CPU limit of one container (ADR 0062). */
+export interface ResourceLimits {
+  memory?: string;
+  cpus?: number;
+}
+
 /** Healthcheck for a compose service (mirrors `ServiceHealthcheck`). */
 export interface ServiceHealthcheck {
   /** Shell-form (string) or exec-form (`["CMD", …]`), as in compose. */
@@ -92,6 +98,12 @@ export interface ResolvedService {
   restart?: string;
   command?: string;
   /**
+   * Enforced memory/CPU limit (ADR 0062). From the yml as parsed; apply
+   * replaces it with the effective limit, the catalog default filled in when
+   * the machine enforces defaults. Becomes `deploy.resources.limits`.
+   */
+  resources?: ResourceLimits;
+  /**
    * Connection-env templates keyed by logical SUFFIX (`URL`, `HOST`,
    * `PORT`, `USER`, `PASSWORD`, `DB`). At apply, `serviceConnectionEnv`
    * emits them into the workspace as `<UPPER(name)>_<SUFFIX>` (e.g.
@@ -115,6 +127,12 @@ export interface CreateOptions {
    */
   languageOptions?: Record<string, Record<string, string | number | boolean>>;
   services: ResolvedService[];
+  /**
+   * Enforced memory/CPU limit of the workspace container (ADR 0062), same
+   * lifecycle as `ResolvedService.resources`. Compose mode writes it as
+   * `deploy.resources.limits`, image mode as `--memory`/`--cpus` run args.
+   */
+  resources?: ResourceLimits;
   /**
    * Pinned runtime-image version (e.g. `1.1.0`), from the yml's
    * `runtimeVersion`. The scaffold resolves it to a concrete image ref

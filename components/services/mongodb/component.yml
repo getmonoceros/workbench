@@ -5,6 +5,9 @@ description: 'Document database with seeded dev credentials and a readiness heal
 service:
   image: mongo:9
   defaultPort: 27017
+  resources:
+    memory: 1g
+    cpus: 1
   dataMount: /data/db
   healthcheck:
     test: [CMD, mongosh, --quiet, --eval, 'db.adminCommand({ ping: 1 }).ok']

@@ -5,6 +5,9 @@ description: 'Relational database with seeded dev credentials and a readiness he
 service:
   image: postgres:18
   defaultPort: 5432
+  resources:
+    memory: 512m
+    cpus: 1
   dataMount: /var/lib/postgresql
   healthcheck:
     test: [CMD, pg_isready, -U, '${POSTGRES_USER}', -d, '${POSTGRES_DB}']

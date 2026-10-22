@@ -75,6 +75,7 @@ export function solutionConfigToCreateOptions(
     // survive untouched here — apply interpolates them against
     // <name>.env afterwards.
     services: config.services.map(resolveService),
+    ...(config.resources ? { resources: { ...config.resources } } : {}),
   };
 
   if (Object.keys(languageOptions).length > 0) {

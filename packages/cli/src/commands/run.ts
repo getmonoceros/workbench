@@ -1,8 +1,9 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
-import { containerDir } from '../config/paths.js';
+import { containerConfigPath, containerDir } from '../config/paths.js';
 import { runInContainer } from '../devcontainer/run.js';
 import { getInnerArgs } from '../inner-args.js';
+import { explainExit137 } from '../limits/index.js';
 
 export const runCommand = defineCommand({
   meta: {
@@ -47,6 +48,15 @@ export const runCommand = defineCommand({
         ...(args.in ? { cwd: args.in } : {}),
         ...(args.yes ? { yes: true } : {}),
       });
+      // 137 is a SIGKILL. When the kernel sent it for memory, say so and
+      // name the limit, instead of leaving a bare exit code (ADR 0062).
+      if (exitCode === 137) {
+        const why = await explainExit137(containerDir(args.name), {
+          name: args.name,
+          ymlPath: containerConfigPath(args.name),
+        });
+        if (why) consola.error(why);
+      }
       process.exit(exitCode);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));

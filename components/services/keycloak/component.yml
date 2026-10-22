@@ -6,6 +6,9 @@ documentationURL: https://www.keycloak.org/
 service:
   image: quay.io/keycloak/keycloak:26.7
   defaultPort: 8080
+  resources:
+    memory: 1g
+    cpus: 1
   # A login server has to be reachable from the device that logs in, and the
   # `--proxy-headers=xforwarded` below is what makes the issuer follow that
   # address. Same port as defaultPort here: Keycloak speaks http on 8080.

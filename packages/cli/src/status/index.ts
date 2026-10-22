@@ -8,7 +8,7 @@ import {
   findUnmountedServiceConfigs,
   type UnmountedServiceConfig,
 } from '../check/index.js';
-import type { ResolvedService } from '../create/types.js';
+import type { ResolvedService, ResourceLimits } from '../create/types.js';
 import {
   realDockerLookup,
   type DockerLookupExec,
@@ -19,6 +19,16 @@ import {
   type ProxyUrl,
 } from '../proxy/dynamic.js';
 import { httpServices } from '../config/http-services.js';
+import {
+  effectiveLimits,
+  findOomKills,
+  formatOomKill,
+  totalMemoryBytes,
+  WORKSPACE,
+  type ContainerLimit,
+  type OomKill,
+} from '../limits/index.js';
+import { memoryBytes } from '../util/memory.js';
 import { type Palette } from '../util/format.js';
 
 /**
@@ -106,6 +116,13 @@ export interface StatusModel {
   appStateNote?: string;
   ports: ProxyUrl[];
   builtIn: { languages: string[]; features: string[] };
+  /** Whether this machine enforces the catalog default limits (ADR 0062). */
+  enforceDefaultLimits: boolean;
+  /** Effective limit per container, workspace first; from the yml, so known before apply. */
+  limits: ContainerLimit[];
+  /** Containers killed for memory since they started. */
+  oomKills: OomKill[];
+  ymlPath: string;
 }
 
 export interface GatherOptions {
@@ -147,6 +164,7 @@ export async function gatherStatus(
   let declaredServices: { name: string; port?: number }[] = [];
   let resolvedServices: ResolvedService[] = [];
   let declaredPorts: number[] = [];
+  let workspaceResources: ResourceLimits | undefined;
   let configured = false;
   try {
     const parsed = await readConfig(containerConfigPath(name, opts.home));
@@ -161,6 +179,7 @@ export async function gatherStatus(
     }));
     resolvedServices = [...createOpts.services];
     declaredPorts = createOpts.ports ?? [];
+    workspaceResources = createOpts.resources;
   } catch {
     // No yml (or unreadable) — render what we can; `configured` stays false.
   }
@@ -199,12 +218,13 @@ export async function gatherStatus(
   // Effective Traefik host port, read once: both the service routes below and
   // the Ports section further down spell it out when it is not the default 80.
   let hostPort = 80;
+  let enforceDefaultLimits = false;
   try {
-    ({ hostPort } = await readMachineSettings({
+    ({ hostPort, enforceDefaultLimits } = await readMachineSettings({
       ...(opts.home ? { monocerosHome: opts.home } : {}),
     }));
   } catch {
-    // default host port
+    // default host port, defaults not enforced
   }
 
   // ── services (by compose project label; works stopped via `ps -a`) ──
@@ -326,6 +346,18 @@ export async function gatherStatus(
 
   // ── ports (proxy URLs, static from the yml) ─────────────────────────
   const ports = proxyUrlsFor(name, declaredPorts, hostPort);
+
+  // ── memory limits (ADR 0062) ────────────────────────────────────────
+  const limits = configured
+    ? effectiveLimits(
+        {
+          ...(workspaceResources ? { resources: workspaceResources } : {}),
+          services: resolvedServices,
+        },
+        enforceDefaultLimits,
+      )
+    : [];
+  const oomKills = container.exists ? await findOomKills(root, docker) : [];
   return {
     name,
     configured,
@@ -336,6 +368,10 @@ export async function gatherStatus(
     ...(appStateNote ? { appStateNote } : {}),
     ports,
     builtIn: { languages, features },
+    enforceDefaultLimits,
+    limits,
+    oomKills,
+    ymlPath: containerConfigPath(name, opts.home),
   };
 }
 
@@ -562,11 +598,33 @@ function renderBuiltIn(p: Palette, m: StatusModel): string[] {
   return out;
 }
 
+/** One warning line per container killed for memory, with its limit and the fix. */
+function oomLines(
+  p: Palette,
+  m: StatusModel,
+  kills: readonly OomKill[],
+): string[] {
+  return kills.map(
+    (k) =>
+      `  ${p.yellow(`⚠ ${formatOomKill(k, { name: m.name, ymlPath: m.ymlPath })}`)}`,
+  );
+}
+
 /** Full-stack status block. The caller adds framing newlines. */
 export function renderStatus(m: StatusModel, p: Palette): string {
   return [
     ...renderContainer(p, m),
+    ...oomLines(
+      p,
+      m,
+      m.oomKills.filter((k) => k.container === WORKSPACE),
+    ),
     ...renderServices(p, m),
+    ...oomLines(
+      p,
+      m,
+      m.oomKills.filter((k) => k.container !== WORKSPACE),
+    ),
     ...renderApps(p, m),
     ...renderPorts(p, m),
     ...renderBuiltIn(p, m),
@@ -626,5 +684,54 @@ export function renderService(
     row(p, liveMarker(p, s.running), s.name, marked, s.name.length),
     // Narrowing to one service must not drop the config it never reads.
     ...unmountedConfigLines(p, m.name, s.unmountedConfigs),
+    ...oomLines(
+      p,
+      m,
+      m.oomKills.filter((k) => k.container === name),
+    ),
   ].join('\n');
+}
+
+/**
+ * `status --json`: the effective limit of every container, so a host can
+ * decide whether a workbench still fits before it runs `apply` (ADR 0062).
+ * Works before the first apply; `running` and `oomKilled` are then false.
+ * A figure is `null` where the container runs without that limit.
+ */
+export interface StatusJson {
+  name: string;
+  configured: boolean;
+  enforceDefaultLimits: boolean;
+  /** Sum of the memory limits; containers without one count 0. */
+  memoryBytes: number;
+  containers: {
+    name: string;
+    memory: string | null;
+    memoryBytes: number | null;
+    cpus: number | null;
+    running: boolean;
+    oomKilled: boolean;
+  }[];
+}
+
+export function statusJson(m: StatusModel): StatusJson {
+  const running = new Map<string, boolean>([
+    [WORKSPACE, m.container.running],
+    ...m.services.map((s) => [s.name, s.running] as const),
+  ]);
+  const oom = new Set(m.oomKills.map((k) => k.container));
+  return {
+    name: m.name,
+    configured: m.configured,
+    enforceDefaultLimits: m.enforceDefaultLimits,
+    memoryBytes: totalMemoryBytes(m.limits),
+    containers: m.limits.map((l) => ({
+      name: l.name,
+      memory: l.memory ?? null,
+      memoryBytes: l.memory !== undefined ? memoryBytes(l.memory) : null,
+      cpus: l.cpus ?? null,
+      running: running.get(l.name) ?? false,
+      oomKilled: oom.has(l.name),
+    })),
+  };
 }

@@ -519,6 +519,12 @@ export interface ServiceEntry {
    */
   deferStart?: boolean;
   /**
+   * Default memory and CPU limit (ADR 0062), enforced only when the machine
+   * switch is on. Descriptor-only, never written into the yml; looked up per
+   * instance by `curatedServiceResources`.
+   */
+  resources?: Readonly<{ memory: string; cpus: number }>;
+  /**
    * Agent-facing guidance lines from the descriptor's `briefing:`, rendered
    * under the service in the generated AGENTS.md (see briefing/agents-md.ts).
    * The single source for what the in-container agent is told about a service.
@@ -601,6 +607,7 @@ export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
           ...(svc.exampleVolumes ? { exampleVolumes: svc.exampleVolumes } : {}),
           ...(svc.exampleEnv ? { exampleEnv: svc.exampleEnv } : {}),
           ...(svc.deferStart ? { deferStart: true } : {}),
+          ...(svc.resources ? { resources: svc.resources } : {}),
           ...(c.descriptor.briefing && c.descriptor.briefing.length > 0
             ? { briefing: c.descriptor.briefing }
             : {}),
@@ -645,6 +652,22 @@ export const DEFERRED_SERVICE_PROFILE = 'monoceros-deferred';
  */
 export function serviceDefersStart(name: string): boolean {
   return SERVICE_CATALOG[name]?.deferStart === true;
+}
+
+/**
+ * The catalog's default limit for one service instance (ADR 0062). By name
+ * first, so `postgres` finds its descriptor; then by exact image, so an
+ * instance added with `--as analytics` still finds the postgres default.
+ * Undefined for a service no descriptor matches, or one without a default.
+ */
+export function curatedServiceResources(svc: {
+  name: string;
+  image: string;
+}): Readonly<{ memory: string; cpus: number }> | undefined {
+  const byName = SERVICE_CATALOG[svc.name];
+  if (byName) return byName.resources;
+  return Object.values(SERVICE_CATALOG).find((e) => e.image === svc.image)
+    ?.resources;
 }
 
 /**
@@ -804,6 +827,7 @@ export function resolveService(entry: ServiceObject): ResolvedService {
     ...(entry.healthcheck ? { healthcheck: entry.healthcheck } : {}),
     ...(entry.restart ? { restart: entry.restart } : {}),
     ...(entry.command ? { command: entry.command } : {}),
+    ...(entry.resources ? { resources: { ...entry.resources } } : {}),
     ...(entry.connectionEnv
       ? { connectionEnv: { ...entry.connectionEnv } }
       : {}),

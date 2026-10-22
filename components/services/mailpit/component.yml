@@ -5,6 +5,9 @@ description: 'SMTP catcher for local dev, so apps send mail to it and nothing le
 service:
   image: axllent/mailpit:latest
   defaultPort: 1025
+  resources:
+    memory: 128m
+    cpus: 0.5
   # 8025, not the defaultPort: 1025 is SMTP, which is what the app dials and
   # what nobody opens in a browser. The web inbox is the part worth reaching.
   httpPort: 8025

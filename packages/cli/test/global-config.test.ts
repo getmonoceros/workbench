@@ -38,7 +38,11 @@ afterEach(async () => {
 
 describe('readMachineSettings', () => {
   it('falls back to the defaults without a global env', async () => {
-    expect(await read()).toEqual({ hostPort: 80, upgradeStaleDays: 30 });
+    expect(await read()).toEqual({
+      hostPort: 80,
+      upgradeStaleDays: 30,
+      enforceDefaultLimits: false,
+    });
     expect(notices).toEqual([]);
   });
 
@@ -47,7 +51,24 @@ describe('readMachineSettings', () => {
       envPath(),
       'MONOCEROS_HOST_PORT=8080\nMONOCEROS_UPGRADE_STALE_DAYS=14\n',
     );
-    expect(await read()).toEqual({ hostPort: 8080, upgradeStaleDays: 14 });
+    expect(await read()).toEqual({
+      hostPort: 8080,
+      upgradeStaleDays: 14,
+      enforceDefaultLimits: false,
+    });
+  });
+
+  it('reads the switch that enforces the default limits', async () => {
+    await writeFile(envPath(), 'MONOCEROS_ENFORCE_DEFAULT_LIMITS=True\n');
+    expect((await read()).enforceDefaultLimits).toBe(true);
+  });
+
+  // A typo must not silently leave an unattended host without limits.
+  it('rejects a switch value that is neither true nor false', async () => {
+    await writeFile(envPath(), 'MONOCEROS_ENFORCE_DEFAULT_LIMITS=yes\n');
+    await expect(read()).rejects.toThrow(
+      /MONOCEROS_ENFORCE_DEFAULT_LIMITS in .* must be true or false, got "yes"/,
+    );
   });
 
   it('treats a blank value as unset', async () => {
@@ -105,7 +126,11 @@ describe('migrating a legacy monoceros-config.yml', () => {
         '',
       ].join('\n'),
     );
-    expect(await read()).toEqual({ hostPort: 8080, upgradeStaleDays: 14 });
+    expect(await read()).toEqual({
+      hostPort: 8080,
+      upgradeStaleDays: 14,
+      enforceDefaultLimits: false,
+    });
 
     const env = await readFile(envPath(), 'utf8');
     expect(env).toMatch(/^MONOCEROS_HOST_PORT=8080$/m);

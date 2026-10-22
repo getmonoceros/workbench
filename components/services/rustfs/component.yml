@@ -5,6 +5,9 @@ description: 'S3-compatible object storage (MinIO-compatible API). S3 API on `ru
 service:
   image: rustfs/rustfs:latest
   defaultPort: 9000
+  resources:
+    memory: 512m
+    cpus: 1
   # 9001, not the defaultPort: 9000 is the S3 API that the app and the aws CLI
   # talk to, the console on 9001 is the part a human opens. Needs
   # RUSTFS_CONSOLE_ENABLE=true, see the option below.

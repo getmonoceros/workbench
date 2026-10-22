@@ -4,6 +4,7 @@ import {
   renderApp,
   renderService,
   renderStatus,
+  statusJson,
 } from '../status/index.js';
 import { colorsFor } from '../util/format.js';
 import { dispatch } from './_dispatch.js';
@@ -28,11 +29,25 @@ export const statusCommand = defineCommand({
         'Narrow to one app (a path under projects/ with .monoceros/launch.json) or one compose service (e.g. postgres). Omit for the whole stack.',
       required: false,
     },
+    json: {
+      type: 'boolean',
+      description:
+        'Print the effective memory and CPU limit of every container as JSON, also before the first apply. For a host that decides whether a workbench still fits.',
+    },
   },
   run({ args }) {
     const filter = typeof args.app === 'string' ? args.app : undefined;
     return dispatch(async () => {
+      if (args.json && filter) {
+        throw new Error(
+          '--json covers the whole workbench. Drop the app or service name.',
+        );
+      }
       const model = await gatherStatus(args.name);
+      if (args.json) {
+        process.stdout.write(`${JSON.stringify(statusJson(model), null, 2)}\n`);
+        return 0;
+      }
       // status output is a report → stdout, so colours drop out when piped.
       const p = colorsFor(process.stdout);
       let block: string;

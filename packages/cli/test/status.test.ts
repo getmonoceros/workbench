@@ -332,6 +332,10 @@ describe('renderStatus (hand-built model)', () => {
       appStateKnown: true,
       ports: [],
       builtIn: { languages: [], features: [] },
+      enforceDefaultLimits: false,
+      limits: [],
+      oomKills: [],
+      ymlPath: '/home/acme.yml',
     };
     const out = renderStatus(m, plain);
     expect(out).toContain('▸ bare');
@@ -374,6 +378,10 @@ describe('renderStatus (hand-built model)', () => {
       // reverse proxy looks like
       ports: [],
       builtIn: { languages: [], features: [] },
+      enforceDefaultLimits: false,
+      limits: [],
+      oomKills: [],
+      ymlPath: '/home/acme.yml',
     };
     const out = renderStatus(m, plain);
     // the address belongs to the service, so no Ports section appears

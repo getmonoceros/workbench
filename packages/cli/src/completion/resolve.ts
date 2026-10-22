@@ -862,6 +862,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   },
   status: {
     positionals: [containerName, appOrServiceCandidates],
+    flags: { '--json': { type: 'boolean' } },
   },
   check: { positionals: [containerName] },
   'list-apps': { positionals: [containerName] },

@@ -9,6 +9,10 @@ service:
   # arm64 Linux host it does not run at all. init, add-service and apply warn.
   architectures: [amd64]
   defaultPort: 1433
+  # SQL Server refuses to start with less than 2000 MB.
+  resources:
+    memory: 2g
+    cpus: 2
   dataMount: /var/opt/mssql
   # The image runs as uid 10001 and, unlike postgres and mysql, has no
   # root-started entrypoint that fixes the data dir's ownership. A fresh

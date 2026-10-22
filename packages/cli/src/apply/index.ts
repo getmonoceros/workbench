@@ -2,6 +2,16 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { consola } from 'consola';
 import { readMachineSettings } from '../config/global.js';
+import type { DockerLookupExec } from '../devcontainer/locate-running.js';
+import {
+  anyLimit,
+  applyEffectiveLimits,
+  dockerMemoryBytes,
+  findOomKills,
+  formatFitWarning,
+  formatLimits,
+  formatOomKill,
+} from '../limits/index.js';
 import { readConfig } from '../config/io.js';
 import {
   containerConfigPath,
@@ -240,6 +250,8 @@ export interface RunApplyOptions {
   featureTokenPrompt?: FeatureTokenPrompt;
   /** Override the docker exec used by the Traefik proxy lifecycle. */
   proxyDocker?: ProxyDockerExec;
+  /** Docker lookups for the memory limits: Docker's total, OOM kills. Tests inject. */
+  limitsDocker?: DockerLookupExec;
   /** Override `ssh-keygen` for the SSH attach point (ADR 0022). Tests stub this. */
   sshKeygen?: KeygenSpawn;
   /** Override the user `.ssh` dir for SSH attach config (ADR 0022). Tests inject a tmpdir. */
@@ -578,6 +590,28 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
 
   validateOptions(createOpts);
   logger.success(`yml validated ${dim(`(${prettyPath(ymlPath)})`)}`);
+
+  // Memory and CPU limits (ADR 0062): what the yml declares, plus the catalog
+  // defaults when this machine enforces them. Named here, before anything is
+  // built, so the figures are on screen even when they are not in the yml.
+  const limits = applyEffectiveLimits(
+    createOpts,
+    machine.enforceDefaultLimits,
+    {
+      ymlPath,
+      globalEnvPath: globalEnvPath(home),
+      home,
+    },
+  );
+  if (anyLimit(limits)) {
+    logger.info(`Limits: ${formatLimits(limits)}`);
+    const fit = formatFitWarning(
+      limits,
+      await dockerMemoryBytes(opts.limitsDocker),
+      ymlPath,
+    );
+    if (fit) (logger.warn ?? logger.info)(fit);
+  }
 
   // Refresh host git identity and HTTPS credentials before the
   // container teardown so they're in place when post-create.sh runs.
@@ -1209,6 +1243,17 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
           progressOut.write(`  ${line}\n`);
         }
         if (tailLines.length > 0) progressOut.write('\n');
+      }
+    }
+
+    // A container the kernel killed for memory, named with its limit instead
+    // of a bare exit 137 (ADR 0062). Looked for when a limit is set or the
+    // apply failed: without either, an OOM kill is not this apply's news.
+    if (anyLimit(limits) || exitCode !== 0) {
+      for (const kill of await findOomKills(targetDir, opts.limitsDocker)) {
+        (logger.warn ?? logger.info)(
+          formatOomKill(kill, { name: opts.name, ymlPath }),
+        );
       }
     }
 

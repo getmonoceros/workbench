@@ -18,12 +18,19 @@ export const DEFAULT_PROXY_HOST_PORT = 80;
 
 export const HOST_PORT_VAR = 'MONOCEROS_HOST_PORT';
 export const UPGRADE_STALE_DAYS_VAR = 'MONOCEROS_UPGRADE_STALE_DAYS';
+export const ENFORCE_DEFAULT_LIMITS_VAR = 'MONOCEROS_ENFORCE_DEFAULT_LIMITS';
 
 export interface MachineSettings {
   /** Host port the Traefik singleton binds (ADR 0007). */
   hostPort: number;
   /** Days after the last `monoceros upgrade` before apply nudges (ADR 0018). */
   upgradeStaleDays: number;
+  /**
+   * Enforce the catalog's default memory/CPU limits on every container that
+   * declares none (ADR 0062). Off by default; a host that runs workbenches
+   * unattended turns it on.
+   */
+  enforceDefaultLimits: boolean;
 }
 
 export interface ReadMachineSettingsOptions {
@@ -63,7 +70,22 @@ export async function readMachineSettings(
       fallback: DEFAULT_UPGRADE_STALE_DAYS,
       min: 1,
     }),
+    enforceDefaultLimits: boolSetting(env, ENFORCE_DEFAULT_LIMITS_VAR, envPath),
   };
+}
+
+/** `true`/`false` (any case); unset or empty is `false`. */
+function boolSetting(
+  env: Record<string, string>,
+  key: string,
+  envPath: string,
+): boolean {
+  const raw = env[key]?.trim().toLowerCase() ?? '';
+  if (raw === '' || raw === 'false') return false;
+  if (raw === 'true') return true;
+  throw new Error(
+    `${key} in ${prettyPath(envPath)} must be true or false, got "${env[key]}".`,
+  );
 }
 
 function intSetting(

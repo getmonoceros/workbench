@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MEMORY_RE, MIN_MEMORY_BYTES, memoryBytes } from '../util/memory.js';
 
 /**
  * Shape validation for a Monoceros solution-config yml. Catalog
@@ -370,6 +371,31 @@ const ServiceEnvValueSchema = z
   .union([z.string(), z.number(), z.boolean(), z.null()])
   .transform((v) => (v === null ? '' : String(v)));
 
+// Memory and CPU limit of one container (ADR 0062). A figure written here is
+// enforced on every apply; the catalog defaults are not written here at all.
+export const ResourceMemorySchema = z
+  .string()
+  .regex(
+    MEMORY_RE,
+    "Invalid memory. Use a number with a unit, like '512m' or '2g'.",
+  )
+  .refine((v) => memoryBytes(v) >= MIN_MEMORY_BYTES, {
+    message: 'Memory must be at least 6m, the smallest limit Docker accepts.',
+  });
+export const ResourceCpusSchema = z
+  .number()
+  .positive('cpus must be greater than 0, e.g. 0.5 or 2.');
+
+export const ResourcesSchema = z
+  .object({
+    memory: ResourceMemorySchema.optional(),
+    cpus: ResourceCpusSchema.optional(),
+  })
+  .strict()
+  .refine((r) => r.memory !== undefined || r.cpus !== undefined, {
+    message: 'resources needs memory, cpus, or both.',
+  });
+
 export const ServiceHealthcheckSchema = z.object({
   // Compose accepts both forms and they differ semantically:
   //   - string         → run via the shell (CMD-SHELL)
@@ -467,6 +493,7 @@ export const ServiceObjectSchema = z.object({
   healthcheck: ServiceHealthcheckSchema.optional(),
   restart: z.enum(SERVICE_RESTART_VALUES).optional(),
   command: z.string().optional(),
+  resources: ResourcesSchema.optional(),
   // Connection-env templates keyed by logical SUFFIX (URL/HOST/PORT/USER/
   // PASSWORD/DB). Baked in by `expandCuratedService`; emitted into the
   // workspace as `<UPPER(name)>_<SUFFIX>` at apply (ADR 0021). `${host}`/
@@ -701,6 +728,8 @@ export const SolutionConfigSchema = z
           ),
       )
       .default([]),
+    // The workspace container's limit; each service carries its own.
+    resources: ResourcesSchema.optional(),
     services: z.array(ServiceObjectSchema).default([]),
     mcpServers: z.array(McpEntrySchema).default([]),
     repos: z.array(RepoEntrySchema).default([]),
@@ -749,6 +778,7 @@ export type PluginEntry = z.infer<typeof PluginEntrySchema>;
 export type McpEntry = z.infer<typeof McpEntrySchema>;
 export type ServiceObject = z.infer<typeof ServiceObjectSchema>;
 export type ServiceHealthcheck = z.infer<typeof ServiceHealthcheckSchema>;
+export type Resources = z.infer<typeof ResourcesSchema>;
 export type RepoEntry = z.infer<typeof RepoEntrySchema>;
 export type GitUser = z.infer<typeof GitUserSchema>;
 export type PortEntry = z.infer<typeof PortEntrySchema>;

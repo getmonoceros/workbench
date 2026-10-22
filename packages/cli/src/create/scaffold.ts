@@ -32,7 +32,12 @@ import {
   serviceDefersStart,
   DEFERRED_SERVICE_PROFILE,
 } from './catalog.js';
-import type { CreateOptions, RepoEntry, ResolvedService } from './types.js';
+import type {
+  CreateOptions,
+  RepoEntry,
+  ResolvedService,
+  ResourceLimits,
+} from './types.js';
 
 // Debian/Ubuntu apt package name rules: start with alphanumeric, then
 // alphanumerics + `.+-` are allowed. We intentionally don't allow shell
@@ -255,6 +260,7 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
       ? { languageOptions: opts.languageOptions }
       : {}),
     services,
+    ...(opts.resources ? { resources: opts.resources } : {}),
     ...(aptPackages.length > 0 ? { aptPackages } : {}),
     ...(features && Object.keys(features).length > 0 ? { features } : {}),
     ...(installUrls && installUrls.length > 0 ? { installUrls } : {}),
@@ -1181,6 +1187,14 @@ export function buildDevcontainerJson(
   if (sshBridgePort !== null) {
     runArgs.push('-p', `127.0.0.1:${sshBridgePort}:${sshBridgePort}`);
   }
+  // The workspace limit (ADR 0062). Image mode has no compose file to carry
+  // `deploy.resources`, so it goes on the run args.
+  if (opts.resources?.memory !== undefined) {
+    runArgs.push(`--memory=${opts.resources.memory}`);
+  }
+  if (opts.resources?.cpus !== undefined) {
+    runArgs.push(`--cpus=${opts.resources.cpus}`);
+  }
 
   // Run the image's own ENTRYPOINT + CMD as PID 1 instead of devcontainer-cli's
   // keep-alive override, so the entrypoint's sshd bring-up fires on every
@@ -1426,6 +1440,7 @@ export function buildComposeYaml(
     lines.push('    ports:');
     lines.push(`      - "127.0.0.1:${sshBridgePort}:${sshBridgePort}"`);
   }
+  lines.push(...composeLimitLines(opts.resources));
   lines.push('    volumes:');
   lines.push(`      - ..:/workspaces/${opts.name}:cached`);
   // Per-feature persistent home subpaths (dirs and files alike).
@@ -1504,6 +1519,7 @@ export function buildComposeYaml(
     if (svc.command !== undefined) {
       lines.push(`    command: ${composeScalar(svc.command)}`);
     }
+    lines.push(...composeLimitLines(svc.resources));
     const envKeys = Object.keys(svc.env);
     if (envKeys.length > 0) {
       lines.push('    environment:');
@@ -1554,6 +1570,28 @@ export function buildComposeYaml(
   }
 
   return lines.join('\n') + '\n';
+}
+
+/**
+ * `deploy.resources.limits` for one compose service (ADR 0062): what Docker
+ * turns into the container's `memory.max` and `cpu.max`. Empty without a
+ * limit.
+ */
+function composeLimitLines(resources: ResourceLimits | undefined): string[] {
+  if (resources?.memory === undefined && resources?.cpus === undefined) {
+    return [];
+  }
+  return [
+    '    deploy:',
+    '      resources:',
+    '        limits:',
+    ...(resources.memory !== undefined
+      ? [`          memory: ${resources.memory}`]
+      : []),
+    ...(resources.cpus !== undefined
+      ? [`          cpus: "${resources.cpus}"`]
+      : []),
+  ];
 }
 
 interface CodeWorkspaceFolder {

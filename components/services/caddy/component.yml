@@ -14,6 +14,9 @@ service:
   # whatever their Caddyfile listens on, so the catalog picks one that is out of
   # everybody's way. Both numbers and the Caddyfile move together.
   defaultPort: 81
+  resources:
+    memory: 128m
+    cpus: 0.5
   # The proxy's whole purpose is to be reached, so its one port is also the one
   # that may leave the container: `monoceros share` offers it, the proxy routes
   # to it. Must match the site address in your Caddyfile.

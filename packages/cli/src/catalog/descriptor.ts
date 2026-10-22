@@ -3,6 +3,8 @@ import { parse as parseYaml } from 'yaml';
 import {
   McpTransportSchema,
   REGEX,
+  ResourceCpusSchema,
+  ResourceMemorySchema,
   validateMcpTransportFields,
 } from '../config/schema.js';
 
@@ -231,6 +233,18 @@ export const ServiceBlockSchema = z.object({
    */
   user: z.string().min(1).optional(),
   healthcheck: HealthcheckSchema.optional(),
+  /**
+   * Default memory and CPU limit of this service (ADR 0062). Enforced only on
+   * a machine with `MONOCEROS_ENFORCE_DEFAULT_LIMITS=true`, and never written
+   * into the yml: a figure in the yml is always enforced, so a default there
+   * would turn into a limit on every machine. A `resources:` in the yml
+   * overrides it field by field. Descriptor-only, like `deferStart`, and
+   * looked up the same way (`curatedServiceResources`).
+   */
+  resources: z
+    .object({ memory: ResourceMemorySchema, cpus: ResourceCpusSchema })
+    .strict()
+    .optional(),
   /**
    * Connection env injected into the WORKSPACE container so the app / agent
    * can reach this service without hardcoding anything. Keyed by logical
