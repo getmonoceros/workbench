@@ -58,7 +58,7 @@ jobs:
       # write: push feature artifacts to GHCR (unchanged from workflow level)
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history + tags for git-cliff release notes (see
           # scripts/gh-release.sh).
@@ -68,8 +68,8 @@ jobs:
       # component.yml descriptor (ADR 0020) — the json is a build artifact,
       # not committed. The publish step packages each components/features/<id>/
       # dir (install.sh + the freshly generated manifest).
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm

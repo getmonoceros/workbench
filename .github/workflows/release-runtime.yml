@@ -52,7 +52,7 @@ jobs:
     env:
       IMAGE: ghcr.io/getmonoceros/monoceros-runtime
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history + tags for git-cliff release notes (see
           # scripts/gh-release.sh).

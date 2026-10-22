@@ -96,11 +96,11 @@ jobs:
 
     steps:
       - name: Checkout workbench
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -151,7 +151,7 @@ jobs:
             '!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f'
 
       - name: Checkout e2e suite
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: getmonoceros/monoceros-e2e
           path: monoceros-e2e
