@@ -68,6 +68,12 @@ describe('writeBriefing', () => {
       'utf8',
     );
     expect(servers).toContain('# Running a long-running server');
+    const resources = await readFile(
+      path.join(dir, '.monoceros', 'resources.md'),
+      'utf8',
+    );
+    expect(resources).toContain('# Memory and CPU limits');
+    expect(agents).toContain('@.monoceros/resources.md');
     expect(agents).toContain('@.monoceros/conventions.md');
     expect(agents).toContain('@.monoceros/servers.md');
   });
@@ -85,7 +91,7 @@ describe('writeBriefing', () => {
     const agentsPath = path.join(dir, 'AGENTS.md');
     const first = await readFile(agentsPath, 'utf8');
     expect(first).toContain(
-      `This file is ${lineCountOf(first)} lines long and imports 3 more:`,
+      `This file is ${lineCountOf(first)} lines long and imports 4 more:`,
     );
 
     // A user note outside the markers lengthens the file, and the next apply
@@ -101,7 +107,7 @@ describe('writeBriefing', () => {
     const second = await readFile(agentsPath, 'utf8');
     expect(lineCountOf(second)).toBeGreaterThan(lineCountOf(first));
     expect(second).toContain(
-      `This file is ${lineCountOf(second)} lines long and imports 3 more:`,
+      `This file is ${lineCountOf(second)} lines long and imports 4 more:`,
     );
   });
 

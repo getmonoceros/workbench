@@ -11,6 +11,11 @@ import {
 } from '../create/catalog.js';
 import type { ResolvedMcpServer } from '../catalog/mcp.js';
 import { hasDeployBriefing } from './deploy-md.js';
+import {
+  formatLimit,
+  WORKSPACE,
+  type ContainerLimit,
+} from '../limits/index.js';
 import type { FeatureManifestSummary } from '../init/manifest.js';
 
 /**
@@ -71,6 +76,12 @@ export interface AgentsMdInput {
    * and hit a dead `:80`. Optional so direct callers/tests default to 80.
    */
   hostPort?: number;
+  /**
+   * Effective memory/CPU limit per container (ADR 0062), workspace first.
+   * Named in the inventory, explained in `.monoceros/resources.md`. Optional
+   * so direct callers and tests can leave it out: no limits.
+   */
+  limits?: readonly ContainerLimit[];
 }
 
 export interface FeatureDisplay {
@@ -122,6 +133,7 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   const imports = [
     '.monoceros/conventions.md',
     '.monoceros/servers.md',
+    '.monoceros/resources.md',
     ...(deploy ? ['.monoceros/deploy.md'] : []),
     '.monoceros/commands.md',
   ];
@@ -182,6 +194,9 @@ export function generateAgentsMd(input: AgentsMdInput): string {
           '  from memory.',
         ]
       : []),
+    '- A build or test that dies with `Killed` or exit code 137 ran out of',
+    '  memory. Do not retry it as it is: make the work smaller first, then ask',
+    '  the user for a higher limit. See "Memory and CPU limits".',
     '- Nothing you install from inside survives the next',
     `  \`monoceros apply ${input.containerName}\`. A missing language, service, tool or`,
     '  port is added on the host, by the user.',
@@ -269,6 +284,24 @@ export function generateAgentsMd(input: AgentsMdInput): string {
         "in the user's `.env` on the host.",
       );
     }
+    lines.push('');
+  }
+
+  const limited = (input.limits ?? []).filter(
+    (l) => l.memory !== undefined || l.cpus !== undefined,
+  );
+  if (limited.length > 0) {
+    lines.push('### Memory and CPU limits');
+    lines.push('');
+    for (const l of limited) {
+      const label =
+        l.name === WORKSPACE ? '`workspace` (this container)' : `\`${l.name}\``;
+      lines.push(`- ${label}: ${formatLimit(l)}`);
+    }
+    lines.push('');
+    lines.push(
+      'Docker enforces them. A container not listed runs without a limit.',
+    );
     lines.push('');
   }
 
@@ -445,6 +478,16 @@ export function generateAgentsMd(input: AgentsMdInput): string {
   );
   lines.push('');
   lines.push('@.monoceros/servers.md');
+  lines.push('');
+
+  lines.push('## Memory and CPU limits');
+  lines.push('');
+  lines.push(
+    'What the limits are, why they exist, where the user sets them, how a',
+    'kill looks from in here, and what to do about it:',
+  );
+  lines.push('');
+  lines.push('@.monoceros/resources.md');
   lines.push('');
 
   if (deploy) {
@@ -627,6 +670,11 @@ export function agentsMdInputFromCreateOptions(
     mcp: opts.mcpServers ?? [],
     ports: opts.ports ?? [],
     hostPort,
+    // apply has already written the effective limits onto the options.
+    limits: [
+      { name: WORKSPACE, ...opts.resources },
+      ...opts.services.map((s) => ({ name: s.name, ...s.resources })),
+    ],
   };
 }
 

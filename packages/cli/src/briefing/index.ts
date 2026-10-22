@@ -12,6 +12,7 @@ import { generateClaudeMd } from './claude-md.js';
 import { generateCommandsMd } from './commands-md.js';
 import { generateConventionsMd } from './conventions-md.js';
 import { generateDeployMd } from './deploy-md.js';
+import { generateResourcesMd } from './resources-md.js';
 import { generateServersMd } from './servers-md.js';
 import { replaceMarkerBlock, wrapWithMarkers } from './markers.js';
 import {
@@ -26,6 +27,7 @@ import {
  *   <targetDir>/CLAUDE.md           — `@AGENTS.md` import in markers + user notes
  *   <targetDir>/.monoceros/conventions.md — the conventions chapter
  *   <targetDir>/.monoceros/servers.md     — the long-running-server chapter
+ *   <targetDir>/.monoceros/resources.md   - the memory and CPU limits chapter
  *   <targetDir>/.monoceros/commands.md  — per-subcommand reference
  *   <targetDir>/.monoceros/deploy.md    — pipeline compose parts, when any
  *                                         configured service has one
@@ -45,8 +47,8 @@ import {
  * AGENTS.md is still the better place for content shared across
  * tools.
  *
- * conventions.md, servers.md, commands.md and deploy.md are always
- * rewritten in full — all four are 100%
+ * conventions.md, servers.md, resources.md, commands.md and deploy.md are
+ * always rewritten in full - all five are 100%
  * Monoceros-owned and not a place where user notes belong. deploy.md is
  * removed again when the last service that contributed to it leaves the
  * yml, so a stale parts list can't outlive the services it describes.
@@ -67,6 +69,7 @@ export async function writeBriefing(input: WriteBriefingInput): Promise<void> {
   const commandsBody = generateCommandsMd(subCommands);
   const conventionsBody = generateConventionsMd(agentsInput);
   const serversBody = generateServersMd(agentsInput);
+  const resourcesBody = generateResourcesMd(agentsInput);
   const deployBody = generateDeployMd(input.createOpts.services);
 
   await writeMarkerAware(path.join(input.targetDir, 'AGENTS.md'), agentsBody);
@@ -87,6 +90,11 @@ export async function writeBriefing(input: WriteBriefingInput): Promise<void> {
   await fs.writeFile(
     path.join(monocerosDir, 'servers.md'),
     serversBody,
+    'utf8',
+  );
+  await fs.writeFile(
+    path.join(monocerosDir, 'resources.md'),
+    resourcesBody,
     'utf8',
   );
 

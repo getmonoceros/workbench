@@ -132,16 +132,18 @@ export function anyLimit(limits: readonly ContainerLimit[]): boolean {
 export function formatLimits(limits: readonly ContainerLimit[]): string {
   return limits
     .filter((l) => l.memory !== undefined || l.cpus !== undefined)
-    .map((l) => {
-      const parts = [
-        ...(l.memory !== undefined ? [l.memory] : []),
-        ...(l.cpus !== undefined
-          ? [`${l.cpus} ${l.cpus === 1 ? 'CPU' : 'CPUs'}`]
-          : []),
-      ];
-      return `${l.name} ${parts.join(', ')}`;
-    })
+    .map((l) => `${l.name} ${formatLimit(l)}`)
     .join(' · ');
+}
+
+/** One container's figures: `4g, 2 CPUs`, `64m`, `0.5 CPUs`. */
+export function formatLimit(l: ContainerLimit): string {
+  return [
+    ...(l.memory !== undefined ? [l.memory] : []),
+    ...(l.cpus !== undefined
+      ? [`${l.cpus} ${l.cpus === 1 ? 'CPU' : 'CPUs'}`]
+      : []),
+  ].join(', ');
 }
 
 /** Sum of the memory limits, in bytes. Containers without one count 0. */

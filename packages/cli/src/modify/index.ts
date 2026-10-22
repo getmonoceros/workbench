@@ -64,6 +64,7 @@ import {
   type DockerLookupExec,
 } from '../devcontainer/locate-running.js';
 import { readMachineSettings } from '../config/global.js';
+import { applyEffectiveLimits } from '../limits/index.js';
 import {
   KNOWN_PROVIDER_HOSTS,
   PROVIDER_FEATURE_SELECTOR,
@@ -460,6 +461,14 @@ async function refreshBriefingFromYml(
     const createOpts = normalizeOptions(
       solutionConfigToCreateOptions(parsed.config),
     );
+    // The same limits apply works with, or the briefing would drop the
+    // enforced catalog defaults until the next apply (ADR 0062).
+    const machine = await readMachineSettings({ monocerosHome: home });
+    applyEffectiveLimits(createOpts, machine.enforceDefaultLimits, {
+      ymlPath: containerConfigPath(name, home),
+      globalEnvPath: globalEnvPath(home),
+      home,
+    });
     const components = await loadComponentCatalog();
     await writeBriefing({ targetDir, createOpts, components });
   } catch {

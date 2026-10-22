@@ -102,10 +102,10 @@ describe('AGENTS.md generator', () => {
     // The count is a placeholder here: only the writer knows the final file
     // (markers + user notes), so it substitutes the real number.
     expect(md).toContain(
-      `This file is ${LINE_COUNT_PLACEHOLDER} lines long and imports 3 more:`,
+      `This file is ${LINE_COUNT_PLACEHOLDER} lines long and imports 4 more:`,
     );
     expect(md).toContain(
-      '`.monoceros/conventions.md`, `.monoceros/servers.md`, `.monoceros/commands.md`.',
+      '`.monoceros/conventions.md`, `.monoceros/servers.md`, `.monoceros/resources.md`, `.monoceros/commands.md`.',
     );
     expect(md).toContain('Read it whole.');
   });
@@ -128,7 +128,7 @@ describe('AGENTS.md generator', () => {
       ports: [],
     });
     expect(md).toContain(
-      `This file is ${LINE_COUNT_PLACEHOLDER} lines long and imports 4 more:`,
+      `This file is ${LINE_COUNT_PLACEHOLDER} lines long and imports 5 more:`,
     );
     expect(md).toContain(
       '- Take a compose file for the pipeline from `.monoceros/deploy.md`',
