@@ -143,7 +143,7 @@ interface ProviderTokenStrategy {
  * The github/gitlab cascade: `<P>_API_TOKEN` → `GIT_TOKEN__<P>_<SEGMENT>`
  * → `GIT_TOKEN__<P>`. The first doubles as the CLI-feature placeholder.
  */
-function gitTokenCascade(provider: RepoProvider, url: string): string[] {
+export function gitTokenCascade(provider: RepoProvider, url: string): string[] {
   const p = provider.toUpperCase();
   const vars: string[] = [`${p}_API_TOKEN`];
   const segment = workspaceSegment(url);
@@ -281,7 +281,12 @@ export function resolveRepoTokens(
     features: features as SolutionConfig['features'],
     hostTokens,
     used,
-    missing,
+    // The git credentials are written per host, so a source whose own owner
+    // has no token still clones with the token another source resolved for
+    // the same host. Reporting that host as unauthenticated was false: a
+    // public marketplace of another owner flagged a workbench whose repos
+    // and `gh` all had their token.
+    missing: missing.filter((m) => !hostTokens.has(m.host)),
     ambiguous,
   };
 }

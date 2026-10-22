@@ -234,6 +234,18 @@ describe('compose actions', () => {
     ]);
   });
 
+  it('pullServiceImages pulls only the named services, and nothing for an empty list (ADR 0064)', async () => {
+    const calls: string[][] = [];
+    const spawn = async (args: string[]) => {
+      calls.push(args);
+      return 0;
+    };
+    await pullServiceImages({ root: solution, spawn, services: ['mssql'] });
+    await pullServiceImages({ root: solution, spawn, services: [] });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.slice(-2)).toEqual(['--quiet', 'mssql']);
+  });
+
   it('pullServiceImages reports a failing pull instead of throwing', async () => {
     // A rate-limited or offline registry must not fail the upgrade: the
     // caller warns and the container starts from the cached image.

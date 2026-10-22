@@ -143,6 +143,36 @@ describe('resolveRepoTokens (ADR 0031 token cascade)', () => {
     expect(resolved.hostTokens.get('github.com')).toBe('ghp_x');
   });
 
+  // ssp-cs: the repos of `conciso` resolve GIT_TOKEN__GITHUB_CONCISO, the public
+  // discovery marketplace of `getmonoceros` has no token of its own. The
+  // credentials are per host, so github.com carries the conciso token for both,
+  // and apply must not claim the host is unauthenticated.
+  it('does not report a host as missing when another source gave it a token', async () => {
+    await writeFile(
+      ymlPath('ssp'),
+      [
+        'schemaVersion: 1',
+        'name: ssp',
+        'features:',
+        `  - ref: ${claudeRef()}`,
+        '    plugins:',
+        '      - url: https://github.com/getmonoceros/monoceros-discovery.git',
+        '        enable:',
+        '          - discovery-atlassian',
+        'repos:',
+        '  - url: https://github.com/conciso/sspag-control-software',
+        '',
+      ].join('\n'),
+    );
+    const r = resolveRepoTokens(await configOf('ssp'), catalog, {
+      GITHUB_API_TOKEN: '',
+      GIT_TOKEN__GITHUB_CONCISO: 'ghp_conciso',
+      GIT_TOKEN__GITHUB_THORQUE: 'ghp_thorque',
+    });
+    expect(r.missing).toEqual([]);
+    expect(r.hostTokens.get('github.com')).toBe('ghp_conciso');
+  });
+
   it('reports missing with the tried vars when no token is set', async () => {
     await seedRepo('demo', 'https://github.com/conciso/app.git');
     const config = await configOf('demo');

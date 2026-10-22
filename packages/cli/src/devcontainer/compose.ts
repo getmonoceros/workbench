@@ -399,6 +399,11 @@ export interface PullImagesOptions {
   /** Keep the compose output off the screen (spinner mode); it still goes to logSink. */
   silent?: boolean;
   logger?: { info: (message: string) => void };
+  /**
+   * Pull only these services. Apply leaves out the private GHCR images it
+   * pulled itself (ADR 0064), which compose would answer with "unauthorized".
+   */
+  services?: string[];
 }
 
 /**
@@ -422,6 +427,7 @@ export interface PullImagesOptions {
 export async function pullServiceImages(
   opts: PullImagesOptions,
 ): Promise<number> {
+  if (opts.services?.length === 0) return 0;
   const { composeFile, projectName } = resolveCompose(opts.root);
   const spawnFn =
     opts.spawn ??
@@ -444,6 +450,7 @@ export async function pullServiceImages(
       '--ignore-buildable',
       '--ignore-pull-failures',
       '--quiet',
+      ...(opts.services ?? []),
     ],
     opts.root,
   );

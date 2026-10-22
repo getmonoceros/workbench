@@ -163,6 +163,7 @@ import {
   resolveRepoTokens,
   tokenAdviceLines,
 } from './repo-token.js';
+import { pullPrivateImage, resolvePrivateImages } from './registry-auth.js';
 
 /**
  * `monoceros apply <name>` — read the yml at
@@ -495,6 +496,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     );
   }
   createOpts.services = interpServices.services;
+
+  // Service images on GHCR are read with the owner's git token (ADR 0064),
+  // so a private package needs no separate `docker login`.
+  const privateImages = resolvePrivateImages(createOpts.services, envVars);
+  for (const img of privateImages) {
+    logger.info(`Using ${img.varName} for ${img.image}`);
+  }
   // The workspace env spells out each reachable service's host-side address, so
   // it needs the port Traefik really binds (default 80, `MONOCEROS_HOST_PORT`
   // otherwise) - the same value the routes and the printed URLs use.
@@ -1095,6 +1103,37 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       );
     }
 
+    // A private GHCR image is pulled here, with its token, whenever compose
+    // would otherwise pull it: on the first apply, on `upgrade`, and when it
+    // is not cached yet. Compose itself only has the builder's Docker login
+    // and would answer a bare "unauthorized" (ADR 0064).
+    if (needsCompose(createOpts)) {
+      const docker = opts.dockerExec ?? defaultDockerExec;
+      for (const img of privateImages) {
+        const cached =
+          (await docker(['image', 'inspect', img.image])).exitCode === 0;
+        if (cached && !opts.rebuild && !isFirstApply) continue;
+        if (progress) progress.setPhase('pulling service images…');
+        const pulled = await pullPrivateImage(img, docker);
+        if (pulled.exitCode === 0) {
+          internalLogger.info(`Pulled ${img.image} with ${img.varName}`);
+          continue;
+        }
+        const reason =
+          pulled.stderr.trim().split('\n').pop() || `exit ${pulled.exitCode}`;
+        if (cached) {
+          containerLogger.warn?.(
+            `Could not pull ${img.image} with ${img.varName}: ${reason}. The service starts from the cached image.`,
+          );
+          continue;
+        }
+        throw new Error(
+          `Could not pull ${img.image} for the service '${img.service}' with ${img.varName}: ${reason}. ` +
+            `The token needs the read:packages scope and read access to that package.`,
+        );
+      }
+    }
+
     // Service images are pulled by `upgrade` (ADR 0052) and on a
     // workbench's FIRST apply (ADR 0054). Not on later routine applies:
     // a service owns a data directory, and a minor image bump can migrate
@@ -1110,6 +1149,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       try {
         const pullExit = await pullServiceImages({
           root: targetDir,
+          ...(privateImages.length > 0
+            ? {
+                services: createOpts.services
+                  .map((s) => s.name)
+                  .filter((n) => !privateImages.some((p) => p.service === n)),
+              }
+            : {}),
           ...(opts.composeSpawn ? { spawn: opts.composeSpawn } : {}),
           logSink: applyLog.sink,
           silent: progress !== null,

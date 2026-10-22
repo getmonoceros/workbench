@@ -770,6 +770,97 @@ describe('runApply', () => {
     expect(pulls[1]).toContain('pull');
   });
 
+  it('pulls a private GHCR service image with the owner token, when compose would pull it (ADR 0064)', async () => {
+    const image = 'ghcr.io/acme/app/pdf:latest';
+    await writeYml(
+      'ghcrdemo',
+      [
+        'schemaVersion: 1',
+        'name: ghcrdemo',
+        'services:',
+        '  - name: postgres',
+        '    image: postgres:18',
+        '  - name: pdf',
+        `    image: ${image}`,
+        '',
+      ].join('\n'),
+    );
+    let cached = false;
+    const docker: string[][] = [];
+    const dockerExec = async (args: string[]) => {
+      docker.push(args);
+      const inspect = args[0] === 'image' && args[1] === 'inspect';
+      return { exitCode: inspect && !cached ? 1 : 0, stdout: '', stderr: '' };
+    };
+    const composePulls: string[][] = [];
+    const composeSpawn = async (args: string[]) => {
+      if (args.includes('pull')) composePulls.push(args);
+      return 0;
+    };
+    const run = () =>
+      runApply({
+        ...baseRunOpts,
+        name: 'ghcrdemo',
+        monocerosHome: home,
+        env: { ...stubEnv, GIT_TOKEN__GITHUB_ACME: 'tok-acme' },
+        dockerExec,
+        composeSpawn,
+      });
+    const pulls = () => docker.filter((a) => a.includes('pull'));
+
+    // First apply: the private image is pulled by apply itself, and compose
+    // pulls only the rest, so it never answers "unauthorized".
+    await run();
+    expect(pulls()).toHaveLength(1);
+    expect(pulls()[0]!.slice(-1)).toEqual([image]);
+    expect(composePulls).toHaveLength(1);
+    expect(composePulls[0]!.slice(-1)).toEqual(['postgres']);
+
+    // Routine re-apply with the image cached: nothing is pulled.
+    cached = true;
+    await run();
+    expect(pulls()).toHaveLength(1);
+
+    // Not cached any more (pruned, or a new workbench on this machine):
+    // compose would pull it, so apply does, with the token.
+    cached = false;
+    await run();
+    expect(pulls()).toHaveLength(2);
+  });
+
+  it('names the image, the token and the registry answer when a private pull fails (ADR 0064)', async () => {
+    await writeYml(
+      'ghcrfail',
+      [
+        'schemaVersion: 1',
+        'name: ghcrfail',
+        'services:',
+        '  - name: pdf',
+        '    image: ghcr.io/acme/app/pdf:latest',
+        '',
+      ].join('\n'),
+    );
+    const dockerExec = async (args: string[]) =>
+      args.includes('pull')
+        ? {
+            exitCode: 1,
+            stdout: '',
+            stderr: 'Error response from daemon: denied\n',
+          }
+        : { exitCode: args[0] === 'image' ? 1 : 0, stdout: '', stderr: '' };
+    await expect(
+      runApply({
+        ...baseRunOpts,
+        name: 'ghcrfail',
+        monocerosHome: home,
+        env: { GIT_TOKEN__GITHUB_ACME: 'tok-acme' },
+        dockerExec,
+      }),
+    ).rejects.toThrow(
+      /ghcr\.io\/acme\/app\/pdf:latest .*GIT_TOKEN__GITHUB_ACME: Error response from daemon: denied\. The token needs the read:packages scope/,
+    );
+  });
+
   it('puts service data in a per-service docker volume, not a host bind mount', async () => {
     await writeYml(
       'dbhost',
