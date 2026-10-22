@@ -10,11 +10,20 @@ import { dispatch } from './_dispatch.js';
 /**
  * Tail a host-side log file (an app log written by a detached server inside
  * the container — the logs dir is bind-mounted, so it's readable here). With
- * follow, `tail -F` shows recent output and keeps streaming (and waits for
- * the file if it doesn't exist yet); otherwise the whole file is dumped once.
+ * follow, `tail -n +1 -F` shows the whole file and keeps streaming (and waits
+ * for the file if it doesn't exist yet), like `monoceros-ctl logs` inside the
+ * container; plain `tail -F` started at the last 10 lines and cut off what a
+ * slow start spent its time on. Otherwise the whole file is dumped once.
  */
+export function logFileCommand(
+  file: string,
+  follow: boolean,
+): [string, string[]] {
+  return follow ? ['tail', ['-n', '+1', '-F', file]] : ['cat', [file]];
+}
+
 function tailLogFile(file: string, follow: boolean): Promise<number> {
-  const [cmd, args] = follow ? ['tail', ['-F', file]] : ['cat', [file]];
+  const [cmd, args] = logFileCommand(file, follow);
   return new Promise((resolve, reject) => {
     const child = spawn(cmd as string, args as string[], { stdio: 'inherit' });
     child.on('error', reject);
