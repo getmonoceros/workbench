@@ -19,6 +19,7 @@ import { relayClipboardFile } from '../src/devcontainer/browser-bridge.js';
 import {
   answerPasteRequest,
   clipboardInfoToTargets,
+  copyToHostClipboard,
   hostClipboardCommands,
   hostPasteCommands,
   takeClipboardPayload,
@@ -164,6 +165,34 @@ describe('hostClipboardCommands', () => {
 
   it('always offers a fallback, so one missing tool is not the end', () => {
     expect(hostClipboardCommands('linux', {}).length).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * `list-components --copy`: the builder asked for the copy, so a copy that
+ * does not arrive has to say so and name what it tried.
+ */
+describe('copyToHostClipboard', () => {
+  it('falls through a missing tool and names the one that took it', () => {
+    const dir = tempDir();
+    const out = path.join(dir, 'clip');
+    const tool = copyToHostClipboard('Grüße, ✓', [
+      ['monoceros-no-such-clipboard-tool', []],
+      ['sh', ['-c', `cat > '${out}'`]],
+    ]);
+    expect(tool).toBe('sh');
+    expect(readFileSync(out, 'utf8')).toBe('Grüße, ✓');
+  });
+
+  it('fails naming every tool it tried and why', () => {
+    expect(() =>
+      copyToHostClipboard('x', [
+        ['monoceros-no-such-clipboard-tool', []],
+        ['sh', ['-c', 'exit 3']],
+      ]),
+    ).toThrow(
+      /Tried: monoceros-no-such-clipboard-tool \(not installed\), sh \(exit 3\)/,
+    );
   });
 });
 

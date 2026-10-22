@@ -1,5 +1,6 @@
 import type { CatalogComponent } from './load.js';
 import type { OptionSpec } from './descriptor.js';
+import type { PluginEntry } from '../config/schema.js';
 
 /**
  * Public, machine-readable projection of the component catalog — the
@@ -40,6 +41,11 @@ export interface CatalogJsonOption {
 interface CatalogJsonBase {
   /** CLI/yml selector, e.g. `node`, `postgres`, `claude`. */
   name: string;
+  /**
+   * Set on a component read from the builder's `<MONOCEROS_HOME>/templates/`
+   * (ADR 0063). Absent on shipped ones, so the published file never has it.
+   */
+  local?: true;
   displayName: string;
   description: string;
   documentationURL?: string;
@@ -95,6 +101,33 @@ export interface CatalogJsonMcpServer extends CatalogJsonBase {
   auth?: 'oauth';
 }
 
+/** A feature as a workbench template carries it. */
+export interface CatalogJsonTemplateFeature {
+  /** Selector name (`claude`), or the OCI ref when the catalog does not know it. */
+  name: string;
+  /** Literal option values only; a `${VAR}` value is a credential and stays out. */
+  options?: Record<string, string | number | boolean>;
+  plugins?: PluginEntry[];
+}
+
+/**
+ * A workbench template (ADR 0057) and what it already brings, so a consumer
+ * can check a requirement against it and propose only the `--with-*` flags
+ * still missing on top.
+ */
+export interface CatalogJsonTemplate {
+  name: string;
+  /** Read from the builder's `<MONOCEROS_HOME>/templates/workbenches/`. */
+  local?: true;
+  /** The template's first comment paragraph without a placeholder in it. */
+  description?: string;
+  /** As written in the yml: `node`, `node:24`. */
+  languages: string[];
+  services: string[];
+  features: CatalogJsonTemplateFeature[];
+  mcpServers: string[];
+}
+
 export interface CatalogJson {
   /**
    * Bumped when this projection's shape changes incompatibly. Added fields
@@ -109,6 +142,8 @@ export interface CatalogJson {
   features: CatalogJsonFeature[];
   /** MCP servers, added additively in CLI 1.52 — may be absent in older snapshots. */
   mcpServers: CatalogJsonMcpServer[];
+  /** Workbench templates, added additively in CLI 1.72. */
+  templates: CatalogJsonTemplate[];
 }
 
 /** Current shape version of the published `catalog.json`. */
@@ -156,15 +191,17 @@ function byName<T extends { name: string }>(a: T, b: T): number {
 export function buildCatalogJson(
   catalog: Map<string, CatalogComponent>,
   cliVersion: string,
+  templates: readonly CatalogJsonTemplate[] = [],
 ): CatalogJson {
   const languages: CatalogJsonLanguage[] = [];
   const services: CatalogJsonService[] = [];
   const features: CatalogJsonFeature[] = [];
   const mcpServers: CatalogJsonMcpServer[] = [];
 
-  for (const { descriptor: d } of catalog.values()) {
+  for (const { descriptor: d, local } of catalog.values()) {
     const base: CatalogJsonBase = {
       name: d.name ?? d.id,
+      ...(local ? { local } : {}),
       displayName: d.displayName,
       description: d.description,
       options: projectOptions(d.options),
@@ -214,5 +251,6 @@ export function buildCatalogJson(
     services: services.sort(byName),
     features: features.sort(byName),
     mcpServers: mcpServers.sort(byName),
+    templates: [...templates].sort(byName),
   };
 }

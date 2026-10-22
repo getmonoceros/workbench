@@ -3,6 +3,12 @@ import { consola } from 'consola';
 import { loadDescriptorCatalog } from '../catalog/load.js';
 import { expandSelectable } from '../catalog/expand.js';
 import { buildCatalogJson } from '../catalog/catalog-json.js';
+import { copyToHostClipboard } from '../devcontainer/clipboard-bridge.js';
+import {
+  projectWorkbenchTemplate,
+  readWorkbenchTemplates,
+  workbenchTemplateSources,
+} from '../init/templates.js';
 import { CLI_VERSION } from '../version.js';
 import { colorsFor } from '../util/format.js';
 
@@ -27,13 +33,18 @@ export const listComponentsCommand = defineCommand({
     name: 'list-components',
     group: 'discovery',
     description:
-      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=… / --with-mcp-servers=…`, grouped by category (Languages, Services, Features, MCP servers). On a terminal the names render in cyan against a short label, in aligned columns; when piped, the formatting drops out and lines become `name<TAB>description`, the full sentence, for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json.',
+      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=… / --with-mcp-servers=…`, grouped by category (Languages, Services, Features, MCP servers). On a terminal the names render in cyan against a short label, in aligned columns; when piped, the formatting drops out and lines become `name<TAB>description`, the full sentence, for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json, plus what only this machine has: components and workbench templates from `~/.monoceros/templates/` carry `local: true`, and every template lists what it already brings. `--copy` puts that JSON on the clipboard instead of printing it.',
   },
   args: {
     json: {
       type: 'boolean',
       description:
-        'Emit the catalog as a JSON document (name, options, versions, presets per component) instead of the human-readable listing.',
+        'Emit the catalog as a JSON document (name, options, versions, presets per component, plus the workbench templates and their contents) instead of the human-readable listing.',
+    },
+    copy: {
+      type: 'boolean',
+      description:
+        'Put the JSON document on the clipboard instead of printing it. Implies `--json`. Fails and names the missing tool when no clipboard tool is installed.',
     },
   },
   async run({ args }) {
@@ -42,9 +53,21 @@ export const listComponentsCommand = defineCommand({
 
       // --json: machine-readable projection, no TTY formatting. This is the
       // canonical shape published as getmonoceros.build/catalog.json.
-      if (args.json) {
-        const doc = buildCatalogJson(descriptors, CLI_VERSION);
-        process.stdout.write(`${JSON.stringify(doc, null, 2)}\n`);
+      if (args.json || args.copy) {
+        const templates = (
+          await readWorkbenchTemplates(workbenchTemplateSources())
+        ).map((t) => projectWorkbenchTemplate(t, descriptors));
+        const doc = buildCatalogJson(descriptors, CLI_VERSION, templates);
+        const text = `${JSON.stringify(doc, null, 2)}\n`;
+        if (args.copy) {
+          const tool = copyToHostClipboard(text);
+          const kb = (Buffer.byteLength(text) / 1024).toFixed(1);
+          consola.success(
+            `Copied the catalog JSON to the clipboard (${kb} KB, ${templates.length} workbench templates, via ${tool}).`,
+          );
+        } else {
+          process.stdout.write(text);
+        }
         process.exit(0);
       }
 

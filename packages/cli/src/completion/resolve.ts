@@ -952,7 +952,12 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   completion: {
     positionals: [shellValues],
   },
-  'list-components': {},
+  'list-components': {
+    flags: {
+      '--json': { type: 'boolean' },
+      '--copy': { type: 'boolean' },
+    },
+  },
   restore: {
     // First positional is a backup-path; no value suggestions today
     // (could plug filesystem completion later). Slot still exists so

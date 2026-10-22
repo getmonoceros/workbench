@@ -84,6 +84,36 @@ mcpServer:
     });
   });
 
+  /**
+   * The builder's own descriptor is the one entry a colleague's machine does
+   * not have, so the JSON says so. Shipped entries carry no field, which keeps
+   * the published file unchanged for them.
+   */
+  it("marks a builder's own component local and leaves shipped ones alone", async () => {
+    const catalog = await loadDescriptorCatalog(componentsRoot);
+    const postgres = catalog.get('postgres')!;
+    catalog.set('postgres', { ...postgres, local: true });
+    const doc = buildCatalogJson(catalog, 'dev');
+    expect(doc.services.find((s) => s.name === 'postgres')).toMatchObject({
+      name: 'postgres',
+      local: true,
+    });
+    expect(doc.services.find((s) => s.name === 'redis')).not.toHaveProperty(
+      'local',
+    );
+  });
+
+  it('carries the templates it is given, sorted by name', async () => {
+    const catalog = await loadDescriptorCatalog(componentsRoot);
+    const empty = { languages: [], services: [], features: [], mcpServers: [] };
+    const doc = buildCatalogJson(catalog, 'dev', [
+      { name: 'web', ...empty },
+      { name: 'agent', local: true, ...empty },
+    ]);
+    expect(doc.templates.map((t) => t.name)).toEqual(['agent', 'web']);
+    expect(buildCatalogJson(catalog, 'dev').templates).toEqual([]);
+  });
+
   it('leaves the marker off a connector that takes a key', async () => {
     const catalog = await loadDescriptorCatalog(componentsRoot);
     const context7 = buildCatalogJson(catalog, 'dev').mcpServers.find(
@@ -167,6 +197,7 @@ mcpServer:
     ]);
     const base = [
       'name',
+      'local',
       'displayName',
       'description',
       'documentationURL',

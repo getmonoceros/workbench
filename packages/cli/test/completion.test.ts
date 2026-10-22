@@ -440,6 +440,15 @@ describe('resolveCompletions', () => {
     expect(r).toEqual(['sandbox']);
   });
 
+  it('offers list-components its --json and --copy flags', async () => {
+    const r = await resolveCompletions(
+      'monoceros list-components --',
+      'monoceros list-components --'.length,
+      { monocerosHome: home },
+    );
+    expect(r).toEqual(['--json', '--copy']);
+  });
+
   it('init has no positional suggestion (fresh name)', async () => {
     await writeFile(path.join(home, 'container-configs', 'sandbox.yml'), '');
     const r = await resolveCompletions(

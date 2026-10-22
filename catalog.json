@@ -710,5 +710,118 @@
       "transport": "http",
       "auth": "oauth"
     }
+  ],
+  "templates": [
+    {
+      "name": "agent-github",
+      "description": "What is in here: Claude Code with the three build roles, and the GitHub CLI they read issues and open pull requests with. No stack: the languages and services your project needs go in with `monoceros add-*`, and a repo added with `monoceros add-repo` brings its own provider CLI along.",
+      "languages": [],
+      "services": [],
+      "features": [
+        {
+          "name": "claude",
+          "options": {
+            "permissionMode": "auto"
+          }
+        },
+        {
+          "name": "claude-code-roles",
+          "options": {
+            "plannerModel": "opus",
+            "plannerEffort": "high",
+            "implementModel": "sonnet",
+            "implementEffort": "medium",
+            "reviewModel": "opus",
+            "reviewEffort": "high"
+          }
+        },
+        {
+          "name": "github"
+        }
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "discovery-atlassian",
+      "description": "What is in here: Claude Code carrying the discovery skills, the three build roles, and the Atlassian CLI the roles read Jira and Confluence with. That is enough to run the discovery from an idea to a cut backlog. The stack the product itself needs (languages, services, repositories) is not here yet: the technical brief decides it, and `monoceros add-*` puts it in afterwards.",
+      "languages": [],
+      "services": [],
+      "features": [
+        {
+          "name": "claude",
+          "options": {
+            "permissionMode": "auto"
+          },
+          "plugins": [
+            {
+              "url": "https://github.com/getmonoceros/monoceros-discovery.git",
+              "enable": [
+                "discovery-atlassian"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "claude-code-roles",
+          "options": {
+            "plannerModel": "opus",
+            "plannerEffort": "high",
+            "implementModel": "sonnet",
+            "implementEffort": "medium",
+            "reviewModel": "opus",
+            "reviewEffort": "high"
+          }
+        },
+        {
+          "name": "atlassian",
+          "options": {
+            "rovodev": false,
+            "twg": true,
+            "forge": false
+          }
+        }
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "go-service",
+      "description": "What is in here: a Go service with Postgres behind it, plus Claude Code. Deliberately small. Add what this service actually needs with `monoceros add-*`, and a repo added with `monoceros add-repo` brings its provider's CLI along.",
+      "languages": [
+        "go:latest"
+      ],
+      "services": [
+        "postgres"
+      ],
+      "features": [
+        {
+          "name": "claude",
+          "options": {
+            "permissionMode": "auto"
+          }
+        }
+      ],
+      "mcpServers": []
+    },
+    {
+      "name": "web-app",
+      "description": "What is in here: a web application with a Node front end, a Java back end, Postgres behind it and Keycloak for the logins, plus Claude Code. Every part is a starting point: swap a language, drop a service, or add your repo with `monoceros add-repo`, which brings its provider's CLI along.",
+      "languages": [
+        "node:22",
+        "java:latest"
+      ],
+      "services": [
+        "postgres",
+        "keycloak"
+      ],
+      "features": [
+        {
+          "name": "claude",
+          "options": {
+            "permissionMode": "auto"
+          }
+        }
+      ],
+      "mcpServers": []
+    }
   ]
 }

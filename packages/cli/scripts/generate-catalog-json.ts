@@ -16,6 +16,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadDescriptorCatalog } from '../src/catalog/load.js';
 import { buildCatalogJson } from '../src/catalog/catalog-json.js';
+import {
+  projectWorkbenchTemplate,
+  readWorkbenchTemplates,
+} from '../src/init/templates.js';
 
 // scripts/ -> packages/cli -> packages -> <checkout root>
 const cliRoot = path.resolve(
@@ -30,7 +34,14 @@ const pkg = JSON.parse(
 ) as { version: string };
 
 const catalog = await loadDescriptorCatalog(componentsRoot);
-const doc = buildCatalogJson(catalog, pkg.version);
+// The shipped templates only, like the components: the machine's own never
+// reach the published file.
+const templates = (
+  await readWorkbenchTemplates([
+    { dir: path.join(cliRoot, 'templates', 'workbenches'), local: false },
+  ])
+).map((t) => projectWorkbenchTemplate(t, catalog));
+const doc = buildCatalogJson(catalog, pkg.version, templates);
 
 const dest = path.join(checkoutRoot, 'catalog.json');
 await writeFile(dest, JSON.stringify(doc, null, 2) + '\n', 'utf8');
@@ -39,5 +50,5 @@ console.log(
   `[generate-catalog-json] ${path.relative(checkoutRoot, dest)} ` +
     `(cliVersion ${doc.cliVersion}; ${doc.languages.length} languages, ` +
     `${doc.services.length} services, ${doc.features.length} features, ` +
-    `${doc.mcpServers.length} mcp servers)`,
+    `${doc.mcpServers.length} mcp servers, ${doc.templates.length} templates)`,
 );

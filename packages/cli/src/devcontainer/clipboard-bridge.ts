@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdtempSync,
@@ -127,6 +127,42 @@ export function writeHostClipboard(
   } catch {
     writeHostClipboard(text, rest);
   }
+}
+
+/**
+ * Put text on the host clipboard and return the tool that took it, or throw
+ * naming every tool tried. The loud sibling of `writeHostClipboard`, for a
+ * command the builder ran to copy something: there a copy that silently does
+ * not arrive is the failure.
+ */
+export function copyToHostClipboard(
+  text: string,
+  commands: ClipboardCommand[] = hostClipboardCommands(process.platform),
+): string {
+  const tried: string[] = [];
+  for (const [cmd, args] of commands) {
+    // stdout/stderr ignored, not piped: xclip and wl-copy fork a child that
+    // keeps serving the selection, and a piped stream would wait for it.
+    const result = spawnSync(cmd, args, {
+      input: text,
+      stdio: ['pipe', 'ignore', 'ignore'],
+      timeout: 10_000,
+    });
+    if (result.error) {
+      const code = (result.error as NodeJS.ErrnoException).code;
+      tried.push(
+        `${cmd} (${code === 'ENOENT' ? 'not installed' : result.error.message})`,
+      );
+    } else if (result.status === 0) {
+      return cmd;
+    } else {
+      tried.push(`${cmd} (exit ${result.status})`);
+    }
+  }
+  throw new Error(
+    `Could not copy to the clipboard. Tried: ${tried.join(', ')}. ` +
+      'Install one of them, or drop --copy and redirect the output to a file.',
+  );
 }
 
 /**

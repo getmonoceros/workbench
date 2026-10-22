@@ -6,6 +6,14 @@ import {
   workbenchTemplatesDir,
 } from '../config/paths.js';
 import { DEFAULT_RUNTIME_VERSION } from '../create/catalog.js';
+import { parseConfig } from '../config/io.js';
+import type { SolutionConfig } from '../config/schema.js';
+import type { CatalogComponent } from '../catalog/load.js';
+import type {
+  CatalogJsonTemplate,
+  CatalogJsonTemplateFeature,
+} from '../catalog/catalog-json.js';
+import { matchMonocerosFeature } from '../util/ref.js';
 
 /**
  * Workbench templates: prepared ymls `monoceros init --template=<name>`
@@ -34,17 +42,30 @@ import { DEFAULT_RUNTIME_VERSION } from '../create/catalog.js';
 const NAME_PLACEHOLDER = /__MONOCEROS_NAME__/g;
 const RUNTIME_PLACEHOLDER = /__MONOCEROS_RUNTIME_VERSION__/g;
 
+/** A directory templates are read from, and whether it is the builder's own. */
+export interface TemplateSource {
+  dir: string;
+  local: boolean;
+}
+
 /**
  * The directories a template is looked for in, in order. The builder's own
  * first, then the shipped set.
  */
-export function workbenchTemplateDirs(opts: TemplateLookup = {}): string[] {
-  const dirs: string[] = [];
+export function workbenchTemplateSources(
+  opts: TemplateLookup = {},
+): TemplateSource[] {
+  const sources: TemplateSource[] = [];
   const user = opts.userDir ?? safeUserTemplatesDir(opts.monocerosHome);
-  if (user) dirs.push(user);
+  if (user) sources.push({ dir: user, local: true });
   const bundled = opts.bundledDir ?? safeTemplatesDir();
-  if (bundled) dirs.push(bundled);
-  return dirs;
+  if (bundled) sources.push({ dir: bundled, local: false });
+  return sources;
+}
+
+/** The directories alone, in lookup order. */
+export function workbenchTemplateDirs(opts: TemplateLookup = {}): string[] {
+  return workbenchTemplateSources(opts).map((s) => s.dir);
 }
 
 export interface TemplateLookup {
@@ -100,9 +121,134 @@ export async function renderWorkbenchTemplate(
     );
   }
   const text = await fs.readFile(file, 'utf8');
+  return fillTemplatePlaceholders(text, containerName);
+}
+
+/** Substitute the two placeholders, the only thing init changes in a template. */
+export function fillTemplatePlaceholders(
+  text: string,
+  containerName: string,
+): string {
   return text
     .replace(NAME_PLACEHOLDER, containerName)
     .replace(RUNTIME_PLACEHOLDER, DEFAULT_RUNTIME_VERSION);
+}
+
+/** A template as read from disk, before its placeholders are filled. */
+export interface TemplateFile {
+  name: string;
+  file: string;
+  text: string;
+  local: boolean;
+}
+
+/**
+ * Every template once, sorted by name. A name in several sources is read from
+ * the first, so the builder's file wins, as it does for `init --template`.
+ */
+export async function readWorkbenchTemplates(
+  sources: readonly TemplateSource[],
+): Promise<TemplateFile[]> {
+  const byName = new Map<string, TemplateFile>();
+  for (const { dir, local } of sources) {
+    if (!existsSync(dir)) continue;
+    for (const entry of readdirSync(dir)) {
+      if (!entry.endsWith('.yml')) continue;
+      const name = entry.slice(0, -'.yml'.length);
+      if (byName.has(name)) continue;
+      const file = path.join(dir, entry);
+      byName.set(name, {
+        name,
+        file,
+        text: await fs.readFile(file, 'utf8'),
+        local,
+      });
+    }
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * What a template brings, for `list-components --json`. Read with the config
+ * parser after filling the placeholders, so a broken template fails here with
+ * its path instead of at the next `init`.
+ */
+export function projectWorkbenchTemplate(
+  template: TemplateFile,
+  catalog: Map<string, CatalogComponent>,
+): CatalogJsonTemplate {
+  let config: SolutionConfig;
+  try {
+    // The name is not part of the output; it only has to be a valid one.
+    config = parseConfig(
+      fillTemplatePlaceholders(template.text, 'template'),
+      template.file,
+    ).config;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Invalid workbench template ${template.file}: ${msg}`);
+  }
+  const description = templateDescription(template.text);
+  return {
+    name: template.name,
+    ...(template.local ? { local: true as const } : {}),
+    ...(description ? { description } : {}),
+    languages: config.languages.map(languageLabel),
+    services: config.services.map((s) => s.name),
+    features: config.features.map((f) => projectFeature(f, catalog)),
+    mcpServers: config.mcpServers.map((m) => m.name),
+  };
+}
+
+/** `node`, `node:24`, or the object form `{ java: { version: 21 } }` as `java:21`. */
+function languageLabel(entry: SolutionConfig['languages'][number]): string {
+  if (typeof entry === 'string') return entry;
+  const [name, options] = Object.entries(entry)[0]!;
+  return options['version'] !== undefined
+    ? `${name}:${options['version']}`
+    : name;
+}
+
+function projectFeature(
+  entry: SolutionConfig['features'][number],
+  catalog: Map<string, CatalogComponent>,
+): CatalogJsonTemplateFeature {
+  const id = matchMonocerosFeature(entry.ref)?.name;
+  const descriptor = id ? catalog.get(id)?.descriptor : undefined;
+  const out: CatalogJsonTemplateFeature = {
+    name:
+      descriptor?.category === 'feature'
+        ? (descriptor.name ?? descriptor.id)
+        : entry.ref,
+  };
+  const options = Object.entries(entry.options ?? {}).filter(
+    ([, value]) => !(typeof value === 'string' && value.includes('${')),
+  );
+  if (options.length > 0) out.options = Object.fromEntries(options);
+  if (entry.plugins && entry.plugins.length > 0) out.plugins = entry.plugins;
+  return out;
+}
+
+/**
+ * The first paragraph of the leading comment block that is not the header
+ * init writes into every yml (`The workbench <name>. This file is the source
+ * of truth …`), URL lines dropped. The shipped templates carry that header
+ * with the placeholder, a template made by copying a config carries it with
+ * the real name; in both the paragraph after it says what the template is
+ * for. A builder's own template without the header gets its first comment.
+ */
+function templateDescription(text: string): string | undefined {
+  const paragraphs: string[][] = [[]];
+  for (const line of text.trimStart().split('\n')) {
+    if (!line.startsWith('#')) break;
+    const body = line.replace(/^#\s?/, '').trim();
+    if (body === '') paragraphs.push([]);
+    else if (!/^https?:\/\/\S+$/.test(body)) paragraphs.at(-1)!.push(body);
+  }
+  const first = paragraphs.find(
+    (p) => p.length > 0 && !p[0]!.startsWith('The workbench `'),
+  );
+  return first?.join(' ');
 }
 
 /**
