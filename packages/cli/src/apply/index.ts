@@ -1114,13 +1114,26 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
           (await docker(['image', 'inspect', img.image])).exitCode === 0;
         if (cached && !opts.rebuild && !isFirstApply) continue;
         if (progress) progress.setPhase('pulling service images…');
-        const pulled = await pullPrivateImage(img, docker);
-        if (pulled.exitCode === 0) {
+        let reason = '';
+        const exit = await pullPrivateImage(img, docker, (dockerArgs) =>
+          pullServiceImages({
+            root: targetDir,
+            services: [img.service],
+            dockerArgs,
+            ...(opts.composeSpawn ? { spawn: opts.composeSpawn } : {}),
+            logSink: applyLog.sink,
+            silent: progress !== null,
+            ...(progress ? { onStatus: (t) => progress.setPhase(t) } : {}),
+            onError: (_image, r) => {
+              reason = r;
+            },
+          }),
+        );
+        if (exit === 0 && !reason) {
           internalLogger.info(`Pulled ${img.image} with ${img.varName}`);
           continue;
         }
-        const reason =
-          pulled.stderr.trim().split('\n').pop() || `exit ${pulled.exitCode}`;
+        reason ||= `exit ${exit}`;
         if (cached) {
           containerLogger.warn?.(
             `Could not pull ${img.image} with ${img.varName}: ${reason}. The service starts from the cached image.`,
@@ -1160,6 +1173,13 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
           logSink: applyLog.sink,
           silent: progress !== null,
           logger: internalLogger,
+          ...(progress ? { onStatus: (t) => progress.setPhase(t) } : {}),
+          // `--ignore-pull-failures` keeps the exit at 0, so a failed image
+          // is only seen here: name it, since its cached version starts.
+          onError: (image, reason) =>
+            containerLogger.warn?.(
+              `Could not pull ${image}: ${reason}. The service starts from the cached image.`,
+            ),
         });
         if (pullExit !== 0) {
           containerLogger.warn?.(

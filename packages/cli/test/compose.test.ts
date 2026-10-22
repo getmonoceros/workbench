@@ -224,10 +224,11 @@ describe('compose actions', () => {
           projectName,
           '--profile',
           'monoceros-deferred',
+          '--progress',
+          'json',
           'pull',
           '--ignore-buildable',
           '--ignore-pull-failures',
-          '--quiet',
         ],
         cwd: solution,
       },
@@ -243,7 +244,7 @@ describe('compose actions', () => {
     await pullServiceImages({ root: solution, spawn, services: ['mssql'] });
     await pullServiceImages({ root: solution, spawn, services: [] });
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.slice(-2)).toEqual(['--quiet', 'mssql']);
+    expect(calls[0]!.slice(-2)).toEqual(['--ignore-pull-failures', 'mssql']);
   });
 
   it('pullServiceImages reports a failing pull instead of throwing', async () => {

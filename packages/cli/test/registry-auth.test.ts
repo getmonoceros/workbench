@@ -63,54 +63,53 @@ describe('pullPrivateImage (ADR 0064)', () => {
   };
 
   it('pulls through a throwaway config on the current context, and removes it', async () => {
-    const calls: string[][] = [];
+    const exec: DockerExec = async (args) => ({
+      stdout:
+        args[0] === 'context'
+          ? 'unix:///Users/u/.docker/run/docker.sock\n'
+          : '/Users/u/.docker/cli-plugins/docker-compose\n',
+      stderr: '',
+      exitCode: 0,
+    });
+    let dockerArgs: string[] = [];
     let config = '';
-    const exec: DockerExec = async (args) => {
-      calls.push(args);
-      if (args[0] === 'context') {
-        return {
-          stdout: 'unix:///Users/u/.docker/run/docker.sock\n',
-          stderr: '',
-          exitCode: 0,
-        };
-      }
+    const exit = await pullPrivateImage(img, exec, async (args) => {
+      dockerArgs = args;
       config = readFileSync(`${args[1]}/config.json`, 'utf8');
-      return { stdout: '', stderr: '', exitCode: 0 };
-    };
+      return 0;
+    });
 
-    const result = await pullPrivateImage(img, exec);
-
-    expect(result.exitCode).toBe(0);
-    const pull = calls[1]!;
-    expect(pull[0]).toBe('--config');
-    expect(pull.slice(2)).toEqual([
+    expect(exit).toBe(0);
+    expect(dockerArgs[0]).toBe('--config');
+    expect(dockerArgs.slice(2)).toEqual([
       '--host',
       'unix:///Users/u/.docker/run/docker.sock',
-      'pull',
-      '--quiet',
-      SSP,
     ]);
-    expect(pull.join(' ')).not.toContain('ghp_conciso');
+    expect(dockerArgs.join(' ')).not.toContain('ghp_conciso');
     const auth = JSON.parse(config).auths['ghcr.io'].auth as string;
     expect(Buffer.from(auth, 'base64').toString()).toBe(
       'monoceros:ghp_conciso',
     );
-    expect(existsSync(pull[1]!)).toBe(false);
+    // A fresh config dir has no cli-plugins, so `compose` would be unknown.
+    expect(JSON.parse(config).cliPluginsExtraDirs).toEqual([
+      '/Users/u/.docker/cli-plugins',
+    ]);
+    expect(existsSync(dockerArgs[1]!)).toBe(false);
   });
 
   it('hands back the failing pull and still removes the config', async () => {
+    const exec: DockerExec = async () => ({
+      stdout: '',
+      stderr: '',
+      exitCode: 1,
+    });
     let dir = '';
-    const exec: DockerExec = async (args) => {
-      if (args[0] === 'context') return { stdout: '', stderr: '', exitCode: 1 };
+    const exit = await pullPrivateImage(img, exec, async (args) => {
       dir = args[1]!;
       expect(args).not.toContain('--host');
-      return { stdout: '', stderr: 'denied: permission_denied\n', exitCode: 1 };
-    };
-    const result = await pullPrivateImage(img, exec);
-    expect(result).toMatchObject({
-      exitCode: 1,
-      stderr: 'denied: permission_denied\n',
+      return 1;
     });
+    expect(exit).toBe(1);
     expect(existsSync(dir)).toBe(false);
   });
 });

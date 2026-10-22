@@ -7,10 +7,20 @@ import { type DockerExec } from '../proxy/index.js';
 import { createSecretMaskStream, maskSecrets } from '../util/mask-secrets.js';
 import { DEFERRED_SERVICE_PROFILE } from '../create/catalog.js';
 import { spawnDevcontainer, type DevcontainerSpawn } from './cli.js';
+import { createPullProgress } from './pull-progress.js';
 
 export { type DockerExec, type DockerResult } from '../proxy/index.js';
 
-export type ComposeSpawn = (args: string[], cwd: string) => Promise<number>;
+/**
+ * Runs `docker compose <args>` in `cwd`. `out` is where a caller that reads
+ * the output wants it (the pull progress, #137); the default spawns are set
+ * up with their sink already and ignore it, a test spawn writes into it.
+ */
+export type ComposeSpawn = (
+  args: string[],
+  cwd: string,
+  out?: NodeJS.WritableStream,
+) => Promise<number>;
 
 // Default spawn: shells out to `docker compose` (the v2 docker
 // subcommand). Stdout/stderr are streamed through a secret masker
@@ -39,27 +49,45 @@ export const spawnDockerCompose: ComposeSpawn = (args, cwd) => {
 export function spawnDockerComposeTo(opts: {
   logSink?: NodeJS.WritableStream;
   silent?: boolean;
+  /** Docker's own flags, which go before `compose` (`--config`, `--host`). */
+  dockerArgs?: readonly string[];
 }): ComposeSpawn {
   return (args, cwd) =>
     new Promise((resolve, reject) => {
-      const child = spawn('docker', ['compose', ...args], {
-        cwd,
-        stdio: ['inherit', 'pipe', 'pipe'],
-      });
+      const child = spawn(
+        'docker',
+        [...(opts.dockerArgs ?? []), 'compose', ...args],
+        {
+          cwd,
+          stdio: ['inherit', 'pipe', 'pipe'],
+        },
+      );
+      // Resolve once both streams are drained, not on `exit`: the masker
+      // still holds the last lines then, and a caller reading them (the pull
+      // progress, #137) would decide on a failure it has not seen yet.
       const route = (
         src: NodeJS.ReadableStream | null,
         screen: NodeJS.WriteStream,
-      ): void => {
-        if (!src) return;
-        src.pipe(createSecretMaskStream()).on('data', (chunk: Buffer) => {
-          opts.logSink?.write(chunk);
-          if (!opts.silent) screen.write(chunk);
+      ): Promise<void> => {
+        if (!src) return Promise.resolve();
+        return new Promise((drained) => {
+          src
+            .pipe(createSecretMaskStream())
+            .on('data', (chunk: Buffer) => {
+              opts.logSink?.write(chunk);
+              if (!opts.silent) screen.write(chunk);
+            })
+            .on('end', drained);
         });
       };
-      route(child.stdout, process.stdout);
-      route(child.stderr, process.stderr);
+      const streams = Promise.all([
+        route(child.stdout, process.stdout),
+        route(child.stderr, process.stderr),
+      ]);
       child.on('error', reject);
-      child.on('exit', (code) => resolve(code ?? 0));
+      child.on('exit', (code) => {
+        void streams.then(() => resolve(code ?? 0));
+      });
     });
 }
 
@@ -404,6 +432,12 @@ export interface PullImagesOptions {
    * pulled itself (ADR 0064), which compose would answer with "unauthorized".
    */
   services?: string[];
+  /** The spinner's status: which image is loading and how far it is (#137). */
+  onStatus?: (text: string) => void;
+  /** An image that failed to pull, with the registry's reason. */
+  onError?: (image: string, reason: string) => void;
+  /** Docker's own flags before `compose`, e.g. a throwaway `--config`. */
+  dockerArgs?: readonly string[];
 }
 
 /**
@@ -429,14 +463,26 @@ export async function pullServiceImages(
 ): Promise<number> {
   if (opts.services?.length === 0) return 0;
   const { composeFile, projectName } = resolveCompose(opts.root);
+  // Compose reports each layer as a JSON line; createPullProgress turns that
+  // into the spinner status and readable lines for the log, instead of the
+  // silence `--quiet` gave a pull that can take minutes (#137).
+  const progress = createPullProgress({
+    log: (line) => {
+      opts.logSink?.write(`${line}\n`);
+      if (!opts.silent) process.stderr.write(`${line}\n`);
+    },
+    ...(opts.onStatus ? { onStatus: opts.onStatus } : {}),
+    ...(opts.onError ? { onError: opts.onError } : {}),
+  });
   const spawnFn =
     opts.spawn ??
     spawnDockerComposeTo({
-      ...(opts.logSink ? { logSink: opts.logSink } : {}),
-      ...(opts.silent ? { silent: true } : {}),
+      logSink: progress,
+      silent: true,
+      ...(opts.dockerArgs ? { dockerArgs: opts.dockerArgs } : {}),
     });
   opts.logger?.info('Pulling service images…');
-  return spawnFn(
+  const exit = await spawnFn(
     [
       '-f',
       composeFile,
@@ -446,14 +492,18 @@ export async function pullServiceImages(
       // the one image most likely to carry a security fix is skipped.
       '--profile',
       DEFERRED_SERVICE_PROFILE,
+      '--progress',
+      'json',
       'pull',
       '--ignore-buildable',
       '--ignore-pull-failures',
-      '--quiet',
       ...(opts.services ?? []),
     ],
     opts.root,
+    progress,
   );
+  progress.end();
+  return exit;
 }
 
 export interface StartOptions {

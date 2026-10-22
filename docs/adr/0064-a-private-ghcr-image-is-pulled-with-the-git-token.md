@@ -28,7 +28,10 @@ builder keeps one token per owner, the one they already have.
 **The pull goes through a throwaway Docker config** that holds only this
 credential, with the current context's endpoint passed as `--host`. Nothing
 is written to the builder's Docker login, the token never appears on a
-command line, and the directory is removed after the pull.
+command line, and the directory is removed after the pull. The pull itself
+is the compose pull of that one service, so it reports progress like every
+other image (#137); the config names the compose plugin's directory in
+`cliPluginsExtraDirs`, because Docker looks for plugins under the config dir.
 
 **It is pulled exactly when compose would pull it**: on the first apply, on
 `upgrade`, and whenever the image is not cached. The compose pull of

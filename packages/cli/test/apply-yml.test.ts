@@ -786,9 +786,7 @@ describe('runApply', () => {
       ].join('\n'),
     );
     let cached = false;
-    const docker: string[][] = [];
     const dockerExec = async (args: string[]) => {
-      docker.push(args);
       const inspect = args[0] === 'image' && args[1] === 'inspect';
       return { exitCode: inspect && !cached ? 1 : 0, stdout: '', stderr: '' };
     };
@@ -806,26 +804,24 @@ describe('runApply', () => {
         dockerExec,
         composeSpawn,
       });
-    const pulls = () => docker.filter((a) => a.includes('pull'));
+    const pulled = () => composePulls.map((a) => a.at(-1));
 
-    // First apply: the private image is pulled by apply itself, and compose
-    // pulls only the rest, so it never answers "unauthorized".
+    // First apply: the private image gets a pull of its own, with the token,
+    // and the general pull takes only the rest, so it never answers
+    // "unauthorized".
     await run();
-    expect(pulls()).toHaveLength(1);
-    expect(pulls()[0]!.slice(-1)).toEqual([image]);
-    expect(composePulls).toHaveLength(1);
-    expect(composePulls[0]!.slice(-1)).toEqual(['postgres']);
+    expect(pulled()).toEqual(['pdf', 'postgres']);
 
     // Routine re-apply with the image cached: nothing is pulled.
     cached = true;
     await run();
-    expect(pulls()).toHaveLength(1);
+    expect(pulled()).toEqual(['pdf', 'postgres']);
 
     // Not cached any more (pruned, or a new workbench on this machine):
     // compose would pull it, so apply does, with the token.
     cached = false;
     await run();
-    expect(pulls()).toHaveLength(2);
+    expect(pulled()).toEqual(['pdf', 'postgres', 'pdf']);
   });
 
   it('names the image, the token and the registry answer when a private pull fails (ADR 0064)', async () => {
@@ -840,14 +836,22 @@ describe('runApply', () => {
         '',
       ].join('\n'),
     );
-    const dockerExec = async (args: string[]) =>
-      args.includes('pull')
-        ? {
-            exitCode: 1,
-            stdout: '',
-            stderr: 'Error response from daemon: denied\n',
-          }
-        : { exitCode: args[0] === 'image' ? 1 : 0, stdout: '', stderr: '' };
+    const dockerExec = async (args: string[]) => ({
+      exitCode: args[0] === 'image' ? 1 : 0,
+      stdout: '',
+      stderr: '',
+    });
+    // What compose reports for a package the token may not read.
+    const composeSpawn = async (
+      _args: string[],
+      _cwd: string,
+      out?: NodeJS.WritableStream,
+    ) => {
+      out?.write(
+        '{"id":"Image ghcr.io/acme/app/pdf:latest","status":"Error","text":"Error","details":"Error response from daemon: denied\\ndenied"}\n',
+      );
+      return 0;
+    };
     await expect(
       runApply({
         ...baseRunOpts,
@@ -855,6 +859,7 @@ describe('runApply', () => {
         monocerosHome: home,
         env: { GIT_TOKEN__GITHUB_ACME: 'tok-acme' },
         dockerExec,
+        composeSpawn,
       }),
     ).rejects.toThrow(
       /ghcr\.io\/acme\/app\/pdf:latest .*GIT_TOKEN__GITHUB_ACME: Error response from daemon: denied\. The token needs the read:packages scope/,
