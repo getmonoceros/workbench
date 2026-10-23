@@ -8,8 +8,9 @@ import {
   applyOverlay,
   collectOwnDescriptors,
   parseDescriptorFile,
-  setCatalogWarnings,
+  finishCatalog,
   withOlderVersions,
+  type OrphanVersions,
   type CatalogComponent,
   type DescriptorFile,
 } from './load.js';
@@ -27,12 +28,13 @@ export function loadDescriptorCatalogSync(
   userDir?: string,
 ): Map<string, CatalogComponent> {
   const warnings: string[] = [];
+  const orphans: OrphanVersions = new Map();
   const out = walkTreeSync(rootDir ?? componentsRootDir(), warnings);
   const overlayDir = rootDir === undefined ? userTemplatesDir() : userDir;
   if (overlayDir) {
-    applyOverlay(out, walkOwnDescriptorsSync(overlayDir, warnings));
+    applyOverlay(out, walkOwnDescriptorsSync(overlayDir, warnings, orphans));
   }
-  setCatalogWarnings(out, warnings);
+  finishCatalog(out, warnings, orphans);
   return out;
 }
 
@@ -83,6 +85,7 @@ function walkTreeSync(
 function walkOwnDescriptorsSync(
   templatesDir: string,
   warnings: string[],
+  orphans: OrphanVersions,
 ): Map<string, CatalogComponent> {
   const out = new Map<string, CatalogComponent>();
   for (const [dirName, category] of Object.entries(OWN_CATEGORY_DIRS)) {
@@ -95,7 +98,7 @@ function walkOwnDescriptorsSync(
         sourcePath: path.join(dir, e.name),
         text: readFileSync(path.join(dir, e.name), 'utf8'),
       }));
-    collectOwnDescriptors(out, files, category, warnings);
+    collectOwnDescriptors(out, files, category, warnings, orphans);
   }
   return out;
 }

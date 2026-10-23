@@ -2,7 +2,11 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { catalogWarnings, loadDescriptorCatalog } from '../src/catalog/load.js';
+import {
+  catalogWarnings,
+  loadDescriptorCatalog,
+  orphanVersions,
+} from '../src/catalog/load.js';
 import { loadDescriptorCatalogSync } from '../src/catalog/load-sync.js';
 
 // Versioned service descriptors (#139): every version stays as a file, a
@@ -141,14 +145,27 @@ describe('versioned descriptors: loading', () => {
     }
   });
 
-  it('leaves out an older version without its current file', async () => {
+  it('keeps an older version without its current file usable by its ref', async () => {
     await writeFile(path.join(services, 'rabbitmq@1.yml'), rabbit(1));
     for (const catalog of await load()) {
+      // Not in the catalog: add-service has no current version to write.
       expect(catalog.has('rabbitmq')).toBe(false);
-      expect(catalogWarnings(catalog)[0]).toMatch(
-        /rabbitmq\.yml next to it is missing/,
-      );
+      expect(catalogWarnings(catalog)).toEqual([]);
+      expect([...orphanVersions(catalog).get('rabbitmq')!.keys()]).toEqual([1]);
     }
+    // A workbench on version 1 still reads it, so apply has nothing to say.
+    const catalog = await import('../src/create/catalog.js');
+    const svc = { name: 'rabbitmq', ref: 'rabbitmq@1' };
+    expect(catalog.curatedServiceBriefing(svc)).toEqual([
+      'Briefing of version 1.',
+    ]);
+    expect(catalog.serviceRefWarnings([svc])).toEqual([]);
+    // One on version 2 gets one hint, about the file that is missing.
+    expect(
+      catalog.serviceRefWarnings([{ name: 'rabbitmq', ref: 'rabbitmq@2' }]),
+    ).toEqual([
+      `Service 'rabbitmq' has ref rabbitmq@2, but ${path.join(services, 'rabbitmq.yml')} is not here. It runs as the yml says, without the briefing and the rest that file carries.`,
+    ]);
   });
 
   it('leaves out a version on an MCP server', async () => {

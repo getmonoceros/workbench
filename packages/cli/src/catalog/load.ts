@@ -77,12 +77,49 @@ export function catalogWarnings(
   return LOAD_WARNINGS.get(catalog) ?? [];
 }
 
-/** Remember the loader's hints for the catalog it returns. */
-export function setCatalogWarnings(
+/** Older versions by id, for ids whose current file is not there. */
+export type OrphanVersions = Map<string, Map<number, CatalogComponent>>;
+
+/**
+ * Older versions of an own service whose current `<id>.yml` is missing. They
+ * are not part of the catalog (`add-service` has no current version to
+ * write), but a workbench whose `ref` names one of them still reads it, so a
+ * missing current file costs only what it carries itself.
+ */
+const ORPHAN_VERSIONS = new WeakMap<
+  Map<string, CatalogComponent>,
+  OrphanVersions
+>();
+
+/** Older versions without a current file (see ORPHAN_VERSIONS). */
+export function orphanVersions(
+  catalog: Map<string, CatalogComponent>,
+): OrphanVersions {
+  return ORPHAN_VERSIONS.get(catalog) ?? new Map();
+}
+
+/**
+ * Remember what the loader found beside the catalog it returns: its hints,
+ * and the older versions without a current file. One whose id the catalog
+ * has after all (a shipped service of that name) is left out: its versions
+ * are the shipped ones.
+ */
+export function finishCatalog(
   catalog: Map<string, CatalogComponent>,
   warnings: string[],
+  orphans: OrphanVersions,
 ): void {
+  for (const [id, versions] of orphans) {
+    if (!catalog.has(id)) continue;
+    for (const c of versions.values()) {
+      warnings.push(
+        `Left out ${c.sourcePath}: '${id}' is a shipped service, and ${id}.yml next to it is missing.`,
+      );
+    }
+    orphans.delete(id);
+  }
   if (warnings.length > 0) LOAD_WARNINGS.set(catalog, warnings);
+  if (orphans.size > 0) ORPHAN_VERSIONS.set(catalog, orphans);
 }
 
 /**
@@ -145,12 +182,13 @@ export async function loadDescriptorCatalog(
   userDir?: string,
 ): Promise<Map<string, CatalogComponent>> {
   const warnings: string[] = [];
+  const orphans: OrphanVersions = new Map();
   const out = await walkTree(rootDir ?? componentsRootDir(), warnings);
   const overlayDir = rootDir === undefined ? userTemplatesDir() : userDir;
   if (overlayDir) {
-    applyOverlay(out, await walkOwnDescriptors(overlayDir, warnings));
+    applyOverlay(out, await walkOwnDescriptors(overlayDir, warnings, orphans));
   }
-  setCatalogWarnings(out, warnings);
+  finishCatalog(out, warnings, orphans);
   return out;
 }
 
@@ -216,6 +254,7 @@ export const OWN_CATEGORY_DIRS: Readonly<Record<string, DescriptorCategory>> = {
 async function walkOwnDescriptors(
   templatesDir: string,
   warnings: string[],
+  orphans: OrphanVersions,
 ): Promise<Map<string, CatalogComponent>> {
   const out = new Map<string, CatalogComponent>();
   for (const [dirName, category] of Object.entries(OWN_CATEGORY_DIRS)) {
@@ -231,7 +270,7 @@ async function walkOwnDescriptors(
         text: await fs.readFile(sourcePath, 'utf8'),
       });
     }
-    collectOwnDescriptors(out, files, category, warnings);
+    collectOwnDescriptors(out, files, category, warnings, orphans);
   }
   return out;
 }
@@ -247,6 +286,7 @@ export function collectOwnDescriptors(
   files: readonly DescriptorFile[],
   category: DescriptorCategory,
   warnings: string[],
+  orphans: OrphanVersions,
 ): void {
   const older = files.filter((f) => OLDER_VERSION_RE.test(f.name));
   for (const file of files) {
@@ -267,9 +307,26 @@ export function collectOwnDescriptors(
     }
     const current = out.get(base);
     if (!current) {
-      warnings.push(
-        `Left out ${first.sourcePath}: it is an older version of '${base}', but ${base}.yml next to it is missing.`,
-      );
+      const versions = new Map<number, CatalogComponent>();
+      for (const file of older) {
+        const m = OLDER_VERSION_RE.exec(file.name)!;
+        if (m[1] !== base) continue;
+        const component = parseDescriptorFile(
+          file.text,
+          file.sourcePath,
+          base,
+          'service',
+          'file',
+        );
+        if (component.descriptor.version !== Number(m[2])) {
+          warnings.push(
+            `Left out ${file.sourcePath}: it carries version ${component.descriptor.version}, but its file name says ${m[2]}.`,
+          );
+          continue;
+        }
+        versions.set(Number(m[2]), component);
+      }
+      if (versions.size > 0) orphans.set(base, versions);
       continue;
     }
     out.set(base, withOlderVersions(current, older, base, 'file', warnings));

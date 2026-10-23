@@ -12,7 +12,7 @@ import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { serviceProxyAlias } from '../config/http-services.js';
 import { componentsRootDir, userTemplatesDir } from '../config/paths.js';
 import { componentDocsURL } from '../init/docs-url.js';
-import type { CatalogComponent } from '../catalog/load.js';
+import { orphanVersions, type CatalogComponent } from '../catalog/load.js';
 import type { BriefingLine } from '../catalog/descriptor.js';
 
 // Monoceros runtime image — thin layer on top of Microsoft's
@@ -668,6 +668,12 @@ const SERVICE_VERSIONS: Readonly<
       return [key, versions];
     }),
 );
+// Older versions whose current file is missing still serve a workbench
+// whose `ref` names them (see catalog/load.ts#orphanVersions).
+for (const [id, versions] of orphanVersions(DESCRIPTORS)) {
+  (SERVICE_VERSIONS as Record<string, ReadonlyMap<number, ServiceEntry>>)[id] =
+    new Map([...versions].map(([n, c]) => [n, toServiceEntry(c, id)]));
+}
 
 const SERVICE_REF_RE = /^([a-z0-9][a-z0-9-]*)@([1-9][0-9]*)$/;
 
@@ -721,6 +727,8 @@ export function serviceRefWarnings(
   for (const svc of services) {
     if (svc.ref === undefined) continue;
     const ref = parseServiceRef(svc.ref);
+    // The version is there, with or without a current file beside it.
+    if (ref && SERVICE_VERSIONS[ref.id]?.has(ref.version)) continue;
     const current = ref ? SERVICE_CATALOG[ref.id] : undefined;
     if (!ref || !current) {
       const id = ref?.id ?? svc.ref;
@@ -729,7 +737,6 @@ export function serviceRefWarnings(
       );
       continue;
     }
-    if (SERVICE_VERSIONS[ref.id]?.has(ref.version)) continue;
     const dir = path.dirname(current.sourcePath);
     const file = current.local
       ? path.join(dir, `${ref.id}@${ref.version}.yml`)
