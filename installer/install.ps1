@@ -346,7 +346,11 @@ if [ -f "$TPLDIR/monoceros-config.sample.env" ] && [ ! -f "$HOME/.monoceros/mono
   Invoke-Step '7. Installing the monoceros shim' {
     $null = New-Item -ItemType Directory -Force -Path $ShimDir
     $shim = Join-Path $ShimDir 'monoceros.cmd'
-    Set-Content -Path $shim -Encoding ASCII -Value "@echo off`r`nwsl.exe -d $DistroName -- $script:MonoBin %*`r`n"
+    # `--cd ~`: WSL would otherwise try to enter the current Windows folder,
+    # and inside %USERPROFILE%\.monoceros (a link back into the distro) that
+    # fails with "chdir ... failed 5". The CLI never reads its working
+    # directory, so starting in the distro's home changes nothing else.
+    Set-Content -Path $shim -Encoding ASCII -Value "@echo off`r`nwsl.exe -d $DistroName --cd ~ -- $script:MonoBin %*`r`n"
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $parts = @($userPath -split ';' | Where-Object { $_ -and $_ -ne $ShimDir })
     [Environment]::SetEnvironmentVariable('Path', ((@($ShimDir) + $parts) -join ';'), 'User')
