@@ -285,13 +285,18 @@ describe('resolveMcpServers', () => {
     ).toThrow(/unknown option 'nope'\. Declared options: mode/);
   });
 
-  it('lists the catalog for an unknown name', () => {
-    expect(() =>
-      resolveMcpServers([entry({ name: 'ghost' })], catalog),
-    ).toThrow(/unknown connector\. Catalog connectors: context7, localthing/);
-    expect(() =>
-      resolveMcpServers([entry({ name: 'acme-wiki' })], catalog),
-    ).toThrow(/templates\/mcp-servers\/acme-wiki\.yml/);
+  it('skips a name with no descriptor here, with a note instead of a stop', () => {
+    const { servers, notes } = resolveMcpServers(
+      [entry({ name: 'acme-wiki' }), entry({ name: 'localthing' })],
+      catalog,
+    );
+    expect(servers.map((s) => s.name)).toEqual(['localthing']);
+    expect(notes).toEqual([
+      "mcp 'acme-wiki' is not registered: there is no descriptor for it here. " +
+        'It belongs in templates/mcp-servers/acme-wiki.yml in your Monoceros home; ' +
+        'or give the entry its own definition (transport, command/url, …). ' +
+        'Catalog connectors: context7, localthing.',
+    ]);
   });
 
   it('points at the right command when the name is another category', () => {
@@ -361,10 +366,13 @@ service:
   it('collects every problem before it throws', () => {
     expect(() =>
       resolveMcpServers(
-        [entry({ name: 'ghost' }), entry({ name: 'context7' })],
+        [
+          entry({ name: 'localthing', options: { nope: 'x' } }),
+          entry({ name: 'context7' }),
+        ],
         catalog,
       ),
-    ).toThrow(/ghost[\s\S]*context7/);
+    ).toThrow(/nope[\s\S]*context7/);
   });
 });
 

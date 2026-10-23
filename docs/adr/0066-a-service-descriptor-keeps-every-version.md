@@ -43,8 +43,10 @@ descriptor rather than from the yml comes from the version in `ref`, looked up
 by the descriptor id: the briefing, the client packages, the deferred start,
 the resource default, the deploy block, the VS Code recommendations. A renamed
 instance therefore gets them too. `tools` stay looked up by name, because a
-tool reads the connection env under the catalog name. A `ref` whose version
-file is missing stops `apply` and names the file; a newer version is a note.
+tool reads the connection env under the catalog name. A `ref` whose file is
+not on this machine is a hint that names the file, never a stop: the block in
+the yml is complete, so the service runs as it says, without the data from
+that file. A newer version is a note.
 
 **`upgrade` merges three states.** The block a version wrote depends only on
 the descriptor and the service name, so it can be rebuilt. For a service whose
@@ -75,9 +77,9 @@ there. An entry that matches no version keeps the image retag of ADR 0052.
   curated image back to the catalog's tag. Now an image the builder changed is
   a builder-only change and stays, unless the new version changes it too, which
   is a conflict they see.
-- **A shared yml needs every version it names.** A workbench recording
-  `rabbitmq@2` does not apply on a machine whose team repository dropped
-  `rabbitmq@2.yml`. The repository keeps old versions as long as workbenches
-  use them.
+- **A shared yml wants every version it names.** A workbench recording
+  `rabbitmq@2` on a machine without `rabbitmq@2.yml` runs the block without
+  its briefing and the rest, and `apply` says which file is missing. So the
+  repository keeps old versions as long as workbenches use them.
 - **`list-components --json` carries `version` per service**, and a workbench
   template lists a service with a `ref` as `<id>@<version>`.

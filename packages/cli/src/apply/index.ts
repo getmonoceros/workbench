@@ -66,7 +66,7 @@ import {
   runtimeSupportsSshAttach,
   serviceArchitectureWarning,
   serviceRefNotes,
-  serviceRefProblems,
+  serviceRefWarnings,
   serviceDefersStart,
 } from '../create/catalog.js';
 import { hasWantedApps, runAppCtl } from '../devcontainer/app-control.js';
@@ -525,10 +525,11 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
   const descriptors = await loadDescriptorCatalog();
   // A service's `ref` names the descriptor version its block came from
   // (#139), and everything apply takes from the descriptor comes from that
-  // version. A ref that cannot be read stops here, after the load above has
-  // reported a broken file by path.
-  const refProblems = serviceRefProblems(createOpts.services);
-  if (refProblems.length > 0) throw new Error(refProblems.join('\n'));
+  // version. A file that is not on this machine is a hint, never a stop: the
+  // block in the yml is complete and runs without it.
+  for (const warning of serviceRefWarnings(createOpts.services)) {
+    (logger.warn ?? logger.info)(warning);
+  }
   for (const note of serviceRefNotes(createOpts.services, opts.name)) {
     logger.info(note);
   }

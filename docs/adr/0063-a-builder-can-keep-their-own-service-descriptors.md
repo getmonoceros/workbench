@@ -54,8 +54,8 @@ local by definition, and `list-components` marks it `(local)`.
 
 - **The yml does not depend on the descriptor** (superseded for entries with a
   `ref` by [ADR 0066](0066-a-service-descriptor-keeps-every-version.md): such
-  an entry needs the descriptor version it names, and `apply` stops and names
-  the file when it is missing). `add-service` bakes image,
+  an entry reads its descriptor data from the version it names; without that
+  file `apply` says which one is missing and runs the block as it is). `add-service` bakes image,
   port, env, healthcheck and `connectionEnv` into the workbench yml, so `apply`
   works on a machine that lacks the file. What it loses there is what is read
   from the catalog by name at apply: briefing lines, client packages, `tools`
@@ -101,9 +101,10 @@ options, and `apply` resolves transport, url, headers and the `briefing` lines
 from the descriptor every time. An own server goes the same way, so its
 briefing always reaches the agent. That differs from a service, whose block is
 baked into the yml. The consequence is the opposite one: on a machine without
-the file, the workbench does not apply, and the error names the unknown
-server. Getting the file onto every machine is what the team template
-repository (#133) is for.
+the file, `apply` leaves the server out and says where its file belongs, and
+the rest of the workbench comes up as usual; a missing file never stops it.
+Getting the file onto every machine is what the team template repository
+(#133) is for.
 
 **The rest follows services.** The yml header above the entry links no
 documentation page, `list-components` marks the server `(local)`, and on

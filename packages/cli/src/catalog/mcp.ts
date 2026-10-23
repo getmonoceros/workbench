@@ -12,7 +12,8 @@ import { matchMonocerosFeature } from '../util/ref.js';
  *
  *   - **no definition** → resolved here against the catalog. Options are
  *     validated against the descriptor and its `${option}` templates are
- *     rendered with them.
+ *     rendered with them. A name with no descriptor on this machine is
+ *     skipped with a note, never a stop.
  *   - **a definition** → passed through verbatim. Deliberately *not* resolved
  *     even when a connector of the same name exists, so shipping a curated
  *     `notion` tomorrow cannot change what an existing yml means. The
@@ -93,7 +94,13 @@ export function resolveMcpServers(
     }
     const descriptor = connectors.get(entry.name);
     if (!descriptor) {
-      problems.push(unknownConnectorMessage(entry.name, catalog, connectors));
+      // A name of another category is the wrong command and stops. A name
+      // with no descriptor on this machine is a file that is not here (a
+      // team's own server, #134): never a stop, the server is just not
+      // registered, and the note says where its file belongs.
+      const wrong = otherCategoryMessage(entry.name, catalog);
+      if (wrong) problems.push(wrong);
+      else notes.push(missingConnectorNote(entry.name, connectors));
       continue;
     }
     const resolved = resolveFromDescriptor(entry, descriptor, problems);
@@ -273,13 +280,14 @@ function renderTemplate(
   });
 }
 
-function unknownConnectorMessage(
+/**
+ * A name that exists in another category is almost always the wrong command,
+ * so say which one instead of "unknown".
+ */
+function otherCategoryMessage(
   name: string,
   catalog: Map<string, CatalogComponent>,
-  connectors: Map<string, Descriptor>,
-): string {
-  // A name that exists in another category is almost always the wrong
-  // command, so say which one instead of "unknown".
+): string | undefined {
   for (const { descriptor: d } of catalog.values()) {
     if ((d.name ?? d.id) === name && d.category !== 'mcp-server') {
       return (
@@ -288,12 +296,19 @@ function unknownConnectorMessage(
       );
     }
   }
+  return undefined;
+}
+
+function missingConnectorNote(
+  name: string,
+  connectors: Map<string, Descriptor>,
+): string {
   const known = [...connectors.keys()].sort().join(', ') || '(none)';
   return (
-    `  - mcp '${name}': unknown connector. Catalog connectors: ${known}. ` +
-    `For a server the catalog does not carry, put its descriptor in ` +
-    `templates/mcp-servers/${name}.yml in your Monoceros home, or its own ` +
-    `definition in the entry (transport, command/url, …) instead of just a name.`
+    `mcp '${name}' is not registered: there is no descriptor for it here. ` +
+    `It belongs in templates/mcp-servers/${name}.yml in your Monoceros home; ` +
+    `or give the entry its own definition (transport, command/url, …). ` +
+    `Catalog connectors: ${known}.`
   );
 }
 

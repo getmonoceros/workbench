@@ -165,21 +165,28 @@ describe('versioned descriptors: what apply reads', () => {
     expect(catalog.curatedServiceBriefing({ name: 'queue' })).toEqual([]);
   });
 
-  it('notes a newer version and names the missing file of a recorded one', async () => {
+  it('hints at a missing file instead of stopping, and notes a newer version', async () => {
     await writeFile(path.join(services, 'rabbitmq.yml'), rabbit(2));
     const catalog = await import('../src/create/catalog.js');
     const svc = [{ name: 'queue', ref: 'rabbitmq@1' }];
-    expect(catalog.serviceRefProblems(svc)).toEqual([
-      `Service 'queue' has ref rabbitmq@1, but version 1 is not there: ${path.join(services, 'rabbitmq@1.yml')} is missing.`,
+    expect(catalog.serviceRefWarnings(svc)).toEqual([
+      `Service 'queue' has ref rabbitmq@1, but ${path.join(services, 'rabbitmq@1.yml')} is not here. It runs as the yml says, without the briefing and the rest that file carries.`,
     ]);
+    // A descriptor that is not on this machine at all: the same hint, and
+    // apply reads nothing for it rather than stopping.
+    expect(catalog.serviceRefWarnings([{ name: 'x', ref: 'ghost@1' }])).toEqual(
+      [
+        `Service 'x' has ref ghost@1, but ${path.join(services, 'ghost.yml')} is not here. It runs as the yml says, without the briefing and the rest that file carries.`,
+      ],
+    );
     expect(
-      catalog.serviceRefProblems([{ name: 'x', ref: 'ghost@1' }])[0],
-    ).toMatch(/no service descriptor 'ghost' exists/);
+      catalog.curatedServiceBriefing({ name: 'x', ref: 'ghost@1' }),
+    ).toEqual([]);
 
     await writeFile(path.join(services, 'rabbitmq@1.yml'), rabbit(1));
     vi.resetModules();
     const fresh = await import('../src/create/catalog.js');
-    expect(fresh.serviceRefProblems(svc)).toEqual([]);
+    expect(fresh.serviceRefWarnings(svc)).toEqual([]);
     expect(fresh.serviceRefNotes(svc, 'demo')).toEqual([
       'queue is rabbitmq version 1, version 2 is available: monoceros upgrade demo',
     ]);

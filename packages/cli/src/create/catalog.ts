@@ -10,7 +10,7 @@ import type { ServiceHealthcheck, ServiceObject } from '../config/schema.js';
 import type { ResolvedService } from './types.js';
 import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { serviceProxyAlias } from '../config/http-services.js';
-import { componentsRootDir } from '../config/paths.js';
+import { componentsRootDir, userTemplatesDir } from '../config/paths.js';
 import { componentDocsURL } from '../init/docs-url.js';
 import type { CatalogComponent } from '../catalog/load.js';
 import type { BriefingLine } from '../catalog/descriptor.js';
@@ -708,11 +708,13 @@ export function serviceEntryAt(
 }
 
 /**
- * Why a service's `ref` cannot be read, one line per service: an unknown
- * descriptor, or a version whose file is not there. Apply stops on these,
- * because everything it takes from the descriptor would otherwise be missing.
+ * A hint per service whose `ref` cannot be read: the descriptor or the
+ * version's file is not on this machine. Never a stop: the block in the yml
+ * is complete, so the service runs as it says, and only what apply takes
+ * from the file (the briefing and the rest) is left out. The hint names the
+ * file, so whoever wants it back knows where it goes.
  */
-export function serviceRefProblems(
+export function serviceRefWarnings(
   services: readonly { name: string; ref?: string }[],
 ): string[] {
   const out: string[] = [];
@@ -721,8 +723,9 @@ export function serviceRefProblems(
     const ref = parseServiceRef(svc.ref);
     const current = ref ? SERVICE_CATALOG[ref.id] : undefined;
     if (!ref || !current) {
+      const id = ref?.id ?? svc.ref;
       out.push(
-        `Service '${svc.name}' has ref ${svc.ref}, but no service descriptor '${ref?.id ?? svc.ref}' exists.`,
+        `Service '${svc.name}' has ref ${svc.ref}, but ${path.join(userTemplatesDir(), 'services', `${id}.yml`)} is not here. It runs as the yml says, without the briefing and the rest that file carries.`,
       );
       continue;
     }
@@ -732,7 +735,7 @@ export function serviceRefProblems(
       ? path.join(dir, `${ref.id}@${ref.version}.yml`)
       : path.join(dir, `component@${ref.version}.yml`);
     out.push(
-      `Service '${svc.name}' has ref ${svc.ref}, but version ${ref.version} is not there: ${file} is missing.`,
+      `Service '${svc.name}' has ref ${svc.ref}, but ${file} is not here. It runs as the yml says, without the briefing and the rest that file carries.`,
     );
   }
   return out;
