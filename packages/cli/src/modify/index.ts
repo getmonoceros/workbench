@@ -39,6 +39,7 @@ import {
 import {
   buildMcpConnectorDoc,
   findMcpConnector,
+  isLocalComponent,
   mcpConnectorNames,
   mcpHeaderCommentBefore,
 } from '../init/mcp-doc.js';
@@ -991,11 +992,12 @@ export async function runAddMcpServer(
   if (!descriptor) {
     throw new Error(unknownMcpConnectorMessage(raw, catalog));
   }
-  const doc = buildMcpConnectorDoc(descriptor);
+  const local = isLocalComponent(catalog, descriptor);
+  const doc = buildMcpConnectorDoc(descriptor, local);
   const options: FeatureOptions = { ...doc.options, ...(input.options ?? {}) };
   const result = await mutate(input, (d) =>
     addMcpToDoc(d, doc.name, options, {
-      header: mcpHeaderCommentBefore(descriptor),
+      header: mcpHeaderCommentBefore(descriptor, local),
       containerName: input.name,
     }),
   );

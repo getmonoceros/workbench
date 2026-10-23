@@ -167,7 +167,8 @@ export type PwshValueKind =
   | 'runInDir'
   | 'target'
   | 'workbenchTemplate'
-  | 'catalogService';
+  | 'catalogService'
+  | 'catalogMcpServer';
 
 type PwshMeta =
   | { static: true }
@@ -779,7 +780,9 @@ const languageValues = staticSource(() => listLanguageNames());
 // at Tab time.
 const serviceValues = hybridSource('catalogService', () => listServiceNames());
 const featureValues = staticSource(() => listFeatureComponents());
-const mcpValues = staticSource(() => listMcpServers());
+// Hybrid like services: the builder's own MCP servers sit in
+// templates/mcp-servers/ (ADR 0063) and cannot be baked in.
+const mcpValues = hybridSource('catalogMcpServer', () => listMcpServers());
 const providerValues = staticSource(() => listProviders());
 const shellValues = staticSource(() => listShellNames());
 const openToolValues = staticSource(() => [...OPEN_TOOLS]);

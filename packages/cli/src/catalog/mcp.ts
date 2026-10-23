@@ -291,8 +291,9 @@ function unknownConnectorMessage(
   const known = [...connectors.keys()].sort().join(', ') || '(none)';
   return (
     `  - mcp '${name}': unknown connector. Catalog connectors: ${known}. ` +
-    `For a server the catalog does not carry, put its own definition in the entry ` +
-    `(transport, command/url, …) instead of just a name.`
+    `For a server the catalog does not carry, put its descriptor in ` +
+    `templates/mcp-servers/${name}.yml in your Monoceros home, or its own ` +
+    `definition in the entry (transport, command/url, …) instead of just a name.`
   );
 }
 

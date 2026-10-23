@@ -1,6 +1,6 @@
 # ADR 0063: A builder can keep their own service descriptors
 
-- Status: accepted
+- Status: accepted, amended 2026-10-23 (see [Amendment](#amendment-2026-10-23-mcp-servers-too))
 - Date: 2026-10-21
 - Relates to: [ADR 0020](0020-unified-component-descriptors.md) (the
   descriptor format),
@@ -71,3 +71,32 @@ local by definition, and `list-components` marks it `(local)`.
 - **Shell completion reads the home at Tab time.** On Windows the service
   names are a hybrid source like the templates: shipped names baked in, the
   `*.yml` names under `templates/services/` read by the script.
+
+## Amendment (2026-10-23): MCP servers too
+
+A team that uses an MCP server the catalog does not ship wrote the same inline
+`mcpServers:` entry into every workbench, transport, url, headers and token
+variable included (#134).
+
+**MCP server descriptors are also read from
+`<MONOCEROS_HOME>/templates/mcp-servers/<id>.yml`**, by the same rules as
+services: one flat file per server, the id is the file name, the content is the
+shipped format (`components/mcp-servers/context7/component.yml` is a start),
+the home wins by id, and a clash with a shipped component of another category
+is an error naming the file. An MCP descriptor is catalog data alone, like a
+service, so "Services only" above now reads "services and MCP servers".
+
+**It is written into the yml by name, not inline.** A catalog connector already
+is: `add-mcp-server` and `init --with-mcp-servers` write the name and its
+options, and `apply` resolves transport, url, headers and the `briefing` lines
+from the descriptor every time. An own server goes the same way, so its
+briefing always reaches the agent. That differs from a service, whose block is
+baked into the yml. The consequence is the opposite one: on a machine without
+the file, the workbench does not apply, and the error names the unknown
+server. Getting the file onto every machine is what the team template
+repository (#133) is for.
+
+**The rest follows services.** The yml header above the entry links no
+documentation page, `list-components` marks the server `(local)`, and on
+Windows the MCP names are a hybrid completion source that reads
+`templates/mcp-servers/*.yml` at Tab time.

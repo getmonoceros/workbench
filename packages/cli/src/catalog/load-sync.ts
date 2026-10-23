@@ -3,10 +3,11 @@ import path from 'node:path';
 import { componentsRootDir, userTemplatesDir } from '../config/paths.js';
 import {
   CATEGORY_DIRS,
+  OWN_CATEGORY_DIRS,
   addUnique,
   applyOverlay,
   parseDescriptorFile,
-  parseOwnService,
+  parseOwnDescriptor,
   type CatalogComponent,
 } from './load.js';
 
@@ -24,7 +25,7 @@ export function loadDescriptorCatalogSync(
 ): Map<string, CatalogComponent> {
   const out = walkTreeSync(rootDir ?? componentsRootDir());
   const overlayDir = rootDir === undefined ? userTemplatesDir() : userDir;
-  if (overlayDir) applyOverlay(out, walkOwnServicesSync(overlayDir));
+  if (overlayDir) applyOverlay(out, walkOwnDescriptorsSync(overlayDir));
   return out;
 }
 
@@ -53,20 +54,27 @@ function walkTreeSync(rootDir: string): Map<string, CatalogComponent> {
   return out;
 }
 
-/** Sync twin of `walkOwnServices`: `<templatesDir>/services/<id>.yml`. */
-function walkOwnServicesSync(
+/** Sync twin of `walkOwnDescriptors`: `<templatesDir>/<category dir>/<id>.yml`. */
+function walkOwnDescriptorsSync(
   templatesDir: string,
 ): Map<string, CatalogComponent> {
   const out = new Map<string, CatalogComponent>();
-  const dir = path.join(templatesDir, 'services');
-  if (!existsSync(dir)) return out;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.yml')) continue;
-    const sourcePath = path.join(dir, entry.name);
-    addUnique(
-      out,
-      parseOwnService(readFileSync(sourcePath, 'utf8'), sourcePath, entry.name),
-    );
+  for (const [dirName, category] of Object.entries(OWN_CATEGORY_DIRS)) {
+    const dir = path.join(templatesDir, dirName);
+    if (!existsSync(dir)) continue;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.yml')) continue;
+      const sourcePath = path.join(dir, entry.name);
+      addUnique(
+        out,
+        parseOwnDescriptor(
+          readFileSync(sourcePath, 'utf8'),
+          sourcePath,
+          entry.name,
+          category,
+        ),
+      );
+    }
   }
   return out;
 }

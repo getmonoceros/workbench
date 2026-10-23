@@ -224,7 +224,7 @@ describe('the pwsh script', () => {
   // The builder's own services (ADR 0063) are read off MONOCEROS_HOME at Tab
   // time and merged with the baked shipped names; only `*.yml` files count.
   it.skipIf(spawnSync('pwsh', ['-v']).status !== 0)(
-    'completes service names from the shipped catalog and the home',
+    'completes service and MCP server names from the shipped catalog and the home',
     async () => {
       const home = await mkdtemp(path.join(tmpdir(), 'monoceros-pwsh-'));
       try {
@@ -232,13 +232,17 @@ describe('the pwsh script', () => {
         await mkdir(services, { recursive: true });
         await writeFile(path.join(services, 'kafka.yml'), 'id: kafka\n');
         await writeFile(path.join(services, 'notes.txt'), 'x');
+        const mcp = path.join(home, 'templates', 'mcp-servers');
+        await mkdir(mcp, { recursive: true });
+        await writeFile(path.join(mcp, 'acme-wiki.yml'), 'id: acme-wiki\n');
         const scriptPath = path.join(home, 'completion.ps1');
         await writeFile(scriptPath, await renderPwshScript());
         const probe = [
           `. '${scriptPath}'`,
           'foreach ($line in @(',
           "  'monoceros add-service sandbox ',",
-          "  'monoceros init x --with-services=ka'",
+          "  'monoceros init x --with-services=ka',",
+          "  'monoceros add-mcp-server sandbox '",
           ')) {',
           '  $r = TabExpansion2 -inputScript $line -cursorColumn $line.Length',
           "  ($r.CompletionMatches | ForEach-Object CompletionText) -join ' '",
@@ -249,12 +253,17 @@ describe('the pwsh script', () => {
           env: { ...process.env, MONOCEROS_HOME: home },
         });
         expect(result.stderr).toBe('');
-        const [addService, withServices] = result.stdout.trim().split('\n');
+        const [addService, withServices, addMcp] = result.stdout
+          .trim()
+          .split('\n');
         expect(addService!.split(' ')).toEqual(
           expect.arrayContaining(['kafka', 'postgres']),
         );
         expect(addService!.split(' ')).not.toContain('notes');
         expect(withServices).toBe('--with-services=kafka');
+        expect(addMcp!.split(' ')).toEqual(
+          expect.arrayContaining(['acme-wiki', 'context7']),
+        );
       } finally {
         await rm(home, { recursive: true, force: true });
       }
@@ -304,6 +313,11 @@ describe('buildPwshCompletionModel', () => {
     const svcSlot = model.specs['add-service']!.positionals[1]!;
     expect('values' in svcSlot && svcSlot.values).toContain('postgres');
     expect('kind' in svcSlot && svcSlot.kind).toBe('catalogService');
+
+    // MCP servers too: the builder's own sit under templates/mcp-servers/.
+    const mcpSlot = model.specs['add-mcp-server']!.positionals[1]!;
+    expect('values' in mcpSlot && mcpSlot.values).toContain('context7');
+    expect('kind' in mcpSlot && mcpSlot.kind).toBe('catalogMcpServer');
 
     // Dynamic positional: container name is a kind, not baked values.
     expect(model.specs['apply']!.positionals[0]).toEqual({

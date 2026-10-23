@@ -53,8 +53,9 @@ export interface CatalogComponent {
  *
  * Without `rootDir` this is the catalog a command works with: the resolved
  * components root (checkout in dev, bundled copy in prod — see
- * `config/paths.ts#componentsRootDir`) plus the builder's own services from
- * `<MONOCEROS_HOME>/templates/services/<id>.yml`, which win by id (ADR 0063). An explicit
+ * `config/paths.ts#componentsRootDir`) plus the builder's own services and MCP
+ * servers from `<MONOCEROS_HOME>/templates/{services,mcp-servers}/<id>.yml`,
+ * which win by id (ADR 0063). An explicit
  * `rootDir` reads that tree alone, so the scripts that generate the published
  * catalog never pick up the machine's own descriptors; tests pass `userDir`
  * to add an overlay to it.
@@ -65,7 +66,7 @@ export async function loadDescriptorCatalog(
 ): Promise<Map<string, CatalogComponent>> {
   const out = await walkTree(rootDir ?? componentsRootDir());
   const overlayDir = rootDir === undefined ? userTemplatesDir() : userDir;
-  if (overlayDir) applyOverlay(out, await walkOwnServices(overlayDir));
+  if (overlayDir) applyOverlay(out, await walkOwnDescriptors(overlayDir));
   return out;
 }
 
@@ -93,37 +94,52 @@ async function walkTree(
 }
 
 /**
- * The builder's own services, `<templatesDir>/services/<id>.yml` (ADR 0063).
- * One flat file each, like `templates/workbenches/<name>.yml`. Services only:
- * a service is catalog data alone, while a language or feature also needs an
- * install script published as an OCI feature.
+ * The categories a builder can keep descriptors for under `templates/`, by
+ * directory (ADR 0063). Services and MCP servers are catalog data alone, while
+ * a language or feature also needs an install script published as an OCI
+ * feature.
  */
-async function walkOwnServices(
+export const OWN_CATEGORY_DIRS: Readonly<Record<string, DescriptorCategory>> = {
+  services: 'service',
+  'mcp-servers': 'mcp-server',
+};
+
+/**
+ * The builder's own descriptors, `<templatesDir>/<category dir>/<id>.yml`.
+ * One flat file each, like `templates/workbenches/<name>.yml`.
+ */
+async function walkOwnDescriptors(
   templatesDir: string,
 ): Promise<Map<string, CatalogComponent>> {
   const out = new Map<string, CatalogComponent>();
-  const dir = path.join(templatesDir, 'services');
-  if (!existsSync(dir)) return out;
-  for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.yml')) continue;
-    const sourcePath = path.join(dir, entry.name);
-    const text = await fs.readFile(sourcePath, 'utf8');
-    addUnique(out, parseOwnService(text, sourcePath, entry.name));
+  for (const [dirName, category] of Object.entries(OWN_CATEGORY_DIRS)) {
+    const dir = path.join(templatesDir, dirName);
+    if (!existsSync(dir)) continue;
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.yml')) continue;
+      const sourcePath = path.join(dir, entry.name);
+      const text = await fs.readFile(sourcePath, 'utf8');
+      addUnique(
+        out,
+        parseOwnDescriptor(text, sourcePath, entry.name, category),
+      );
+    }
   }
   return out;
 }
 
-/** Parse one `templates/services/<id>.yml`; its id is the file name. */
-export function parseOwnService(
+/** Parse one `templates/<category dir>/<id>.yml`; its id is the file name. */
+export function parseOwnDescriptor(
   text: string,
   sourcePath: string,
   fileName: string,
+  category: DescriptorCategory,
 ): CatalogComponent {
   return parseDescriptorFile(
     text,
     sourcePath,
     fileName.slice(0, -'.yml'.length),
-    'service',
+    category,
     'file',
   );
 }
@@ -147,7 +163,7 @@ export function addUnique(
  * same category: theirs replaces ours. Clashing with a shipped component of
  * another category, by id or by the name it is selected with (`claude` is the
  * claude-code feature), is an error, because the one name would then mean a
- * service in one command and a feature in the next.
+ * service or MCP server in one command and a feature in the next.
  */
 export function applyOverlay(
   out: Map<string, CatalogComponent>,
@@ -163,8 +179,9 @@ export function applyOverlay(
           selector(shipped) === selector(component)),
     );
     if (clash) {
+      const what = component.category === 'service' ? 'Service' : 'MCP server';
       throw new Error(
-        `Service '${selector(component)}' (${component.sourcePath}) has the name of the shipped ${clash.category} '${selector(clash)}'. Rename the file and its id.`,
+        `${what} '${selector(component)}' (${component.sourcePath}) has the name of the shipped ${clash.category} '${selector(clash)}'. Rename the file and its id.`,
       );
     }
     // `tools` are files next to a descriptor, and a flat yml has nowhere to

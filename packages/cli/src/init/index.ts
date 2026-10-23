@@ -41,6 +41,7 @@ import {
 import {
   buildMcpConnectorDoc,
   findMcpConnector,
+  isLocalComponent,
   mcpConnectorNames,
 } from './mcp-doc.js';
 import {
@@ -626,7 +627,10 @@ function resolveInitMcpServers(
       continue;
     }
     seen.add(name);
-    const doc = buildMcpConnectorDoc(descriptor);
+    const doc = buildMcpConnectorDoc(
+      descriptor,
+      isLocalComponent(descriptors, descriptor),
+    );
     out.push({
       name: doc.name,
       options: doc.options,

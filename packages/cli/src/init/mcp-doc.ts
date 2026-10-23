@@ -50,7 +50,18 @@ export function mcpConnectorNames(
   return out.sort();
 }
 
-export function buildMcpConnectorDoc(descriptor: Descriptor): McpConnectorDoc {
+/** Whether a descriptor is the builder's own, from `templates/mcp-servers/`. */
+export function isLocalComponent(
+  catalog: Map<string, CatalogComponent>,
+  descriptor: Descriptor,
+): boolean {
+  return catalog.get(descriptor.id)?.local === true;
+}
+
+export function buildMcpConnectorDoc(
+  descriptor: Descriptor,
+  local = false,
+): McpConnectorDoc {
   const name = descriptor.name ?? descriptor.id;
   const options: Record<string, string | number | boolean> = {};
   const envVars: string[] = [];
@@ -72,7 +83,7 @@ export function buildMcpConnectorDoc(descriptor: Descriptor): McpConnectorDoc {
     name,
     options,
     envVars,
-    headerLines: buildMcpHeaderLines(descriptor, FEATURE_HEADER_WIDTH),
+    headerLines: buildMcpHeaderLines(descriptor, FEATURE_HEADER_WIDTH, local),
   };
 }
 
@@ -90,6 +101,7 @@ export function buildMcpConnectorDoc(descriptor: Descriptor): McpConnectorDoc {
 export function buildMcpHeaderLines(
   descriptor: Descriptor,
   width: number,
+  local = false,
 ): string[] {
   const paragraphs: string[] = [];
   const what = `${descriptor.displayName}: ${descriptor.description}`;
@@ -102,9 +114,12 @@ export function buildMcpHeaderLines(
     const trimmed = note.trim();
     if (trimmed.length > 0) paragraphs.push(trimmed);
   }
-  paragraphs.push(
-    componentDocsURL('mcp-server', descriptor.name ?? descriptor.id),
-  );
+  // The builder's own server (ADR 0063) has no page to point at.
+  if (!local) {
+    paragraphs.push(
+      componentDocsURL('mcp-server', descriptor.name ?? descriptor.id),
+    );
+  }
   const out: string[] = [];
   for (const para of paragraphs) {
     for (const line of wrapToComment(para, width)) out.push(line);
@@ -113,8 +128,11 @@ export function buildMcpHeaderLines(
 }
 
 /** yaml-lib `commentBefore` form: one leading space per line. */
-export function mcpHeaderCommentBefore(descriptor: Descriptor): string {
-  return buildMcpHeaderLines(descriptor, FEATURE_HEADER_WIDTH)
+export function mcpHeaderCommentBefore(
+  descriptor: Descriptor,
+  local = false,
+): string {
+  return buildMcpHeaderLines(descriptor, FEATURE_HEADER_WIDTH, local)
     .map((l) => ` ${l}`)
     .join('\n');
 }

@@ -289,6 +289,9 @@ describe('resolveMcpServers', () => {
     expect(() =>
       resolveMcpServers([entry({ name: 'ghost' })], catalog),
     ).toThrow(/unknown connector\. Catalog connectors: context7, localthing/);
+    expect(() =>
+      resolveMcpServers([entry({ name: 'acme-wiki' })], catalog),
+    ).toThrow(/templates\/mcp-servers\/acme-wiki\.yml/);
   });
 
   it('points at the right command when the name is another category', () => {
