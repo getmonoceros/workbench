@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 import { consola } from 'consola';
-import { loadDescriptorCatalog } from '../catalog/load.js';
+import { catalogWarnings, loadDescriptorCatalog } from '../catalog/load.js';
 import { expandSelectable } from '../catalog/expand.js';
 import { buildCatalogJson } from '../catalog/catalog-json.js';
 import { copyToHostClipboard } from '../devcontainer/clipboard-bridge.js';
@@ -50,6 +50,9 @@ export const listComponentsCommand = defineCommand({
   async run({ args }) {
     try {
       const descriptors = await loadDescriptorCatalog();
+      for (const warning of catalogWarnings(descriptors)) {
+        consola.warn(warning);
+      }
 
       // --json: machine-readable projection, no TTY formatting. This is the
       // canonical shape published as getmonoceros.build/catalog.json.

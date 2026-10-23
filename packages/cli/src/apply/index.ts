@@ -48,7 +48,7 @@ import {
 } from '../config/state.js';
 import type { SolutionConfig } from '../config/schema.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
-import { loadDescriptorCatalog } from '../catalog/load.js';
+import { catalogWarnings, loadDescriptorCatalog } from '../catalog/load.js';
 import {
   featureMcpServers,
   formatFeatureMcpCollision,
@@ -523,6 +523,11 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     );
   }
   const descriptors = await loadDescriptorCatalog();
+  // Older version files that do not fit were left out (ADR 0066); say so,
+  // and go on: a workbench may be meant to stay on an old version.
+  for (const warning of catalogWarnings(descriptors)) {
+    (logger.warn ?? logger.info)(warning);
+  }
   // A service's `ref` names the descriptor version its block came from
   // (#139), and everything apply takes from the descriptor comes from that
   // version. A file that is not on this machine is a hint, never a stop: the

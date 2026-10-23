@@ -27,8 +27,11 @@ renamed with `--as` got none of it (#139).
 name; older ones sit next to it with the version in the name:
 `templates/services/rabbitmq@2.yml` beside `rabbitmq.yml`, and
 `components/services/postgres/component@1.yml` beside `component.yml`. A file
-`@n` must carry `version: n` and be older than the current one; both loaders
-refuse anything else with the file's path. Whoever changes a descriptor copies
+`@n` must carry `version: n` and be older than the current one. Both loaders
+leave out a file that does not fit and keep everything else, and `apply` and
+`list-components` print a hint naming it: a version mix-up in a template
+directory never stops anything, because a workbench may be meant to stay on
+an old version. Whoever changes a descriptor copies
 the current file to `@<its version>` first, then raises `version`. MCP servers
 have no versions: the yml names them and carries no block that could fall
 behind.

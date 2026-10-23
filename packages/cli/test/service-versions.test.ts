@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadDescriptorCatalog } from '../src/catalog/load.js';
+import { catalogWarnings, loadDescriptorCatalog } from '../src/catalog/load.js';
 import { loadDescriptorCatalogSync } from '../src/catalog/load-sync.js';
 
 // Versioned service descriptors (#139): every version stays as a file, a
@@ -105,49 +105,61 @@ describe('versioned descriptors: loading', () => {
     }
   });
 
-  it('names the file whose version differs from its file name', async () => {
+  // A version mix-up in a template directory never stops anything: a
+  // workbench may be meant to stay on an old version. The file is left out
+  // and the hint names it.
+  async function load() {
+    const own = path.join(home, 'templates');
+    const none = path.join(tmp, 'none');
+    return [
+      await loadDescriptorCatalog(none, own),
+      loadDescriptorCatalogSync(none, own),
+    ];
+  }
+
+  it('leaves out a file whose version differs from its file name', async () => {
     await writeFile(path.join(services, 'rabbitmq.yml'), rabbit(3));
     const file = path.join(services, 'rabbitmq@2.yml');
     await writeFile(file, rabbit(1));
-    await expect(
-      loadDescriptorCatalog(
-        path.join(tmp, 'none'),
-        path.join(home, 'templates'),
-      ),
-    ).rejects.toThrow(`${file} carries version 1, but its file name says 2`);
+    for (const catalog of await load()) {
+      expect(catalog.get('rabbitmq')!.older).toBeUndefined();
+      expect(catalogWarnings(catalog)).toEqual([
+        `Left out ${file}: it carries version 1, but its file name says 2.`,
+      ]);
+    }
   });
 
-  it('refuses an older version that is not older than the current one', async () => {
+  it('leaves out an older version that is not older, and keeps the current one', async () => {
     await writeFile(path.join(services, 'rabbitmq.yml'), rabbit(1));
-    await writeFile(path.join(services, 'rabbitmq@1.yml'), rabbit(1));
-    await expect(
-      loadDescriptorCatalog(
-        path.join(tmp, 'none'),
-        path.join(home, 'templates'),
-      ),
-    ).rejects.toThrow(/Raise the version of the current one/);
+    const file = path.join(services, 'rabbitmq@1.yml');
+    await writeFile(file, rabbit(1));
+    for (const catalog of await load()) {
+      expect(catalog.get('rabbitmq')!.descriptor.version).toBe(1);
+      expect(catalogWarnings(catalog)).toEqual([
+        `Left out ${file}: it is version 1, and ${path.join(services, 'rabbitmq.yml')} is version 1. If rabbitmq.yml is a new version, raise its version.`,
+      ]);
+    }
   });
 
-  it('refuses an older version without its current file', async () => {
+  it('leaves out an older version without its current file', async () => {
     await writeFile(path.join(services, 'rabbitmq@1.yml'), rabbit(1));
-    await expect(
-      loadDescriptorCatalog(
-        path.join(tmp, 'none'),
-        path.join(home, 'templates'),
-      ),
-    ).rejects.toThrow(/rabbitmq\.yml next to it is missing/);
+    for (const catalog of await load()) {
+      expect(catalog.has('rabbitmq')).toBe(false);
+      expect(catalogWarnings(catalog)[0]).toMatch(
+        /rabbitmq\.yml next to it is missing/,
+      );
+    }
   });
 
-  it('refuses a version on an MCP server', async () => {
+  it('leaves out a version on an MCP server', async () => {
     const mcp = path.join(home, 'templates', 'mcp-servers');
     await mkdir(mcp, { recursive: true });
     await writeFile(path.join(mcp, 'wiki@1.yml'), 'id: wiki\n');
-    await expect(
-      loadDescriptorCatalog(
-        path.join(tmp, 'none'),
-        path.join(home, 'templates'),
-      ),
-    ).rejects.toThrow(/only a service descriptor has versions/);
+    for (const catalog of await load()) {
+      expect(catalogWarnings(catalog)[0]).toMatch(
+        /only a service descriptor has versions/,
+      );
+    }
   });
 });
 

@@ -63,15 +63,39 @@ export interface DescriptorFile {
 const OLDER_VERSION_RE = /^(.+)@([1-9][0-9]*)\.yml$/;
 
 /**
+ * Hints the loaders collected for a catalog: older version files they left
+ * out because they do not fit. A version mix-up in a template directory is
+ * never a stop, because a workbench may be meant to stay on an old version;
+ * the commands that load the catalog print these instead.
+ */
+const LOAD_WARNINGS = new WeakMap<Map<string, CatalogComponent>, string[]>();
+
+/** The hints the loader collected for this catalog (see LOAD_WARNINGS). */
+export function catalogWarnings(
+  catalog: Map<string, CatalogComponent>,
+): readonly string[] {
+  return LOAD_WARNINGS.get(catalog) ?? [];
+}
+
+/** Remember the loader's hints for the catalog it returns. */
+export function setCatalogWarnings(
+  catalog: Map<string, CatalogComponent>,
+  warnings: string[],
+): void {
+  if (warnings.length > 0) LOAD_WARNINGS.set(catalog, warnings);
+}
+
+/**
  * Attach the older versions found next to a current descriptor. Each one is
  * `<base>@<n>.yml`, must carry `version: n`, and must be older than the
- * current one.
+ * current one. One that does not is left out with a hint in `warnings`.
  */
 export function withOlderVersions(
   current: CatalogComponent,
   files: readonly DescriptorFile[],
   base: string,
   storedAs: 'folder' | 'file',
+  warnings: string[],
 ): CatalogComponent {
   const older = new Map<number, CatalogComponent>();
   for (const file of files) {
@@ -86,14 +110,16 @@ export function withOlderVersions(
       storedAs,
     );
     if (component.descriptor.version !== version) {
-      throw new Error(
-        `Descriptor ${file.sourcePath} carries version ${component.descriptor.version}, but its file name says ${version}.`,
+      warnings.push(
+        `Left out ${file.sourcePath}: it carries version ${component.descriptor.version}, but its file name says ${version}.`,
       );
+      continue;
     }
     if (version >= current.descriptor.version) {
-      throw new Error(
-        `${file.sourcePath} is version ${version}, but the current ${current.sourcePath} is version ${current.descriptor.version}. Raise the version of the current one.`,
+      warnings.push(
+        `Left out ${file.sourcePath}: it is version ${version}, and ${current.sourcePath} is version ${current.descriptor.version}. If ${path.basename(current.sourcePath)} is a new version, raise its version.`,
       );
+      continue;
     }
     older.set(version, component);
   }
@@ -118,14 +144,19 @@ export async function loadDescriptorCatalog(
   rootDir?: string,
   userDir?: string,
 ): Promise<Map<string, CatalogComponent>> {
-  const out = await walkTree(rootDir ?? componentsRootDir());
+  const warnings: string[] = [];
+  const out = await walkTree(rootDir ?? componentsRootDir(), warnings);
   const overlayDir = rootDir === undefined ? userTemplatesDir() : userDir;
-  if (overlayDir) applyOverlay(out, await walkOwnDescriptors(overlayDir));
+  if (overlayDir) {
+    applyOverlay(out, await walkOwnDescriptors(overlayDir, warnings));
+  }
+  setCatalogWarnings(out, warnings);
   return out;
 }
 
 async function walkTree(
   rootDir: string,
+  warnings: string[],
 ): Promise<Map<string, CatalogComponent>> {
   const out = new Map<string, CatalogComponent>();
   if (!existsSync(rootDir)) {
@@ -153,7 +184,13 @@ async function walkTree(
             text: await fs.readFile(filePath, 'utf8'),
           });
         }
-        component = withOlderVersions(component, files, 'component', 'folder');
+        component = withOlderVersions(
+          component,
+          files,
+          'component',
+          'folder',
+          warnings,
+        );
       }
       addUnique(out, component);
     }
@@ -178,6 +215,7 @@ export const OWN_CATEGORY_DIRS: Readonly<Record<string, DescriptorCategory>> = {
  */
 async function walkOwnDescriptors(
   templatesDir: string,
+  warnings: string[],
 ): Promise<Map<string, CatalogComponent>> {
   const out = new Map<string, CatalogComponent>();
   for (const [dirName, category] of Object.entries(OWN_CATEGORY_DIRS)) {
@@ -193,7 +231,7 @@ async function walkOwnDescriptors(
         text: await fs.readFile(sourcePath, 'utf8'),
       });
     }
-    collectOwnDescriptors(out, files, category);
+    collectOwnDescriptors(out, files, category, warnings);
   }
   return out;
 }
@@ -208,6 +246,7 @@ export function collectOwnDescriptors(
   out: Map<string, CatalogComponent>,
   files: readonly DescriptorFile[],
   category: DescriptorCategory,
+  warnings: string[],
 ): void {
   const older = files.filter((f) => OLDER_VERSION_RE.test(f.name));
   for (const file of files) {
@@ -221,17 +260,19 @@ export function collectOwnDescriptors(
   for (const base of bases) {
     const first = older.find((f) => f.name.startsWith(`${base}@`))!;
     if (category !== 'service') {
-      throw new Error(
-        `${first.sourcePath}: only a service descriptor has versions. Rename it to ${base}.yml.`,
+      warnings.push(
+        `Left out ${first.sourcePath}: only a service descriptor has versions.`,
       );
+      continue;
     }
     const current = out.get(base);
     if (!current) {
-      throw new Error(
-        `${first.sourcePath} is an older version of '${base}', but ${base}.yml next to it is missing.`,
+      warnings.push(
+        `Left out ${first.sourcePath}: it is an older version of '${base}', but ${base}.yml next to it is missing.`,
       );
+      continue;
     }
-    out.set(base, withOlderVersions(current, older, base, 'file'));
+    out.set(base, withOlderVersions(current, older, base, 'file', warnings));
   }
 }
 
