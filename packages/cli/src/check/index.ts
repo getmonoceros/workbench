@@ -631,7 +631,7 @@ async function checkComposeFile(
   for (const [key, blockRaw] of Object.entries(
     composeServices as Record<string, unknown>,
   )) {
-    const catalogText = curatedServiceDeploy(key);
+    const catalogText = curatedServiceDeploy({ name: key });
     if (!catalogText) continue;
     if (!blockRaw || typeof blockRaw !== 'object') continue;
     const block = blockRaw as Record<string, unknown>;

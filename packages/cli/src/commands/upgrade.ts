@@ -20,7 +20,7 @@ export const upgradeCommand = defineCommand({
     name: 'upgrade',
     group: 'lifecycle',
     description:
-      'Refresh tooling to the latest (rebuilds feature layers, bumps the runtime base when newer) and prune stale Monoceros images. `monoceros upgrade` refreshes all containers; `monoceros upgrade <name>` one; `monoceros upgrade <name> <version>` pins that base version; `monoceros upgrade --list` lists runtime versions.',
+      'Refresh tooling to the latest (rebuilds feature layers, bumps the runtime base when newer) and prune stale Monoceros images. `monoceros upgrade` refreshes all containers; `monoceros upgrade <name>` one; `monoceros upgrade <name> <version>` pins that base version; `monoceros upgrade --list` lists runtime versions. A service whose descriptor has a newer version is merged into the yml, keeping your own edits; one where you changed what the new version changes is left as it is and named.',
   },
   args: {
     name: {
@@ -41,6 +41,11 @@ export const upgradeCommand = defineCommand({
         'List available runtime versions and exit, changing nothing.',
       default: false,
     },
+    replace: {
+      type: 'string',
+      description:
+        'Services to reset to the current version of their descriptor, comma-separated. Drops your edits to them. Needs <name>.',
+    },
   },
   run({ args }) {
     return dispatch(() =>
@@ -48,6 +53,14 @@ export const upgradeCommand = defineCommand({
         ...(args.name ? { name: args.name } : {}),
         ...(args.version ? { version: args.version } : {}),
         list: args.list,
+        ...(args.replace
+          ? {
+              replace: args.replace
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean),
+            }
+          : {}),
         cliVersion: CLI_VERSION,
       }),
     );

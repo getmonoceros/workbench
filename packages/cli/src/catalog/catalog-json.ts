@@ -65,6 +65,8 @@ export interface CatalogJsonLanguage extends CatalogJsonBase {
 }
 
 export interface CatalogJsonService extends CatalogJsonBase {
+  /** Descriptor version (#139); a workbench's `ref` names it as `<name>@<version>`. */
+  version: number;
   defaultPort?: number;
   /**
    * Bind-mounts the generated yml carries COMMENTED, for the builder to
@@ -123,6 +125,10 @@ export interface CatalogJsonTemplate {
   description?: string;
   /** As written in the yml: `node`, `node:24`. */
   languages: string[];
+  /**
+   * `<descriptor>@<version>` for a service with a `ref` (#139), so a renamed
+   * instance still reads as what it is; the yml name for one written by hand.
+   */
   services: string[];
   features: CatalogJsonTemplateFeature[];
   mcpServers: string[];
@@ -221,7 +227,7 @@ export function buildCatalogJson(
       }
       languages.push(lang);
     } else if (d.category === 'service' && d.service) {
-      const svc: CatalogJsonService = { ...base };
+      const svc: CatalogJsonService = { ...base, version: d.version };
       if (d.service.defaultPort !== undefined) {
         svc.defaultPort = d.service.defaultPort;
       }

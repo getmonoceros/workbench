@@ -67,6 +67,9 @@ describe('projectWorkbenchTemplate', () => {
         'services:',
         '  - name: postgres',
         '    image: postgres:17',
+        '  - name: analytics',
+        '    ref: postgres@1',
+        '    image: postgres:18',
         'mcpServers:',
         '  - name: context7',
       ]),
@@ -77,7 +80,7 @@ describe('projectWorkbenchTemplate', () => {
       local: true,
       description: 'Node and Postgres with Claude Code and the Atlassian CLIs.',
       languages: ['node:24', 'java:21'],
-      services: ['postgres'],
+      services: ['postgres', 'postgres@1'],
       features: [
         {
           name: 'claude',

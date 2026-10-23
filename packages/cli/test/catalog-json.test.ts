@@ -208,6 +208,7 @@ mcpServer:
       languages: new Set([...base, 'defaultVersion', 'versions']),
       services: new Set([
         ...base,
+        'version',
         'defaultPort',
         'exampleVolumes',
         'exampleEnv',

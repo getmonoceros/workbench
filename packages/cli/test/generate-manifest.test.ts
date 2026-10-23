@@ -85,6 +85,7 @@ describe('descriptorToFeatureManifest', () => {
     const fakeLanguage = {
       id: 'java',
       category: 'language' as const,
+      version: 1,
       displayName: 'Java',
       description: 'x',
       options: {},

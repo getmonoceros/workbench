@@ -1,6 +1,6 @@
 # ADR 0063: A builder can keep their own service descriptors
 
-- Status: accepted, amended 2026-10-23 (see [Amendment](#amendment-2026-10-23-mcp-servers-too))
+- Status: accepted, amended 2026-10-23 (see [Amendment](#amendment-2026-10-23-mcp-servers-too)); versions added by [ADR 0066](0066-a-service-descriptor-keeps-every-version.md)
 - Date: 2026-10-21
 - Relates to: [ADR 0020](0020-unified-component-descriptors.md) (the
   descriptor format),
@@ -23,7 +23,8 @@ short of forking the workbench.
 `<MONOCEROS_HOME>/templates/services/<id>.yml`.** One flat file per service,
 next to `templates/workbenches/<name>.yml`, so everything a builder keeps for
 reuse lives under one directory and the home gets no new top-level entry. The
-id is the file name. The content is the shipped descriptor format, so writing
+id is the file name. (Older versions sit next to it as `<id>@<n>.yml`,
+[ADR 0066](0066-a-service-descriptor-keeps-every-version.md).) The content is the shipped descriptor format, so writing
 one starts from copying `components/services/postgres/component.yml`.
 Validation is the shipped one too.
 
@@ -51,16 +52,24 @@ local by definition, and `list-components` marks it `(local)`.
 
 ## Consequences
 
-- **The yml does not depend on the descriptor.** `add-service` bakes image,
+- **The yml does not depend on the descriptor** (superseded for entries with a
+  `ref` by [ADR 0066](0066-a-service-descriptor-keeps-every-version.md): such
+  an entry needs the descriptor version it names, and `apply` stops and names
+  the file when it is missing). `add-service` bakes image,
   port, env, healthcheck and `connectionEnv` into the workbench yml, so `apply`
   works on a machine that lacks the file. What it loses there is what is read
   from the catalog by name at apply: briefing lines, client packages, `tools`
   and deferred start. That is the same as for a service renamed with `--as`.
+  [ADR 0066](0066-a-service-descriptor-keeps-every-version.md) changes the
+  lookup: `apply` reads these from the version in the entry's `ref`, by
+  descriptor id, so a renamed instance gets them too (`tools` excepted).
 - **`upgrade` follows the builder's image.** It pulls curated images up to
   the catalog's tag by repository, and the builder's descriptor is part of
   the catalog. A builder who pins `postgres:17` in their own `postgres` gets
   `postgres:17` back on `upgrade`, which is what replacing the descriptor
-  means.
+  means. With [ADR 0066](0066-a-service-descriptor-keeps-every-version.md)
+  this holds for entries without a `ref`; an entry with one is merged from
+  the descriptor's newer version instead.
 - **A builder's service carries no `tools`.** A tool is a file next to the
   descriptor, and a flat yml has nowhere to keep one. A new service that lists
   `tools` is an error naming the file; one that replaces a shipped service

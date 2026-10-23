@@ -41,6 +41,7 @@ describe('expandCuratedService / isCuratedService', () => {
     expect(isCuratedService('postgres')).toBe(true);
     expect(expandCuratedService('postgres')).toEqual({
       name: 'postgres',
+      ref: 'postgres@1',
       image: 'postgres:18',
       port: 5432,
       env: {
@@ -76,7 +77,7 @@ describe('expandCuratedService / isCuratedService', () => {
   });
 
   it('expands keycloak with a command + admin env, no volumes/healthcheck (ADR 0025)', () => {
-    expect(serviceDefersStart('keycloak')).toBe(true);
+    expect(serviceDefersStart({ name: 'keycloak' })).toBe(true);
     const svc = expandCuratedService('keycloak');
     // The repository, not the tag: pinning the exact tag here only makes
     // this test fail on every catalog version bump, and the tag is not
@@ -176,7 +177,7 @@ describe('expandCuratedService / isCuratedService', () => {
     // the second wave (ADR 0025) - at the parallel start docker would create a
     // DIRECTORY at the missing mount source and Caddy would find a directory
     // where it wants its config.
-    expect(serviceDefersStart('caddy')).toBe(true);
+    expect(serviceDefersStart({ name: 'caddy' })).toBe(true);
     // No healthcheck on purpose: nothing gates on this service, and a probe on
     // `/` reports the upstream - it would mark Caddy unhealthy whenever the dev
     // server behind it is simply not running.
@@ -287,15 +288,15 @@ describe('deriveServiceName', () => {
 
 describe('serviceDefersStart (ADR 0025)', () => {
   it('is false for an unknown / renamed service', () => {
-    expect(serviceDefersStart('not-a-catalog-service')).toBe(false);
-    expect(serviceDefersStart('my-renamed-keycloak')).toBe(false);
+    expect(serviceDefersStart({ name: 'not-a-catalog-service' })).toBe(false);
+    expect(serviceDefersStart({ name: 'my-renamed-keycloak' })).toBe(false);
   });
 
   it('does not defer the ordinary infra services', () => {
     // Deferral is opt-in per descriptor; backing stores must come up with
     // the workspace so post-create (migrations/seeds) can reach them.
     for (const svc of ['postgres', 'mysql', 'mssql', 'mongodb', 'redis']) {
-      expect(serviceDefersStart(svc)).toBe(false);
+      expect(serviceDefersStart({ name: svc })).toBe(false);
     }
   });
 });

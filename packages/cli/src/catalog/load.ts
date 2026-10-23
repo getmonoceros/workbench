@@ -44,6 +44,60 @@ export interface CatalogComponent {
   descriptor: Descriptor;
   /** Read from the builder's `<MONOCEROS_HOME>/templates/`, not shipped. */
   local?: true;
+  /**
+   * Older versions of a service descriptor, by version (#139):
+   * `component@<n>.yml` next to a shipped one, `<id>@<n>.yml` next to the
+   * builder's own. The component itself is the current version; a workbench
+   * whose `ref` names an older one is read against the entry here.
+   */
+  older?: ReadonlyMap<number, CatalogComponent>;
+}
+
+/** A descriptor file as read from disk, before it is parsed. */
+export interface DescriptorFile {
+  name: string;
+  sourcePath: string;
+  text: string;
+}
+
+const OLDER_VERSION_RE = /^(.+)@([1-9][0-9]*)\.yml$/;
+
+/**
+ * Attach the older versions found next to a current descriptor. Each one is
+ * `<base>@<n>.yml`, must carry `version: n`, and must be older than the
+ * current one.
+ */
+export function withOlderVersions(
+  current: CatalogComponent,
+  files: readonly DescriptorFile[],
+  base: string,
+  storedAs: 'folder' | 'file',
+): CatalogComponent {
+  const older = new Map<number, CatalogComponent>();
+  for (const file of files) {
+    const m = OLDER_VERSION_RE.exec(file.name);
+    if (!m || m[1] !== base) continue;
+    const version = Number(m[2]);
+    const component = parseDescriptorFile(
+      file.text,
+      file.sourcePath,
+      current.id,
+      'service',
+      storedAs,
+    );
+    if (component.descriptor.version !== version) {
+      throw new Error(
+        `Descriptor ${file.sourcePath} carries version ${component.descriptor.version}, but its file name says ${version}.`,
+      );
+    }
+    if (version >= current.descriptor.version) {
+      throw new Error(
+        `${file.sourcePath} is version ${version}, but the current ${current.sourcePath} is version ${current.descriptor.version}. Raise the version of the current one.`,
+      );
+    }
+    older.set(version, component);
+  }
+  return older.size > 0 ? { ...current, older } : current;
 }
 
 /**
@@ -86,7 +140,21 @@ async function walkTree(
       const id = entry.name;
       const sourcePath = path.join(categoryDir, id, 'component.yml');
       if (!existsSync(sourcePath)) continue;
-      const component = await loadOne(sourcePath, id, category);
+      let component = await loadOne(sourcePath, id, category);
+      if (category === 'service') {
+        const dir = path.join(categoryDir, id);
+        const files: DescriptorFile[] = [];
+        for (const name of await fs.readdir(dir)) {
+          if (!OLDER_VERSION_RE.test(name)) continue;
+          const filePath = path.join(dir, name);
+          files.push({
+            name,
+            sourcePath: filePath,
+            text: await fs.readFile(filePath, 'utf8'),
+          });
+        }
+        component = withOlderVersions(component, files, 'component', 'folder');
+      }
       addUnique(out, component);
     }
   }
@@ -115,17 +183,56 @@ async function walkOwnDescriptors(
   for (const [dirName, category] of Object.entries(OWN_CATEGORY_DIRS)) {
     const dir = path.join(templatesDir, dirName);
     if (!existsSync(dir)) continue;
+    const files: DescriptorFile[] = [];
     for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith('.yml')) continue;
       const sourcePath = path.join(dir, entry.name);
-      const text = await fs.readFile(sourcePath, 'utf8');
-      addUnique(
-        out,
-        parseOwnDescriptor(text, sourcePath, entry.name, category),
-      );
+      files.push({
+        name: entry.name,
+        sourcePath,
+        text: await fs.readFile(sourcePath, 'utf8'),
+      });
     }
+    collectOwnDescriptors(out, files, category);
   }
   return out;
+}
+
+/**
+ * Parse the files of one `templates/<category dir>/` into `out`. A name with
+ * `@<n>` is an older version of a service and joins its current file; an MCP
+ * server has no versions, because the yml names it and carries no block that
+ * could fall behind.
+ */
+export function collectOwnDescriptors(
+  out: Map<string, CatalogComponent>,
+  files: readonly DescriptorFile[],
+  category: DescriptorCategory,
+): void {
+  const older = files.filter((f) => OLDER_VERSION_RE.test(f.name));
+  for (const file of files) {
+    if (older.includes(file)) continue;
+    addUnique(
+      out,
+      parseOwnDescriptor(file.text, file.sourcePath, file.name, category),
+    );
+  }
+  const bases = new Set(older.map((f) => OLDER_VERSION_RE.exec(f.name)![1]!));
+  for (const base of bases) {
+    const first = older.find((f) => f.name.startsWith(`${base}@`))!;
+    if (category !== 'service') {
+      throw new Error(
+        `${first.sourcePath}: only a service descriptor has versions. Rename it to ${base}.yml.`,
+      );
+    }
+    const current = out.get(base);
+    if (!current) {
+      throw new Error(
+        `${first.sourcePath} is an older version of '${base}', but ${base}.yml next to it is missing.`,
+      );
+    }
+    out.set(base, withOlderVersions(current, older, base, 'file'));
+  }
 }
 
 /** Parse one `templates/<category dir>/<id>.yml`; its id is the file name. */

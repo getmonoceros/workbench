@@ -824,7 +824,12 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     // First positional is a container name; the second is a version
     // string (no suggestions — versions live in the registry).
     positionals: [containerName, () => []],
-    flags: { '--list': { type: 'boolean' } },
+    flags: {
+      '--list': { type: 'boolean' },
+      // Every declared service; one without a `ref` line is refused with
+      // its name, which is cheaper than a second yml parser in pwsh.
+      '--replace': { type: 'value', values: workbenchServices },
+    },
   },
   remove: {
     positionals: [containerName],

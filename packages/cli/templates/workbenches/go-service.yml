@@ -35,6 +35,7 @@ services:
   # readiness healthcheck. Reachable in-container as host `postgres`.
   # https://getmonoceros.build/docs/services/postgres/
   - name: postgres
+    ref: postgres@1
     image: postgres:18
     port: 5432
     env:

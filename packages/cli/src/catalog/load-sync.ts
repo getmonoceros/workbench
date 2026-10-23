@@ -6,9 +6,11 @@ import {
   OWN_CATEGORY_DIRS,
   addUnique,
   applyOverlay,
+  collectOwnDescriptors,
   parseDescriptorFile,
-  parseOwnDescriptor,
+  withOlderVersions,
   type CatalogComponent,
+  type DescriptorFile,
 } from './load.js';
 
 /**
@@ -40,15 +42,24 @@ function walkTreeSync(rootDir: string): Map<string, CatalogComponent> {
       const id = entry.name;
       const sourcePath = path.join(categoryDir, id, 'component.yml');
       if (!existsSync(sourcePath)) continue;
-      addUnique(
-        out,
-        parseDescriptorFile(
-          readFileSync(sourcePath, 'utf8'),
-          sourcePath,
-          id,
-          category,
-        ),
+      let component = parseDescriptorFile(
+        readFileSync(sourcePath, 'utf8'),
+        sourcePath,
+        id,
+        category,
       );
+      if (category === 'service') {
+        const dir = path.join(categoryDir, id);
+        const files: DescriptorFile[] = readdirSync(dir)
+          .filter((name) => /^component@[1-9][0-9]*\.yml$/.test(name))
+          .map((name) => ({
+            name,
+            sourcePath: path.join(dir, name),
+            text: readFileSync(path.join(dir, name), 'utf8'),
+          }));
+        component = withOlderVersions(component, files, 'component', 'folder');
+      }
+      addUnique(out, component);
     }
   }
   return out;
@@ -62,19 +73,14 @@ function walkOwnDescriptorsSync(
   for (const [dirName, category] of Object.entries(OWN_CATEGORY_DIRS)) {
     const dir = path.join(templatesDir, dirName);
     if (!existsSync(dir)) continue;
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith('.yml')) continue;
-      const sourcePath = path.join(dir, entry.name);
-      addUnique(
-        out,
-        parseOwnDescriptor(
-          readFileSync(sourcePath, 'utf8'),
-          sourcePath,
-          entry.name,
-          category,
-        ),
-      );
-    }
+    const files: DescriptorFile[] = readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith('.yml'))
+      .map((e) => ({
+        name: e.name,
+        sourcePath: path.join(dir, e.name),
+        text: readFileSync(path.join(dir, e.name), 'utf8'),
+      }));
+    collectOwnDescriptors(out, files, category);
   }
   return out;
 }

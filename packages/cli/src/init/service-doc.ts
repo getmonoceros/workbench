@@ -17,7 +17,10 @@ import { envPrefix } from '../create/catalog.js';
 
 /** Full active map body for a known ServiceObject (curated, expanded). */
 export function renderServiceObjectBody(svc: ServiceObject): string[] {
-  const lines: string[] = [`name: ${svc.name}`, `image: ${svc.image}`];
+  const lines: string[] = [`name: ${svc.name}`];
+  // Right under the name: which descriptor version the block came from (#139).
+  if (svc.ref !== undefined) lines.push(`ref: ${svc.ref}`);
+  lines.push(`image: ${svc.image}`);
   if (svc.user !== undefined)
     lines.push(`user: '${svc.user.replace(/'/g, "''")}'`);
   if (svc.port !== undefined) lines.push(`port: ${svc.port}`);

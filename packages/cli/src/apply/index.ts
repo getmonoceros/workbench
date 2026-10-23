@@ -65,6 +65,8 @@ import {
   runtimeSupportsHostKeyPinning,
   runtimeSupportsSshAttach,
   serviceArchitectureWarning,
+  serviceRefNotes,
+  serviceRefProblems,
   serviceDefersStart,
 } from '../create/catalog.js';
 import { hasWantedApps, runAppCtl } from '../devcontainer/app-control.js';
@@ -521,6 +523,15 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     );
   }
   const descriptors = await loadDescriptorCatalog();
+  // A service's `ref` names the descriptor version its block came from
+  // (#139), and everything apply takes from the descriptor comes from that
+  // version. A ref that cannot be read stops here, after the load above has
+  // reported a broken file by path.
+  const refProblems = serviceRefProblems(createOpts.services);
+  if (refProblems.length > 0) throw new Error(refProblems.join('\n'));
+  for (const note of serviceRefNotes(createOpts.services, opts.name)) {
+    logger.info(note);
+  }
   const mcp = resolveMcpServers(interpMcp.entries, descriptors);
   for (const note of mcp.notes) (logger.warn ?? logger.info)(note);
   const hasAgent = agentsPresent(createOpts.features).length > 0;
@@ -1213,7 +1224,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
     // in spinner mode). A failure is surfaced but does not flip the result.
     if (exitCode === 0) {
       const deferred = createOpts.services
-        .filter((s) => serviceDefersStart(s.name))
+        .filter((s) => serviceDefersStart(s))
         .map((s) => s.name);
       if (deferred.length > 0) {
         if (progress) progress.setPhase('starting services…');

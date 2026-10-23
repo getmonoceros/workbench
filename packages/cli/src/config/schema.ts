@@ -461,6 +461,17 @@ export const ServiceObjectSchema = z.object({
       SERVICE_NAME_RE,
       "Invalid service name. Use lowercase letters, digits, '_' or '-' (must start with a letter or digit).",
     ),
+  // The descriptor version the block came from, `<id>@<version>` (#139).
+  // Written by add-service and init; apply reads the descriptor data of
+  // exactly this version, and upgrade merges a newer one in. A service
+  // written by hand has none.
+  ref: z
+    .string()
+    .regex(
+      /^[a-z0-9][a-z0-9-]*@[1-9][0-9]*$/,
+      "Invalid service ref. Expected '<descriptor>@<version>', e.g. 'postgres@1'.",
+    )
+    .optional(),
   image: z.string().min(1, 'Service image must not be empty.'),
   // Compose `user:` for the service container (e.g. "0:0"). Set for images
   // that run as a fixed non-root uid but must write a host bind-mounted

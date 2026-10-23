@@ -454,6 +454,26 @@ describe('resolveCompletions', () => {
     expect(r).toEqual(['sandbox']);
   });
 
+  it('completes upgrade --replace with the services of the workbench', async () => {
+    await writeFile(
+      path.join(home, 'container-configs', 'sandbox.yml'),
+      [
+        'schemaVersion: 1',
+        'name: sandbox',
+        'services:',
+        '  - name: queue',
+        '    ref: rabbitmq@1',
+        '    image: rabbitmq:4',
+        '',
+      ].join('\n'),
+    );
+    const line = 'monoceros upgrade sandbox --replace ';
+    const r = await resolveCompletions(line, line.length, {
+      monocerosHome: home,
+    });
+    expect(r).toEqual(['queue']);
+  });
+
   it('offers list-components its --json and --copy flags', async () => {
     const r = await resolveCompletions(
       'monoceros list-components --',

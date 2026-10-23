@@ -76,6 +76,8 @@ export interface ServiceHealthcheck {
  */
 export interface ResolvedService {
   name: string;
+  /** `<id>@<version>` of the descriptor the block came from (#139). */
+  ref?: string;
   image: string;
   /** In-container listen port — feeds `monoceros tunnel`. Not a host mapping. */
   port?: number;

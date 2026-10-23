@@ -194,7 +194,7 @@ export function projectWorkbenchTemplate(
     ...(template.local ? { local: true as const } : {}),
     ...(description ? { description } : {}),
     languages: config.languages.map(languageLabel),
-    services: config.services.map((s) => s.name),
+    services: config.services.map((s) => s.ref ?? s.name),
     features: config.features.map((f) => projectFeature(f, catalog)),
     mcpServers: config.mcpServers.map((m) => m.name),
   };

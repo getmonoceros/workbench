@@ -45,6 +45,7 @@ services:
   # readiness healthcheck. Reachable in-container as host `postgres`.
   # https://getmonoceros.build/docs/services/postgres/
   - name: postgres
+    ref: postgres@1
     image: postgres:18
     port: 5432
     env:
@@ -73,6 +74,7 @@ services:
   # volumes below.
   # https://getmonoceros.build/docs/services/keycloak/
   - name: keycloak
+    ref: keycloak@1
     image: quay.io/keycloak/keycloak:26.7
     port: 8080
     httpPort: 8080

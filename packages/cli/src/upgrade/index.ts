@@ -4,10 +4,13 @@ import {
   containerConfigPath,
   containerConfigsDir,
   containerDir,
+  containerEnvPath,
   monocerosHome as defaultMonocerosHome,
 } from '../config/paths.js';
 import { markUpgraded } from '../config/machine-state.js';
-import { compareRuntimeVersions, SERVICE_CATALOG } from '../create/catalog.js';
+import { ensureEnvVars } from '../config/env-file.js';
+import { compareRuntimeVersions } from '../create/catalog.js';
+import { upgradeServices, type ServiceUpgrade } from './services.js';
 import { isWorkspaceRunning, spawnDocker } from '../devcontainer/compose.js';
 import { type DockerExec } from '../proxy/index.js';
 import { pruneStaleImages } from './prune.js';
@@ -46,6 +49,11 @@ export interface UpgradeOptions {
   version?: string;
   /** List available versions and exit without changing anything. */
   list?: boolean;
+  /**
+   * Services to reset to the current descriptor version, dropping the
+   * builder's edits (#139). Per container only.
+   */
+  replace?: readonly string[];
   cliVersion: string;
   monocerosHome?: string;
   logger?: UpgradeLogger;
@@ -107,62 +115,6 @@ export function setRuntimeVersion(yml: string, version: string): string {
   return `runtimeVersion: ${version}\n${yml}`;
 }
 
-/**
- * The repository half of an image reference: everything before the tag
- * or digest. A registry port (`ghcr.io:5000/x/app`) is not a tag, so the
- * split is only a tag when it comes after the last `/`.
- */
-function imageRepo(image: string): string {
-  const repo = image.split('@')[0]!;
-  const colon = repo.lastIndexOf(':');
-  return colon > repo.lastIndexOf('/') ? repo.slice(0, colon) : repo;
-}
-
-/** repo → the image reference the catalog ships today. */
-function catalogImagesByRepo(): Map<string, string> {
-  const byRepo = new Map<string, string>();
-  for (const entry of Object.values(SERVICE_CATALOG)) {
-    byRepo.set(imageRepo(entry.image), entry.image);
-  }
-  return byRepo;
-}
-
-/**
- * Pull the curated services in a yml document up to the tags the catalog
- * ships now, preserving comments and everything else (ADR 0052).
- *
- * Matched by image REPOSITORY, not by service name: that also catches an
- * instance renamed with `add-service … --as`, and it leaves an image the
- * builder chose themselves alone, because no catalog entry claims its
- * repository. Only indented `image:` lines are considered, so a
- * top-level key or a commented-out example is never touched.
- *
- * Pure — no I/O. Returns the new document and one `old → new` line per
- * rewrite, for the caller to log.
- */
-export function setCuratedServiceImages(yml: string): {
-  yml: string;
-  changed: string[];
-} {
-  const byRepo = catalogImagesByRepo();
-  const changed: string[] = [];
-  const out = yml.split('\n').map((line) => {
-    const m = /^(\s+image:[ \t]*)(\S+)([ \t]*)$/.exec(line);
-    if (!m) return line;
-    const [, prefix, image, trailing] = m as unknown as [
-      string,
-      string,
-      string,
-      string,
-    ];
-    const current = byRepo.get(imageRepo(image));
-    if (current === undefined || current === image) return line;
-    changed.push(`${image} → ${current}`);
-    return `${prefix}${current}${trailing}`;
-  });
-  return { yml: out.join('\n'), changed };
-}
-
 export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
   const home = opts.monocerosHome ?? defaultMonocerosHome();
   const logger = opts.logger ?? consola;
@@ -191,6 +143,12 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
         `Invalid version ${JSON.stringify(opts.version)}. Expected an exact version like '1.1.0'.`,
       );
     }
+  }
+
+  if (opts.replace && opts.replace.length > 0 && !opts.name) {
+    throw new Error(
+      'Services can only be replaced in one container: `monoceros upgrade <name> --replace=<service>`.',
+    );
   }
 
   if (opts.name && !existsSync(containerConfigPath(opts.name, home))) {
@@ -269,6 +227,8 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
   let worstExit = 0;
   let bumped = 0;
   let retagged = 0;
+  let upgraded = 0;
+  let leftAlone = 0;
   for (const name of targets) {
     const ymlPath = containerConfigPath(name, home);
     if (!existsSync(ymlPath)) continue; // removed mid-run — skip
@@ -278,14 +238,47 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
       bumped += 1;
       logger.info(`Pinned '${name}' to runtime ${pinVersion}.`);
     }
-    // Curated service images move with the catalog, not with the
-    // container (ADR 0052) — a security fix in an upstream image reaches
-    // an existing workbench only if upgrade writes the new tag here.
-    const { yml: updated, changed } = setCuratedServiceImages(withRuntime);
-    for (const line of changed) {
-      retagged += 1;
-      logger.info(`Retagged a service in '${name}': ${line}.`);
+    // Services move with their descriptor (#139): a newer version is merged
+    // into the entry, keeping the builder's own edits. An entry from before
+    // versions gets the image retag it always had (ADR 0052).
+    const services = upgradeServices(withRuntime, {
+      replace: name === opts.name ? opts.replace : undefined,
+    });
+    const unknown = (name === opts.name ? (opts.replace ?? []) : []).filter(
+      (svc) =>
+        !services.results.some(
+          (r) => r.service === svc && r.kind === 'replaced',
+        ),
+    );
+    if (unknown.length > 0) {
+      throw new Error(
+        `Cannot replace ${unknown.join(', ')} in '${name}': no service of that name with a ref line.`,
+      );
     }
+    for (const result of services.results) {
+      if (result.kind === 'retagged') retagged += 1;
+      if (result.kind === 'upgraded' || result.kind === 'replaced') {
+        upgraded += 1;
+      }
+      if (result.kind === 'conflict') leftAlone += 1;
+      logServiceUpgrade(logger, name, result);
+      if (
+        (result.kind === 'upgraded' || result.kind === 'replaced') &&
+        Object.keys(result.newEnv).length > 0
+      ) {
+        const seeded = await ensureEnvVars(
+          containerEnvPath(name, home),
+          name,
+          result.newEnv,
+        );
+        if (seeded.added.length > 0) {
+          logger.info(
+            `Seeded ${seeded.added.join(', ')} into ${name}.env (dev-defaults of the new version).`,
+          );
+        }
+      }
+    }
+    const updated = services.yml;
     if (updated !== raw) await fs.writeFile(ymlPath, updated);
     logger.info(`Refreshing '${name}' (rebuild — latest tools)…`);
     const result = await apply({
@@ -311,7 +304,7 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
       `Upgraded ${opts.name ? `'${opts.name}'` : `${targets.length} running container${targets.length === 1 ? '' : 's'}`}\n` +
         `  layers    rebuilt - latest pulled\n` +
         `  base      ${pinVersion} ${bumped > 0 ? `(${bumped} bumped)` : '(already latest)'}\n` +
-        `  services  images re-pulled${retagged > 0 ? ` (${retagged} retagged)` : ''}\n` +
+        `  services  images re-pulled${formatServiceCounts(upgraded, leftAlone, retagged)}\n` +
         `  pruned    ${formatPruneLine(prune)}\n` +
         (skipped.length > 0
           ? `  skipped   ${skipped.length} not running (${skipped.join(', ')})\n`
@@ -320,6 +313,66 @@ export async function runUpgrade(opts: UpgradeOptions): Promise<number> {
     );
   }
   return worstExit;
+}
+
+/** `(2 upgraded, 1 left for you, 1 retagged)`, or nothing when all are zero. */
+function formatServiceCounts(
+  upgraded: number,
+  leftAlone: number,
+  retagged: number,
+): string {
+  const parts = [
+    upgraded > 0 ? `${upgraded} upgraded` : '',
+    leftAlone > 0 ? `${leftAlone} left for you` : '',
+    retagged > 0 ? `${retagged} retagged` : '',
+  ].filter(Boolean);
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+}
+
+/** One service's outcome, in the words the builder acts on. */
+function logServiceUpgrade(
+  logger: UpgradeLogger,
+  container: string,
+  result: ServiceUpgrade,
+): void {
+  switch (result.kind) {
+    case 'retagged':
+      logger.info(
+        `Retagged a service in '${container}': ${result.from} → ${result.to}.`,
+      );
+      return;
+    case 'stamped':
+      logger.info(
+        `Recorded ${result.service} in '${container}' as ${result.id}@${result.version}.`,
+      );
+      return;
+    case 'upgraded':
+      logger.info(
+        `Upgraded ${result.service} in '${container}': ${result.id} ${result.from} → ${result.to}.`,
+      );
+      return;
+    case 'replaced':
+      logger.info(
+        `Replaced ${result.service} in '${container}' with ${result.id} version ${result.to}; your edits to it are gone.`,
+      );
+      return;
+    case 'conflict': {
+      const show = (v: unknown): string =>
+        v === undefined ? '(none)' : JSON.stringify(v);
+      const lines = result.conflicts.map(
+        (c) =>
+          `  ${c.path}: version ${result.from} ${show(c.base)}, yours ${show(c.ours)}, version ${result.to} ${show(c.theirs)}`,
+      );
+      (logger.warn ?? logger.info)(
+        [
+          `Left ${result.service} in '${container}' as it is: ${result.id} version ${result.to} changes what you changed.`,
+          ...lines,
+          `Merge it by hand, or take version ${result.to} and drop your edits: monoceros upgrade ${container} --replace=${result.service}`,
+        ].join('\n'),
+      );
+      return;
+    }
+  }
 }
 
 /** Human-readable prune outcome for the upgrade summary. */

@@ -18,7 +18,7 @@ import {
   BUILTIN_LANGUAGES,
   curatedServiceTools,
   LANGUAGE_CATALOG,
-  SERVICE_CATALOG,
+  serviceEntryFor,
   knownLanguages,
   parseLanguageSpec,
   compareRuntimeVersions,
@@ -1117,7 +1117,7 @@ export function buildDevcontainerJson(
     // `devcontainer up` does not start them with the workspace; they come up
     // host-side in a second wave after post-create (the clone) has run.
     const eagerServices = opts.services
-      .filter((s) => !serviceDefersStart(s.name))
+      .filter((s) => !serviceDefersStart(s))
       .map((s) => s.name);
 
     // Compose-mode: per-feature persistent home mounts go onto the
@@ -1524,7 +1524,7 @@ export function buildComposeYaml(
     // brings them up with `--profile`. Without this, devcontainer-cli's
     // `docker compose up -d` starts every (non-profiled) service in the
     // first wave — before the repo clone — defeating the deferral.
-    if (serviceDefersStart(svc.name)) {
+    if (serviceDefersStart(svc)) {
       lines.push('    profiles:');
       lines.push(`      - ${DEFERRED_SERVICE_PROFILE}`);
     }
@@ -1690,7 +1690,7 @@ export function computeExtensionRecommendations(opts: CreateOptions): string[] {
   }
   // Services (e.g. a DB client when postgres/mysql/redis is present).
   for (const svc of opts.services) {
-    for (const ext of SERVICE_CATALOG[svc.name]?.vscodeExtensions ?? []) {
+    for (const ext of serviceEntryFor(svc)?.vscodeExtensions ?? []) {
       recs.add(ext);
     }
   }

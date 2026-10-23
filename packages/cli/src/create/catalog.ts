@@ -4,6 +4,7 @@
 // through to devcontainer / compose.
 
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ServiceHealthcheck, ServiceObject } from '../config/schema.js';
 import type { ResolvedService } from './types.js';
@@ -431,6 +432,10 @@ export function parseLanguageSpec(spec: string): LanguageSpec | null {
 
 export interface ServiceEntry {
   id: string;
+  /** Descriptor version (#139); a workbench's `ref` names it as `<id>@<version>`. */
+  version: number;
+  /** The descriptor file this entry was read from, for errors. */
+  sourcePath: string;
   /** Product name for the yml header, e.g. `PostgreSQL` for `postgres`. */
   displayName: string;
   /** One-or-two-sentence descriptor prose for the yml header. */
@@ -582,62 +587,173 @@ export interface ServiceEntry {
 // leaves the host, never rides along when the yml is shared). Because
 // the default isn't a secret, the secret-masking layer
 // (util/mask-secrets.ts) doesn't and shouldn't mask it.
+/** Project one service descriptor (current or older version) into its entry. */
+function toServiceEntry(c: CatalogComponent, key: string): ServiceEntry {
+  const svc = c.descriptor.service!;
+  if (svc.defaultPort === undefined) {
+    throw new Error(
+      `Service descriptor '${key}' is missing service.defaultPort.`,
+    );
+  }
+  // env defaults are modeled as the service's surface:env options.
+  const env = descriptorOptionDefaults(c.descriptor.options) as Record<
+    string,
+    string
+  >;
+  return {
+    id: key,
+    version: c.descriptor.version,
+    sourcePath: c.sourcePath,
+    image: svc.image,
+    ...(svc.architectures ? { architectures: svc.architectures } : {}),
+    ...(Object.keys(env).length > 0 ? { env } : {}),
+    ...(svc.healthcheck
+      ? { healthcheck: svc.healthcheck as ServiceHealthcheck }
+      : {}),
+    ...(svc.dataMount ? { dataMount: svc.dataMount } : {}),
+    ...(svc.user ? { user: svc.user } : {}),
+    displayName: c.descriptor.displayName,
+    description: c.descriptor.description,
+    defaultPort: svc.defaultPort,
+    ...(svc.httpPort !== undefined ? { httpPort: svc.httpPort } : {}),
+    ...(svc.vscodeExtensions ? { vscodeExtensions: svc.vscodeExtensions } : {}),
+    ...(svc.connectionEnv ? { connectionEnv: svc.connectionEnv } : {}),
+    ...(svc.client ? { client: svc.client } : {}),
+    ...(svc.command ? { command: svc.command } : {}),
+    ...(svc.exampleVolumes ? { exampleVolumes: svc.exampleVolumes } : {}),
+    ...(svc.exampleEnv ? { exampleEnv: svc.exampleEnv } : {}),
+    ...(svc.deferStart ? { deferStart: true } : {}),
+    ...(svc.resources ? { resources: svc.resources } : {}),
+    ...(c.descriptor.briefing && c.descriptor.briefing.length > 0
+      ? { briefing: c.descriptor.briefing }
+      : {}),
+    ...(c.descriptor.deploy ? { deploy: c.descriptor.deploy.compose } : {}),
+    ...(c.descriptor.deploy?.requires
+      ? { deployRequires: c.descriptor.deploy.requires }
+      : {}),
+    ...(svc.tools ? { tools: svc.tools } : {}),
+    ...(c.local ? { local: true as const } : {}),
+  };
+}
+
 export const SERVICE_CATALOG: Readonly<Record<string, ServiceEntry>> =
   Object.fromEntries(
     [...DESCRIPTORS.values()]
       .filter((c) => c.category === 'service')
       .map((c) => {
         const key = descriptorSelector(c);
-        const svc = c.descriptor.service!;
-        if (svc.defaultPort === undefined) {
-          throw new Error(
-            `Service descriptor '${key}' is missing service.defaultPort.`,
-          );
-        }
-        // env defaults are modeled as the service's surface:env options.
-        const env = descriptorOptionDefaults(c.descriptor.options) as Record<
-          string,
-          string
-        >;
-        const entry: ServiceEntry = {
-          id: key,
-          image: svc.image,
-          ...(svc.architectures ? { architectures: svc.architectures } : {}),
-          ...(Object.keys(env).length > 0 ? { env } : {}),
-          ...(svc.healthcheck
-            ? { healthcheck: svc.healthcheck as ServiceHealthcheck }
-            : {}),
-          ...(svc.dataMount ? { dataMount: svc.dataMount } : {}),
-          ...(svc.user ? { user: svc.user } : {}),
-          displayName: c.descriptor.displayName,
-          description: c.descriptor.description,
-          defaultPort: svc.defaultPort,
-          ...(svc.httpPort !== undefined ? { httpPort: svc.httpPort } : {}),
-          ...(svc.vscodeExtensions
-            ? { vscodeExtensions: svc.vscodeExtensions }
-            : {}),
-          ...(svc.connectionEnv ? { connectionEnv: svc.connectionEnv } : {}),
-          ...(svc.client ? { client: svc.client } : {}),
-          ...(svc.command ? { command: svc.command } : {}),
-          ...(svc.exampleVolumes ? { exampleVolumes: svc.exampleVolumes } : {}),
-          ...(svc.exampleEnv ? { exampleEnv: svc.exampleEnv } : {}),
-          ...(svc.deferStart ? { deferStart: true } : {}),
-          ...(svc.resources ? { resources: svc.resources } : {}),
-          ...(c.descriptor.briefing && c.descriptor.briefing.length > 0
-            ? { briefing: c.descriptor.briefing }
-            : {}),
-          ...(c.descriptor.deploy
-            ? { deploy: c.descriptor.deploy.compose }
-            : {}),
-          ...(c.descriptor.deploy?.requires
-            ? { deployRequires: c.descriptor.deploy.requires }
-            : {}),
-          ...(svc.tools ? { tools: svc.tools } : {}),
-          ...(c.local ? { local: true as const } : {}),
-        };
-        return [key, entry];
+        return [key, toServiceEntry(c, key)];
       }),
   );
+
+/**
+ * Every version of every service descriptor, by selector then version
+ * (#139): the current one plus the older `@<n>` files next to it. A
+ * workbench's `ref` is looked up here, so what apply reads always matches
+ * the block the yml carries.
+ */
+const SERVICE_VERSIONS: Readonly<
+  Record<string, ReadonlyMap<number, ServiceEntry>>
+> = Object.fromEntries(
+  [...DESCRIPTORS.values()]
+    .filter((c) => c.category === 'service')
+    .map((c) => {
+      const key = descriptorSelector(c);
+      const versions = new Map<number, ServiceEntry>([
+        [c.descriptor.version, SERVICE_CATALOG[key]!],
+      ]);
+      for (const [n, older] of c.older ?? []) {
+        versions.set(n, toServiceEntry(older, key));
+      }
+      return [key, versions];
+    }),
+);
+
+const SERVICE_REF_RE = /^([a-z0-9][a-z0-9-]*)@([1-9][0-9]*)$/;
+
+/** `rabbitmq@3` → `{ id: 'rabbitmq', version: 3 }`, or undefined. */
+export function parseServiceRef(
+  ref: string,
+): { id: string; version: number } | undefined {
+  const m = SERVICE_REF_RE.exec(ref);
+  return m ? { id: m[1]!, version: Number(m[2]) } : undefined;
+}
+
+/**
+ * The descriptor entry a yml service was written from: the version its
+ * `ref` names, or, for an entry without one (hand-written, or written before
+ * #139), the current entry of the same name. Undefined when there is none,
+ * which `serviceRefProblems` reports before apply gets this far.
+ */
+export function serviceEntryFor(svc: {
+  name: string;
+  ref?: string;
+}): ServiceEntry | undefined {
+  if (svc.ref === undefined) return SERVICE_CATALOG[svc.name];
+  const ref = parseServiceRef(svc.ref);
+  return ref ? SERVICE_VERSIONS[ref.id]?.get(ref.version) : undefined;
+}
+
+/** The newest version of a descriptor, or undefined for an unknown id. */
+export function currentServiceVersion(id: string): number | undefined {
+  return SERVICE_CATALOG[id]?.version;
+}
+
+/** One version of a descriptor, or undefined when it does not exist. */
+export function serviceEntryAt(
+  id: string,
+  version: number,
+): ServiceEntry | undefined {
+  return SERVICE_VERSIONS[id]?.get(version);
+}
+
+/**
+ * Why a service's `ref` cannot be read, one line per service: an unknown
+ * descriptor, or a version whose file is not there. Apply stops on these,
+ * because everything it takes from the descriptor would otherwise be missing.
+ */
+export function serviceRefProblems(
+  services: readonly { name: string; ref?: string }[],
+): string[] {
+  const out: string[] = [];
+  for (const svc of services) {
+    if (svc.ref === undefined) continue;
+    const ref = parseServiceRef(svc.ref);
+    const current = ref ? SERVICE_CATALOG[ref.id] : undefined;
+    if (!ref || !current) {
+      out.push(
+        `Service '${svc.name}' has ref ${svc.ref}, but no service descriptor '${ref?.id ?? svc.ref}' exists.`,
+      );
+      continue;
+    }
+    if (SERVICE_VERSIONS[ref.id]?.has(ref.version)) continue;
+    const dir = path.dirname(current.sourcePath);
+    const file = current.local
+      ? path.join(dir, `${ref.id}@${ref.version}.yml`)
+      : path.join(dir, `component@${ref.version}.yml`);
+    out.push(
+      `Service '${svc.name}' has ref ${svc.ref}, but version ${ref.version} is not there: ${file} is missing.`,
+    );
+  }
+  return out;
+}
+
+/** A note per service whose `ref` is older than the descriptor's current version. */
+export function serviceRefNotes(
+  services: readonly { name: string; ref?: string }[],
+  containerName: string,
+): string[] {
+  const out: string[] = [];
+  for (const svc of services) {
+    const ref = svc.ref === undefined ? undefined : parseServiceRef(svc.ref);
+    const current = ref ? SERVICE_CATALOG[ref.id] : undefined;
+    if (!ref || !current || current.version <= ref.version) continue;
+    out.push(
+      `${svc.name} is ${ref.id} version ${ref.version}, version ${current.version} is available: monoceros upgrade ${containerName}`,
+    );
+  }
+  return out;
+}
 
 export function knownLanguages(): string[] {
   return [...BUILTIN_LANGUAGES, ...Object.keys(LANGUAGE_CATALOG)].sort();
@@ -660,13 +776,15 @@ export const DEFERRED_SERVICE_PROFILE = 'monoceros-deferred';
 
 /**
  * Whether a service starts in the host-side second wave (after the
- * in-container clone) rather than together with the workspace. Resolved
- * by catalog name — `deferStart` is a hidden, descriptor-only attribute,
- * so a renamed instance (yml `name` ≠ catalog id) is treated as
- * non-deferred. See ADR 0025.
+ * in-container clone) rather than together with the workspace.
+ * `deferStart` is a hidden, descriptor-only attribute, read from the version
+ * the service's `ref` names (by name for an entry without one). See ADR 0025.
  */
-export function serviceDefersStart(name: string): boolean {
-  return SERVICE_CATALOG[name]?.deferStart === true;
+export function serviceDefersStart(svc: {
+  name: string;
+  ref?: string;
+}): boolean {
+  return serviceEntryFor(svc)?.deferStart === true;
 }
 
 /**
@@ -678,8 +796,9 @@ export function serviceDefersStart(name: string): boolean {
 export function curatedServiceResources(svc: {
   name: string;
   image: string;
+  ref?: string;
 }): Readonly<{ memory: string; cpus: number }> | undefined {
-  const byName = SERVICE_CATALOG[svc.name];
+  const byName = serviceEntryFor(svc);
   if (byName) return byName.resources;
   return Object.values(SERVICE_CATALOG).find((e) => e.image === svc.image)
     ?.resources;
@@ -735,13 +854,17 @@ export function curatedServiceHeader(
 }
 
 /**
- * Agent-facing briefing lines for a curated service, from its descriptor's
- * `briefing:` field. Rendered under the service in AGENTS.md. Empty for
- * services (or non-curated names) without one. Service briefing lines are
- * unconditional - `whenOption` gating is a feature-only concern.
+ * Agent-facing briefing lines for a curated service, from the `briefing:` of
+ * the descriptor version its `ref` names (#139). Rendered under the service
+ * in AGENTS.md. Empty for services (or non-curated names) without one.
+ * Service briefing lines are unconditional - `whenOption` gating is a
+ * feature-only concern.
  */
-export function curatedServiceBriefing(name: string): readonly string[] {
-  return (SERVICE_CATALOG[name]?.briefing ?? []).map((line) => line.text);
+export function curatedServiceBriefing(svc: {
+  name: string;
+  ref?: string;
+}): readonly string[] {
+  return (serviceEntryFor(svc)?.briefing ?? []).map((line) => line.text);
 }
 
 /**
@@ -760,8 +883,11 @@ export function curatedServiceTools(name: string): readonly string[] {
   return SERVICE_CATALOG[name]?.tools ?? [];
 }
 
-export function curatedServiceDeploy(name: string): string | undefined {
-  return SERVICE_CATALOG[name]?.deploy;
+export function curatedServiceDeploy(svc: {
+  name: string;
+  ref?: string;
+}): string | undefined {
+  return serviceEntryFor(svc)?.deploy;
 }
 
 /** `mcr.microsoft.com/mssql/server:2022-latest` → `mcr.microsoft.com/mssql/server`. */
@@ -819,8 +945,11 @@ export function serviceArchitectureWarning(
  * (`deploy.requires`), e.g. Keycloak's own database. Undefined when the
  * service needs nothing extra.
  */
-export function curatedServiceDeployRequires(name: string): string | undefined {
-  return SERVICE_CATALOG[name]?.deployRequires;
+export function curatedServiceDeployRequires(svc: {
+  name: string;
+  ref?: string;
+}): string | undefined {
+  return serviceEntryFor(svc)?.deployRequires;
 }
 
 /**
@@ -833,6 +962,7 @@ export function curatedServiceDeployRequires(name: string): string | undefined {
 export function resolveService(entry: ServiceObject): ResolvedService {
   return {
     name: entry.name,
+    ...(entry.ref !== undefined ? { ref: entry.ref } : {}),
     image: entry.image,
     ...(entry.port !== undefined ? { port: entry.port } : {}),
     ...(entry.httpPort !== undefined ? { httpPort: entry.httpPort } : {}),
@@ -869,8 +999,17 @@ export function expandCuratedService(name: string): ServiceObject {
       `Unknown service '${name}'. Known catalog services: ${knownServices().join(', ')}.`,
     );
   }
+  return expandServiceEntry(def);
+}
+
+/**
+ * The block one descriptor version writes into the yml, `ref` included. Pure
+ * in the entry, so `upgrade` can rebuild what an older version wrote (#139).
+ */
+export function expandServiceEntry(def: ServiceEntry): ServiceObject {
   return {
     name: def.id,
+    ref: `${def.id}@${def.version}`,
     image: def.image,
     port: def.defaultPort,
     // Visible in the yml, unlike `deferStart`: the builder can drop the line
@@ -1000,7 +1139,7 @@ export function serviceClientAptPackages(
 ): string[] {
   const pkgs = new Set<string>();
   for (const svc of services) {
-    for (const pkg of SERVICE_CATALOG[svc.name]?.client?.apt ?? []) {
+    for (const pkg of serviceEntryFor(svc)?.client?.apt ?? []) {
       pkgs.add(pkg);
     }
   }
@@ -1018,7 +1157,7 @@ export function serviceClientNpmPackages(
 ): string[] {
   const pkgs = new Set<string>();
   for (const svc of services) {
-    for (const pkg of SERVICE_CATALOG[svc.name]?.client?.npm ?? []) {
+    for (const pkg of serviceEntryFor(svc)?.client?.npm ?? []) {
       pkgs.add(pkg);
     }
   }

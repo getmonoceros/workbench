@@ -116,6 +116,7 @@
         "Edits to the Caddyfile take effect when you save (`--watch`). No apply, no restart.",
         "A dev server proxied through Caddy keeps serving the page but loses live reload, because it tells the browser to open its reload connection on its own port while the browser came in through Caddy. Point it at the port the browser used (Vite: `server.ws.clientPort`, formerly `server.hmr.clientPort`)."
       ],
+      "version": 1,
       "defaultPort": 81,
       "exampleVolumes": [
         "projects/<app>/caddy:/etc/caddy:ro"
@@ -154,6 +155,7 @@
         "Import is one-way: admin-UI changes live in the Keycloak database, not the file. To keep them, export the realm and overwrite the committed JSON.",
         "The boot import only fills an EMPTY database, so a changed realm file does nothing until apply recreates the service. To apply it to the running Keycloak, run `.monoceros/bin/keycloak-realm <path/to/realm.json> [<path/to/users.json>]` in the container."
       ],
+      "version": 1,
       "defaultPort": 8080,
       "exampleVolumes": [
         "projects/<app>/keycloak/realm.json:/opt/keycloak/data/import/<realm>-realm.json:ro",
@@ -166,6 +168,7 @@
       "displayName": "Mailpit",
       "description": "SMTP catcher for local dev, so apps send mail to it and nothing leaves the machine. SMTP on `mailpit:1025`; web UI + API on 8025, reachable from the host via `monoceros tunnel <name> mailpit:8025` and from another device via `monoceros share`.",
       "options": [],
+      "version": 1,
       "defaultPort": 1025
     },
     {
@@ -192,6 +195,7 @@
           "default": "monoceros"
         }
       ],
+      "version": 1,
       "defaultPort": 27017
     },
     {
@@ -230,6 +234,7 @@
         "There is no `sqlcmd` in the workspace. Query the database through the project's own driver, or from the host with `monoceros tunnel <name> mssql`.",
         "Drivers that encrypt by default (Microsoft.Data.SqlClient, JDBC) reject the server's self-signed certificate; set `TrustServerCertificate=true` in the connection string."
       ],
+      "version": 1,
       "defaultPort": 1433
     },
     {
@@ -250,6 +255,7 @@
           "default": "monoceros"
         }
       ],
+      "version": 1,
       "defaultPort": 3306
     },
     {
@@ -276,6 +282,7 @@
           "default": "monoceros"
         }
       ],
+      "version": 1,
       "defaultPort": 5432
     },
     {
@@ -302,6 +309,7 @@
           "default": "monoceros"
         }
       ],
+      "version": 1,
       "defaultPort": 5432
     },
     {
@@ -309,6 +317,7 @@
       "displayName": "Redis",
       "description": "In-memory key-value store on the default port with a readiness healthcheck. Reachable in-container as host `redis`.",
       "options": [],
+      "version": 1,
       "defaultPort": 6379
     },
     {
@@ -329,6 +338,7 @@
           "default": "rustfsadmin"
         }
       ],
+      "version": 1,
       "defaultPort": 9000
     }
   ],
@@ -790,7 +800,7 @@
         "go:latest"
       ],
       "services": [
-        "postgres"
+        "postgres@1"
       ],
       "features": [
         {
@@ -810,8 +820,8 @@
         "java:latest"
       ],
       "services": [
-        "postgres",
-        "keycloak"
+        "postgres@1",
+        "keycloak@1"
       ],
       "features": [
         {

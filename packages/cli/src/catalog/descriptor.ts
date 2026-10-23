@@ -548,6 +548,13 @@ export const DescriptorSchema = z
       .regex(DESCRIPTOR_ID_RE, 'name must be lowercase letters/digits/hyphens')
       .optional(),
     category: CategorySchema,
+    /**
+     * Version of a service descriptor (#139), a whole number whoever changes
+     * the descriptor raises. A workbench's `ref: <id>@<n>` names the version
+     * its block came from; older versions stay as `<id>@<n>.yml` files.
+     * Service-only; a feature's OCI version lives in `feature.version`.
+     */
+    version: z.number().int().min(1).default(1),
     displayName: z.string().min(1),
     description: z.string().min(1),
     documentationURL: z.string().url().optional(),
@@ -596,6 +603,14 @@ export const DescriptorSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `category '${data.category}' requires a '${BLOCK_KEY[data.category]}' block, found '${BLOCK_KEY[present[0]!]}'`,
+      });
+    }
+
+    if (data.version !== 1 && data.category !== 'service') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['version'],
+        message: 'only a service descriptor has a version',
       });
     }
 

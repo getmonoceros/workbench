@@ -24,13 +24,13 @@ export function generateDeployMd(
   services: readonly ResolvedService[],
 ): string | null {
   const known = services
-    .map((svc) => ({ svc, compose: curatedServiceDeploy(svc.name) }))
+    .map((svc) => ({ svc, compose: curatedServiceDeploy(svc) }))
     .filter((e): e is { svc: ResolvedService; compose: string } =>
       Boolean(e.compose),
     );
   if (known.length === 0) return null;
 
-  const without = services.filter((svc) => !curatedServiceDeploy(svc.name));
+  const without = services.filter((svc) => !curatedServiceDeploy(svc));
 
   const lines: string[] = [];
   lines.push('# Taking these services to a pipeline');
@@ -79,7 +79,7 @@ export function generateDeployMd(
     // only exists when it is declared up there. Everything in it is named
     // after the component, so it merges into the compose file's existing
     // `services:` / `volumes:` without colliding.
-    const requires = curatedServiceDeployRequires(svc.name);
+    const requires = curatedServiceDeployRequires(svc);
     if (requires) {
       lines.push('It needs these of its own:');
       lines.push('');
@@ -143,7 +143,7 @@ export function generateDeployMd(
 export function hasDeployBriefing(
   services: readonly ResolvedService[],
 ): boolean {
-  return services.some((svc) => curatedServiceDeploy(svc.name) !== undefined);
+  return services.some((svc) => curatedServiceDeploy(svc) !== undefined);
 }
 
 /**
@@ -156,7 +156,7 @@ function requiredVariables(
 ): string[] {
   const out: string[] = [];
   for (const { svc, compose } of known) {
-    const requires = curatedServiceDeployRequires(svc.name) ?? '';
+    const requires = curatedServiceDeployRequires(svc) ?? '';
     for (const m of `${compose}\n${requires}`.matchAll(
       /\$\{([A-Za-z_][A-Za-z0-9_]*):\?/g,
     )) {

@@ -130,7 +130,7 @@ async function bringContainerUp(
         }));
       }
       deferred = (parsed.config.services ?? [])
-        .filter((s) => serviceDefersStart(s.name))
+        .filter((s) => serviceDefersStart(s))
         .map((s) => s.name);
     } catch (err) {
       consola.warn(

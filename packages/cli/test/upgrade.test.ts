@@ -4,10 +4,10 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   runUpgrade,
-  setCuratedServiceImages,
   setRuntimeVersion,
   type UpgradeOptions,
 } from '../src/upgrade/index.js';
+import { upgradeServices } from '../src/upgrade/services.js';
 import { SERVICE_CATALOG } from '../src/create/catalog.js';
 import type { RunApplyOptions, RunApplyResult } from '../src/apply/index.js';
 import type { DockerExec } from '../src/proxy/index.js';
@@ -42,7 +42,25 @@ describe('setRuntimeVersion', () => {
   });
 });
 
-describe('setCuratedServiceImages', () => {
+/**
+ * An entry without `ref` that no descriptor version wrote (a partial block,
+ * or one from before #139 that was edited) keeps the image retag upgrade has
+ * always done (ADR 0052).
+ */
+function setCuratedServiceImages(yml: string): {
+  yml: string;
+  changed: string[];
+} {
+  const { yml: out, results } = upgradeServices(yml);
+  return {
+    yml: out,
+    changed: results.flatMap((r) =>
+      r.kind === 'retagged' ? [`${r.from} → ${r.to}`] : [],
+    ),
+  };
+}
+
+describe('upgradeServices: the image retag for entries without ref', () => {
   const keycloak = SERVICE_CATALOG.keycloak!.image;
   const postgres = SERVICE_CATALOG.postgres!.image;
 

@@ -224,7 +224,7 @@ export function generateAgentsMd(input: AgentsMdInput): string {
       lines.push(formatServiceLine(svc));
       // Per-service guidance comes straight from the descriptor's `briefing:`
       // (the single source), rendered as indented lines under the service.
-      for (const brief of curatedServiceBriefing(svc.name)) {
+      for (const brief of curatedServiceBriefing(svc)) {
         for (const sub of brief.split('\n')) {
           lines.push(sub ? `  ${sub}` : '');
         }
