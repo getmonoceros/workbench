@@ -238,13 +238,15 @@ function __Monoceros_Templates($bundled) {
 }
 
 function __Monoceros_CatalogServices($bundled) {
+  @(@($bundled) + (__Monoceros_OwnServices) | Where-Object { $_ } | Sort-Object -Unique)
+}
+
+# The builder's own services, without the older <id>@<n>.yml versions.
+function __Monoceros_OwnServices {
   $dir = Join-Path (Join-Path (__Monoceros_Home) 'templates') 'services'
-  $own = @()
-  if (Test-Path -LiteralPath $dir) {
-    $own = @(Get-ChildItem -LiteralPath $dir -Filter '*.yml' -File -ErrorAction SilentlyContinue |
-      ForEach-Object { $_.BaseName })
-  }
-  @(@($bundled) + $own | Where-Object { $_ } | Sort-Object -Unique)
+  if (-not (Test-Path -LiteralPath $dir)) { return @() }
+  @(Get-ChildItem -LiteralPath $dir -Filter '*.yml' -File -ErrorAction SilentlyContinue |
+    ForEach-Object { $_.BaseName } | Where-Object { $_ -notlike '*@*' } | Sort-Object)
 }
 
 function __Monoceros_CatalogMcpServers($bundled) {
@@ -300,6 +302,7 @@ function __Monoceros_Values($desc, $argTokens) {
       'workbenchTemplate' { return (__Monoceros_Templates $desc.values) }
       'catalogService' { return (__Monoceros_CatalogServices $desc.values) }
       'catalogMcpServer' { return (__Monoceros_CatalogMcpServers $desc.values) }
+      'ownService'    { return (__Monoceros_OwnServices) }
     }
   }
   return @()

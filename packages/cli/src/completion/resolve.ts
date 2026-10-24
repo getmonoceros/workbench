@@ -168,7 +168,8 @@ export type PwshValueKind =
   | 'target'
   | 'workbenchTemplate'
   | 'catalogService'
-  | 'catalogMcpServer';
+  | 'catalogMcpServer'
+  | 'ownService';
 
 type PwshMeta =
   | { static: true }
@@ -405,6 +406,21 @@ function filterPrefix(values: readonly string[], fragment: string): string[] {
 }
 
 // ─── Value sources ────────────────────────────────────────────────
+
+/**
+ * The builder's own services, `templates/services/<id>.yml` without the
+ * older `<id>@<n>.yml` versions next to them (ADR 0066).
+ */
+async function listOwnServices(ctx: Ctx): Promise<string[]> {
+  const home = ctx.opts.monocerosHome ?? monocerosHome();
+  const dir = path.join(home, 'templates', 'services');
+  if (!existsSync(dir)) return [];
+  const entries = await fs.readdir(dir);
+  return entries
+    .filter((e) => e.endsWith('.yml') && !e.includes('@'))
+    .map((e) => e.slice(0, -'.yml'.length))
+    .sort();
+}
 
 async function listContainerNames(ctx: Ctx): Promise<string[]> {
   const home = ctx.opts.monocerosHome ?? monocerosHome();
@@ -750,6 +766,7 @@ const ALL_COMMANDS = [
   'port',
   'tunnel',
   'share',
+  'create-version',
   'completion',
 ] as const;
 
@@ -959,6 +976,9 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   },
   completion: {
     positionals: [shellValues],
+  },
+  'create-version': {
+    positionals: [dynamicSource('ownService', (ctx) => listOwnServices(ctx))],
   },
   'list-components': {
     flags: {

@@ -17,6 +17,7 @@ import { __migrateConfigCommand } from './commands/__migrate-config.js';
 import { initCommand } from './commands/init.js';
 import { listAppsCommand } from './commands/list-apps.js';
 import { listComponentsCommand } from './commands/list-components.js';
+import { createVersionCommand } from './commands/create-version.js';
 import { logsCommand } from './commands/logs.js';
 import { openCommand } from './commands/open.js';
 import { portCommand } from './commands/port.js';
@@ -82,6 +83,7 @@ export const main = defineCommand({
     port: portCommand,
     tunnel: tunnelCommand,
     share: shareCommand,
+    'create-version': createVersionCommand,
     completion: completionCommand,
     __complete: __completeCommand,
     '__update-check': __updateCheckCommand,

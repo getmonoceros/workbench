@@ -60,6 +60,7 @@ const GROUPS: ReadonlyArray<{ key: string; label: string }> = [
   { key: 'run', label: 'Run + inspect' },
   { key: 'edit', label: 'Edit container yml' },
   { key: 'discovery', label: 'Discovery' },
+  { key: 'templates', label: 'Templates' },
   { key: 'tooling', label: 'Tooling' },
 ];
 

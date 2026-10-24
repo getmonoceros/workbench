@@ -231,6 +231,7 @@ describe('the pwsh script', () => {
         const services = path.join(home, 'templates', 'services');
         await mkdir(services, { recursive: true });
         await writeFile(path.join(services, 'kafka.yml'), 'id: kafka\n');
+        await writeFile(path.join(services, 'kafka@1.yml'), 'id: kafka\n');
         await writeFile(path.join(services, 'notes.txt'), 'x');
         const mcp = path.join(home, 'templates', 'mcp-servers');
         await mkdir(mcp, { recursive: true });
@@ -260,6 +261,8 @@ describe('the pwsh script', () => {
           expect.arrayContaining(['kafka', 'postgres']),
         );
         expect(addService!.split(' ')).not.toContain('notes');
+        // An older version is not a service of its own (ADR 0066).
+        expect(addService!.split(' ')).not.toContain('kafka@1');
         expect(withServices).toBe('--with-services=kafka');
         expect(addMcp!.split(' ')).toEqual(
           expect.arrayContaining(['acme-wiki', 'context7']),
@@ -472,6 +475,19 @@ describe('resolveCompletions', () => {
       monocerosHome: home,
     });
     expect(r).toEqual(['queue']);
+  });
+
+  it('completes create-version with own services, without their older versions', async () => {
+    const services = path.join(home, 'templates', 'services');
+    await mkdir(services, { recursive: true });
+    await writeFile(path.join(services, 'rabbitmq.yml'), '');
+    await writeFile(path.join(services, 'rabbitmq@1.yml'), '');
+    await writeFile(path.join(services, 'gotenberg.yml'), '');
+    const line = 'monoceros create-version ';
+    const r = await resolveCompletions(line, line.length, {
+      monocerosHome: home,
+    });
+    expect(r).toEqual(['gotenberg', 'rabbitmq']);
   });
 
   it('offers list-components its --json and --copy flags', async () => {
