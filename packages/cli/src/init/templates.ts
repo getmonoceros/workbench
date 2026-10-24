@@ -237,7 +237,7 @@ function projectFeature(
  * the real name; in both the paragraph after it says what the template is
  * for. A builder's own template without the header gets its first comment.
  */
-function templateDescription(text: string): string | undefined {
+export function templateDescription(text: string): string | undefined {
   const paragraphs: string[][] = [[]];
   for (const line of text.trimStart().split('\n')) {
     if (!line.startsWith('#')) break;

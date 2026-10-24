@@ -18,6 +18,7 @@ import { initCommand } from './commands/init.js';
 import { listAppsCommand } from './commands/list-apps.js';
 import { listComponentsCommand } from './commands/list-components.js';
 import { createVersionCommand } from './commands/create-version.js';
+import { createTemplateCommand } from './commands/create-template.js';
 import { logsCommand } from './commands/logs.js';
 import { openCommand } from './commands/open.js';
 import { portCommand } from './commands/port.js';
@@ -84,6 +85,7 @@ export const main = defineCommand({
     tunnel: tunnelCommand,
     share: shareCommand,
     'create-version': createVersionCommand,
+    'create-template': createTemplateCommand,
     completion: completionCommand,
     __complete: __completeCommand,
     '__update-check': __updateCheckCommand,

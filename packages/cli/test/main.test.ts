@@ -47,6 +47,7 @@ describe('monoceros main command', () => {
       'tunnel',
       'share',
       'create-version',
+      'create-template',
       'completion',
       // Internal helper used by the shell-completion wrappers; not
       // user-facing but part of the registered subcommand surface.

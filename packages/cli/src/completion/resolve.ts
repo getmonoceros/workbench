@@ -767,6 +767,7 @@ const ALL_COMMANDS = [
   'tunnel',
   'share',
   'create-version',
+  'create-template',
   'completion',
 ] as const;
 
@@ -979,6 +980,11 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   },
   'create-version': {
     positionals: [dynamicSource('ownService', (ctx) => listOwnServices(ctx))],
+  },
+  'create-template': {
+    // Second positional is the new template's name: free text.
+    positionals: [containerName, () => []],
+    flags: { '--description': { type: 'value' } },
   },
   'list-components': {
     flags: {
