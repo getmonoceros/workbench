@@ -24,7 +24,7 @@ export const createTemplateCommand = defineCommand({
     description: {
       type: 'string',
       description:
-        'What the template is for. Written as the paragraph under the header comment, which `list-components --json` shows.',
+        'What the template is for, in quotes (--description "Node with Postgres."), or the shell passes only its first word. Written as the paragraph under the header comment, which `list-components --json` shows.',
     },
   },
   async run({ args }) {
