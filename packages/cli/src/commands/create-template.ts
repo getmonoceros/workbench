@@ -45,7 +45,7 @@ export const createTemplateCommand = defineCommand({
       consola.info(
         `Start a workbench from it: monoceros init <name> --template=${args.template}`,
       );
-      consola.info('In a team repository, commit it and open a pull request.');
+      consola.info('In a team repository, commit it there.');
       process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));

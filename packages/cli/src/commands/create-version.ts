@@ -24,9 +24,7 @@ export const createVersionCommand = defineCommand({
       consola.success(
         `${result.current} is now version ${result.version}: make your change there.`,
       );
-      consola.info(
-        'In a team repository, commit both files and open a pull request.',
-      );
+      consola.info('In a team repository, commit both files there.');
       process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
