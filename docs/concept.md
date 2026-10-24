@@ -122,6 +122,19 @@ Container identity follows the convention
 cwd is irrelevant; every command works from anywhere via
 `monoceros <command> <containername>`.
 
+A builder or a team keeps reusable parts under
+`$MONOCEROS_HOME/templates/`, often as a shared Git repository: workbench
+templates, service descriptors and MCP server descriptors. A workbench
+template only seeds the yml. Once `init` has written it, the yml belongs
+to the builder, and a later change to the template reaches new workbenches
+only. What the catalog carries beyond the yml, a service's briefing and an
+MCP server's definition, is read from the home at every `apply`; for a
+service it comes from the descriptor version its `ref` names, and a newer
+version reaches the yml only through `upgrade`. The mechanism is in ADR
+[0057](adr/0057-a-workbench-template-is-a-prepared-yml.md),
+[0063](adr/0063-a-builder-can-keep-their-own-service-descriptors.md) and
+[0066](adr/0066-a-service-descriptor-keeps-every-version.md).
+
 ### 3. AI tools as devcontainer features
 
 Each AI tool is a devcontainer feature under
