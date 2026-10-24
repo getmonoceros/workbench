@@ -29,6 +29,15 @@ export const createTemplateCommand = defineCommand({
   },
   async run({ args }) {
     try {
+      // Words beyond the two positionals are almost always a description
+      // without quotes, which the shell split up. Say so rather than write
+      // a template described by its first word.
+      const extra = args._.slice(2);
+      if (extra.length > 0) {
+        throw new Error(
+          `Unexpected arguments: ${extra.join(' ')}. Put the description in quotes: --description "…".`,
+        );
+      }
       const result = await runCreateTemplate({
         name: args.name,
         template: args.template,
