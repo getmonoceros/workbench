@@ -386,6 +386,40 @@ describe('runApply', () => {
     expect(briefing).toContain('- `context7`');
   });
 
+  it('registers monoceros-docs by name alone, so an agent can look up the formats', async () => {
+    await writeYml(
+      'docs',
+      [
+        'schemaVersion: 1',
+        'name: docs',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        'mcpServers:',
+        '  - name: monoceros-docs',
+        '',
+      ].join('\n'),
+    );
+    await runApply({ ...baseRunOpts, name: 'docs', monocerosHome: home });
+    const config = JSON.parse(
+      await readFile(
+        path.join(home, 'container', 'docs', 'home', '.claude.json'),
+        'utf8',
+      ),
+    ) as { mcpServers: Record<string, { url?: string; headers?: object }> };
+    expect(config.mcpServers['monoceros-docs']?.url).toBe(
+      'https://mcp.getmonoceros.build/mcp',
+    );
+    expect(config.mcpServers['monoceros-docs']?.headers).toBeUndefined();
+    // The CLI does not run in the workbench; the briefing says where the
+    // formats are instead.
+    const briefing = await readFile(
+      path.join(home, 'container', 'docs', 'AGENTS.md'),
+      'utf8',
+    );
+    expect(briefing).toContain('- `monoceros-docs`');
+    expect(briefing).toContain('/docs/reference/templates/');
+  });
+
   it('refuses a connector whose credential resolves empty', async () => {
     await writeYml(
       'mcpblank',

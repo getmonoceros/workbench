@@ -25,6 +25,7 @@ The curated set, with what each one is for:
 | `figma`           | layout, components and design tokens of a design | oauth |
 | `forge`           | Forge modules, manifest rules, UI Kit            | none  |
 | `microsoft-learn` | first-party .NET and Azure docs and code samples | none  |
+| `monoceros-docs`  | Monoceros formats, where the CLI does not run    | none  |
 
 ## Consequences
 

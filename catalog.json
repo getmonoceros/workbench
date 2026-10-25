@@ -703,6 +703,14 @@
       "transport": "http"
     },
     {
+      "name": "monoceros-docs",
+      "displayName": "Monoceros Docs",
+      "description": "The Monoceros documentation and component catalog, including the formats of workbench templates and service and MCP server descriptors.",
+      "options": [],
+      "documentationURL": "https://getmonoceros.build/docs/mcp-servers/monoceros-docs/",
+      "transport": "http"
+    },
+    {
       "name": "notion",
       "displayName": "Notion",
       "description": "Pages and databases, so requirements written in Notion reach the agent that has to build them.",

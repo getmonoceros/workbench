@@ -1,0 +1,13 @@
+id: monoceros-docs
+category: mcp-server
+displayName: Monoceros Docs
+description: 'The Monoceros documentation and component catalog, including the formats of workbench templates and service and MCP server descriptors.'
+documentationURL: https://getmonoceros.build/docs/mcp-servers/monoceros-docs/
+mcpServer:
+  transport: http
+  # Anonymous and read-only; searches and returns the pages of
+  # getmonoceros.build and the published component catalog.
+  url: https://mcp.getmonoceros.build/mcp
+briefing:
+  - text: 'The Monoceros documentation and component catalog. The `monoceros` CLI does not run inside the workbench, so look up here how a Monoceros file is written before you write one: a workbench template, a service descriptor, an MCP server descriptor. The reference pages under `/docs/reference/templates/` list every field.'
+  - text: 'In a Monoceros templates repository, a change to `services/<id>.yml` needs a new version first, the way `monoceros create-version` makes one: copy the file unchanged to `services/<id>@<version>.yml`, with the version the file carries (1 when it has no `version:` line), then raise `version:` in `services/<id>.yml` by one (or add `version: 2` under `category:`) and make the change there. Never edit an `@<version>` file.'
