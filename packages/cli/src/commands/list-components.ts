@@ -3,6 +3,7 @@ import { consola } from 'consola';
 import { catalogWarnings, loadDescriptorCatalog } from '../catalog/load.js';
 import { expandSelectable } from '../catalog/expand.js';
 import { buildCatalogJson } from '../catalog/catalog-json.js';
+import type { CatalogJsonTemplate } from '../catalog/catalog-json.js';
 import { copyToHostClipboard } from '../devcontainer/clipboard-bridge.js';
 import {
   projectWorkbenchTemplate,
@@ -10,7 +11,7 @@ import {
   workbenchTemplateSources,
 } from '../init/templates.js';
 import { CLI_VERSION } from '../version.js';
-import { colorsFor } from '../util/format.js';
+import { colorsFor, type Palette } from '../util/format.js';
 
 // Category-key → human-readable section label. Same order is used
 // for rendering — languages first (most common), services next,
@@ -28,12 +29,76 @@ const CATEGORY_ORDER: ReadonlyArray<keyof typeof CATEGORY_LABELS> = [
   'mcp-server',
 ];
 
+export interface ListingItem {
+  name: string;
+  /** Terminal column: a short label. */
+  label: string;
+  /** Piped column: the full sentence. */
+  desc: string;
+}
+
+export interface ListingSection {
+  /** Header of the piped output (`# service`). */
+  key: string;
+  /** Header of the terminal output (`Services`). */
+  label: string;
+  items: ListingItem[];
+}
+
+/**
+ * The human-readable listing. Piped (non-TTY) output stays machine-friendly
+ * with the historical `name<TAB>description` shape, one section at a time,
+ * no ANSI, no alignment padding, because grep/awk consumers want predictable
+ * columns. On a terminal: section headers and aligned columns, the same
+ * visual vocabulary as the help renderer, the cyan name column padded to the
+ * widest entry in its section. An empty section is left out.
+ */
+export function renderListing(
+  sections: readonly ListingSection[],
+  isTty: boolean,
+  fmt: Palette,
+): string {
+  const blocks: string[] = [];
+  for (const { key, label, items } of sections) {
+    if (items.length === 0) continue;
+    const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name));
+    if (!isTty) {
+      blocks.push(
+        [`# ${key}`, ...sorted.map((i) => `${i.name}\t${i.desc}`)].join('\n'),
+      );
+      continue;
+    }
+    const nameWidth = Math.max(...sorted.map((i) => i.name.length));
+    const gutter = 2;
+    blocks.push(
+      [
+        `${fmt.sectionLine(label)}\n`,
+        ...sorted.map((i) => {
+          const pad = ' '.repeat(nameWidth - i.name.length + gutter);
+          return `  ${fmt.cyan(i.name)}${pad}${i.label}`;
+        }),
+      ].join('\n'),
+    );
+  }
+  return blocks.length === 0 ? '' : `${blocks.join('\n\n')}\n`;
+}
+
+/** What a template brings, by the names `init` takes: `node:22, postgres, claude`. */
+export function templateContents(t: CatalogJsonTemplate): string {
+  return [
+    ...t.languages,
+    ...t.services.map((s) => s.replace(/@\d+$/, '')),
+    ...t.features.map((f) => f.name),
+    ...t.mcpServers,
+  ].join(', ');
+}
+
 export const listComponentsCommand = defineCommand({
   meta: {
     name: 'list-components',
     group: 'discovery',
     description:
-      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=… / --with-mcp-servers=…`, grouped by category (Languages, Services, Features, MCP servers). On a terminal the names render in cyan against a short label, in aligned columns; when piped, the formatting drops out and lines become `name<TAB>description`, the full sentence, for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json, plus what only this machine has: components and workbench templates from `~/.monoceros/templates/` carry `local: true`, and every template lists what it already brings. `--copy` puts that JSON on the clipboard instead of printing it.',
+      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=… / --with-mcp-servers=…`, grouped by category (Languages, Services, Features, MCP servers), followed by the workbench templates `init --template=…` starts from. On a terminal the names render in cyan against a short label (for a template: what it brings), in aligned columns; when piped, the formatting drops out and lines become `name<TAB>description`, the full sentence, for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json, plus what only this machine has: components and workbench templates from `~/.monoceros/templates/` carry `local: true`, and every template lists what it already brings. `--copy` puts that JSON on the clipboard instead of printing it.',
   },
   args: {
     json: {
@@ -82,18 +147,12 @@ export const listComponentsCommand = defineCommand({
         process.exit(0);
       }
 
-      const fmt = colorsFor(process.stdout);
-      const isTty = process.stdout.isTTY ?? false;
-
       // Group entries by category for sectioned rendering.
       // Two columns, because the two consumers want different things: a
       // terminal wants a short label it can align, a pipe wants the sentence
       // that says what the component is (`dotnet<TAB>.NET` tells a grep
       // nothing).
-      const byCategory = new Map<
-        string,
-        Array<{ name: string; label: string; desc: string }>
-      >();
+      const byCategory = new Map<string, ListingItem[]>();
       for (const c of catalog.values()) {
         const list = byCategory.get(c.category) ?? [];
         // The builder's own descriptor says so, in both outputs: it is the
@@ -106,48 +165,35 @@ export const listComponentsCommand = defineCommand({
         });
         byCategory.set(c.category, list);
       }
-      for (const list of byCategory.values()) {
-        list.sort((a, b) => a.name.localeCompare(b.name));
-      }
+      const sections: ListingSection[] = CATEGORY_ORDER.map((cat) => ({
+        key: cat,
+        label: CATEGORY_LABELS[cat],
+        items: byCategory.get(cat) ?? [],
+      }));
 
-      // Piped (non-TTY) output: stay machine-friendly with the
-      // historical `name<TAB>description` shape, one category at a
-      // time. No ANSI, no alignment padding — grep/awk consumers
-      // want predictable columns.
-      if (!isTty) {
-        let first = true;
-        for (const cat of CATEGORY_ORDER) {
-          const items = byCategory.get(cat);
-          if (!items || items.length === 0) continue;
-          if (!first) process.stdout.write('\n');
-          first = false;
-          process.stdout.write(`# ${cat}\n`);
-          for (const { name, desc } of items) {
-            process.stdout.write(`${name}\t${desc}\n`);
-          }
-        }
-        process.exit(0);
-      }
+      // A workbench template's short label is what it brings; its description
+      // is a paragraph, which only the pipe gets. Read with the config parser,
+      // so a broken template fails here with its path, as it does under --json.
+      const templates = (
+        await readWorkbenchTemplates(workbenchTemplateSources())
+      ).map((t) => projectWorkbenchTemplate(t, descriptors));
+      sections.push({
+        key: 'template',
+        label: 'Workbench templates',
+        items: templates.map((t) => {
+          const local = t.local ? ' (local)' : '';
+          return {
+            name: t.name,
+            label: `${templateContents(t)}${local}`,
+            desc: `${t.description ?? templateContents(t)}${local}`,
+          };
+        }),
+      });
 
-      // Interactive (TTY) output: section headers + aligned
-      // columns, same visual vocabulary as the help renderer and
-      // the apply/install structured output. Cyan name column
-      // padded to the widest entry in its section so the
-      // description column lines up.
-      let first = true;
-      for (const cat of CATEGORY_ORDER) {
-        const items = byCategory.get(cat);
-        if (!items || items.length === 0) continue;
-        if (!first) process.stdout.write('\n');
-        first = false;
-        process.stdout.write(`${fmt.sectionLine(CATEGORY_LABELS[cat])}\n\n`);
-        const nameWidth = Math.max(...items.map((i) => i.name.length));
-        const gutter = 2;
-        for (const { name, label } of items) {
-          const pad = ' '.repeat(nameWidth - name.length + gutter);
-          process.stdout.write(`  ${fmt.cyan(name)}${pad}${label}\n`);
-        }
-      }
+      const isTty = process.stdout.isTTY ?? false;
+      process.stdout.write(
+        renderListing(sections, isTty, colorsFor(process.stdout)),
+      );
       process.exit(0);
     } catch (err) {
       consola.error(err instanceof Error ? err.message : String(err));
