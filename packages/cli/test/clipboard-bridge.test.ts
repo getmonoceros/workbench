@@ -188,7 +188,9 @@ describe('copyToHostClipboard', () => {
     expect(() =>
       copyToHostClipboard('x', [
         ['monoceros-no-such-clipboard-tool', []],
-        ['sh', ['-c', 'exit 3']],
+        // Reads its input before it fails, like a real clipboard tool; a bare
+        // `exit 3` can exit before the write and fail with EPIPE instead.
+        ['sh', ['-c', 'cat >/dev/null; exit 3']],
       ]),
     ).toThrow(
       /Tried: monoceros-no-such-clipboard-tool \(not installed\), sh \(exit 3\)/,
