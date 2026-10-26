@@ -37,6 +37,22 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 USER root
 
+# Node 22.23.4 (October 2026 security release) ahead of the base image.
+# Swaps only the node binary; skipped once the base ships this version or
+# newer, so a later base can never be downgraded. Remove once it has caught up.
+ARG NODE_SECURITY_VERSION=22.23.4
+ARG TARGETARCH
+RUN set -eu; \
+    if dpkg --compare-versions "$(node -p process.versions.node)" ge "$NODE_SECURITY_VERSION"; then exit 0; fi; \
+    arch=$([ "$TARGETARCH" = amd64 ] && echo x64 || echo arm64); \
+    f="node-v${NODE_SECURITY_VERSION}-linux-${arch}.tar.gz"; \
+    cd /tmp; \
+    curl -fsSLO "https://nodejs.org/dist/v${NODE_SECURITY_VERSION}/${f}"; \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_SECURITY_VERSION}/SHASUMS256.txt" | grep " ${f}\$" | sha256sum -c -; \
+    tar -xzf "$f" -C /usr/local/bin --strip-components=2 "node-v${NODE_SECURITY_VERSION}-linux-${arch}/bin/node"; \
+    rm "$f"; \
+    node --version
+
 # shellcheck is not ours to use: it is what OpenCode's bash language
 # server shells out to for diagnostics. Without it the server starts,
 # reports nothing, and the silence looks like the feature being off.
