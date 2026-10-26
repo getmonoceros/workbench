@@ -57,6 +57,11 @@ RUN set -eu; \
 # server shells out to for diagnostics. Without it the server starts,
 # reports nothing, and the silence looks like the feature being off.
 # Every container has shell scripts, and the package is small.
+#
+# libbrotli1 takes the bookworm-security fix for the Brotli decoder
+# (CVE-2026-111497, the same bug as in Node) ahead of the base image; curl
+# and git over HTTPS decode with it. --only-upgrade does nothing once the
+# base ships the fix. Remove once it has caught up.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       iptables \
@@ -66,6 +71,7 @@ RUN apt-get update \
       openssh-server \
       socat \
       shellcheck \
+ && apt-get install -y --no-install-recommends --only-upgrade libbrotli1 \
  && rm -rf /var/lib/apt/lists/*
 
 # Harden sshd for the IDE attach point (ADR 0022). A drop-in under
