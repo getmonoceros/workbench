@@ -4,6 +4,8 @@ import { catalogWarnings, loadDescriptorCatalog } from '../catalog/load.js';
 import { expandSelectable } from '../catalog/expand.js';
 import { buildCatalogJson } from '../catalog/catalog-json.js';
 import type { CatalogJsonTemplate } from '../catalog/catalog-json.js';
+import { readTemplateRepository } from '../catalog/template-repository.js';
+import { userTemplatesDir } from '../config/paths.js';
 import { copyToHostClipboard } from '../devcontainer/clipboard-bridge.js';
 import {
   projectWorkbenchTemplate,
@@ -98,7 +100,7 @@ export const listComponentsCommand = defineCommand({
     name: 'list-components',
     group: 'discovery',
     description:
-      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=… / --with-mcp-servers=…`, grouped by category (Languages, Services, Features, MCP servers), followed by the workbench templates `init --template=…` starts from. On a terminal the names render in cyan against a short label (for a template: what it brings), in aligned columns; when piped, the formatting drops out and lines become `name<TAB>description`, the full sentence, for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json, plus what only this machine has: components and workbench templates from `~/.monoceros/templates/` carry `local: true`, and every template lists what it already brings. `--copy` puts that JSON on the clipboard instead of printing it.',
+      'Print the components catalog used by `monoceros init --with-languages=… / --with-services=… / --with-features=… / --with-mcp-servers=…`, grouped by category (Languages, Services, Features, MCP servers), followed by the workbench templates `init --template=…` starts from. On a terminal the names render in cyan against a short label (for a template: what it brings), in aligned columns; when piped, the formatting drops out and lines become `name<TAB>description`, the full sentence, for grep/awk-friendly consumption. `--json` emits the full catalog (options, versions, presets) as a machine-readable document — the same shape published at getmonoceros.build/catalog.json, plus what only this machine has: components and workbench templates from `~/.monoceros/templates/` carry `local: true` and a `source` (`team` when committed in the Git repository that folder is a clone of, `personal` otherwise), the document names that repository as `templateRepository`, and every template lists what it already brings. `--copy` puts that JSON on the clipboard instead of printing it.',
   },
   args: {
     json: {
@@ -122,10 +124,16 @@ export const listComponentsCommand = defineCommand({
       // --json: machine-readable projection, no TTY formatting. This is the
       // canonical shape published as getmonoceros.build/catalog.json.
       if (args.json || args.copy) {
+        const repository = readTemplateRepository(userTemplatesDir());
         const templates = (
           await readWorkbenchTemplates(workbenchTemplateSources())
-        ).map((t) => projectWorkbenchTemplate(t, descriptors));
-        const doc = buildCatalogJson(descriptors, CLI_VERSION, templates);
+        ).map((t) => projectWorkbenchTemplate(t, descriptors, repository));
+        const doc = buildCatalogJson(
+          descriptors,
+          CLI_VERSION,
+          templates,
+          repository,
+        );
         const text = `${JSON.stringify(doc, null, 2)}\n`;
         if (args.copy) {
           const tool = copyToHostClipboard(text);

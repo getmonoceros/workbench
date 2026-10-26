@@ -103,6 +103,37 @@ mcpServer:
     );
   });
 
+  /**
+   * #146: a local component says whether a colleague has it too, and the
+   * document names the team repository. The published file has neither.
+   */
+  it('says whose a local component is and names the team repository', async () => {
+    const catalog = await loadDescriptorCatalog(componentsRoot);
+    const postgres = catalog.get('postgres')!;
+    const redis = catalog.get('redis')!;
+    catalog.set('postgres', { ...postgres, local: true });
+    catalog.set('redis', { ...redis, local: true });
+    const doc = buildCatalogJson(catalog, 'dev', [], {
+      committed: new Set([postgres.sourcePath]),
+      url: 'https://github.com/acme/monoceros-templates.git',
+    });
+    const service = (name: string) => doc.services.find((s) => s.name === name);
+    expect(service('postgres')).toMatchObject({ local: true, source: 'team' });
+    expect(service('redis')).toMatchObject({
+      local: true,
+      source: 'personal',
+    });
+    expect(service('mailpit')).not.toHaveProperty('source');
+    expect(doc.templateRepository).toBe(
+      'https://github.com/acme/monoceros-templates.git',
+    );
+    const published = buildCatalogJson(
+      await loadDescriptorCatalog(componentsRoot),
+      'dev',
+    );
+    expect(published).not.toHaveProperty('templateRepository');
+  });
+
   it('carries the templates it is given, sorted by name', async () => {
     const catalog = await loadDescriptorCatalog(componentsRoot);
     const empty = { languages: [], services: [], features: [], mcpServers: [] };

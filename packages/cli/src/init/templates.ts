@@ -9,6 +9,8 @@ import { DEFAULT_RUNTIME_VERSION } from '../create/catalog.js';
 import { parseConfig } from '../config/io.js';
 import type { SolutionConfig } from '../config/schema.js';
 import type { CatalogComponent } from '../catalog/load.js';
+import { templateSource } from '../catalog/template-repository.js';
+import type { TemplateRepository } from '../catalog/template-repository.js';
 import type {
   CatalogJsonTemplate,
   CatalogJsonTemplateFeature,
@@ -176,6 +178,7 @@ export async function readWorkbenchTemplates(
 export function projectWorkbenchTemplate(
   template: TemplateFile,
   catalog: Map<string, CatalogComponent>,
+  repository?: TemplateRepository,
 ): CatalogJsonTemplate {
   let config: SolutionConfig;
   try {
@@ -191,7 +194,12 @@ export function projectWorkbenchTemplate(
   const description = templateDescription(template.text);
   return {
     name: template.name,
-    ...(template.local ? { local: true as const } : {}),
+    ...(template.local
+      ? {
+          local: true as const,
+          source: templateSource(template.file, repository),
+        }
+      : {}),
     ...(description ? { description } : {}),
     languages: config.languages.map(languageLabel),
     services: config.services.map((s) => s.ref ?? s.name),

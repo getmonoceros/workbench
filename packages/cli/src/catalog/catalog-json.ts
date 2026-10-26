@@ -1,6 +1,8 @@
 import type { CatalogComponent } from './load.js';
 import type { OptionSpec } from './descriptor.js';
 import type { PluginEntry } from '../config/schema.js';
+import { templateSource } from './template-repository.js';
+import type { TemplateRepository } from './template-repository.js';
 
 /**
  * Public, machine-readable projection of the component catalog — the
@@ -46,6 +48,12 @@ interface CatalogJsonBase {
    * (ADR 0063). Absent on shipped ones, so the published file never has it.
    */
   local?: true;
+  /**
+   * Set with `local`: `team` when the file is committed in the team
+   * repository the templates folder is a clone of, `personal` when it exists
+   * on this machine only (#146).
+   */
+  source?: 'team' | 'personal';
   displayName: string;
   description: string;
   documentationURL?: string;
@@ -121,6 +129,8 @@ export interface CatalogJsonTemplate {
   name: string;
   /** Read from the builder's `<MONOCEROS_HOME>/templates/workbenches/`. */
   local?: true;
+  /** Set with `local`, as on a component. */
+  source?: 'team' | 'personal';
   /** The template's first comment paragraph without a placeholder in it. */
   description?: string;
   /** As written in the yml: `node`, `node:24`. */
@@ -143,6 +153,12 @@ export interface CatalogJson {
   schemaVersion: number;
   /** The CLI version this snapshot was generated from. */
   cliVersion: string;
+  /**
+   * The team repository the builder's templates folder is a clone of, as an
+   * HTTPS URL without credentials (#146). Absent without one, and always in
+   * the published file.
+   */
+  templateRepository?: string;
   languages: CatalogJsonLanguage[];
   services: CatalogJsonService[];
   features: CatalogJsonFeature[];
@@ -198,16 +214,19 @@ export function buildCatalogJson(
   catalog: Map<string, CatalogComponent>,
   cliVersion: string,
   templates: readonly CatalogJsonTemplate[] = [],
+  repository?: TemplateRepository,
 ): CatalogJson {
   const languages: CatalogJsonLanguage[] = [];
   const services: CatalogJsonService[] = [];
   const features: CatalogJsonFeature[] = [];
   const mcpServers: CatalogJsonMcpServer[] = [];
 
-  for (const { descriptor: d, local } of catalog.values()) {
+  for (const { descriptor: d, local, sourcePath } of catalog.values()) {
     const base: CatalogJsonBase = {
       name: d.name ?? d.id,
-      ...(local ? { local } : {}),
+      ...(local
+        ? { local, source: templateSource(sourcePath, repository) }
+        : {}),
       displayName: d.displayName,
       description: d.description,
       options: projectOptions(d.options),
@@ -253,6 +272,7 @@ export function buildCatalogJson(
   return {
     schemaVersion: CATALOG_JSON_SCHEMA_VERSION,
     cliVersion,
+    ...(repository?.url ? { templateRepository: repository.url } : {}),
     languages: languages.sort(byName),
     services: services.sort(byName),
     features: features.sort(byName),

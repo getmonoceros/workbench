@@ -78,6 +78,7 @@ describe('projectWorkbenchTemplate', () => {
     expect(out).toEqual({
       name: 'standard',
       local: true,
+      source: 'personal',
       description: 'Node and Postgres with Claude Code and the Atlassian CLIs.',
       languages: ['node:24', 'java:21'],
       services: ['postgres', 'postgres@1'],
@@ -188,6 +189,15 @@ describe('projectWorkbenchTemplate', () => {
     const out = projectWorkbenchTemplate(template(HEADER, false), catalog);
     expect(out).not.toHaveProperty('description');
     expect(out).not.toHaveProperty('local');
+    expect(out).not.toHaveProperty('source');
+  });
+
+  it("marks a template the team repository has committed as the team's", () => {
+    const t = template(HEADER);
+    const out = projectWorkbenchTemplate(t, catalog, {
+      committed: new Set([t.file]),
+    });
+    expect(out).toMatchObject({ local: true, source: 'team' });
   });
 
   it('fails on a broken template and names its file', () => {
