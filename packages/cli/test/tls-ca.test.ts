@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import forge from 'node-forge';
-import { ensureCa, ensureLeafCert } from '../src/tls/ca.js';
+import { ensureCa, ensureLeafCert, randomSerial } from '../src/tls/ca.js';
 
 let home: string;
 
@@ -126,5 +126,27 @@ describe('ensureLeafCert', () => {
     expect(await readFile(path.join(b.certDir, b.certFile), 'utf8')).not.toBe(
       pem1,
     );
+  });
+});
+
+describe('randomSerial', () => {
+  /**
+   * A serial that starts with `00 00` (random bytes beginning with zero) is
+   * rejected by Go's x509 parser, so Caddy could not load the leaf, and
+   * node-forge failed to verify it about once in 256 issuances.
+   */
+  it('stays positive and minimally encoded whatever the random bytes', () => {
+    for (const fill of ['\x00', '\x2e', '\x7f', '\x80', '\xff']) {
+      const serial = randomSerial(fill.repeat(16));
+      expect(serial, `fill ${fill.charCodeAt(0)}`).toHaveLength(32);
+      const first = parseInt(serial.slice(0, 2), 16);
+      expect(first).toBeGreaterThanOrEqual(0x40);
+      expect(first).toBeLessThanOrEqual(0x7f);
+    }
+  });
+
+  it('keeps the rest of the random bytes', () => {
+    const bytes = '\x00' + '\xab'.repeat(15);
+    expect(randomSerial(bytes)).toBe('40' + 'ab'.repeat(15));
   });
 });

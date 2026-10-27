@@ -62,9 +62,17 @@ function homeDir(monocerosHome?: string): string {
   return monocerosHome ?? defaultMonocerosHome();
 }
 
-/** DER serials must be positive; a leading `00` keeps the high bit clear. */
-function randomSerial(): string {
-  return '00' + forge.util.bytesToHex(forge.random.getBytesSync(16));
+/**
+ * A positive, minimally encoded DER serial: the first byte's high bit cleared
+ * (positive) and the bit below it set (no leading zero byte). A `00` prefix
+ * was not enough: random bytes starting with `00` gave `0000…`, which Go's
+ * parser (Caddy, the share terminator) and OpenSSL reject outright.
+ */
+export function randomSerial(
+  bytes: string = forge.random.getBytesSync(16),
+): string {
+  const first = (bytes.charCodeAt(0) & 0x7f) | 0x40;
+  return forge.util.bytesToHex(String.fromCharCode(first) + bytes.slice(1));
 }
 
 /**
