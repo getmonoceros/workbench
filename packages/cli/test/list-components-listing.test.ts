@@ -80,6 +80,10 @@ describe('list-components listing', () => {
         services: ['postgres@1', 'meilisearch@2', 'cache'],
         features: [{ name: 'claude', options: { permissionMode: 'auto' } }],
         mcpServers: ['acme-wiki'],
+        repos: [],
+        ports: [],
+        aptPackages: [],
+        installUrls: [],
       }),
     ).toBe('node:22, postgres, meilisearch, cache, claude, acme-wiki');
   });

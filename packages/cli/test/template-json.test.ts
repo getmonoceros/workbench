@@ -95,7 +95,75 @@ describe('projectWorkbenchTemplate', () => {
         { name: 'atlassian', options: { twg: true, rovodev: false } },
       ],
       mcpServers: ['context7'],
+      repos: [],
+      ports: [],
+      aptPackages: [],
+      installUrls: [],
     });
+  });
+
+  /**
+   * The template from #147: made with `init --with-repos --with-ports
+   * --with-apt-packages`, then turned into a template. A consumer has to see
+   * all of it, or it proposes those flags again.
+   */
+  it('lists repos, ports, apt packages and install URLs', () => {
+    const out = projectWorkbenchTemplate(
+      template([
+        ...HEADER,
+        'aptPackages:',
+        '  - make',
+        'installUrls:',
+        '  - https://example.com/install.sh',
+        'repos:',
+        '  - url: https://github.com/acme/shop-web.git',
+        '  - url: https://git.acme.example/shop/api.git',
+        '    path: backend/api',
+        '    provider: gitlab',
+        'routing:',
+        '  ports:',
+        '    - 5173',
+        '    - port: 3000',
+      ]),
+      catalog,
+    );
+    expect(out).toMatchObject({
+      repos: [
+        { url: 'https://github.com/acme/shop-web.git' },
+        {
+          url: 'https://git.acme.example/shop/api.git',
+          path: 'backend/api',
+          provider: 'gitlab',
+        },
+      ],
+      ports: [5173, 3000],
+      aptPackages: ['make'],
+      installUrls: ['https://example.com/install.sh'],
+    });
+  });
+
+  it('leaves out the git identity, on the workbench and on a repo', () => {
+    const out = projectWorkbenchTemplate(
+      template([
+        ...HEADER,
+        'git:',
+        '  user:',
+        '    name: Ada Lovelace',
+        '    email: ada@example.com',
+        'repos:',
+        '  - url: https://github.com/acme/shop-web.git',
+        '    git:',
+        '      user:',
+        '        name: Ada Lovelace',
+        '        email: ada@example.com',
+      ]),
+      catalog,
+    );
+    expect(out.repos).toEqual([
+      { url: 'https://github.com/acme/shop-web.git' },
+    ]);
+    expect(out).not.toHaveProperty('git');
+    expect(JSON.stringify(out)).not.toContain('ada@example.com');
   });
 
   it('leaves out an option whose value is a ${VAR} credential', () => {

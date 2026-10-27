@@ -136,7 +136,16 @@ mcpServer:
 
   it('carries the templates it is given, sorted by name', async () => {
     const catalog = await loadDescriptorCatalog(componentsRoot);
-    const empty = { languages: [], services: [], features: [], mcpServers: [] };
+    const empty = {
+      languages: [],
+      services: [],
+      features: [],
+      mcpServers: [],
+      repos: [],
+      ports: [],
+      aptPackages: [],
+      installUrls: [],
+    };
     const doc = buildCatalogJson(catalog, 'dev', [
       { name: 'web', ...empty },
       { name: 'agent', local: true, ...empty },

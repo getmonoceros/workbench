@@ -757,7 +757,11 @@
           "name": "github"
         }
       ],
-      "mcpServers": []
+      "mcpServers": [],
+      "repos": [],
+      "ports": [],
+      "aptPackages": [],
+      "installUrls": []
     },
     {
       "name": "discovery-atlassian",
@@ -799,7 +803,11 @@
           }
         }
       ],
-      "mcpServers": []
+      "mcpServers": [],
+      "repos": [],
+      "ports": [],
+      "aptPackages": [],
+      "installUrls": []
     },
     {
       "name": "go-service",
@@ -818,7 +826,11 @@
           }
         }
       ],
-      "mcpServers": []
+      "mcpServers": [],
+      "repos": [],
+      "ports": [],
+      "aptPackages": [],
+      "installUrls": []
     },
     {
       "name": "web-app",
@@ -839,7 +851,11 @@
           }
         }
       ],
-      "mcpServers": []
+      "mcpServers": [],
+      "repos": [],
+      "ports": [],
+      "aptPackages": [],
+      "installUrls": []
     }
   ]
 }

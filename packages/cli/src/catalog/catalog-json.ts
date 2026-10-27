@@ -121,6 +121,17 @@ export interface CatalogJsonTemplateFeature {
 }
 
 /**
+ * A repository a workbench template clones. The git identity under `git.user`
+ * stays out: it is personal data and no `--with-*` flag sets it.
+ */
+export interface CatalogJsonTemplateRepo {
+  url: string;
+  /** Folder under `projects/` when the template sets one. */
+  path?: string;
+  provider?: 'github' | 'gitlab' | 'bitbucket';
+}
+
+/**
  * A workbench template (ADR 0057) and what it already brings, so a consumer
  * can check a requirement against it and propose only the `--with-*` flags
  * still missing on top.
@@ -142,6 +153,11 @@ export interface CatalogJsonTemplate {
   services: string[];
   features: CatalogJsonTemplateFeature[];
   mcpServers: string[];
+  repos: CatalogJsonTemplateRepo[];
+  /** `routing.ports` as numbers, in order; the first is the default route. */
+  ports: number[];
+  aptPackages: string[];
+  installUrls: string[];
 }
 
 export interface CatalogJson {

@@ -14,6 +14,7 @@ import type { TemplateRepository } from '../catalog/template-repository.js';
 import type {
   CatalogJsonTemplate,
   CatalogJsonTemplateFeature,
+  CatalogJsonTemplateRepo,
 } from '../catalog/catalog-json.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 
@@ -205,6 +206,23 @@ export function projectWorkbenchTemplate(
     services: config.services.map((s) => s.ref ?? s.name),
     features: config.features.map((f) => projectFeature(f, catalog)),
     mcpServers: config.mcpServers.map((m) => m.name),
+    repos: config.repos.map(projectRepo),
+    ports: (config.routing?.ports ?? []).map((p) =>
+      typeof p === 'number' ? p : p.port,
+    ),
+    aptPackages: [...config.aptPackages],
+    installUrls: [...config.installUrls],
+  };
+}
+
+/** URL, path and provider only; the per-repo `git.user` is personal data. */
+function projectRepo(
+  entry: SolutionConfig['repos'][number],
+): CatalogJsonTemplateRepo {
+  return {
+    url: entry.url,
+    ...(entry.path !== undefined ? { path: entry.path } : {}),
+    ...(entry.provider !== undefined ? { provider: entry.provider } : {}),
   };
 }
 
