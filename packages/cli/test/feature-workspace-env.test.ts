@@ -107,7 +107,7 @@ describe('atlassian forge → workspace runtime env (scaffold integration)', () 
         },
       ],
       features: {
-        [ATLASSIAN]: { forge: true, email: 'me@x.io', apiToken: 'sek' },
+        [ATLASSIAN]: { forge: true, email: 'me@x.io', forgeToken: 'sek' },
       },
     });
     expect(yaml).toContain('      FORGE_EMAIL: "me@x.io"');
@@ -138,12 +138,33 @@ describe('atlassian forge → workspace runtime env (scaffold integration)', () 
     const dc = buildDevcontainerJson({
       ...base,
       features: {
-        [ATLASSIAN]: { forge: true, email: 'me@x.io', apiToken: 'sek' },
+        [ATLASSIAN]: { forge: true, email: 'me@x.io', forgeToken: 'sek' },
       },
     });
     expect('containerEnv' in dc && dc.containerEnv).toEqual({
       FORGE_EMAIL: 'me@x.io',
       FORGE_API_TOKEN: 'sek',
+    });
+  });
+
+  // The Forge CLI takes a token scoped to the Forge app. `apiToken` is the
+  // Teamwork Graph one twg uses, and handing that to forge left it
+  // unauthenticated with no hint why.
+  it('never hands the twg token to forge', () => {
+    const dc = buildDevcontainerJson({
+      ...base,
+      features: {
+        [ATLASSIAN]: {
+          forge: true,
+          twg: false,
+          rovodev: false,
+          email: 'me@x.io',
+          apiToken: 'twg-token',
+        },
+      },
+    });
+    expect('containerEnv' in dc && dc.containerEnv).toEqual({
+      FORGE_EMAIL: 'me@x.io',
     });
   });
 

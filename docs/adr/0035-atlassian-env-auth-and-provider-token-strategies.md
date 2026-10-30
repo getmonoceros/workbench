@@ -267,7 +267,7 @@ Settled by real-account testing (2026-07-23, refined 2026-07-24):
 
 - The **apps-side token** (`ATLASSIAN_API_TOKEN`) is a scoped API token with
   **Teamwork Graph** as the app. It covers the full non-Bitbucket twg surface
-  — Jira, Confluence, JSM, Assets, Rovo and Forge. (A classic/unscoped token
+  — Jira, Confluence, JSM, Assets and Rovo search. (A classic/unscoped token
   also works but is the deprecated, lesser option; an early apparent 401 from
   a classic token was a transient glitch, not the rule.)
 - The **Bitbucket-side token** (`ATLASSIAN_BITBUCKET_TOKEN`) is a scoped token
@@ -294,3 +294,12 @@ fallback** (`docker exec -it <container> twg login` in a PTY; auth persists
 via the feature's `.config/twg` mount) stays a nice-to-have, not a
 necessity. A support request to Atlassian about multi-product token creation
 is open.
+
+**Amended (2026-10-30): Rovo Dev and Forge are not on the apps-side token.**
+The first bullet above originally listed Forge as covered, and nobody ran the
+`forge` CLI against it. Both tools turned out to accept only a token scoped to
+their own app in the same picker: Rovo Dev got `rovodevToken` /
+`ATLASSIAN_ROVODEV_TOKEN` (#90), and the Forge CLI gets `forgeToken` /
+`ATLASSIAN_FORGE_TOKEN`, a scoped token with **Forge** as the app (Atlassian's
+Forge getting-started guide). `FORGE_API_TOKEN` is filled from that option, and
+`ATLASSIAN_API_TOKEN` is twg's alone.

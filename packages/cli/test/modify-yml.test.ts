@@ -667,6 +667,21 @@ describe('add-*/remove-* against the yml', () => {
       },
     });
     expect(asked).toEqual(['ATLASSIAN_ROVODEV_TOKEN']);
+
+    // Forge reads neither the twg token nor the instance, only its own token.
+    asked.length = 0;
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'atlassian/forge',
+      monocerosHome: home,
+      promptEnv: true,
+      askEnvValue: async (c) => {
+        asked.push(c.envVar);
+        return '';
+      },
+    });
+    expect(asked).toEqual(['ATLASSIAN_FORGE_TOKEN']);
   });
 
   // The keys were already in the env file, so nothing was asked and the

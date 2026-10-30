@@ -7,10 +7,12 @@
 #   - Forge (forge, default on) — the `@forge/cli` app-dev toolchain
 #
 # Each tool is toggled independently via the `rovodev` / `twg` / `forge`
-# options. `instance` / `email` / `apiToken` are shared by twg and Forge;
-# Rovo Dev needs its OWN token (`rovodevToken`), because acli only accepts
-# a Rovo Dev scoped token and answers a classic one with a bare
+# options. `email` is shared by all three, `instance` / `apiToken` belong to
+# twg. Rovo Dev needs its OWN token (`rovodevToken`), because acli only
+# accepts a Rovo Dev scoped token and answers a classic one with a bare
 # "authentication failed" — which is why the two cannot share a variable.
+# Forge needs its own as well (`forgeToken`): it takes a token scoped to the
+# Forge app, not the Teamwork Graph one twg uses.
 #
 # Each tool gets a post-create hook under
 # /usr/local/share/monoceros/post-create.d/, run on every container start:
@@ -39,6 +41,7 @@ INSTANCE="${INSTANCE:-}"
 EMAIL="${EMAIL:-}"
 APITOKEN="${APITOKEN:-}"
 ROVODEVTOKEN="${ROVODEVTOKEN:-}"
+FORGETOKEN="${FORGETOKEN:-}"
 BITBUCKETTOKEN="${BITBUCKETTOKEN:-}"
 
 if [ "${ROVODEV}" != "true" ] && [ "${TWG}" != "true" ] && [ "${FORGE}" != "true" ]; then
@@ -492,7 +495,7 @@ if [ "${FORGE}" = "true" ]; then
   # the OS keychain (libsecret on Linux), which we deliberately do not
   # carry. Instead Forge reads FORGE_EMAIL / FORGE_API_TOKEN at command
   # time; the workbench injects them into the workspace runtime env from
-  # this feature's `email` / `apiToken` options (feature.workspaceEnv),
+  # this feature's `email` / `forgeToken` options (feature.workspaceEnv),
   # so the right account is in scope without a login step here.
   # Forge gets NO refresh hook, unlike the other tools in this feature
   # (ADR 0054). Not an omission: the version Forge should run is decided by
@@ -544,8 +547,8 @@ NOTE
   else
     rm -f /usr/local/share/monoceros/notes.d/atlassian-forge.txt 2>/dev/null || true
   fi
-  if [ -z "${EMAIL}" ] || [ -z "${APITOKEN}" ]; then
-    echo "[atlassian/forge] no email/apiToken set — set them in the container yml so FORGE_EMAIL/FORGE_API_TOKEN reach the shell"
+  if [ -z "${EMAIL}" ] || [ -z "${FORGETOKEN}" ]; then
+    echo "[atlassian/forge] no ATLASSIAN_EMAIL/ATLASSIAN_FORGE_TOKEN set, so forge stays unauthenticated. It needs its own token, scoped to the Forge app (id.atlassian.com, Security, create an API token with scopes)."
   fi
 
   # Forge asks for analytics consent on first use, on stdin. An agent calling

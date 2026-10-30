@@ -353,7 +353,7 @@
           "type": "string",
           "surface": "env",
           "default": "",
-          "description": "Atlassian API token for twg and Forge (id.atlassian.com, Security, API tokens)."
+          "description": "Atlassian API token for twg (id.atlassian.com, Security, create an API token with scopes, app Teamwork Graph)."
         },
         {
           "key": "bitbucketToken",
@@ -375,6 +375,13 @@
           "surface": "yml",
           "default": true,
           "description": "Install the Forge CLI (`forge`) for building Atlassian apps."
+        },
+        {
+          "key": "forgeToken",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "Forge scoped API token, which is a different token from `apiToken` (id.atlassian.com, Security, create an API token with scopes, app Forge). The Forge CLI does not accept the Teamwork Graph token."
         },
         {
           "key": "instance",
