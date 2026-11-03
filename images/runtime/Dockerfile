@@ -79,8 +79,12 @@ RUN apt-get update \
 # root, no password, and bind to loopback only - nothing is published
 # to the host; the host reaches sshd through `docker exec … socat`. Host
 # keys and /run/sshd are created at runtime by monoceros-sshd-up.sh so
-# they don't bake into the image layer.
-RUN install -d /etc/ssh/sshd_config.d \
+# they don't bake into the image layer. The openssh-server postinst
+# generates host keys during the build, so they are deleted here: left in,
+# every container shared one key pair whose private half ships in the
+# public image.
+RUN rm -f /etc/ssh/ssh_host_* \
+ && install -d /etc/ssh/sshd_config.d \
  && printf '%s\n' \
       'ListenAddress 127.0.0.1' \
       'PermitRootLogin no' \

@@ -33,6 +33,39 @@ mkdir -p /run/sshd
 # and host-readable so `apply` can publish the pubkey). sshd itself uses the
 # copies in /etc/ssh (correct perms on the container fs; a bind-mount's perms
 # can trip sshd's strict host-key check). Restore -> fill-missing -> save.
+#
+# The store is only trusted with the `.per-container` marker. Runtimes up to
+# 1.11.2 baked host keys into the image and saved THOSE, so every container
+# on one runtime shared a key pair whose private half ships in the public
+# image. A store without the marker is such a copy: it is dropped once and
+# this container mints its own keys. $1 is the store (empty: no workspace,
+# nothing persisted), $2 an optional root prefix for tests.
+sync_host_keys() {
+  local store="$1" root="${2:-}"
+  local etc="$root/etc/ssh"
+  if [ -n "$store" ]; then
+    mkdir -p "$store"
+    if [ ! -e "$store/.per-container" ]; then
+      rm -f "$store"/ssh_host_* "$etc"/ssh_host_*
+    fi
+    for k in "$store"/ssh_host_*; do
+      if [ -e "$k" ]; then
+        cp -p "$k" "$etc"/ || true
+      fi
+    done
+  fi
+  # Generate any host keys still missing (first run, or a new type).
+  ssh-keygen -A ${root:+-f "$root"} >/dev/null 2>&1 || true
+  # sshd refuses private host keys that are group/world readable.
+  chmod 600 "$etc"/ssh_host_*_key 2>/dev/null || true
+  chmod 644 "$etc"/ssh_host_*_key.pub 2>/dev/null || true
+  if [ -n "$store" ]; then
+    cp -p "$etc"/ssh_host_*_key "$store"/ 2>/dev/null || true
+    cp -p "$etc"/ssh_host_*_key.pub "$store"/ 2>/dev/null || true
+    : >"$store/.per-container"
+  fi
+}
+
 host_store=""
 for d in /workspaces/*/.monoceros/ssh; do
   if [ -d "$d" ]; then
@@ -40,23 +73,7 @@ for d in /workspaces/*/.monoceros/ssh; do
     break
   fi
 done
-if [ -n "$host_store" ]; then
-  mkdir -p "$host_store"
-  for k in "$host_store"/ssh_host_*; do
-    if [ -e "$k" ]; then
-      cp -p "$k" /etc/ssh/ || true
-    fi
-  done
-fi
-# Generate any host keys still missing (first run, or a new type).
-ssh-keygen -A >/dev/null 2>&1 || true
-# sshd refuses private host keys that are group/world readable.
-chmod 600 /etc/ssh/ssh_host_*_key 2>/dev/null || true
-chmod 644 /etc/ssh/ssh_host_*_key.pub 2>/dev/null || true
-if [ -n "$host_store" ]; then
-  cp -p /etc/ssh/ssh_host_*_key "$host_store"/ 2>/dev/null || true
-  cp -p /etc/ssh/ssh_host_*_key.pub "$host_store"/ 2>/dev/null || true
-fi
+sync_host_keys "$host_store"
 
 # Install the builder's per-container public key(s) as the runtime user's
 # authorized_keys. The keys are minted on the host by `monoceros apply`

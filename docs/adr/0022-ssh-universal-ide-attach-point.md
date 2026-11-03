@@ -289,6 +289,18 @@ direct, so `apply` also records `[127.0.0.1]:<port>` in the WSL
 `~/.ssh/known_hosts`. `StrictHostKeyChecking no` stays as a fallback for
 the window between writing the config and recording the key.
 
+**Revision (host keys per container):** the stable keys were not per
+container. The `openssh-server` postinst generated host keys during the
+image build, `ssh-keygen -A` only fills missing ones, so `sshd-up.sh`
+persisted the image's keys: every workbench on one runtime version shared a
+key pair whose private half ships in the public GHCR image. The image now
+deletes its host keys after installing `openssh-server`, and `sshd-up.sh`
+trusts the persisted store only when it carries a `.per-container` marker.
+A store without the marker was written by an older runtime, so it is dropped
+once and the container mints its own keys; `apply` then records the new key
+in `known_hosts` as usual. Existing workbenches rotate on their first apply
+with the fixed runtime.
+
 ### 6. Always-on host-browser bridge for attach sessions
 
 The Host-Browser-Bridge (a relay `xdg-open` whose URL is opened on the host
