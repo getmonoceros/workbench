@@ -921,6 +921,7 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
         )
           ? windowsSshPort(opts.name)
           : null,
+        hostKeyPinned: runtimeSupportsHostKeyPinning(createOpts.runtimeVersion),
         ...(opts.sshKeygen ? { keygen: opts.sshKeygen } : {}),
         ...(opts.sshUserSshDir ? { userSshDir: opts.sshUserSshDir } : {}),
         logger: idLogger,
@@ -1356,8 +1357,9 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       }
 
       // Record the container's (now stable) SSH host key in ~/.ssh/known_hosts
-      // so the Claude desktop app's ssh2 (no trust-on-first-use) accepts it -
-      // under the alias on macOS/Linux, under [127.0.0.1]:<port> on Windows.
+      // so the Claude desktop app's ssh2 (no trust-on-first-use) and IDEs that
+      // verify host keys themselves accept it without a prompt - under the
+      // alias on macOS/Linux, under [127.0.0.1]:<port> on Windows.
       // The host key is persisted by sshd-up.sh (>= 1.3.5). Best-effort.
       if (runtimeSupportsHostKeyPinning(createOpts.runtimeVersion)) {
         try {

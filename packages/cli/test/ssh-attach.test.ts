@@ -107,6 +107,34 @@ describe('setupSshAttach', () => {
     );
   });
 
+  it('keeps the default known_hosts when the host key is pinned', async () => {
+    // Codium's Open Remote - SSH (>= 0.5) reads UserKnownHostsFile but not
+    // StrictHostKeyChecking: with /dev/null it asks on every connect.
+    await setupSshAttach({
+      name: 'demo',
+      targetDir,
+      home,
+      userSshDir,
+      keygen: fakeKeygen().spawn,
+      hostKeyPinned: true,
+    });
+    const entry = await readFile(sshConfigEntryPath(home, 'demo'), 'utf8');
+    expect(entry).not.toContain('UserKnownHostsFile');
+    expect(entry).toContain('StrictHostKeyChecking no');
+  });
+
+  it('sends known_hosts to /dev/null when the host key is not pinned (older runtime)', async () => {
+    await setupSshAttach({
+      name: 'demo',
+      targetDir,
+      home,
+      userSshDir,
+      keygen: fakeKeygen().spawn,
+    });
+    const entry = await readFile(sshConfigEntryPath(home, 'demo'), 'utf8');
+    expect(entry).toContain('UserKnownHostsFile /dev/null');
+  });
+
   it('is idempotent: re-running does not duplicate the include or re-mint', async () => {
     const kg = fakeKeygen();
     await setupSshAttach({
@@ -230,6 +258,7 @@ describe('Windows/WSL bridge', () => {
       userSshDir,
       keygen: fakeKeygen().spawn,
       windowsDirectPort: windowsSshPort('demo'),
+      hostKeyPinned: true,
       windows: deps,
     });
 
@@ -248,6 +277,8 @@ describe('Windows/WSL bridge', () => {
     expect(cfg).toContain('HostName 127.0.0.1');
     expect(cfg).toContain(`Port ${windowsSshPort('demo')}`);
     expect(cfg).not.toContain('ProxyCommand');
+    // stable key recorded under [127.0.0.1]:<port>: default known_hosts
+    expect(cfg).not.toContain('UserKnownHostsFile');
     expect(cfg).toContain('# <<< monoceros monoceros-demo <<<');
     // The unix config.d entry (read by the app via the WSL ~/.ssh/config
     // Include, and by `ssh` in the WSL terminal) must ALSO be direct under
@@ -256,6 +287,7 @@ describe('Windows/WSL bridge', () => {
     expect(unixEntry).toContain('HostName 127.0.0.1');
     expect(unixEntry).toContain(`Port ${windowsSshPort('demo')}`);
     expect(unixEntry).not.toContain('ProxyCommand');
+    expect(unixEntry).not.toContain('UserKnownHostsFile');
     // icacls invoked on the Windows key path for the resolved user
     expect(locked).toEqual([
       { p: 'C:\\Users\\TestUser\\.ssh\\monoceros\\demo', u: 'TestUser' },
@@ -278,6 +310,7 @@ describe('Windows/WSL bridge', () => {
       'ProxyCommand docker exec -i monoceros-demo socat - TCP:127.0.0.1:22',
     );
     expect(cfg).not.toContain('HostName 127.0.0.1');
+    expect(cfg).toContain('UserKnownHostsFile NUL');
   });
 
   it('does nothing when not under WSL', async () => {
@@ -434,6 +467,33 @@ describe('recordHostKey', () => {
     const kh = await readFile(path.join(userSshDir, 'known_hosts'), 'utf8');
     const hits = kh.split('\n').filter((l) => l.startsWith('monoceros-demo '));
     expect(hits).toHaveLength(1);
+  });
+
+  it('under WSL, also records [127.0.0.1]:<port> in both known_hosts files', async () => {
+    const winHome = path.join(root, 'winhome');
+    await recordHostKey({
+      name: 'demo',
+      targetDir: root,
+      userSshDir,
+      windows: {
+        isWsl: () => true,
+        resolveProfile: async () => ({
+          homeWsl: winHome,
+          homeWin: 'C:\\Users\\TestUser',
+          user: 'TestUser',
+        }),
+      },
+    });
+    const direct = `[127.0.0.1]:${windowsSshPort('demo')} ssh-ed25519 AAAATESTKEY`;
+    // WSL side: the unix block is direct there, so OpenSSH looks up the port
+    const kh = await readFile(path.join(userSshDir, 'known_hosts'), 'utf8');
+    expect(kh).toContain('monoceros-demo ssh-ed25519 AAAATESTKEY');
+    expect(kh).toContain(direct);
+    const winKh = await readFile(
+      path.join(winHome, '.ssh', 'known_hosts'),
+      'utf8',
+    );
+    expect(winKh).toContain(direct);
   });
 
   it('is a silent no-op when no host key has been persisted yet', async () => {

@@ -102,7 +102,6 @@ Host monoceros-<name>
     IdentityFile "<MONOCEROS_HOME>/container/<name>/.monoceros/ssh/id_ed25519"
     IdentitiesOnly yes
     StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
     ProxyCommand "<MONOCEROS_HOME>/ssh/exec-<name>.sh"
 ```
 
@@ -115,9 +114,11 @@ it. Resolving by label rather than a baked-in name means the entry follows
 rebuilds (the container id changes, the label does not) and prints an
 actionable error when the container is not running. `sshd` listens only
 inside the container; `socat` is already a runtime dependency established by
-[ADR 0009](./0009-tcp-tunnels-foreground-sidecar.md). Host keys are
-ephemeral (regenerated per container), so the entry disables host-key
-checking - there is no persistent identity to pin.
+[ADR 0009](./0009-tcp-tunnels-foreground-sidecar.md). Host keys were
+originally ephemeral (regenerated per container), so the entry disabled
+host-key checking and added `UserKnownHostsFile /dev/null`. Runtimes that
+persist the host key (>= 1.3.5, see the Windows revision below) drop the
+`/dev/null` line; older runtimes keep it.
 
 `apply` also ensures - idempotently, once - an `Include
 "<MONOCEROS_HOME>/ssh/config.d/*"` line in the builder's `~/.ssh/config`;
@@ -276,6 +277,17 @@ portless ProxyCommand transport; the stable host key is invisible to system
 OpenSSH (it disables host-key checking) and the `known_hosts` entry only
 matters to the app. The one new exposure is the Windows `127.0.0.1`-bound,
 key-only published port.
+
+**Revision (Open Remote - SSH 0.5):** that extension, the SSH client in
+VSCodium, now verifies host keys itself. It reads `UserKnownHostsFile` but
+ignores `StrictHostKeyChecking`, so `/dev/null` made it ask for the
+fingerprint on every connect. With a stable host key there is no reason to
+hide known_hosts any more: on a runtime >= 1.3.5 the generated blocks
+(macOS/Linux, WSL and Windows) omit `UserKnownHostsFile`, and every client
+checks against the entry `apply` records. Under WSL the unix block is
+direct, so `apply` also records `[127.0.0.1]:<port>` in the WSL
+`~/.ssh/known_hosts`. `StrictHostKeyChecking no` stays as a fallback for
+the window between writing the config and recording the key.
 
 ### 6. Always-on host-browser bridge for attach sessions
 
