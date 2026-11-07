@@ -16,9 +16,9 @@
 # installable: upstream restricts graspologic to Python below 3.13.
 #
 # The skill registration does NOT happen here. It writes into the agent's home
-# directory (~/.claude, ~/.config/opencode), and those are bind-mounted at
-# container start - a build-time write would be shadowed by the mount on the
-# first run (ADR 0018). So install.sh leaves a post-create hook, which runs
+# directory (~/.claude, ~/.config/opencode, ~/.copilot), and those are
+# bind-mounted at container start - a build-time write would be shadowed by the
+# mount on the first run (ADR 0018). So install.sh leaves a post-create hook, which runs
 # after the mounts are in place, on every container start.
 
 set -euo pipefail
@@ -194,6 +194,11 @@ if command -v claude >/dev/null 2>&1; then
 fi
 if command -v opencode >/dev/null 2>&1; then
   GRAPHIFY_PLATFORMS+=(opencode)
+fi
+# Global scope writes ~/.copilot/skills/graphify and nothing else, which the
+# copilot feature persists.
+if command -v copilot >/dev/null 2>&1; then
+  GRAPHIFY_PLATFORMS+=(copilot)
 fi
 
 if [ ${#GRAPHIFY_PLATFORMS[@]} -eq 0 ]; then

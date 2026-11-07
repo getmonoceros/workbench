@@ -229,6 +229,7 @@ describe('the post-create hook', () => {
   it('registers exactly the agents present in the container', async () => {
     await stub('claude', 'exit 0', hookBin);
     await stub('opencode', 'exit 0', hookBin);
+    await stub('copilot', 'exit 0', hookBin);
 
     const result = await runHook();
     expect(result.code).toBe(0);
@@ -238,6 +239,7 @@ describe('the post-create hook', () => {
     expect(calls).toEqual([
       'install --platform claude',
       'install --platform opencode',
+      'install --platform copilot',
     ]);
   });
 
