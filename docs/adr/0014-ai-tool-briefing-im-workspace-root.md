@@ -19,13 +19,20 @@ to explain it per session.
 
 Each tool has its own conventions for instruction files:
 
-| Tool           | File                               | Lookup                                   |
-| -------------- | ---------------------------------- | ---------------------------------------- |
-| Claude Code    | `CLAUDE.md`                        | Walk-up from cwd to filesystem root      |
-| OpenCode       | `AGENTS.md` (fallback `CLAUDE.md`) | Walk-up from cwd to filesystem root      |
-| Codex          | `AGENTS.md`                        | git root down to cwd (no walk-up)        |
-| Gemini CLI     | `GEMINI.md`                        | Walk-up to "trusted root" (fuzzy)        |
-| GitHub Copilot | `.github/copilot-instructions.md`  | Workspace root only, buggy in multi-root |
+| Tool            | File                                                                  | Lookup                                                                     |
+| --------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Claude Code     | `CLAUDE.md`                                                           | Walk-up from cwd to filesystem root                                        |
+| OpenCode        | `AGENTS.md` (fallback `CLAUDE.md`)                                    | Walk-up from cwd to filesystem root                                        |
+| Codex           | `AGENTS.md`                                                           | git root down to cwd (no walk-up)                                          |
+| Gemini CLI      | `GEMINI.md`                                                           | Walk-up to "trusted root" (fuzzy)                                          |
+| Copilot CLI[^1] | `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, all read | git root down to cwd (no walk-up), plus `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` |
+
+[^1]:
+    Corrected in November 2026, when Copilot CLI became a feature. The row
+    first described Copilot in VS Code (`.github/copilot-instructions.md`,
+    workspace root only). Copilot CLI misses a workspace-root `AGENTS.md` when
+    started inside a project repository, so the copilot feature points
+    `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` at the workspace.
 
 On top of that there are managed-policy slots at system-level paths
 (`/etc/claude-code/CLAUDE.md`, `/etc/codex/requirements.toml`) that

@@ -4,8 +4,13 @@ import { componentsRootDir, workbenchCheckoutRoot } from '../config/paths.js';
 import { matchMonocerosFeature } from '../util/ref.js';
 import { loadDescriptorCatalogSync } from '../catalog/load-sync.js';
 import { descriptorToFeatureManifest } from '../catalog/generate-manifest.js';
-import type { Descriptor, WorkspaceEnvBlock } from '../catalog/descriptor.js';
+import {
+  WORKSPACE_FOLDER_TOKEN,
+  type Descriptor,
+  type WorkspaceEnvBlock,
+} from '../catalog/descriptor.js';
 import { writeClaudePermissionMode } from './claude-settings.js';
+import { writeCopilotSettings } from './copilot-settings.js';
 import { notesDirInContainer } from './feature-notes.js';
 import { refreshLogInContainer } from './refresh-log.js';
 import { writeMcpRegistrations } from './mcp-registration.js';
@@ -762,9 +767,13 @@ function isOptionEnabled(value: unknown): boolean {
  * filled the backing secret yet, emitting an empty env var would only mask
  * the tool's own "not configured" path. This mirrors the atlassian login
  * hooks, which install only when their credentials are present.
+ *
+ * `${workspaceFolder}` renders to `workspaceFolder`, the workspace path in the
+ * container, ahead of any option of the same name.
  */
 export function featureWorkspaceEnv(
   features: readonly ResolvedFeature[],
+  workspaceFolder: string,
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const f of features) {
@@ -779,6 +788,7 @@ export function featureWorkspaceEnv(
         const value = template.replace(
           /\$\{([A-Za-z0-9_]+)\}/g,
           (_, token: string) => {
+            if (token === WORKSPACE_FOLDER_TOKEN) return workspaceFolder;
             const v = f.options[token];
             return v === undefined || v === null ? '' : String(v);
           },
@@ -1101,7 +1111,7 @@ export function buildDevcontainerJson(
   // devcontainer.json, so every process in the container sees it. (Service
   // connection env only exists in compose mode, where services live.)
   const workspaceEnv = {
-    ...featureWorkspaceEnv(resolvedFeatures),
+    ...featureWorkspaceEnv(resolvedFeatures, `/workspaces/${opts.name}`),
     ...languageWorkspaceEnv(opts.languages),
     ...(sshBridgePort
       ? { MONOCEROS_SSH_PUBLISH_PORT: String(sshBridgePort) }
@@ -1497,7 +1507,7 @@ export function buildComposeYaml(
         ? { hostPort: opts.proxyHostPort }
         : {}),
     }),
-    ...featureWorkspaceEnv(resolvedFeatures),
+    ...featureWorkspaceEnv(resolvedFeatures, `/workspaces/${opts.name}`),
     ...languageWorkspaceEnv(opts.languages),
     ...(sshBridgePort
       ? { MONOCEROS_SSH_PUBLISH_PORT: String(sshBridgePort) }
@@ -2393,6 +2403,11 @@ export async function writeScaffold(
   // apply-time-merge rationale as the claude write above. No-op without
   // the opencode feature.
   await writeOpencodeConfig(targetDir, opts.name, opts.features, opts.services);
+
+  // Copilot CLI's default permission mode and the trusted workspace folder,
+  // merged into the persistent `~/.copilot/`. Same apply-time rationale. No-op
+  // without the copilot feature.
+  await writeCopilotSettings(targetDir, opts.name, opts.features);
 
   // The opencode-roles feature's agents and commands, into the same
   // persistent `~/.config/opencode/` tree. No-op without that feature.

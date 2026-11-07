@@ -1,0 +1,45 @@
+id: copilot
+name: copilot
+category: feature
+displayName: GitHub Copilot CLI
+description: "GitHub's CLI coding agent, for anyone with a Copilot seat. Login, sessions and settings persist across container rebuilds."
+documentationURL: https://docs.github.com/en/copilot/how-tos/copilot-cli
+options:
+  apiToken:
+    type: string
+    default: ''
+    description: 'Fine-grained personal access token owned by your personal account, with the **Copilot Requests** permission (classic `ghp_` tokens are rejected). Reaches Copilot as COPILOT_GITHUB_TOKEN, which wins over a GH_TOKEN the `github` feature sets. Empty: run `/login` once inside Copilot.'
+    surface: env
+  permissionMode:
+    type: string
+    default: auto
+    proposals: [auto, ask, bypass]
+    description: 'Default Copilot permission mode in this container. `auto` = Assisted: a model reviews each request and approves the ones it judges safe, the rest still asks. `ask` prompts for every write and command; `bypass` approves everything, like `--yolo`. Monoceros writes this to ~/.copilot/settings.json on apply. An organization policy can override it.'
+    surface: yml
+feature:
+  version: 1.0.0
+  # `.copilot` holds the login (in plain text in config.json: a container has
+  # no keychain), settings, sessions, saved permissions, trusted folders and
+  # the MCP config. `.cache/copilot` holds the package cache the CLI updates
+  # itself into; without it every apply falls back to the version in the image
+  # and downloads the update again.
+  persistentHomePaths: [.copilot, .cache/copilot]
+  # COPILOT_GITHUB_TOKEN ranks above GH_TOKEN, so a `github` feature in the
+  # same workbench cannot hand Copilot a token without Copilot access.
+  #
+  # COPILOT_CUSTOM_INSTRUCTIONS_DIRS because Copilot reads AGENTS.md only from
+  # the repository root up to the working directory. Started in a project under
+  # `projects/`, which is its own git repository, it would miss the workspace
+  # briefing one level above. The `@`-imports in AGENTS.md resolve inside this
+  # directory too.
+  #
+  # MONOCEROS_WORKSPACE_FOLDER feeds the `copilot` wrapper from install.sh,
+  # which passes it as --add-dir: without it Copilot asks before reading the
+  # workspace root from a project directory.
+  workspaceEnv:
+    - vars:
+        COPILOT_GITHUB_TOKEN: '${apiToken}'
+        COPILOT_CUSTOM_INSTRUCTIONS_DIRS: '${workspaceFolder}'
+        MONOCEROS_WORKSPACE_FOLDER: '${workspaceFolder}'
+briefing:
+  - text: 'GitHub Copilot CLI (`copilot`): interactive coding agent. Reads this AGENTS.md as project instructions. Authenticated by its own token (COPILOT_GITHUB_TOKEN) when one was set in the yml, otherwise by a one-time `/login` inside Copilot. MCP servers from the yml are in `~/.copilot/mcp-config.json`.'

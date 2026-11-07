@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   agentsPresent,
   toClaudeMcpConfig,
+  toCopilotMcpConfig,
   toOpencodeMcpConfig,
   toRovodevMcpConfig,
   writeMcpRegistrations,
@@ -18,6 +19,7 @@ const CLAUDE = { [CLAUDE_REF]: {} };
 const OPENCODE = { [OPENCODE_REF]: {} };
 const BOTH = { ...CLAUDE, ...OPENCODE };
 const ROVODEV = { [ATLASSIAN_REF]: { rovodev: true } };
+const COPILOT = { 'ghcr.io/getmonoceros/monoceros-features/copilot:1': {} };
 
 const remote = (name: string, key = 'k'): ResolvedMcpServer => ({
   name,
@@ -172,6 +174,44 @@ describe('toOpencodeMcpConfig', () => {
       url: 'https://example.test/sse',
       enabled: true,
     });
+  });
+});
+
+describe('toCopilotMcpConfig', () => {
+  it('writes stdio as `local` with command and args apart, and all tools', () => {
+    expect(
+      toCopilotMcpConfig({
+        name: 'notion',
+        transport: 'stdio',
+        command: 'npx',
+        args: ['-y', 'notion-mcp'],
+        env: { NOTION_TOKEN: 'ntn_1' },
+        fromCatalog: false,
+      }),
+    ).toEqual({
+      type: 'local',
+      command: 'npx',
+      args: ['-y', 'notion-mcp'],
+      env: { NOTION_TOKEN: 'ntn_1' },
+      tools: ['*'],
+    });
+  });
+
+  it('keeps the remote transport name, sse included', () => {
+    expect(toCopilotMcpConfig(remote('context7', 'k1'))).toEqual({
+      type: 'http',
+      url: 'https://example.test/context7',
+      headers: { API_KEY: 'k1' },
+      tools: ['*'],
+    });
+    expect(
+      toCopilotMcpConfig({
+        name: 'sse-thing',
+        transport: 'sse',
+        url: 'https://example.test/sse',
+        fromCatalog: true,
+      }),
+    ).toEqual({ type: 'sse', url: 'https://example.test/sse', tools: ['*'] });
   });
 });
 
@@ -375,6 +415,24 @@ describe('writeMcpRegistrations', () => {
           rovodev?: string[];
         }
       ).rovodev,
+    ).toEqual(['context7']);
+  });
+
+  it('registers with Copilot CLI in ~/.copilot/mcp-config.json', async () => {
+    await writeMcpRegistrations(dir, COPILOT, [remote('context7')], 'acme');
+    const config = JSON.parse(
+      await fsp.readFile(
+        path.join(dir, 'home', '.copilot', 'mcp-config.json'),
+        'utf8',
+      ),
+    ) as { mcpServers: Record<string, { type: string }> };
+    expect(config.mcpServers.context7?.type).toBe('http');
+    expect(
+      (
+        JSON.parse(await fsp.readFile(recordFile(), 'utf8')) as {
+          copilot?: string[];
+        }
+      ).copilot,
     ).toEqual(['context7']);
   });
 

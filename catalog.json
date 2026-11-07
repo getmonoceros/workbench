@@ -508,6 +508,34 @@
       "presets": []
     },
     {
+      "name": "copilot",
+      "displayName": "GitHub Copilot CLI",
+      "description": "GitHub's CLI coding agent, for anyone with a Copilot seat. Login, sessions and settings persist across container rebuilds.",
+      "options": [
+        {
+          "key": "apiToken",
+          "type": "string",
+          "surface": "env",
+          "default": "",
+          "description": "Fine-grained personal access token owned by your personal account, with the **Copilot Requests** permission (classic `ghp_` tokens are rejected). Reaches Copilot as COPILOT_GITHUB_TOKEN, which wins over a GH_TOKEN the `github` feature sets. Empty: run `/login` once inside Copilot."
+        },
+        {
+          "key": "permissionMode",
+          "type": "string",
+          "surface": "yml",
+          "default": "auto",
+          "description": "Default Copilot permission mode in this container. `auto` = Assisted: a model reviews each request and approves the ones it judges safe, the rest still asks. `ask` prompts for every write and command; `bypass` approves everything, like `--yolo`. Monoceros writes this to ~/.copilot/settings.json on apply. An organization policy can override it.",
+          "proposals": [
+            "auto",
+            "ask",
+            "bypass"
+          ]
+        }
+      ],
+      "documentationURL": "https://docs.github.com/en/copilot/how-tos/copilot-cli",
+      "presets": []
+    },
+    {
       "name": "github",
       "displayName": "GitHub CLI",
       "description": "The official `gh` CLI. Login persists across container rebuilds.",

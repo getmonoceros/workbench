@@ -32,9 +32,23 @@ function feature(
   };
 }
 
+const render = (features: ReturnType<typeof feature>[]) =>
+  featureWorkspaceEnv(features, '/workspaces/sandbox');
+
 describe('featureWorkspaceEnv', () => {
+  it('fills ${workspaceFolder} with the workspace path in the container', () => {
+    const env = render([
+      feature({}, [
+        { vars: { COPILOT_CUSTOM_INSTRUCTIONS_DIRS: '${workspaceFolder}' } },
+      ]),
+    ]);
+    expect(env).toEqual({
+      COPILOT_CUSTOM_INSTRUCTIONS_DIRS: '/workspaces/sandbox',
+    });
+  });
+
   it('renders a gated block when its whenOption is truthy, substituting option values', () => {
-    const env = featureWorkspaceEnv([
+    const env = render([
       feature({ forge: true, email: 'me@x.io', apiToken: 'sek' }, [
         {
           whenOption: 'forge',
@@ -46,7 +60,7 @@ describe('featureWorkspaceEnv', () => {
   });
 
   it('emits nothing when the whenOption gate is off', () => {
-    const env = featureWorkspaceEnv([
+    const env = render([
       feature({ forge: false, email: 'me@x.io', apiToken: 'sek' }, [
         { whenOption: 'forge', vars: { FORGE_EMAIL: '${email}' } },
       ]),
@@ -55,14 +69,14 @@ describe('featureWorkspaceEnv', () => {
   });
 
   it('treats a block without whenOption as always on', () => {
-    const env = featureWorkspaceEnv([
+    const env = render([
       feature({ region: 'eu' }, [{ vars: { REGION: '${region}' } }]),
     ]);
     expect(env).toEqual({ REGION: 'eu' });
   });
 
   it('drops a var that renders empty (secret not filled in yet)', () => {
-    const env = featureWorkspaceEnv([
+    const env = render([
       feature({ forge: true, email: '', apiToken: 'sek' }, [
         {
           whenOption: 'forge',
@@ -76,14 +90,14 @@ describe('featureWorkspaceEnv', () => {
 
   it('gates "on" for a string-true value and "off" for the string "false"', () => {
     expect(
-      featureWorkspaceEnv([
+      render([
         feature({ forge: 'true', email: 'me@x.io' }, [
           { whenOption: 'forge', vars: { FORGE_EMAIL: '${email}' } },
         ]),
       ]),
     ).toEqual({ FORGE_EMAIL: 'me@x.io' });
     expect(
-      featureWorkspaceEnv([
+      render([
         feature({ forge: 'false', email: 'me@x.io' }, [
           { whenOption: 'forge', vars: { FORGE_EMAIL: '${email}' } },
         ]),

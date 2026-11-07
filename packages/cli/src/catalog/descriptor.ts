@@ -451,6 +451,10 @@ export const FeatureBlockSchema = z.object({
    * emitted into the published devcontainer-feature.json (like `presets`),
    * because it drives how the workbench wires the container, not the feature
    * install. See `featureWorkspaceEnv` in create/scaffold.ts.
+   *
+   * Besides `${option}` tokens a template may use `${workspaceFolder}`, the
+   * workspace path inside the container (`/workspaces/<name>`), for a tool
+   * that has to be told where the workspace is.
    */
   workspaceEnv: z.array(WorkspaceEnvBlockSchema).optional(),
   /**
@@ -504,6 +508,9 @@ export const McpBlockSchema = z
     validateMcpTransportFields(data, ctx);
   });
 export type McpBlock = z.infer<typeof McpBlockSchema>;
+
+/** The one non-option token a feature's `workspaceEnv` template may use. */
+export const WORKSPACE_FOLDER_TOKEN = 'workspaceFolder';
 
 /** Pull the `${option}` tokens referenced by a set of templates. */
 function optionTokens(templates: readonly string[]): string[] {
@@ -684,7 +691,7 @@ export const DescriptorSchema = z
         });
       }
       for (const token of optionTokens(Object.values(block.vars))) {
-        if (!optionKeys.has(token)) {
+        if (token !== WORKSPACE_FOLDER_TOKEN && !optionKeys.has(token)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['feature', 'workspaceEnv', i, 'vars'],

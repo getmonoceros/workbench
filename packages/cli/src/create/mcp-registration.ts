@@ -76,8 +76,24 @@ interface OpencodeMcpServerConfig {
   enabled: boolean;
 }
 
+/**
+ * Copilot CLI's per-server shape, from `~/.copilot/mcp-config.json`. `local`
+ * for stdio, otherwise the transport name. `tools` is not optional in practice:
+ * every example in GitHub's docs carries it, and `["*"]` is what `copilot mcp
+ * add` writes by default.
+ */
+interface CopilotMcpServerConfig {
+  type: 'local' | 'http' | 'sse';
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  tools: string[];
+}
+
 /** Agents whose config Monoceros writes MCP registrations into. */
-export type AgentId = 'claudeCode' | 'opencode' | 'rovodev';
+export type AgentId = 'claudeCode' | 'opencode' | 'rovodev' | 'copilot';
 
 export interface AgentTarget {
   id: AgentId;
@@ -134,6 +150,15 @@ const AGENTS: readonly AgentTarget[] = [
     enabledFor: (options) =>
       options.rovodev !== false && options.rovodev !== 'false',
   },
+  {
+    id: 'copilot',
+    featureName: 'copilot',
+    label: 'Copilot CLI',
+    configPath: ['home', '.copilot', 'mcp-config.json'],
+    serversKey: 'mcpServers',
+    toConfig: toCopilotMcpConfig,
+    manualRemoval: (name) => `copilot mcp remove ${name}`,
+  },
 ];
 
 interface McpRegistrationRecord {
@@ -142,6 +167,7 @@ interface McpRegistrationRecord {
   claudeCode?: string[];
   opencode?: string[];
   rovodev?: string[];
+  copilot?: string[];
 }
 
 const REGISTRATION_FILE = ['.monoceros', 'mcp-registrations.json'];
@@ -172,8 +198,8 @@ export function formatNoAgentError(
   const names = servers.map((s) => s.name).join(', ');
   return (
     `The yml registers MCP servers (${names}) but the container has no agent to register them with.\n` +
-    `Add one (\`monoceros add-feature ${containerName} claude\`, \`… opencode\` or ` +
-    `\`… atlassian\`) or remove the ` +
+    `Add one (\`monoceros add-feature ${containerName} claude\`, \`… opencode\`, ` +
+    `\`… copilot\` or \`… atlassian\`) or remove the ` +
     `\`mcpServers:\` entries ` +
     `(\`monoceros remove-mcp-server ${containerName} ${servers[0]?.name ?? '<connector>'}\`).`
   );
@@ -245,6 +271,32 @@ export function toOpencodeMcpConfig(
     type: 'remote',
     url: server.url!,
     enabled: true,
+  };
+  if (server.headers && Object.keys(server.headers).length > 0) {
+    out.headers = { ...server.headers };
+  }
+  return out;
+}
+
+export function toCopilotMcpConfig(
+  server: ResolvedMcpServer,
+): CopilotMcpServerConfig {
+  if (server.transport === 'stdio') {
+    const out: CopilotMcpServerConfig = {
+      type: 'local',
+      command: server.command!,
+      tools: ['*'],
+    };
+    if (server.args && server.args.length > 0) out.args = [...server.args];
+    if (server.env && Object.keys(server.env).length > 0) {
+      out.env = { ...server.env };
+    }
+    return out;
+  }
+  const out: CopilotMcpServerConfig = {
+    type: server.transport,
+    url: server.url!,
+    tools: ['*'],
   };
   if (server.headers && Object.keys(server.headers).length > 0) {
     out.headers = { ...server.headers };
