@@ -99,6 +99,49 @@ describe('writeCopilotSettings', () => {
     });
   });
 
+  it('wires the graphify hooks with graphify, and keeps foreign hooks', async () => {
+    const foreign = { type: 'command', matcher: 'Bash', command: 'my-guard' };
+    await seed(
+      settingsFile(),
+      JSON.stringify({ hooks: { PreToolUse: [foreign], sessionStart: [] } }),
+    );
+    const features = {
+      [COPILOT_REF]: {},
+      'ghcr.io/getmonoceros/monoceros-features/graphify:1': {},
+    };
+    await writeCopilotSettings(dir, 'acme', features);
+    await writeCopilotSettings(dir, 'acme', features);
+    expect((await readJson(settingsFile())).hooks).toEqual({
+      PreToolUse: [
+        foreign,
+        {
+          type: 'command',
+          matcher: 'Bash|Grep',
+          command: 'graphify hook-guard search',
+        },
+        {
+          type: 'command',
+          matcher: 'Read|Glob',
+          command: 'graphify hook-guard read',
+        },
+      ],
+      sessionStart: [],
+    });
+  });
+
+  it('removes the graphify hooks again when graphify leaves', async () => {
+    const graphify = 'ghcr.io/getmonoceros/monoceros-features/graphify:1';
+    await writeCopilotSettings(dir, 'acme', {
+      [COPILOT_REF]: {},
+      [graphify]: {},
+    });
+    await writeCopilotSettings(dir, 'acme', { [COPILOT_REF]: {} });
+    expect(await readJson(settingsFile())).toEqual({
+      defaultPermissionMode: 'assisted',
+      storeTokenPlaintext: true,
+    });
+  });
+
   it('leaves a file alone that does not parse', async () => {
     const commented = '{\n  // my note\n  "model": "auto"\n}\n';
     await seed(settingsFile(), commented);
