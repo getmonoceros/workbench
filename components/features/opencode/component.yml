@@ -7,8 +7,8 @@ documentationURL: https://opencode.ai/docs/
 options:
   version:
     type: string
-    default: latest
-    description: 'npm-style version spec for `opencode-ai` (`latest`, `^0.4`, `0.4.2`).'
+    default: '1'
+    description: 'npm-style version spec for `opencode-ai`. A major (`1`) or `latest` is kept current on every apply, an exact version (`1.19.5`) or a range stays as it is.'
     surface: silent
   model:
     type: string

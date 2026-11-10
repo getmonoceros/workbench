@@ -1,6 +1,6 @@
 # ADR 0043: A plan/implement/review workflow ships as its own component, not inside the workbench
 
-- Status: accepted
+- Status: accepted, superseded in part by [ADR 0067](0067-one-role-feature-for-every-coding-agent.md) (one role feature for every agent)
 - Date: 2026-07-31
 - Relates to: [`docs/concept.md`](../concept.md) ("no iteration workflow"),
   [ADR 0019](0019-component-taxonomy-service-feature-dependency.md) (what

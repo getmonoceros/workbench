@@ -1,4 +1,5 @@
 import type { ResolvedMcpServer } from '../catalog/mcp.js';
+import type { AgentRolesConfig } from '../config/schema.js';
 
 /**
  * Free-form devcontainer feature options (the value object of the
@@ -157,6 +158,11 @@ export interface CreateOptions {
    * the feature's option hash.
    */
   features?: Record<string, FeatureOptions>;
+  /**
+   * The agent-roles feature's `roles:` block from the yml: per role, per
+   * coding agent, the model and the effort (ADR 0067).
+   */
+  agentRoles?: AgentRolesConfig;
   /**
    * HTTPS marketplaces an agent clones inside the container for its plugins.
    * The scaffold needs them for one decision only: whether to wire git's

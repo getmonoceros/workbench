@@ -26,4 +26,12 @@ describe('.monoceros/conventions.md generator', () => {
     expect(md).toContain('If they want the project in another language');
     expect(md).toContain('monoceros tunnel demo <service>');
   });
+
+  // A session cleaned up its probes by deleting every note the API listed.
+  // The table was empty before; the rule keeps the user's records out of it.
+  it('limits test cleanup to the records the agent created', () => {
+    const md = generateConventionsMd({ containerName: 'demo' });
+    expect(md).toContain('**Clean up only the test data you created.**');
+    expect(md).toContain('Never empty a table and never delete');
+  });
 });

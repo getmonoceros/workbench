@@ -20,6 +20,16 @@ import {
   FEATURE_HEADER_WIDTH,
 } from '../init/feature-doc.js';
 import { GIT_IDENTITY_VAR } from '../config/env-file.js';
+import { matchMonocerosFeature } from '../util/ref.js';
+import {
+  AGENTS,
+  LEGACY_FEATURES,
+  ROLES,
+  legacyRolesBlock,
+  rolesRefBlock,
+  type Agent,
+  type RolesBlock,
+} from '../create/agent-roles.js';
 
 /**
  * AST-level mutators for solution-config yml. Each function:
@@ -636,14 +646,109 @@ export function addFeatureToDoc(
     (entry as { commentBefore?: string }).commentBefore = headerBefore;
     (entry as { spaceBefore?: boolean }).spaceBefore = true;
   }
-  // Commented `plugins:` example for a feature whose agent reads plugins,
-  // as the entry's trailing comment — the same carrier a curated service
-  // uses for its `volumes:` scaffold, and the only one that survives the
-  // map being moved into the sequence.
+  // Commented `plugins:` example for a feature whose agent reads plugins, as
+  // the entry's trailing comment — the same carrier a curated service uses
+  // for its `volumes:` scaffold, and the only one that survives the map being
+  // moved into the sequence.
   const pluginScaffold = examplePluginsComment(summary?.examplePlugin);
+  const name = matchMonocerosFeature(ref)?.name;
+  if (name === 'agent-roles') {
+    // Each role's model and effort per agent in the workbench, as `${VAR}`
+    // references the env fills. A yml that still carries one of the features
+    // agent-roles replaced keeps their values literally: switching over must
+    // not quietly drop the models the builder chose.
+    const carried = legacyRolesInDoc(doc)?.block ?? {};
+    const inCarried = (agent: Agent): boolean =>
+      ROLES.some((role) => carried[role]?.[agent]);
+    const present = agentsInDoc(doc);
+    const agents = AGENTS.filter(
+      (agent) => present.includes(agent) || inCarried(agent),
+    );
+    if (agents.length > 0) {
+      entry.set('roles', doc.createNode(rolesRefBlock(agents, carried)));
+    }
+  } else if (name && (AGENTS as readonly string[]).includes(name)) {
+    addAgentToRoles(doc, name as Agent);
+  }
   if (pluginScaffold) entry.comment = pluginScaffold;
   seq.add(entry);
   return true;
+}
+
+/** The coding agents the yml's features carry. */
+function agentsInDoc(doc: Document): Agent[] {
+  const seq = doc.get('features', true);
+  if (!seq || !isSeq(seq)) return [];
+  const names = seq.items
+    .filter(isMap)
+    .map((item) => matchMonocerosFeature(String(item.get('ref')))?.name);
+  return AGENTS.filter((agent) => names.includes(agent));
+}
+
+/**
+ * An agent added next to agent-roles gets its lines in the `roles:` block,
+ * as `${VAR}` references, so it is asked for and configured like the agents
+ * that were there first. Lines already there are left alone.
+ */
+function addAgentToRoles(doc: Document, agent: Agent): void {
+  const seq = doc.get('features', true);
+  if (!seq || !isSeq(seq)) return;
+  const entry = seq.items.find(
+    (item) =>
+      isMap(item) &&
+      matchMonocerosFeature(String(item.get('ref')))?.name === 'agent-roles',
+  );
+  if (!entry || !isMap(entry)) return;
+  const found: unknown = entry.get('roles', true);
+  let roles: YAMLMap;
+  if (isMap(found)) {
+    roles = found;
+  } else {
+    roles = new YAMLMap();
+    entry.set('roles', roles);
+  }
+  const block = rolesRefBlock([agent]);
+  for (const role of ROLES) {
+    const existing: unknown = roles.get(role, true);
+    let perRole: YAMLMap;
+    if (isMap(existing)) {
+      perRole = existing;
+    } else {
+      perRole = new YAMLMap();
+      roles.set(role, perRole);
+    }
+    if (perRole.has(agent)) continue;
+    perRole.set(agent, doc.createNode(block[role]![agent]));
+  }
+}
+
+/**
+ * The settings of the replaced role features (`claude-code-roles`,
+ * `opencode-roles`) in this yml, as one `roles:` block, and which of them
+ * contributed. Undefined when none of them sets a model or an effort.
+ */
+export function legacyRolesInDoc(
+  doc: Document,
+): { block: RolesBlock; from: string[] } | undefined {
+  const seq = doc.get('features', true);
+  if (!seq || !isSeq(seq)) return undefined;
+  const block: RolesBlock = {};
+  const from: string[] = [];
+  for (const item of seq.items) {
+    if (!isMap(item)) continue;
+    const name = matchMonocerosFeature(String(item.get('ref')))?.name;
+    const legacy = LEGACY_FEATURES.find((l) => l === name);
+    if (!legacy) continue;
+    const { options } = item.toJS(doc) as { options?: FeatureOptions };
+    const roles = legacyRolesBlock(legacy, options);
+    if (Object.keys(roles).length === 0) continue;
+    from.push(legacy);
+    for (const [role, agents] of Object.entries(roles)) {
+      const key = role as keyof RolesBlock;
+      block[key] = { ...block[key], ...agents };
+    }
+  }
+  return from.length > 0 ? { block, from } : undefined;
 }
 
 /**

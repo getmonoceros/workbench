@@ -87,6 +87,8 @@ export function solutionConfigToCreateOptions(
   if (Object.keys(featureRecord).length > 0) {
     result.features = featureRecord;
   }
+  const roles = config.features.find((f) => f.roles != null)?.roles;
+  if (roles) result.agentRoles = roles;
   const pluginMarketplaceUrls = config.features
     .flatMap((f) => f.plugins ?? [])
     .map((p) => p.url)

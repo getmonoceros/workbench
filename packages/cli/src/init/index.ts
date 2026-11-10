@@ -53,6 +53,8 @@ import {
 } from './generator.js';
 import { loadFeatureManifestSummary } from './manifest.js';
 import { renderWorkbenchTemplate } from './templates.js';
+import { replacementFor, retiredNotice } from '../util/retired-features.js';
+import { noAgentHint, rolesWithoutAgent } from '../create/agent-roles.js';
 import {
   collectEnvPromptCandidates,
   collectMcpEnvPromptCandidates,
@@ -464,6 +466,11 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
   const ymlRel = prettyPath(dest);
   const envRel = prettyPath(envPath);
   logger.success(`Wrote ${ymlRel} and ${envRel}.`);
+  if (
+    rolesWithoutAgent((finalConfig.config.features ?? []).map((f) => f.ref))
+  ) {
+    (logger.warn ?? logger.info)(noAgentHint(opts.name));
+  }
   for (const svc of finalConfig.config.services ?? []) {
     const archWarning = serviceArchitectureWarning(svc.image);
     if (archWarning) (logger.warn ?? logger.info)(archWarning);
@@ -745,8 +752,13 @@ function resolveInitFeatures(
   >();
   const unknown: string[] = [];
   for (const raw of entries) {
-    const e = raw.trim();
+    let e = raw.trim();
     if (!e) continue;
+    const replacement = replacementFor(e);
+    if (replacement) {
+      consola.warn(retiredNotice(e, replacement));
+      e = replacement;
+    }
     if (REGEX.featureRef.test(e)) {
       if (!byRef.has(e)) byRef.set(e, { ref: e, options: {} });
       continue;

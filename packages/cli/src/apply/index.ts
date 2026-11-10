@@ -48,6 +48,7 @@ import {
 } from '../config/state.js';
 import type { SolutionConfig } from '../config/schema.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
+import { interpolateRoles, validateAgentRoles } from '../create/agent-roles.js';
 import { catalogWarnings, loadDescriptorCatalog } from '../catalog/load.js';
 import {
   featureMcpServers,
@@ -485,6 +486,24 @@ export async function runApply(opts: RunApplyOptions): Promise<RunApplyResult> {
       ...parsed.config,
       features: resolvedFeatures,
     }),
+  );
+
+  // The agent-roles `roles:` block carries `${AGENT_ROLES_…}` references, like
+  // a feature's credential. Resolve them against the same merged env; a blank
+  // or missing one leaves the field unset (the session's model). A refused
+  // value is reported under its variable and the file it is in.
+  const roles = interpolateRoles(createOpts.agentRoles, envVars);
+  if (roles.roles) createOpts.agentRoles = roles.roles;
+  else delete createOpts.agentRoles;
+  const containerEnv = readEnvFile(envPath);
+  validateAgentRoles(
+    createOpts,
+    Object.fromEntries(
+      Object.entries(roles.sources).map(([at, key]) => [
+        at,
+        `${key} in ${prettyPath((containerEnv[key] ?? '').trim() ? envPath : globalEnvPath(home))}`,
+      ]),
+    ),
   );
 
   // Resolve `${VAR}` in SERVICE fields (post-transform — services don't

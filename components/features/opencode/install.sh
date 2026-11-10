@@ -12,7 +12,12 @@
 
 set -euo pipefail
 
-VERSION="${VERSION:-latest}"
+# The default is a major, not `latest`. OpenCode itself installs patch
+# releases on its own, only announces minor ones, and moves to a new major only
+# on an explicit `opencode upgrade --major`. A refresh that tracks `latest`
+# would make that jump behind the builder's back. Raising this is a deliberate
+# feature release.
+VERSION="${VERSION:-1}"
 
 echo "[opencode] installing opencode-ai@${VERSION} (as node)"
 
@@ -32,9 +37,14 @@ runuser -u node -- bash -lc 'opencode --version' >/dev/null 2>&1 || {
 }
 
 # ─── Refresh hook (ADR 0054) ──────────────────────────────────────
-# Only when the version is unpinned. A builder who wrote a version into the
-# yml decided which one they want, and an apply does not overrule that.
-if [ "${VERSION}" = "latest" ]; then
+# Only for a major or `latest`. A builder who wrote an exact version or a
+# range into the yml decided which one they want, and an apply does not
+# overrule that.
+case "${VERSION}" in
+  latest | [0-9] | [0-9][0-9]) REFRESH=1 ;;
+  *) REFRESH=0 ;;
+esac
+if [ "${REFRESH}" = 1 ]; then
   REFRESH_DIR=/usr/local/share/monoceros/refresh.d
   mkdir -p "${REFRESH_DIR}"
   cat >"${REFRESH_DIR}/opencode.sh" <<'HOOK'
@@ -55,6 +65,8 @@ if [ "${VERSION}" = "latest" ]; then
 set -u
 
 PKG='opencode-ai'
+# The major this workbench stays on, or `latest`. Filled in at build time.
+SPEC='__SPEC__'
 
 note() {
   [ -n "${MONOCEROS_REFRESH_LOG:-}" ] || return 0
@@ -66,7 +78,10 @@ version_of() {
 }
 
 installed="$(version_of)"
-latest="$(npm view "${PKG}" version 2>/dev/null | tr -d '[:space:]')"
+# For a major, npm lists every matching version in ascending order, one
+# `opencode-ai@1.19.5 '1.19.5'` line each; for `latest` it prints the bare
+# version. The last version number on the last line is the newest either way.
+latest="$(npm view "${PKG}@${SPEC}" version 2>/dev/null | tail -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tail -n1)"
 
 if [ -z "${latest}" ]; then
   note "opencode: could not reach the npm registry, keeping ${installed:-the version from the image}"
@@ -84,6 +99,10 @@ else
   note "opencode: update to ${latest} failed, keeping ${installed:-the version from the image}"
 fi
 HOOK
+  # VERSION passed the case above, so it is `latest` or digits: safe for sed.
+  # No `sed -i`: its argument differs between GNU and BSD sed.
+  hook="$(sed "s/__SPEC__/${VERSION}/" "${REFRESH_DIR}/opencode.sh")"
+  printf '%s\n' "${hook}" >"${REFRESH_DIR}/opencode.sh"
   chmod 0755 "${REFRESH_DIR}/opencode.sh"
 fi
 

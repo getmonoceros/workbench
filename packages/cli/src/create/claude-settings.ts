@@ -1,7 +1,6 @@
 import { existsSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { matchMonocerosFeature } from '../util/ref.js';
-import { PLANS_DIR } from './claude-code-roles.js';
 import type { CreateOptions } from './types.js';
 
 /**
@@ -75,9 +74,6 @@ export async function writeClaudePermissionMode(
   const hasGraphify = Object.keys(features).some(
     (ref) => matchMonocerosFeature(ref)?.name === 'graphify',
   );
-  const hasRoles = Object.keys(features).some(
-    (ref) => matchMonocerosFeature(ref)?.name === 'claude-code-roles',
-  );
 
   const raw = entry[1]?.permissionMode;
   const mode = resolveClaudeDefaultMode(
@@ -109,11 +105,7 @@ export async function writeClaudePermissionMode(
       ? (config.permissions as Record<string, unknown>)
       : {};
   permissions.defaultMode = mode;
-  applyWorkingDirectories(
-    permissions,
-    `/workspaces/${containerName}`,
-    hasRoles,
-  );
+  applyWorkingDirectories(permissions, `/workspaces/${containerName}`);
   config.permissions = permissions;
 
   // Auto Mode: enable it via env where the account supports it; otherwise drop
@@ -143,44 +135,37 @@ export async function writeClaudePermissionMode(
   await fsp.writeFile(file, `${JSON.stringify(config, null, 2)}\n`);
 }
 
+/** Where `claude-code-roles` kept its plans, before `agent-roles`. */
+const LEGACY_PLANS_DIR = '/home/node/.claude/plans';
+
 /**
- * The session's extra working directories that Monoceros owns: the workspace
- * root, always, and the roles' plans directory while the roles are installed.
+ * The session's extra working directory that Monoceros owns: the workspace
+ * root.
  *
- * The workspace root, because the whole workspace is trusted, but Claude Code
- * only counts the directory it was started in as a working directory. Started
- * in `projects/<app>`, it treats `AGENTS.md` and the `.code-workspace` file one
- * level up as outside, and auto mode then asks whether it may read outside the
- * working directories.
+ * The whole workspace is trusted, but Claude Code only counts the directory it
+ * was started in as a working directory. Started in `projects/<app>`, it treats
+ * `AGENTS.md` and the `.code-workspace` file one level up as outside, and auto
+ * mode then asks whether it may read outside the working directories. The
+ * agent-roles plans live under the workspace root too
+ * (`.monoceros/agent-roles/plans`), so this one entry covers them.
  *
- * The plans directory, because plans live under the persisted `~/.claude`,
- * deliberately outside the workspace, so a plan survives an apply. Claude Code
- * refuses to list or search a directory that is not a working directory of the
- * session, and refuses it *silently for a skill* - the `!`find …`` line in the
- * skill's preamble is not a prompt the user can approve, so the whole skill
- * aborts before it loads. Auto Mode hid this for months (its classifier lets
- * the read through); Claude Desktop attaches over SSH in `acceptEdits`, where
- * it fails every time. Only the plans directory, not `~/.claude`: it should
- * widen by exactly the directory the roles own.
+ * The roles used to keep their plans in `~/.claude/plans`, which needed an
+ * entry of its own. That entry is still recognised as ours, so an apply drops
+ * it from a settings file an older CLI wrote.
  *
  * Entries the builder added themselves are left alone.
  */
 function applyWorkingDirectories(
   permissions: Record<string, unknown>,
   workspaceDir: string,
-  hasRoles: boolean,
 ): void {
-  const owned = new Set([workspaceDir, PLANS_DIR]);
+  const owned = new Set([workspaceDir, LEGACY_PLANS_DIR]);
   const existing = Array.isArray(permissions.additionalDirectories)
     ? (permissions.additionalDirectories as unknown[]).filter(
         (entry) => typeof entry === 'string' && !owned.has(entry),
       )
     : [];
-  permissions.additionalDirectories = [
-    ...existing,
-    workspaceDir,
-    ...(hasRoles ? [PLANS_DIR] : []),
-  ];
+  permissions.additionalDirectories = [...existing, workspaceDir];
 }
 
 /** A Claude Code `PreToolUse` entry, as it sits in settings.json. */

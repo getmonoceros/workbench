@@ -1,0 +1,9 @@
+name: agent-roles-reviewer
+description: Reviews a finished change against its plan file or against a conversation goal the session writes down. Only for /agent-roles-ship and /agent-roles-review. Read-only. Returns PASS or CHANGES_REQUIRED with a numbered list.
+{{MODEL_LINE}}
+tools: ['read', 'search', 'execute', 'todo']
+include-custom-instructions: true
+hooks:
+  PreToolUse:
+    - type: command
+      command: 'node {{GUARD}} reviewer copilot'

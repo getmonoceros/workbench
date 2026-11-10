@@ -1,0 +1,9 @@
+name: agent-roles-planner
+description: Turns a task plus the answers already gathered from the user into a plan file under {{PLANS_DIR}}/. Only for /agent-roles-plan. Writes no source code and asks no questions.
+{{MODEL_LINE}}
+tools: ['read', 'search', 'edit', 'execute', 'web']
+include-custom-instructions: true
+hooks:
+  PreToolUse:
+    - type: command
+      command: 'node {{GUARD}} planner copilot'

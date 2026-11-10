@@ -59,29 +59,29 @@ describe('writeClaudePermissionMode', () => {
     expect(cfg.skipDangerousModePermissionPrompt).toBeUndefined();
   });
 
-  // The roles keep their plans outside the workspace so they survive an apply,
-  // and Claude Code refuses to list a directory that is not a working directory
-  // of the session in every mode but auto. A skill's `!`find …`` preamble is not
-  // a prompt anyone can approve, so the skill aborts before it loads - which is
-  // what Claude Desktop over SSH does, because it attaches in acceptEdits.
-  it('allows the plans directory while the roles are installed', async () => {
-    const ROLES = 'ghcr.io/getmonoceros/monoceros-features/claude-code-roles:1';
-    await writeClaudePermissionMode(dir, 'acme', {
-      [CLAUDE_REF]: {},
-      [ROLES]: {},
-    });
-    const withRoles = (await read()).permissions as Record<string, unknown>;
-    expect(withRoles.additionalDirectories).toEqual([
-      '/workspaces/acme',
-      '/home/node/.claude/plans',
-    ]);
-
-    // Dropping the feature takes the entry with it, and leaves a directory the
-    // builder added themselves alone.
-    (withRoles.additionalDirectories as string[]).unshift('/opt/shared');
+  // The roles used to keep their plans in `~/.claude/plans`, outside the
+  // workspace, which needed a working-directory entry of its own: Claude Code
+  // refuses to list a directory outside its working directories in every mode
+  // but auto. The agent-roles plans live under the workspace root, which is
+  // always an entry, so the old one has to go - and a directory the builder
+  // added themselves has to stay.
+  it('drops the old plans entry and keeps what the builder added', async () => {
+    await fsp.mkdir(path.dirname(settings()), { recursive: true });
     await fsp.writeFile(
       settings(),
-      JSON.stringify({ permissions: withRoles }, null, 2),
+      JSON.stringify(
+        {
+          permissions: {
+            additionalDirectories: [
+              '/opt/shared',
+              '/workspaces/acme',
+              '/home/node/.claude/plans',
+            ],
+          },
+        },
+        null,
+        2,
+      ),
     );
     await writeClaudePermissionMode(dir, 'acme', { [CLAUDE_REF]: {} });
     expect(

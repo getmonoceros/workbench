@@ -3,6 +3,12 @@ import { consola } from 'consola';
 import path from 'node:path';
 import type { Document } from 'yaml';
 import { parseConfig, readConfig, stringifyConfig } from '../config/io.js';
+import { matchMonocerosFeature } from '../util/ref.js';
+import {
+  AGENTS,
+  noAgentHint,
+  rolesWithoutAgent,
+} from '../create/agent-roles.js';
 import { httpServices, type HttpService } from '../config/http-services.js';
 import {
   containerConfigPath,
@@ -77,6 +83,11 @@ import {
 } from '../config/schema.js';
 import { loadComponentCatalog } from '../init/components.js';
 import {
+  replacementFor,
+  retiredFeatureRef,
+  retiredNotice,
+} from '../util/retired-features.js';
+import {
   attachToProxyNetwork,
   ensureProxy,
   maybeStopProxy,
@@ -126,6 +137,7 @@ import {
   addRepoToDoc,
   addServiceEntryToDoc,
   ensureContainerGitUserPlaceholder,
+  legacyRolesInDoc,
   relocateLeakedSectionComments,
   removeAptPackagesFromDoc,
   removeFeatureFromDoc,
@@ -897,7 +909,9 @@ export async function runAddFeature(
       'Missing feature ref. Usage: monoceros add-feature <containername> <feature>.',
     );
   }
-  const resolved = await resolveFeatureRefOrShortname(raw);
+  const replacement = replacementFor(raw);
+  if (replacement) consola.warn(retiredNotice(raw, replacement));
+  const resolved = await resolveFeatureRefOrShortname(replacement ?? raw);
   // User-supplied `-- key=value` options override the catalog-driven
   // defaults that come with a short name. For a full OCI ref the
   // resolver returns no defaults, so this is just `input.options`.
@@ -909,13 +923,35 @@ export async function runAddFeature(
   // already-present entry; a plain feature / raw ref keeps the
   // overwrite-protected behavior. `raw` is the form the builder typed,
   // echoed in the conflict error so the remove-feature hint matches.
-  const result = await mutate(input, (doc) =>
-    addFeatureToDoc(doc, resolved.ref, merged, {
+  let carriedFrom: string[] = [];
+  const result = await mutate(input, (doc) => {
+    carriedFrom =
+      matchMonocerosFeature(resolved.ref)?.name === 'agent-roles'
+        ? (legacyRolesInDoc(doc)?.from ?? [])
+        : [];
+    return addFeatureToDoc(doc, resolved.ref, merged, {
       isPreset: resolved.isPreset,
       displayName: raw,
       containerName: input.name,
-    }),
-  );
+    });
+  });
+  if (result.status === 'updated') {
+    if (matchMonocerosFeature(resolved.ref)?.name === 'agent-roles') {
+      const home = input.monocerosHome ?? defaultMonocerosHome();
+      const { config } = await readConfig(
+        containerConfigPath(input.name, home),
+      );
+      if (rolesWithoutAgent((config.features ?? []).map((f) => f.ref))) {
+        consola.warn(noAgentHint(input.name));
+      }
+    }
+    for (const legacy of carriedFrom) {
+      consola.info(
+        `Took the role models and efforts over from '${legacy}' into the roles: block. Remove the old entry with:\n` +
+          `  monoceros remove-feature ${input.name} ${legacy}`,
+      );
+    }
+  }
 
   // Seed the feature's credential vars into <name>.env (the same
   // ${VAR} placeholders addFeatureToDoc just wrote into the yml), so
@@ -926,8 +962,17 @@ export async function runAddFeature(
   if (result.status === 'updated') {
     const home = input.monocerosHome ?? defaultMonocerosHome();
     const parsed = await readConfig(containerConfigPath(input.name, home));
+    // An agent added next to agent-roles brought its lines into the `roles:`
+    // block, so that entry's references are asked about as well.
+    const addedAgent = (AGENTS as readonly string[]).includes(
+      matchMonocerosFeature(resolved.ref)?.name ?? '',
+    );
     const candidates = collectEnvPromptCandidates(
-      (parsed.config.features ?? []).filter((f) => f.ref === resolved.ref),
+      (parsed.config.features ?? []).filter(
+        (f) =>
+          f.ref === resolved.ref ||
+          (addedAgent && matchMonocerosFeature(f.ref)?.name === 'agent-roles'),
+      ),
       loadFeatureManifestSummary,
     );
     const vars = candidates.map((c) => c.envVar);
@@ -944,7 +989,8 @@ export async function runAddFeature(
         const written = await promptForNewEnvVars(
           input,
           seeded.added,
-          candidates[0]!.feature,
+          (envVar) =>
+            candidates.find((c) => c.envVar === envVar)?.feature ?? '',
           (envVar) =>
             candidates.find((c) => c.envVar === envVar)?.description ?? '',
         );
@@ -1059,13 +1105,15 @@ export async function runAddMcpServer(
 async function promptForNewEnvVars(
   input: ModifyOptions,
   vars: readonly string[],
-  featureName: string,
+  featureName: string | ((envVar: string) => string),
   describe: (envVar: string) => string,
 ): Promise<string[]> {
   const home = input.monocerosHome ?? defaultMonocerosHome();
   const envPath = containerEnvPath(input.name, home);
+  const featureOf =
+    typeof featureName === 'string' ? () => featureName : featureName;
   return promptAndWriteEnvValues(
-    envCandidatesForVars(vars, featureName, describe),
+    vars.flatMap((v) => envCandidatesForVars([v], featureOf(v), describe)),
     envPath,
     input.name,
     {
@@ -1223,8 +1271,12 @@ export async function runRemoveFeature(
   // Same short-name → ref resolution as `add-feature`. Without this
   // the suggestion `monoceros remove-feature atlassian` we print
   // elsewhere wouldn't actually work, only the full OCI form.
-  const resolved = await resolveFeatureRefOrShortname(raw);
-  return mutate(input, (doc) => removeFeatureFromDoc(doc, resolved.ref));
+  // A retired name is no longer in the catalog, but an older yml still
+  // carries it, and apply tells the builder to remove it by that name.
+  const ref = replacementFor(raw)
+    ? retiredFeatureRef(raw)
+    : (await resolveFeatureRefOrShortname(raw)).ref;
+  return mutate(input, (doc) => removeFeatureFromDoc(doc, ref));
 }
 
 /**

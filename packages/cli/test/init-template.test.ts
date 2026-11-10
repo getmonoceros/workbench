@@ -458,18 +458,23 @@ describe('init --template', () => {
     },
   );
 
-  it('gives the roles the models the template recommends', async () => {
-    const text = await renderWorkbenchTemplate('discovery-atlassian', 'acme');
-    const { config } = parseConfig(text);
-    const roles = (config.features ?? []).find((f) =>
-      f.ref.includes('claude-code-roles'),
-    );
-    // Planning and reviewing carry the thinking, implementing follows a plan.
-    expect(roles?.options).toMatchObject({
-      plannerModel: 'opus',
-      implementModel: 'sonnet',
-      reviewModel: 'opus',
-    });
+  it('takes the role models from the env', async () => {
+    for (const template of ['discovery-atlassian', 'agent-github']) {
+      const text = await renderWorkbenchTemplate(template, 'acme');
+      const { config } = parseConfig(text);
+      const roles = (config.features ?? []).find((f) =>
+        f.ref.includes('agent-roles'),
+      );
+      // References, like a credential: the builder's env decides, and init
+      // asks for what no env file holds.
+      expect(roles?.roles?.planner?.['claude-code']).toEqual({
+        model: '${AGENT_ROLES_CLAUDE_PLANNER_MODEL}',
+        effort: '${AGENT_ROLES_CLAUDE_PLANNER_EFFORT}',
+      });
+      expect(roles?.roles?.reviewer?.['claude-code']?.effort).toBe(
+        '${AGENT_ROLES_CLAUDE_REVIEWER_EFFORT}',
+      );
+    }
   });
 
   it('renders the shipped discovery-atlassian template into a valid config', async () => {
@@ -479,7 +484,7 @@ describe('init --template', () => {
     const refs = (config.features ?? []).map((f) => f.ref);
     expect(refs).toEqual([
       'ghcr.io/getmonoceros/monoceros-features/claude-code:1',
-      'ghcr.io/getmonoceros/monoceros-features/claude-code-roles:1',
+      'ghcr.io/getmonoceros/monoceros-features/agent-roles:1',
       'ghcr.io/getmonoceros/monoceros-features/atlassian:1',
     ]);
     // twg on its own: the lean shape the discovery chain expects.

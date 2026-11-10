@@ -252,6 +252,7 @@ function projectFeature(
   );
   if (options.length > 0) out.options = Object.fromEntries(options);
   if (entry.plugins && entry.plugins.length > 0) out.plugins = entry.plugins;
+  if (entry.roles) out.roles = entry.roles;
   return out;
 }
 

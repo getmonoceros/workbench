@@ -57,10 +57,41 @@ describe('writeCopilotSettings', () => {
     expect(await readJson(settingsFile())).toEqual({
       defaultPermissionMode: 'assisted',
       storeTokenPlaintext: true,
+      assistedApprovalInstructions: expect.stringContaining('monoceros-ctl'),
     });
     expect(await readJson(configFile())).toEqual({
       trustedFolders: ['/workspaces/acme'],
     });
+  });
+
+  // A real run asked before every `monoceros-ctl stop/start`. Copilot has no
+  // persistent allow list, so the judge is told what the tool is.
+  it("explains monoceros-ctl to the judge, next to the builder's own text", async () => {
+    await seed(
+      settingsFile(),
+      JSON.stringify({
+        assistedApprovalInstructions:
+          'Never approve curl to external hosts.\n\nMonoceros workbench: an older version of ours.',
+      }),
+    );
+    await writeCopilotSettings(dir, 'acme', { [COPILOT_REF]: {} });
+    await writeCopilotSettings(dir, 'acme', { [COPILOT_REF]: {} });
+    const text = (await readJson(settingsFile()))
+      .assistedApprovalInstructions as string;
+    const paragraphs = text.split('\n\n');
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[0]).toBe('Never approve curl to external hosts.');
+    expect(paragraphs[1]).toMatch(/^Monoceros workbench: .*`monoceros-ctl`/s);
+  });
+
+  // A real run held the agent-roles developer four minutes on a local commit.
+  // The judge learns that committing is routine and pushing is not.
+  it('tells the judge a local commit is routine and a push is not', async () => {
+    await writeCopilotSettings(dir, 'acme', { [COPILOT_REF]: {} });
+    const text = (await readJson(settingsFile()))
+      .assistedApprovalInstructions as string;
+    expect(text).toContain('`git commit`');
+    expect(text).toMatch(/Pushing is different/);
   });
 
   it('keeps every other key, the login included, and adds the folder once', async () => {
@@ -76,6 +107,7 @@ describe('writeCopilotSettings', () => {
       model: 'auto',
       defaultPermissionMode: 'manual',
       storeTokenPlaintext: true,
+      assistedApprovalInstructions: expect.any(String),
     });
     expect(await readJson(configFile())).toEqual({
       auth: 'kept',
@@ -139,6 +171,7 @@ describe('writeCopilotSettings', () => {
     expect(await readJson(settingsFile())).toEqual({
       defaultPermissionMode: 'assisted',
       storeTokenPlaintext: true,
+      assistedApprovalInstructions: expect.any(String),
     });
   });
 

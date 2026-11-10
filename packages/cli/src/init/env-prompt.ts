@@ -2,6 +2,11 @@ import { createInterface } from 'node:readline/promises';
 import { consola } from 'consola';
 import type { CatalogComponent } from '../catalog/load.js';
 import { readEnvFile, setEnvVarRef } from '../config/env-file.js';
+import {
+  describeRolesEnvVar,
+  rolesEnvRefs,
+  type RolesBlock,
+} from '../create/agent-roles.js';
 import type { McpEntry } from '../config/schema.js';
 import { colorsFor } from '../util/format.js';
 import { optionHintNeeded } from './feature-doc.js';
@@ -27,6 +32,8 @@ export interface EnvPromptCandidate {
 export interface FeatureRefWithOptions {
   ref: string;
   options?: Record<string, unknown> | undefined;
+  /** The agent-roles `roles:` block, whose fields are `${VAR}` references. */
+  roles?: RolesBlock | null | undefined;
 }
 
 /**
@@ -61,6 +68,16 @@ export function collectEnvPromptCandidates(
         envVar,
         feature: summary?.name ?? f.ref,
         description: summary?.optionDescriptions[key] ?? '',
+      });
+    }
+    // The agent-roles models and efforts, asked the same way.
+    for (const envVar of rolesEnvRefs(f.roles)) {
+      if (seen.has(envVar)) continue;
+      seen.add(envVar);
+      out.push({
+        envVar,
+        feature: summary?.name ?? f.ref,
+        description: describeRolesEnvVar(envVar) ?? '',
       });
     }
   }

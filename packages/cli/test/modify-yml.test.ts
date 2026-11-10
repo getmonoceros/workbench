@@ -1,3 +1,4 @@
+import { consola } from 'consola';
 import { promises as fs, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -1071,6 +1072,192 @@ describe('add-*/remove-* against the yml', () => {
     // Claude entry + its own commented options-hint must still be there.
     expect(yml).toContain('claude-code:1');
     expect(yml).toMatch(/^\s+# options:\s*$/m);
+  });
+
+  // The two role features left the catalog for `agent-roles` (ADR 0067).
+  // Their names keep working: a plugin's `init` line or a builder's habit adds
+  // the replacement, and the remove command apply prints for an old yml finds
+  // the old entry instead of answering "Unknown feature".
+  it('runAddFeature takes a retired name and adds its replacement', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'claude-code-roles',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toContain('monoceros-features/agent-roles:1');
+    expect(yml).not.toContain('claude-code-roles');
+  });
+
+  // Whether someone works in an agent is not in the yml, so add-feature sets
+  // no model for anyone. It writes the whole `roles:` block commented out,
+  // for all three agents, with Claude Code's recommended aliases and
+  // placeholders for the others.
+  it('runAddFeature writes the roles of each agent as env references', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        '',
+      ].join('\n'),
+    );
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'agent-roles',
+      monocerosHome: home,
+    });
+    let yml = await ymlOf('demo');
+    expect(yml).toMatch(/^ {4}roles:$/m);
+    expect(yml).toContain('model: ${AGENT_ROLES_CLAUDE_PLANNER_MODEL}');
+    expect(yml).toContain('effort: ${AGENT_ROLES_CLAUDE_REVIEWER_EFFORT}');
+    expect(yml).not.toContain('COPILOT');
+    const env = await fs.readFile(
+      path.join(home, 'container-configs', 'demo.env'),
+      'utf8',
+    );
+    expect(env).toContain('AGENT_ROLES_CLAUDE_PLANNER_MODEL=\n');
+    expect(env).toContain('AGENT_ROLES_CLAUDE_DEVELOPER_EFFORT=\n');
+
+    // An agent added later gets its own lines, and they are seeded too.
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'copilot',
+      monocerosHome: home,
+    });
+    yml = await ymlOf('demo');
+    expect(yml).toContain('model: ${AGENT_ROLES_COPILOT_DEVELOPER_MODEL}');
+    expect(yml).toContain('model: ${AGENT_ROLES_CLAUDE_PLANNER_MODEL}');
+    expect(
+      await fs.readFile(
+        path.join(home, 'container-configs', 'demo.env'),
+        'utf8',
+      ),
+    ).toContain('AGENT_ROLES_COPILOT_REVIEWER_EFFORT=\n');
+  });
+
+  it('runAddFeature writes no roles block without a coding agent, and says so', async () => {
+    await writeYml('demo', 'schemaVersion: 1\nname: demo\n');
+    const warn = vi.spyOn(consola, 'warn').mockImplementation(() => {});
+    try {
+      await runAddFeature({
+        ...baseOpts,
+        name: 'demo',
+        ref: 'agent-roles',
+        monocerosHome: home,
+      });
+      expect(await ymlOf('demo')).not.toMatch(/^\s+roles:/m);
+      const said = warn.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(said).toContain('has no coding agent yet');
+      expect(said).toContain('monoceros add-feature demo claude');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // Apply's hint for an older yml says: add agent-roles, then remove the old
+  // feature. The add has to keep what the builder had set there, or the
+  // switch quietly puts every role on the session's model.
+  it('runAddFeature carries the replaced features’ models into roles:', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code-roles:1',
+        '    options:',
+        '      plannerModel: "opus"',
+        '      plannerEffort: "high"',
+        '      implementModel: "sonnet"',
+        '      implementEffort: "medium"',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/opencode-roles:1',
+        '    options:',
+        '      plannerModel: "openrouter/moonshotai/kimi-k3"',
+        '      implementEffort: ""',
+        '',
+      ].join('\n'),
+    );
+    await runAddFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'agent-roles',
+      monocerosHome: home,
+    });
+    await runRemoveFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'claude-code-roles',
+      monocerosHome: home,
+    });
+    await runRemoveFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'opencode-roles',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).toMatch(/^ {4}roles:$/m);
+    expect(yml).not.toContain('claude-code-roles');
+    expect(yml).not.toContain('opencode-roles');
+    // The carried values stay literal, every other field is a reference.
+    const opts = solutionConfigToCreateOptions(parseConfig(yml).config);
+    expect(opts.agentRoles).toEqual({
+      planner: {
+        'claude-code': { model: 'opus', effort: 'high' },
+        opencode: {
+          model: 'openrouter/moonshotai/kimi-k3',
+          effort: '${AGENT_ROLES_OPENCODE_PLANNER_EFFORT}',
+        },
+      },
+      developer: {
+        'claude-code': { model: 'sonnet', effort: 'medium' },
+        opencode: {
+          model: '${AGENT_ROLES_OPENCODE_DEVELOPER_MODEL}',
+          effort: '${AGENT_ROLES_OPENCODE_DEVELOPER_EFFORT}',
+        },
+      },
+      reviewer: {
+        'claude-code': {
+          model: '${AGENT_ROLES_CLAUDE_REVIEWER_MODEL}',
+          effort: '${AGENT_ROLES_CLAUDE_REVIEWER_EFFORT}',
+        },
+        opencode: {
+          model: '${AGENT_ROLES_OPENCODE_REVIEWER_MODEL}',
+          effort: '${AGENT_ROLES_OPENCODE_REVIEWER_EFFORT}',
+        },
+      },
+    });
+  });
+
+  it('runRemoveFeature removes a retired feature by its old short name', async () => {
+    await writeYml(
+      'demo',
+      [
+        'schemaVersion: 1',
+        'name: demo',
+        'features:',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+        '  - ref: ghcr.io/getmonoceros/monoceros-features/opencode-roles:1',
+        '',
+      ].join('\n'),
+    );
+    await runRemoveFeature({
+      ...baseOpts,
+      name: 'demo',
+      ref: 'opencode-roles',
+      monocerosHome: home,
+    });
+    const yml = await ymlOf('demo');
+    expect(yml).not.toContain('opencode-roles');
+    expect(yml).toContain('claude-code:1');
   });
 
   it('runRemoveFeature accepts a short-name (atlassian)', async () => {

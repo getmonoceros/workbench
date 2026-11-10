@@ -45,6 +45,9 @@ const ATLASSIAN_INSTALL_SH = fileURLToPath(
 const BROWSER_INSTALL_SH = fileURLToPath(
   new URL('../../../components/features/browser/install.sh', import.meta.url),
 );
+const OPENCODE_INSTALL_SH = fileURLToPath(
+  new URL('../../../components/features/opencode/install.sh', import.meta.url),
+);
 
 let dir: string;
 let binDir: string;
@@ -340,6 +343,90 @@ describe('browser feature', () => {
     expect(await readFile(log, 'utf8')).toContain(
       'playwright-mcp: could not reach the npm registry, keeping 0.0.82',
     );
+  });
+});
+
+/**
+ * OpenCode stays on its major. It installs patch releases on its own, only
+ * announces the rest, and moves to a new major only on an explicit
+ * `opencode upgrade --major`; a hook that followed `latest` would make that
+ * jump on the next apply instead.
+ */
+describe('opencode refresh hook', () => {
+  async function installFeature(version?: string): Promise<{
+    npmLog: string;
+    hook: string;
+  }> {
+    const npmLog = path.join(dir, 'npm.log');
+    await stub('npm', `printf '%s\\n' "$*" >> ${npmLog}`);
+    await stub('opencode', 'echo "1.19.5"');
+    const installer = await sandboxInstaller(OPENCODE_INSTALL_SH);
+    const result = await run(installer, version ? { VERSION: version } : {});
+    expect(result.code).toBe(0);
+    return { npmLog, hook: path.join(refreshDir, 'opencode.sh') };
+  }
+
+  /** npm answering `view` the way it does for a major: one line per version. */
+  async function stubNpmMajor(versions: string[]): Promise<string> {
+    const log = path.join(dir, 'npm-hook.log');
+    const lines = versions.map((v) => `opencode-ai@${v} '${v}'`).join('\\n');
+    await stub(
+      'npm',
+      [
+        `printf '%s\\n' "$*" >> ${log}`,
+        'if [ "$1" = "view" ]; then',
+        `  printf '${lines}\\n'`,
+        'fi',
+        'exit 0',
+      ].join('\n'),
+    );
+    return log;
+  }
+
+  it('installs the current major by default, not latest', async () => {
+    const { npmLog, hook } = await installFeature();
+    expect(await readFile(npmLog, 'utf8')).toContain(
+      'install -g --no-audit --no-fund opencode-ai@1',
+    );
+    expect(await readFile(hook, 'utf8')).toContain("SPEC='1'");
+  });
+
+  it('updates to the newest release of that major, read from the last line', async () => {
+    const { hook } = await installFeature();
+    const npmLog = await stubNpmMajor(['1.19.4', '1.19.5', '1.20.0']);
+    const log = path.join(dir, 'refresh.log');
+
+    expect((await run(hook, { MONOCEROS_REFRESH_LOG: log })).code).toBe(0);
+    const calls = await readFile(npmLog, 'utf8');
+    expect(calls).toContain('view opencode-ai@1 version');
+    expect(calls).toContain(
+      'install -g --no-audit --no-fund opencode-ai@1.20.0',
+    );
+    expect(await readFile(log, 'utf8')).toContain(
+      'opencode 1.20.0 (updated from 1.19.5)',
+    );
+  });
+
+  it('does not install when the newest of the major is installed', async () => {
+    const { hook } = await installFeature();
+    const npmLog = await stubNpmMajor(['1.19.4', '1.19.5']);
+    const log = path.join(dir, 'refresh.log');
+
+    expect((await run(hook, { MONOCEROS_REFRESH_LOG: log })).code).toBe(0);
+    expect(await readFile(npmLog, 'utf8')).not.toContain('install');
+    expect(await readFile(log, 'utf8')).toContain(
+      'opencode 1.19.5 (already current)',
+    );
+  });
+
+  it('still follows latest when the builder asked for it', async () => {
+    const { hook } = await installFeature('latest');
+    expect(await readFile(hook, 'utf8')).toContain("SPEC='latest'");
+  });
+
+  it('writes no hook when the builder pinned an exact version', async () => {
+    const { hook } = await installFeature('1.19.5');
+    expect(existsSync(hook)).toBe(false);
   });
 });
 

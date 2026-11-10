@@ -1,0 +1,12 @@
+name: agent-roles-developer
+description: Implements an approved plan file. Only for /agent-roles-ship, never for an ordinary code change. The prompt must carry the path to a plan file under {{PLANS_DIR}}/<app>/ and nothing else is assumed to be known.
+{{MODEL_LINE}}
+{{EFFORT_LINE}}
+permissionMode: acceptEdits
+disallowedTools: Agent
+hooks:
+  PreToolUse:
+    - matcher: 'Write|Edit|NotebookEdit|Bash'
+      hooks:
+        - type: command
+          command: 'node {{GUARD}} developer'

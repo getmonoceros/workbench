@@ -22,6 +22,13 @@ import {
   renderServiceObjectBody,
 } from './service-doc.js';
 import { GIT_IDENTITY_VAR } from '../config/env-file.js';
+import {
+  AGENTS,
+  ROLES,
+  rolesRefBlock,
+  type Agent,
+} from '../create/agent-roles.js';
+import { matchMonocerosFeature } from '../util/ref.js';
 
 /**
  * Renderer for the container yml that `monoceros init` produces.
@@ -170,6 +177,12 @@ export function generateComposedYml(
   if (composed.features.length > 0) {
     pushSectionHeader(lines, FEATURES_HEADER_ACTIVE, /* commented */ false);
     lines.push('features:');
+    // The coding agents in this workbench, for the agent-roles `roles:` block.
+    const agents = AGENTS.filter((agent) =>
+      composed.features.some(
+        (f) => matchMonocerosFeature(f.ref)?.name === agent,
+      ),
+    );
     for (const f of composed.features) {
       lines.push('');
       renderFeatureBlock(
@@ -177,6 +190,7 @@ export function generateComposedYml(
         f,
         lookupManifest(f.ref),
         /* commented */ false,
+        agents,
       );
     }
     lines.push('');
@@ -341,6 +355,7 @@ function renderFeatureBlock(
   feature: RenderableFeature,
   summary: FeatureManifestSummary | undefined,
   commented: boolean,
+  agents: readonly Agent[] = [],
 ): void {
   // Header lines are ALWAYS plain `#` comments at single depth —
   // never double `# #`. In documented mode the yaml lines below get
@@ -372,8 +387,20 @@ function renderFeatureBlock(
   const pluginScaffold = commented
     ? undefined
     : examplePluginsComment(summary?.examplePlugin);
+  // agent-roles: each role's model and effort per agent in the workbench, as
+  // `${VAR}` references the env fills, like a credential.
+  const rolesLines =
+    !commented && matchMonocerosFeature(feature.ref)?.name === 'agent-roles'
+      ? renderRolesBlock(agents)
+      : [];
 
-  if (activeKeys.length === 0 && hints.length === 0 && !pluginScaffold) return;
+  if (
+    activeKeys.length === 0 &&
+    hints.length === 0 &&
+    !pluginScaffold &&
+    rolesLines.length === 0
+  )
+    return;
 
   if (commented) {
     // Documented mode: the whole feature block is single-`#`
@@ -411,6 +438,7 @@ function renderFeatureBlock(
       out.push(`      ${hint.key}: ${hint.placeholder}`);
     }
   }
+  out.push(...rolesLines);
   // Commented `plugins:` example, at the same depth as `options:`.
   if (pluginScaffold) {
     for (const line of pluginScaffold.split('\n')) {
@@ -420,6 +448,23 @@ function renderFeatureBlock(
 }
 
 // ───── Misc helpers ───────────────────────────────────────────────
+
+/** The agent-roles `roles:` block as yml lines, under a `- ref:`. */
+export function renderRolesBlock(agents: readonly Agent[]): string[] {
+  if (agents.length === 0) return [];
+  const block = rolesRefBlock(agents);
+  const out = ['    roles:'];
+  for (const role of ROLES) {
+    out.push(`      ${role}:`);
+    for (const agent of agents) {
+      const s = block[role]?.[agent];
+      out.push(`        ${agent}:`);
+      out.push(`          model: ${s?.model ?? ''}`);
+      out.push(`          effort: ${s?.effort ?? ''}`);
+    }
+  }
+  return out;
+}
 
 function pushHeader(out: string[], header: string, name: string): void {
   for (const line of header.replace(/<name>/g, name).split('\n')) {

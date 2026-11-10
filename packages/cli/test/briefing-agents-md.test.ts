@@ -63,6 +63,7 @@ describe('AGENTS.md generator', () => {
     expect(md).toContain('`pkill -f` kills the shell running it');
     expect(md).toContain('- Nothing you install from inside survives the next');
     expect(md).toContain("- `monoceros …` commands are the user's to run");
+    expect(md).toContain('- Clean up only the test data you created');
   });
 
   // MCP servers reach the container from the user's own Claude account too,

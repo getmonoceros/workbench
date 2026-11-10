@@ -1,0 +1,24 @@
+description: Implements an approved plan file. Only for /agent-roles-ship, never for an ordinary code change. The prompt must carry the path to a plan file under {{PLANS_DIR}}/<app>/ and nothing else is assumed to be known.
+mode: subagent
+{{MODEL_LINE}}
+permission:
+  # May change code, never what it is measured against: the plans and the rest
+  # of the feature's directory. Both spellings, same reason as in the planner:
+  # a deny that only covers the absolute form would let this agent edit the plan,
+  # because the edit tool asks with a worktree-relative path.
+  edit: { '*': allow, '{{ROLES_DIR}}/*': deny, '{{ROLES_MATCH}}/*': deny }
+  write: { '*': allow, '{{ROLES_DIR}}/*': deny, '{{ROLES_MATCH}}/*': deny }
+  external_directory: { '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
+  bash:
+    # Allow by default - this role exists to change things - and deny what
+    # leaves the machine. Committing IS allowed: it gives the reviewer a real
+    # diff to read instead of a dirty working tree.
+    '*': allow
+    'git push*': deny
+    'gh pr create*': deny
+    'gh release*': deny
+    'npm publish*': deny
+    'pnpm publish*': deny
+    'yarn publish*': deny
+    'docker push*': deny
+  task: deny

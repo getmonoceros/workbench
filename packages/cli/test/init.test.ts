@@ -131,6 +131,39 @@ describe('runInit', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  // `claude-code-roles` left the catalog for `agent-roles` (ADR 0067), and the
+  // discovery plugin's `init` line still names it. It has to keep working.
+  it('composed mode: a retired feature name resolves to its replacement', async () => {
+    await writeDescriptor(
+      root,
+      'features',
+      'agent-roles',
+      [
+        'id: agent-roles',
+        'category: feature',
+        'displayName: Agent roles',
+        'description: Roles.',
+        'feature:',
+        '  version: 1.0.0',
+        '',
+      ].join('\n'),
+    );
+    const result = await runInit({
+      name: 'sandbox',
+      languages: [],
+      services: [],
+      features: ['claude', 'claude-code-roles'],
+      workbenchRoot: root,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const text = await readFile(result.configPath, 'utf8');
+    expect(text).toContain(
+      '  - ref: ghcr.io/getmonoceros/monoceros-features/agent-roles:1',
+    );
+    expect(text).not.toContain('claude-code-roles');
+  });
+
   it('composed mode: --with-languages/services/features writes an active yml that validates', async () => {
     const result = await runInit({
       name: 'sandbox',

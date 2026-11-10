@@ -34,22 +34,27 @@ features:
           - discovery-atlassian
 
   # The three roles that build a story: the planner writes the plan, the
-  # implementer executes it, the reviewer checks the result against it.
+  # developer executes it, the reviewer checks the result against it.
   #
-  # The models below are a starting point, not a rule. Planning and reviewing
-  # carry the thinking, so they get the stronger model; implementing follows a
-  # plan that already names the files and the acceptance command, so it runs
-  # cheaper. Change them here, or empty a value to let that role run on
-  # whatever the session runs on.
-  # https://getmonoceros.build/docs/features/claude-code-roles/
-  - ref: ghcr.io/getmonoceros/monoceros-features/claude-code-roles:1
-    options:
-      plannerModel: opus
-      plannerEffort: high
-      implementModel: sonnet
-      implementEffort: medium
-      reviewModel: opus
-      reviewEffort: high
+  # Planning and reviewing carry the thinking, so they deserve the stronger
+  # model; implementing follows a plan that already names the files and the
+  # acceptance command, so a cheaper one does. `init` asks for the values; put
+  # them in monoceros-config.env to set them once for every workbench.
+  # https://getmonoceros.build/docs/features/agent-roles/
+  - ref: ghcr.io/getmonoceros/monoceros-features/agent-roles:1
+    roles:
+      planner:
+        claude-code:
+          model: ${AGENT_ROLES_CLAUDE_PLANNER_MODEL}
+          effort: ${AGENT_ROLES_CLAUDE_PLANNER_EFFORT}
+      developer:
+        claude-code:
+          model: ${AGENT_ROLES_CLAUDE_DEVELOPER_MODEL}
+          effort: ${AGENT_ROLES_CLAUDE_DEVELOPER_EFFORT}
+      reviewer:
+        claude-code:
+          model: ${AGENT_ROLES_CLAUDE_REVIEWER_MODEL}
+          effort: ${AGENT_ROLES_CLAUDE_REVIEWER_EFFORT}
 
   # Atlassian: the `twg` CLI on its own, which is how the roles read and write
   # Jira and Confluence from in here. Rovo Dev and Forge are deliberately left

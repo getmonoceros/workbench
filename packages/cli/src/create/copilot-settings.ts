@@ -40,7 +40,9 @@ export function resolveCopilotPermissionMode(raw: string | undefined): string {
  *                       Without the setting, every `copilot login` stops to
  *                       ask whether that is acceptable.
  *                       With the graphify feature also `hooks`, see
- *                       `applyGraphifyHooks` below.
+ *                       `applyGraphifyHooks` below, and always a paragraph in
+ *                       `assistedApprovalInstructions`, see
+ *                       `applyJudgeInstructions`.
  *   - `config.json`   → the workspace in `trustedFolders`, so the first session
  *                       does not open with a folder-trust prompt. Trusting a
  *                       folder covers its subfolders, so the workspace root is
@@ -80,6 +82,7 @@ export async function writeCopilotSettings(
     config.defaultPermissionMode = mode;
     config.storeTokenPlaintext = true;
     applyGraphifyHooks(config, hasGraphify);
+    applyJudgeInstructions(config);
   });
 
   const workspace = `/workspaces/${containerName}`;
@@ -92,6 +95,50 @@ export async function writeCopilotSettings(
     if (!trusted.includes(workspace)) trusted.push(workspace);
     config.trustedFolders = trusted;
   });
+}
+
+/** Every paragraph Monoceros owns in the judge's instructions starts with this. */
+const JUDGE_MARKER = 'Monoceros workbench:';
+
+/** What the judge is told about the workbench's own tooling. */
+const JUDGE_INSTRUCTIONS =
+  `${JUDGE_MARKER} this session runs in a local dev container. ` +
+  "`monoceros-ctl` is the workbench's own tool for the dev servers an app " +
+  'declares in `.monoceros/launch.json` (list, start, stop, restart, logs). ' +
+  'Running it is routine work on the app, not a risk: approve it. ' +
+  '`git add` and `git commit` only change the local history of a repository ' +
+  'in this workspace and are just as routine: approve them. Pushing is ' +
+  'different, because it leaves the machine.';
+
+/**
+ * Tell Copilot's Assisted Permissions judge what `monoceros-ctl` is, and that
+ * a local commit is no risk. With `permissionMode: auto` (Copilot's
+ * `assisted`) a model reviews every command and asks the user when it is
+ * unsure. Real runs had it ask before every `monoceros-ctl stop/start` (a tool
+ * it had never seen, restarting servers), and hold the agent-roles developer
+ * four minutes on its `git add … && git commit`, which the role is allowed to
+ * do. A push stays the user's call, here and in the agent-roles guard.
+ *
+ * Copilot keeps no persistent allow list for commands: `--allow-tool` is a
+ * launch flag, and "allow for this location" is per-directory internal state.
+ * `assistedApprovalInstructions` is the documented setting for exactly this
+ * judge. It steers it rather than binding it, which is the nature of the mode.
+ *
+ * Only our paragraph is ours: it is recognised by its marker and replaced, and
+ * whatever the builder wrote around it stays.
+ */
+function applyJudgeInstructions(config: Record<string, unknown>): void {
+  const current =
+    typeof config.assistedApprovalInstructions === 'string'
+      ? config.assistedApprovalInstructions
+      : '';
+  const foreign = current
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter((p) => p && !p.startsWith(JUDGE_MARKER));
+  config.assistedApprovalInstructions = [...foreign, JUDGE_INSTRUCTIONS].join(
+    '\n\n',
+  );
 }
 
 /** A Copilot CLI hook entry, as it sits under `hooks.<event>` in settings.json. */
@@ -165,7 +212,7 @@ function applyGraphifyHooks(
  * Leading `//` comment lines are kept as they are. A file that does not parse
  * to an object without them is left untouched (see above).
  */
-async function mergeJson(
+export async function mergeJson(
   file: string,
   edit: (config: Record<string, unknown>) => void,
 ): Promise<void> {

@@ -1,0 +1,51 @@
+description: Turns a task plus the answers already gathered from the user into a plan file under {{PLANS_DIR}}/. Only for /agent-roles-plan. Writes no source code and asks no questions.
+mode: subagent
+{{MODEL_LINE}}
+permission:
+  # Writes the plan and nothing else. Two spellings on purpose: `edit` asks with
+  # the path relative to the worktree (`projects/<app>`), and the plans dir sits
+  # above it in the workspace, so the relative form starts with `../..` and an
+  # absolute pattern never matches it. The star-prefixed one covers both.
+  edit: { '*': deny, '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
+  write: { '*': deny, '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
+  external_directory: { '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
+  bash:
+    # Allow by default, deny what mutates. An allowlist loses here: opencode
+    # splits a command at &&, ||, ; and pipes and evaluates every part, so one
+    # unforeseen verb in a chain costs a prompt. The same splitting makes this
+    # denylist effective - a mutating verb anywhere in the chain denies the
+    # whole command. The real guard against writing source stays the edit/write
+    # permission above; this is a speed bump, not a sandbox.
+    #
+    # Writing redirects are the guard plugin's job (agent-roles-guard.js): a
+    # glob cannot tell `> file` from `2>&1`, a quoted arrow or a `>` in the
+    # body of a heredoc, and every attempt to teach it refused a real probe.
+    # What is left here are the rules a glob gets right, as a fallback for an
+    # OpenCode that no longer loads the plugin.
+    '*': allow
+    '*<<*': deny
+    '*tee *': deny
+    'rm *': deny
+    'mv *': deny
+    'cp *': deny
+    'sed -i*': deny
+    'truncate *': deny
+    'chmod *': deny
+    'chown *': deny
+    'sudo *': deny
+    'git add*': deny
+    'git commit*': deny
+    'git checkout*': deny
+    'git reset*': deny
+    'git restore*': deny
+    'git rm*': deny
+    'git push*': deny
+    'gh pr create*': deny
+    'gh release*': deny
+    'npm install*': deny
+    'npm i *': deny
+    'pnpm add*': deny
+    'pnpm install*': deny
+    'yarn add*': deny
+    'pip install*': deny
+  task: deny

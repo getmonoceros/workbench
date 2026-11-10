@@ -157,18 +157,18 @@ cwd is irrelevant — everything goes through convention.
   list, but flags and value sources are not auto-checked. A new dynamic
   `kind` also needs a matching host-side resolver in the pwsh script in
   [`packages/cli/src/commands/completion.ts`](packages/cli/src/commands/completion.ts).
-- **A rule a real run teaches goes into both role sets.**
-  `packages/cli/templates/claude-code-roles/` and
-  `packages/cli/templates/opencode-roles/` are deliberate copies
-  ([ADR 0043](docs/adr/0043-opencode-roles-as-its-own-component.md)): they share
-  the prompt substance but not a template, and nothing enforces the overlap.
-  They are supposed to differ where the agents differ (permissions, delegation
-  syntax, where plans live) and to agree on everything a run taught us. Two have
-  come out of real runs so far: the guard that denied `2>&1` on a read-only
-  probe, and an acceptance command that checked `/` for a 200 and therefore
-  could never fail. Fix that class of thing in both sets in the same change and
-  pin it with a test in each suite, or the next session fixes one and ships the
-  other broken.
+- **The agent roles have one text for every agent.**
+  `packages/cli/templates/agent-roles/` holds the role bodies and skills once;
+  only the frontmatter differs per agent (`frontmatter/<agent>/`)
+  ([ADR 0067](docs/adr/0067-one-role-feature-for-every-coding-agent.md)). A rule
+  a real run teaches goes into that shared text, never into one agent's
+  frontmatter, and gets a test in `packages/cli/test/agent-roles.test.ts`. Two
+  have come out of real runs so far: the guard that denied `2>&1` on a
+  read-only probe, and an acceptance command that checked `/` for a 200 and
+  therefore could never fail. A rule that holds for any session, with or
+  without the roles, also goes into the general briefing
+  (`src/briefing/agents-md.ts` and `conventions-md.ts`), because a session the
+  user drives in conversation never reads a role prompt.
 
 ## Working an issue (board workflow)
 

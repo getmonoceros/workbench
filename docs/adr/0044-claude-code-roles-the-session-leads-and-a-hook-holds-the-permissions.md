@@ -1,6 +1,6 @@
 # ADR 0044: For Claude Code roles the session leads, and a hook holds the permissions
 
-- Status: accepted
+- Status: accepted, superseded in part by [ADR 0067](0067-one-role-feature-for-every-coding-agent.md) (one role feature for every agent)
 - Date: 2026-08-02
 - Relates to: [ADR 0043](0043-opencode-roles-as-its-own-component.md) (the same
   workflow for OpenCode, and why a workflow may ship as a component at all),

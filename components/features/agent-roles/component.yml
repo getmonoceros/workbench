@@ -1,0 +1,10 @@
+id: agent-roles
+name: agent-roles
+category: feature
+displayName: Agent roles (plan / develop / review)
+description: 'Three roles for every coding agent in the workbench (Claude Code, OpenCode, Copilot): a planner writes a plan file, a developer executes it, a reviewer checks the result against the plan or against what a conversation set out to do. Adds `/agent-roles-plan`, `/agent-roles-ship` and `/agent-roles-review`. For work worth a plan; for a small correction, talk to the agent directly and use the review on its own.'
+documentationURL: https://getmonoceros.build/docs/features/agent-roles/
+feature:
+  version: 1.0.0
+briefing:
+  - text: 'Agent roles - for work handed over, not for every change. `/agent-roles-plan <task>` grills the task and has a planner write a plan to `.monoceros/agent-roles/plans/<app>/<slug>.md`, `/agent-roles-ship <plan>` has a developer implement it and a reviewer check it, `/agent-roles-review` reviews on its own: against a plan, or without one against what this conversation set out to do. When the user asks for a change in conversation, make it yourself; do not delegate it to the developer role. The planner writes no source, the developer cannot edit the plan it is measured against, and the reviewer is read-only.'

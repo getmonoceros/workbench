@@ -239,7 +239,19 @@ export async function writeOpencodeConfig(
 
   // Model: only when set. An empty option must not clobber a user-set
   // model, and leaving it unset lets OpenCode prompt on first run.
+  //
+  // `small_model` follows it. OpenCode runs session titles on a "small model",
+  // and without one it picks a cheaper model from the same provider by name.
+  // On OpenRouter that pick was `google/gemini-nano-banana-2.1`, an image
+  // model: the builder found a provider on the bill they never chose, and the
+  // titles stayed "New session - <date>". A title is a few hundred tokens, so
+  // the model the builder chose is the right one. A `small_model` the builder
+  // set to something else is theirs and stays.
   if (model) {
+    const previous = config.model;
+    if (!config.small_model || config.small_model === previous) {
+      config.small_model = model;
+    }
     config.model = model;
   }
 

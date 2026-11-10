@@ -207,20 +207,72 @@ export const PluginEntrySchema = z
     }
   });
 
-export const FeatureEntrySchema = z.object({
-  ref: z
-    .string()
-    .regex(
-      FEATURE_REF_RE,
-      "Invalid feature ref. Expected an OCI-image-style ref like 'ghcr.io/devcontainers/features/<name>:<tag>'.",
-    ),
-  options: z.record(z.string(), FeatureOptionValueSchema).optional(),
-  // Agent plugins this feature should carry. Accepted on every feature
-  // entry at parse time; whether the feature can actually host plugins is
-  // a catalog question (`feature.acceptsPlugins` in the descriptor) and is
-  // checked at apply, like every other catalog validation (ADR 0006).
-  plugins: z.array(PluginEntrySchema).optional(),
-});
+/**
+ * One coding agent's settings for one role, under the agent-roles feature's
+ * `roles:` block (ADR 0067). Both fields optional: a missing one means the
+ * role runs on the session's model or effort in that agent. A bare `model:`
+ * parses to null and means the same.
+ */
+const RoleAgentSettingsSchema = z
+  .object({
+    model: z.string().nullable().optional(),
+    effort: z.string().nullable().optional(),
+  })
+  .strict();
+
+/** The agents a role can be configured for. Unknown names are an error. */
+const RoleAgentsSchema = z
+  .object({
+    'claude-code': RoleAgentSettingsSchema.nullable().optional(),
+    opencode: RoleAgentSettingsSchema.nullable().optional(),
+    copilot: RoleAgentSettingsSchema.nullable().optional(),
+  })
+  .strict();
+
+/**
+ * The agent-roles feature's `roles:` block: per role, per coding agent, the
+ * model and the effort. A sibling of `options:` rather than part of it,
+ * because feature options are flat by the devcontainer spec and this one is
+ * read by Monoceros only, like `plugins:`. Grouped by role so a role's
+ * settings for every agent sit together.
+ */
+export const AgentRolesSchema = z
+  .object({
+    planner: RoleAgentsSchema.nullable().optional(),
+    developer: RoleAgentsSchema.nullable().optional(),
+    reviewer: RoleAgentsSchema.nullable().optional(),
+  })
+  .strict();
+
+export type AgentRolesConfig = z.infer<typeof AgentRolesSchema>;
+
+export const FeatureEntrySchema = z
+  .object({
+    ref: z
+      .string()
+      .regex(
+        FEATURE_REF_RE,
+        "Invalid feature ref. Expected an OCI-image-style ref like 'ghcr.io/devcontainers/features/<name>:<tag>'.",
+      ),
+    options: z.record(z.string(), FeatureOptionValueSchema).optional(),
+    // Agent plugins this feature should carry. Accepted on every feature
+    // entry at parse time; whether the feature can actually host plugins is
+    // a catalog question (`feature.acceptsPlugins` in the descriptor) and is
+    // checked at apply, like every other catalog validation (ADR 0006).
+    plugins: z.array(PluginEntrySchema).optional(),
+    // Per-role, per-agent models and effort. Only the agent-roles feature reads
+    // it; anywhere else it would be silently ignored, so it is refused.
+    roles: AgentRolesSchema.nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.roles != null && !/\/agent-roles:[^/]+$/.test(data.ref)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['roles'],
+        message: '`roles:` belongs to the agent-roles feature only.',
+      });
+    }
+  });
 
 /**
  * Git identity block.

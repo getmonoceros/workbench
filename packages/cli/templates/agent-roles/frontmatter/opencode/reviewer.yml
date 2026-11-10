@@ -1,0 +1,27 @@
+description: Reviews a finished change against its plan file or against a conversation goal the session writes down. Only for /agent-roles-ship and /agent-roles-review. Read-only. Returns PASS or CHANGES_REQUIRED with a numbered list.
+mode: subagent
+{{MODEL_LINE}}
+permission:
+  edit: deny
+  write: deny
+  external_directory: { '{{PLANS_DIR}}/*': allow, '{{PLANS_MATCH}}/*': allow }
+  bash:
+    # Read-only role. It runs the acceptance command - that is the point - but
+    # it must not change the thing it is judging, and with auto-approve on the
+    # denies are the only thing saying so.
+    '*': allow
+    'git push*': deny
+    'git commit*': deny
+    'git add*': deny
+    'git checkout*': deny
+    'git reset*': deny
+    'git restore*': deny
+    'git rm*': deny
+    'gh pr create*': deny
+    'gh release*': deny
+    'npm publish*': deny
+    'docker push*': deny
+    '*tee *': deny
+    'sed -i*': deny
+    # Writing redirects are the guard plugin's job, as in the planner.
+  task: deny

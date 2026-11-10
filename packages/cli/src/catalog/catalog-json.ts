@@ -1,6 +1,6 @@
 import type { CatalogComponent } from './load.js';
 import type { OptionSpec } from './descriptor.js';
-import type { PluginEntry } from '../config/schema.js';
+import type { AgentRolesConfig, PluginEntry } from '../config/schema.js';
 import { templateSource } from './template-repository.js';
 import type { TemplateRepository } from './template-repository.js';
 
@@ -118,6 +118,8 @@ export interface CatalogJsonTemplateFeature {
   /** Literal option values only; a `${VAR}` value is a credential and stays out. */
   options?: Record<string, string | number | boolean>;
   plugins?: PluginEntry[];
+  /** The agent-roles feature's per-role, per-agent models (ADR 0067). */
+  roles?: AgentRolesConfig;
 }
 
 /**

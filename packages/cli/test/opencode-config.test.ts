@@ -148,12 +148,43 @@ describe('writeOpencodeConfig', () => {
     expect(provider.anthropic!.options).toEqual({ apiKey: 'sk-test-123' });
   });
 
+  // Without small_model, OpenCode picked google/gemini-nano-banana-2.1 on
+  // OpenRouter for the session titles: an image model nobody chose.
+  it('runs the small model on the chosen model and follows it on a change', async () => {
+    const apply = (model: string) =>
+      writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: { model } });
+    await apply('openrouter/moonshotai/kimi-k3');
+    expect((await read()).small_model).toBe('openrouter/moonshotai/kimi-k3');
+    await apply('openrouter/moonshotai/kimi-k3.1-pro');
+    expect((await read()).small_model).toBe(
+      'openrouter/moonshotai/kimi-k3.1-pro',
+    );
+  });
+
+  it('keeps a small_model the builder set to another model', async () => {
+    await fsp.mkdir(path.dirname(cfgPath()), { recursive: true });
+    await fsp.writeFile(
+      cfgPath(),
+      JSON.stringify({
+        model: 'openrouter/moonshotai/kimi-k3',
+        small_model: 'openrouter/moonshotai/kimi-k2.7-code',
+      }),
+    );
+    await writeOpencodeConfig(dir, NAME, {
+      [OPENCODE_REF]: { model: 'openrouter/moonshotai/kimi-k3.1-pro' },
+    });
+    expect((await read()).small_model).toBe(
+      'openrouter/moonshotai/kimi-k2.7-code',
+    );
+  });
+
   it('omits model and provider when the option is empty (interactive auth)', async () => {
     await writeOpencodeConfig(dir, NAME, {
       [OPENCODE_REF]: { model: '', apiToken: '' },
     });
     const cfg = await read();
     expect(cfg.model).toBeUndefined();
+    expect(cfg.small_model).toBeUndefined();
     expect(cfg.provider).toBeUndefined();
     // Instructions are written regardless of auth mode.
     expect(cfg.instructions).toEqual([

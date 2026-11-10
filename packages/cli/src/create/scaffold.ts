@@ -16,9 +16,7 @@ import { refreshLogInContainer } from './refresh-log.js';
 import { writeMcpRegistrations } from './mcp-registration.js';
 import { isWsl, windowsSshPort } from '../devcontainer/ssh-attach.js';
 import { writeOpencodeConfig } from './opencode-config.js';
-import { writeOpencodeRoles } from './opencode-roles.js';
-import { writeClaudeCodeRoles } from './claude-code-roles.js';
-import { validateRoleOptions } from './role-options.js';
+import { validateAgentRoles, writeAgentRoles } from './agent-roles.js';
 import {
   BUILTIN_LANGUAGES,
   curatedServiceTools,
@@ -124,7 +122,7 @@ export function validateOptions(opts: CreateOptions): void {
   // A role's model and effort land verbatim in an agent definition, and
   // nothing between here and the running agent looks at them again. A typo
   // therefore surfaces mid-chain, on the user's clock and bill.
-  validateRoleOptions(opts.features);
+  validateAgentRoles(opts);
   if (!opts.name || !/^[a-zA-Z0-9._-]+$/.test(opts.name)) {
     throw new Error(
       `Invalid solution name: ${JSON.stringify(opts.name)}. Use letters, digits, '.', '_' or '-'.`,
@@ -277,6 +275,7 @@ export function normalizeOptions(opts: CreateOptions): CreateOptions {
     ...(opts.pluginMarketplaceUrls && opts.pluginMarketplaceUrls.length > 0
       ? { pluginMarketplaceUrls: [...new Set(opts.pluginMarketplaceUrls)] }
       : {}),
+    ...(opts.agentRoles ? { agentRoles: opts.agentRoles } : {}),
   };
 }
 
@@ -2409,14 +2408,12 @@ export async function writeScaffold(
   // without the copilot feature.
   await writeCopilotSettings(targetDir, opts.name, opts.features);
 
-  // The opencode-roles feature's agents and commands, into the same
-  // persistent `~/.config/opencode/` tree. No-op without that feature.
-  await writeOpencodeRoles(targetDir, opts.features);
-
-  // The claude-code-roles feature's subagents, skills and permission hook,
-  // into the persistent `~/.claude/` tree. Same apply-time rationale. No-op
-  // without that feature.
-  await writeClaudeCodeRoles(targetDir, opts.features);
+  // The agent-roles feature's roles, skills and permission layer, into the
+  // persistent trees of every coding agent present, plus the plans folder and
+  // the guard in the workspace. Same apply-time rationale. Runs after the
+  // OpenCode config write, because it merges the role variants into that file.
+  // Without the feature it only cleans up what an earlier apply left.
+  await writeAgentRoles(targetDir, opts.name, opts);
 
   // The `mcpServers:` block's servers, merged into each present agent's own
   // config (ADR 0045). Merge and not write: those files belong to the agents.
