@@ -3,9 +3,11 @@
 # here or with `monoceros add-*`, then run `monoceros apply __MONOCEROS_NAME__`.
 # https://getmonoceros.build/docs/concepts/configuration/
 #
-# What is in here: Claude Code carrying the discovery skills, the three build
-# roles, and the Atlassian CLI the roles read Jira and Confluence with. That is
-# enough to run the discovery from an idea to a cut backlog. The stack the
+# What is in here: Claude Code, the discovery skills, the three build roles,
+# the Atlassian CLI the skills and roles read Jira and Confluence with, and the
+# Monoceros docs the technical brief reads the catalog from. That is enough to
+# run the discovery from an idea to a cut backlog. The discovery and the roles
+# serve OpenCode and Copilot too: add either with `monoceros add-feature`. The stack the
 # product itself needs (languages, services, repositories) is not here yet: the
 # technical brief decides it, and `monoceros add-*` puts it in afterwards.
 # https://getmonoceros.build/from-idea-to-code/
@@ -20,18 +22,18 @@ runtimeVersion: __MONOCEROS_RUNTIME_VERSION__
 # Full catalog and every option: `monoceros list-components`, or the feature
 # page linked above each entry.
 features:
-  # Claude Code, carrying the discovery plugin: the skills that work an idea
-  # into a brief, personas and journeys, a domain model, a technical frame and
-  # a cut backlog, written to Confluence and Jira.
+  # Claude Code, the coding agent the discovery runs in.
   # https://getmonoceros.build/docs/features/claude/
   - ref: ghcr.io/getmonoceros/monoceros-features/claude-code:1
     options:
       permissionMode: auto
       apiKey: ${CLAUDE_CODE_API_KEY}
-    plugins:
-      - url: https://github.com/getmonoceros/monoceros-discovery.git
-        enable:
-          - discovery-atlassian
+
+  # The discovery: the skills that work an idea into a brief, personas and
+  # journeys, a domain model, a design brief, a technical brief and a cut
+  # backlog, written to Confluence and Jira.
+  # https://getmonoceros.build/docs/discovery/
+  - ref: ghcr.io/getmonoceros/monoceros-features/discovery-atlassian:1
 
   # The three roles that build a story: the planner writes the plan, the
   # developer executes it, the reviewer checks the result against it.
@@ -56,9 +58,9 @@ features:
           model: ${AGENT_ROLES_CLAUDE_REVIEWER_MODEL}
           effort: ${AGENT_ROLES_CLAUDE_REVIEWER_EFFORT}
 
-  # Atlassian: the `twg` CLI on its own, which is how the roles read and write
-  # Jira and Confluence from in here. Rovo Dev and Forge are deliberately left
-  # off; add them with
+  # Atlassian: the `twg` CLI on its own, which is how the discovery and the roles
+  # read and write Jira and Confluence from in here. Rovo Dev and Forge are
+  # deliberately left off; add them with
   # `monoceros add-feature __MONOCEROS_NAME__ atlassian/rovodev` if you want
   # them.
   # https://getmonoceros.build/docs/features/atlassian/
@@ -70,3 +72,9 @@ features:
       instance: ${ATLASSIAN_INSTANCE}
       email: ${ATLASSIAN_EMAIL}
       apiToken: ${ATLASSIAN_API_TOKEN}
+
+# The Monoceros docs and component catalog, which the technical brief reads to
+# map the stack onto a workbench.
+# https://getmonoceros.build/docs/mcp-servers/monoceros-docs/
+mcpServers:
+  - name: monoceros-docs

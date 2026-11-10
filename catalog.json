@@ -493,6 +493,14 @@
       "presets": []
     },
     {
+      "name": "discovery-atlassian",
+      "displayName": "Discovery for Atlassian",
+      "description": "Takes a raw idea to a product brief, personas and journeys, a domain model, a design brief, a technical brief and a Jira backlog, in a guided dialog that writes to Confluence and Jira. Seven skills for every coding agent in the workbench (Claude Code, OpenCode, Copilot). Needs the `atlassian` feature with `twg`, and the technical brief reads the catalog from the `monoceros-docs` MCP server.",
+      "options": [],
+      "documentationURL": "https://getmonoceros.build/docs/discovery/",
+      "presets": []
+    },
+    {
       "name": "github",
       "displayName": "GitHub CLI",
       "description": "The official `gh` CLI. Login persists across container rebuilds.",
@@ -718,7 +726,7 @@
     },
     {
       "name": "discovery-atlassian",
-      "description": "What is in here: Claude Code carrying the discovery skills, the three build roles, and the Atlassian CLI the roles read Jira and Confluence with. That is enough to run the discovery from an idea to a cut backlog. The stack the product itself needs (languages, services, repositories) is not here yet: the technical brief decides it, and `monoceros add-*` puts it in afterwards.",
+      "description": "What is in here: Claude Code, the discovery skills, the three build roles, the Atlassian CLI the skills and roles read Jira and Confluence with, and the Monoceros docs the technical brief reads the catalog from. That is enough to run the discovery from an idea to a cut backlog. The discovery and the roles serve OpenCode and Copilot too: add either with `monoceros add-feature`. The stack the product itself needs (languages, services, repositories) is not here yet: the technical brief decides it, and `monoceros add-*` puts it in afterwards.",
       "languages": [],
       "services": [],
       "features": [
@@ -726,15 +734,10 @@
           "name": "claude",
           "options": {
             "permissionMode": "auto"
-          },
-          "plugins": [
-            {
-              "url": "https://github.com/getmonoceros/monoceros-discovery.git",
-              "enable": [
-                "discovery-atlassian"
-              ]
-            }
-          ]
+          }
+        },
+        {
+          "name": "discovery-atlassian"
         },
         {
           "name": "agent-roles",
@@ -768,7 +771,9 @@
           }
         }
       ],
-      "mcpServers": [],
+      "mcpServers": [
+        "monoceros-docs"
+      ],
       "repos": [],
       "ports": [],
       "aptPackages": [],

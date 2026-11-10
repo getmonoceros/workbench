@@ -19,3 +19,7 @@ skills/
 # skills/ above: prettier reflowing a table or a fence changes what the model
 # reproduces, for no benefit to a human reader.
 packages/cli/templates/agent-roles/
+
+# The discovery skills (ADR 0068): prose for a model, plus a diagram script
+# that runs inside the workbench. Same reasoning as agent-roles above.
+packages/cli/templates/discovery-atlassian/

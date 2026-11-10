@@ -1,0 +1,10 @@
+id: discovery-atlassian
+name: discovery-atlassian
+category: feature
+displayName: Discovery for Atlassian
+description: 'Takes a raw idea to a product brief, personas and journeys, a domain model, a design brief, a technical brief and a Jira backlog, in a guided dialog that writes to Confluence and Jira. Seven skills for every coding agent in the workbench (Claude Code, OpenCode, Copilot). Needs the `atlassian` feature with `twg`, and the technical brief reads the catalog from the `monoceros-docs` MCP server.'
+documentationURL: https://getmonoceros.build/docs/discovery/
+feature:
+  version: 1.0.0
+briefing:
+  - text: 'Discovery for Atlassian - from an idea to a backlog, in Confluence and Jira through `twg`. Start with the `discovery-brief-atlassian` skill; then `discovery-personas-journeys-atlassian`, `discovery-domain-model-atlassian`, `discovery-design-atlassian`, `discovery-tech-frame-atlassian`, `planning-epics-stories-atlassian`, and `handoff-project-files-atlassian` for the README and agent instructions of a new repository. New work goes to the backlog only through `planning-epics-stories-atlassian`.'

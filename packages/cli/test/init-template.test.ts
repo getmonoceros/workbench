@@ -484,14 +484,21 @@ describe('init --template', () => {
     const refs = (config.features ?? []).map((f) => f.ref);
     expect(refs).toEqual([
       'ghcr.io/getmonoceros/monoceros-features/claude-code:1',
+      'ghcr.io/getmonoceros/monoceros-features/discovery-atlassian:1',
       'ghcr.io/getmonoceros/monoceros-features/agent-roles:1',
       'ghcr.io/getmonoceros/monoceros-features/atlassian:1',
     ]);
+    // The discovery is a feature now, not a plugin on the claude-code entry.
+    expect(config.features?.[0]?.plugins ?? []).toEqual([]);
     // twg on its own: the lean shape the discovery chain expects.
-    const atlassian = config.features?.[2];
+    const atlassian = config.features?.[3];
     expect(atlassian?.options?.twg).toBe(true);
     expect(atlassian?.options?.rovodev).toBe(false);
     expect(atlassian?.options?.forge).toBe(false);
+    // The technical brief reads the catalog from the docs MCP server.
+    expect((config.mcpServers ?? []).map((s) => s.name)).toEqual([
+      'monoceros-docs',
+    ]);
   });
 });
 

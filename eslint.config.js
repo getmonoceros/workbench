@@ -20,6 +20,10 @@ export default tseslint.config(
       // after the containers are gone. Linting someone else's service worker
       // tells us nothing.
       'docs/private/**',
+      // The discovery skills' diagram script runs inside the workbench, as
+      // part of a skill the model reads (ADR 0068). It is shipped content,
+      // not CLI code.
+      'packages/cli/templates/discovery-atlassian/**',
     ],
   },
   eslint.configs.recommended,

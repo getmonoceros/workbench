@@ -17,6 +17,7 @@ import { writeMcpRegistrations } from './mcp-registration.js';
 import { isWsl, windowsSshPort } from '../devcontainer/ssh-attach.js';
 import { writeOpencodeConfig } from './opencode-config.js';
 import { validateAgentRoles, writeAgentRoles } from './agent-roles.js';
+import { writeDiscovery } from './discovery-atlassian.js';
 import {
   BUILTIN_LANGUAGES,
   curatedServiceTools,
@@ -2414,6 +2415,11 @@ export async function writeScaffold(
   // OpenCode config write, because it merges the role variants into that file.
   // Without the feature it only cleans up what an earlier apply left.
   await writeAgentRoles(targetDir, opts.name, opts);
+
+  // The discovery-atlassian feature's skills, into the same persistent trees
+  // of every coding agent present (ADR 0068). Without the feature it only
+  // removes what an earlier apply wrote.
+  await writeDiscovery(targetDir, opts.name, opts);
 
   // The `mcpServers:` block's servers, merged into each present agent's own
   // config (ADR 0045). Merge and not write: those files belong to the agents.
