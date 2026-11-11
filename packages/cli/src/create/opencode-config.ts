@@ -215,9 +215,16 @@ export async function writeOpencodeConfig(
     // working area - that is what the mount is for. What must not leak is
     // narrower than a directory listing and is denied back below, after the
     // allow, because OpenCode resolves last-match-wins.
+    //
+    // `/tmp` too: it is the container's scratch space and holds nothing to
+    // protect, and tools hand their results over through it. `twg` writes
+    // every call's output to a fresh `/tmp/twg/<time>/run.<id>/stdout.json`
+    // the agent then reads, so without this each Jira or Confluence call
+    // asked again, "Allow always" included.
     for (const p of [
       `${workspaceRoot}/*`,
       `${workspaceRoot}/${containerName}.code-workspace`,
+      '/tmp/*',
     ]) {
       ext[p] = 'allow';
     }

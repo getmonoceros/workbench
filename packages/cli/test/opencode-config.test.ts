@@ -307,11 +307,22 @@ describe('writeOpencodeConfig', () => {
     expect(ext).toEqual({
       [`/workspaces/${NAME}/*`]: 'allow',
       [`/workspaces/${NAME}/${NAME}.code-workspace`]: 'allow',
+      '/tmp/*': 'allow',
       [`/workspaces/${NAME}/home/*`]: 'deny',
       [`/workspaces/${NAME}/data/*`]: 'deny',
       [`/workspaces/${NAME}/.devcontainer/*`]: 'deny',
       [`/workspaces/${NAME}/.monoceros/git-credentials`]: 'deny',
     });
+  });
+
+  // A real run: twg writes each call's output to a fresh
+  // /tmp/twg/<time>/run.<id>/stdout.json, and OpenCode asked for every one.
+  it('allows /tmp, where tools like twg leave their output', async () => {
+    await writeOpencodeConfig(dir, NAME, { [OPENCODE_REF]: {} });
+    const cfg = await read();
+    const ext = (cfg.permission as Record<string, Record<string, unknown>>)
+      .external_directory!;
+    expect(ext['/tmp/*']).toBe('allow');
   });
 
   it('keeps the closed paths closed and after the allow', async () => {
