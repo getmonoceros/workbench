@@ -135,13 +135,20 @@ the product needs.
 4. **Described list items, not a keyword dump** - each point is a half-sentence
    with the *why*.
 5. **Fixed defaults of this workflow.** These entries go into every mapping, and
-   exactly one of them is a question.
+   exactly two of them are questions.
 
-   - **`claude`**, the builder, unless the user explicitly asks for `opencode`
-     or `copilot` instead, or for several. (Rovo Dev is not a builder here: it
-     is an option of the `atlassian` feature, not an agent feature of its
-     own.) The discovery and the roles come along in every one of them, so the
-     choice changes nothing else.
+   - **The coding agents, and this one you ask**: which agents the build
+     workbench gets, `claude` (Claude Code), `opencode` or `copilot`, one or
+     several. Ask it as a choice that allows several answers. The agent this
+     session runs in is the first option and marked as the recommendation:
+     the user is working with it right now. No question tool preselects an
+     answer, so the order and the mark are what carry the proposal.
+     Never settle on `claude` because the template carries it; a team on
+     OpenCode would get a workbench it does not work in, and the handoff would
+     write instructions for the wrong agent. (Rovo Dev is not a coding agent
+     here: it is an option of the `atlassian` feature, not an agent feature of
+     its own.) The discovery and the roles come along in every one of them, so
+     the choice changes nothing else.
    - **`discovery-atlassian`**, the feature that carries these skills, so the
      discovery goes on in the workbench, together with the MCP server
      **`monoceros-docs`** this technical brief reads the catalog from.
@@ -161,8 +168,8 @@ the product needs.
      case; for a customer on Bitbucket that is a decision nobody made. While the
      answer is open, the feature is open too, and it belongs in the open points.
 
-   All but the code host are **named, not asked** - no selection dialog about
-   them.
+   All but the coding agents and the code host are **named, not asked** - no
+   selection dialog about them.
    In particular **never** ask whether Atlassian CLIs should go into the
    container: `twg` is set, `forge` and `rovodev` deliberately **left out**
    (lean preset). They are requirements of the workbench, not of a
@@ -322,14 +329,16 @@ page has to stand without it.
 For real choices in the **stack**, ask and offer the actual
 catalog alternatives, not just your favorite (e.g. SQL store
 `postgres`/`mysql`/`pgvector`, which object storage), the team's own ones
-included and marked as such (principle 6). The **set defaults** (the coding
-agent, `discovery-atlassian` with `monoceros-docs`, `agent-roles`,
-`atlassian/twg`) are **not** a choice - don't offer them, don't pose them as an
-"in/out?" question, just name them. All but the roles are preconditions, the
+included and marked as such (principle 6). The **set defaults**
+(`discovery-atlassian` with `monoceros-docs`, `agent-roles`, `atlassian/twg`)
+are **not** a choice - don't offer them, don't pose them as an "in/out?"
+question, just name them. All but the roles are preconditions, the
 roles are a working style; that is why the features
 row says what each one is for, so a reader can drop the roles deliberately
-rather than wonder how they got there. The **code host** is not in that list: it
-is one question, and its answer decides `github`, `gitlab` or neither.
+rather than wonder how they got there. The **coding agents** and the **code
+host** are not in that list: each is one question. The first decides which of
+`claude`, `opencode` and `copilot` the workbench gets, the second decides
+`github`, `gitlab` or neither.
 
 For each decision, record whether it is a Monoceros service, a feature, or an
 (app-owned) dependency.
@@ -339,14 +348,15 @@ For each decision, record whether it is a Monoceros service, a feature, or an
 #### The workbench template
 
 The workbench starts from the **`discovery-atlassian` template**, which carries
-every default from principle 5 but the code-host feature, which comes from the
-user's answer: `claude`, the `discovery-atlassian` feature with the
-`monoceros-docs` MCP server, `agent-roles` (plan, implement, review against the
-plan) and `atlassian/twg` (Jira and Confluence access, the lean preset rather
-than the full `atlassian` with `rovodev`+`forge`). A coding agent other than
-`claude` goes into `--with-features`; the template's `claude` stays unless the
-user wants it gone, then `monoceros remove-feature <name> claude` after the
-`init`.
+the set defaults from principle 5 with `claude` as its coding agent: the
+`discovery-atlassian` feature with the `monoceros-docs` MCP server,
+`agent-roles` (plan, implement, review against the plan) and `atlassian/twg`
+(Jira and Confluence access, the lean preset rather than the full `atlassian`
+with `rovodev`+`forge`). The two answers fill in the rest. Every chosen coding
+agent other than `claude` goes into `--with-features`, and the code-host feature
+with it. When `claude` is not among the chosen agents, the template's `claude`
+comes out again: `monoceros remove-feature <name> claude` right after the
+`init`, before the first `apply`.
 
 If the pasted output lists templates of the team's own (`local: true`,
 `source: team`), ask which one the workbench starts from: `discovery-atlassian`
@@ -358,16 +368,16 @@ output, and a personal one gets the same note as a personal component
 `discovery-atlassian` and there is nothing to ask.
 
 For any other template, read what it brings from its entry in `templates` and
-check the three the discovery chain needs:
+check what the discovery chain needs:
 
-- a coding agent: `claude`, `opencode` or `copilot`;
+- the coding agents the user chose, of `claude`, `opencode` and `copilot`;
 - `discovery-atlassian`;
 - `agent-roles`;
 - `atlassian` with `twg: true` in its options;
 - the MCP server `monoceros-docs`.
 
 Name each one the template lacks and close it, never drop the requirement: the
-coding agent the user chose, `discovery-atlassian` and `agent-roles` go into
+coding agents the user chose, `discovery-atlassian` and `agent-roles` go into
 `--with-features` as they are, a missing or twg-less `atlassian` goes in as
 `atlassian/twg` (it merges into an `atlassian` entry that is already there),
 and `monoceros-docs` goes into `--with-mcp-servers`.
@@ -393,9 +403,10 @@ Translate the decisions into the `init` categories with catalog ids:
   never with `@<version>`: `--with-services=mailpit`, not `mailpit@1`. The CLI
   reads anything after `@` as an image name, and the workbench breaks. The
   same goes for `add-service`.
-- **`--with-features`**: only what comes on top of the template: the
-  code-host feature the answer decided (`github`, `gitlab`, or none for
-  Bitbucket), the defaults the template lacks, and further features if the
+- **`--with-features`**: only what comes on top of the template: the chosen
+  coding agents the template does not carry, the code-host feature the answer
+  decided (`github`, `gitlab`, or none for Bitbucket), the defaults the
+  template lacks, and further features if the
   stack really needs them. `twg` is configured when the workbench is set up;
   that is not a product question, so it is neither an open point nor a
   follow-up question here.
@@ -436,7 +447,9 @@ Translate the decisions into the `init` categories with catalog ids:
 
 Produce a `monoceros init <name> --template=<template> …` sketch with the
 template chosen above (the `--with-repos` line only in the big-three case; for
-another host a separate `monoceros add-repo` command below instead). For a
+another host a separate `monoceros add-repo` command below instead, and
+`monoceros remove-feature <name> claude` below it when `claude` was not
+chosen). For a
 template other than `discovery-atlassian`, one line under it names the defaults
 the template lacked and how the sketch closes them. Under the code block, put a
 reference to the token/PAT setup:
@@ -460,7 +473,8 @@ carries every default itself.** `--with-features` is short because the
 template already brought the coding agent, `discovery-atlassian`,
 `agent-roles` and `atlassian/twg`, or the sketch closed the gaps. Nothing
 brings them to a workbench that already exists, so the `add-feature` lines are
-the full set from principle 5, not the leftover from the sketch, and
+the full set from principle 5, one per chosen coding agent, not the leftover
+from the sketch, and
 `monoceros add-mcp-server <name> monoceros-docs` is among them. A second block with only the code-host feature in it builds exactly
 the workbench this whole chain cannot run in. The same holds for the app's
 repository and ports: the second block names them with `add-repo` and

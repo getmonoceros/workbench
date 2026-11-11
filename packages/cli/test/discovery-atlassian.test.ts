@@ -329,6 +329,42 @@ describe('the shipped skills', () => {
     }
   });
 
+  it('asks which coding agents the build workbench gets', async () => {
+    // A real run in OpenCode: the technical brief settled on `claude` as a
+    // fixed default, the page and the handoff followed, and the user worked
+    // with OpenCode the whole time.
+    const dir = path.join(
+      TEMPLATES,
+      'skills',
+      'discovery-tech-frame-atlassian',
+    );
+    const skill = await readFile(path.join(dir, 'SKILL.md'), 'utf8');
+    expect(skill).toContain('**The coding agents, and this one you ask**');
+    expect(skill).toContain('exactly two of them are questions');
+    expect(skill).toContain(
+      'The agent this\n     session runs in is the first option and marked as the recommendation',
+    );
+    expect(skill).toContain('monoceros remove-feature <name> claude');
+    const page = await readFile(
+      path.join(dir, 'references', 'templates.md'),
+      'utf8',
+    );
+    expect(page).toContain('one line per chosen coding agent');
+    expect(page).toContain('monoceros remove-feature {name} claude');
+  });
+
+  it('reads a write from its output file instead of repeating it', async () => {
+    // A real run in OpenCode: twg handed the create's result over as a file,
+    // the agent could not parse the output, ran the create again, and the
+    // backlog got a duplicate epic.
+    const rules = await readFile(
+      path.join(TEMPLATES, 'shared', 'references', 'discovery-rules.md'),
+      'utf8',
+    );
+    expect(rules).toContain('## A write is never repeated to see its result');
+    expect(rules).toContain('output_files:');
+  });
+
   it('no longer points at the plugin or the retired role features', async () => {
     for (const skill of DISCOVERY_SKILLS) {
       const dirFiles = await readdir(path.join(TEMPLATES, 'skills', skill), {

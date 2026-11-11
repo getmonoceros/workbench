@@ -234,6 +234,18 @@ So where something turns up that deserves an issue - an open point, a finding, a
 piece of work the plan uncovered - name it and hand it to that skill. Do not file
 it yourself.
 
+## A write is never repeated to see its result
+
+`twg` hands a large result over as a file. Instead of the JSON, its output then
+starts with `output_files:` and names the file that holds it
+(`stdout: "/tmp/twg/<time>/run.<id>/stdout.json"`). Read that file.
+
+A write whose output you could not read may well have gone through. So never
+run a create, an update or an upload again just to see what it returns. Look
+up what is there first (the page under its parent, the issues by JQL), and go
+on from that. In a real run an epic was created twice, and a test issue landed
+in the backlog, because the output was cut off and the create ran again.
+
 ## A journey carries a status, and nothing else does
 
 A journey page's properties open with a **Status** row: a status macro in one
