@@ -353,6 +353,24 @@ describe('the shipped skills', () => {
     expect(page).toContain('monoceros remove-feature {name} claude');
   });
 
+  it('names the design brief before the technical brief', async () => {
+    // Real runs in OpenCode and Claude Code: after the domain model the
+    // technical brief was offered first, and it settled the stack without
+    // the design brief's interaction section.
+    const skill = await readFile(
+      path.join(
+        TEMPLATES,
+        'skills',
+        'discovery-domain-model-atlassian',
+        'SKILL.md',
+      ),
+      'utf8',
+    );
+    expect(skill).toContain(
+      '**design brief comes first and the\ntechnical brief second**',
+    );
+  });
+
   it('reads a write from its output file instead of repeating it', async () => {
     // A real run in OpenCode: twg handed the create's result over as a file,
     // the agent could not parse the output, ran the create again, and the

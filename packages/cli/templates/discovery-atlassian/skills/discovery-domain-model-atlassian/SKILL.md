@@ -31,6 +31,14 @@ and reads this model when it exists, because the entities are what a screen
 shows and lists. If it is still missing when you finish, say so - a product with
 a user interface needs it, and planning will ask for its prototype.
 
+So when you name what comes next, the **design brief comes first and the
+technical brief second**. The technical brief takes the design brief's
+"Interaction & platform" section as a stack decision (offline, PWA,
+mobile-first), and it can only do that if the design brief already exists. In
+real runs the technical brief was offered first, the user took it, and it
+decided the stack without that section. A product without a user interface
+has no design brief, and the technical brief comes next.
+
 ## Before you write anything
 
 Read `references/discovery-rules.md`. Four of its rules decide whether the
