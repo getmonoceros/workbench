@@ -32,7 +32,7 @@ features:
   # The discovery: the skills that work an idea into a brief, personas and
   # journeys, a domain model, a design brief, a technical brief and a cut
   # backlog, written to Confluence and Jira.
-  # https://getmonoceros.build/docs/discovery/
+  # https://getmonoceros.build/docs/discovery/overview/
   - ref: ghcr.io/getmonoceros/monoceros-features/discovery-atlassian:1
 
   # The three roles that build a story: the planner writes the plan, the

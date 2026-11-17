@@ -3,7 +3,7 @@ name: discovery-atlassian
 category: feature
 displayName: Discovery for Atlassian
 description: 'Takes a raw idea to a product brief, personas and journeys, a domain model, a design brief, a technical brief and a Jira backlog, in a guided dialog that writes to Confluence and Jira. Seven skills for every coding agent in the workbench (Claude Code, OpenCode, Copilot). Needs the `atlassian` feature with `twg`, and the technical brief reads the catalog from the `monoceros-docs` MCP server.'
-documentationURL: https://getmonoceros.build/docs/discovery/
+documentationURL: https://getmonoceros.build/docs/discovery/overview/
 feature:
   version: 1.0.0
 briefing:
