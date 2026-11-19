@@ -126,6 +126,11 @@ import {
 } from '../create/scaffold.js';
 import { solutionConfigToCreateOptions } from '../config/transform.js';
 import { writeBriefing } from '../briefing/index.js';
+import {
+  DOCS_MCP_NAME,
+  FEATURE as DISCOVERY_FEATURE,
+  registersDocsServer,
+} from '../create/discovery-atlassian.js';
 import type { FeatureOptions, RepoEntry } from '../create/types.js';
 import {
   addAptPackagesToDoc,
@@ -924,17 +929,47 @@ export async function runAddFeature(
   // overwrite-protected behavior. `raw` is the form the builder typed,
   // echoed in the conflict error so the remove-feature hint matches.
   let carriedFrom: string[] = [];
-  const result = await mutate(input, (doc) => {
-    carriedFrom =
-      matchMonocerosFeature(resolved.ref)?.name === 'agent-roles'
-        ? (legacyRolesInDoc(doc)?.from ?? [])
-        : [];
-    return addFeatureToDoc(doc, resolved.ref, merged, {
-      isPreset: resolved.isPreset,
-      displayName: raw,
-      containerName: input.name,
-    });
-  });
+  // The discovery's technical brief reads the catalog from the docs MCP
+  // server, which needs no credentials: it comes along instead of being one
+  // more hint at apply (ADR 0068).
+  const docsServer =
+    matchMonocerosFeature(resolved.ref)?.name === DISCOVERY_FEATURE
+      ? await docsServerEntry()
+      : undefined;
+  let docsAdded = false;
+  const result = await mutate(
+    input,
+    (doc) => {
+      carriedFrom =
+        matchMonocerosFeature(resolved.ref)?.name === 'agent-roles'
+          ? (legacyRolesInDoc(doc)?.from ?? [])
+          : [];
+      const added = addFeatureToDoc(doc, resolved.ref, merged, {
+        isPreset: resolved.isPreset,
+        displayName: raw,
+        containerName: input.name,
+      });
+      const servers = (doc.toJS() as { mcpServers?: { name: string }[] })
+        .mcpServers;
+      if (added && docsServer && !registersDocsServer(servers)) {
+        docsAdded = addMcpToDoc(doc, docsServer.name, docsServer.options, {
+          header: docsServer.header,
+          containerName: input.name,
+        });
+      }
+      return added;
+    },
+    // Said here instead, so the reminder comes after the docs server line.
+    { skipApplyReminder: docsServer !== undefined },
+  );
+  if (docsAdded) {
+    (input.logger ?? defaultLogger()).info(
+      `Also registered the ${DOCS_MCP_NAME} MCP server: the discovery's technical brief reads the component catalog from it.`,
+    );
+  }
+  if (docsServer && result.status === 'updated') {
+    (input.logger ?? defaultLogger()).info(applyReminder(input.name));
+  }
   if (result.status === 'updated') {
     if (matchMonocerosFeature(resolved.ref)?.name === 'agent-roles') {
       const home = input.monocerosHome ?? defaultMonocerosHome();
@@ -1012,6 +1047,22 @@ export async function runAddFeature(
     }
   }
   return result;
+}
+
+/** The docs MCP server as `add-mcp-server` writes it, if the catalog has it. */
+async function docsServerEntry(): Promise<
+  { name: string; options: FeatureOptions; header: string } | undefined
+> {
+  const catalog = await loadDescriptorCatalog();
+  const descriptor = findMcpConnector(catalog, DOCS_MCP_NAME);
+  if (!descriptor) return undefined;
+  const local = isLocalComponent(catalog, descriptor);
+  const doc = buildMcpConnectorDoc(descriptor, local);
+  return {
+    name: doc.name,
+    options: doc.options,
+    header: mcpHeaderCommentBefore(descriptor, local),
+  };
 }
 
 /**
@@ -1399,12 +1450,12 @@ async function mutate(
   // a raw unified-diff prompt here was noise nobody could act on.
   await fs.writeFile(ymlPath, newText, 'utf8');
   logger.success(`Updated ${ymlPath}.`);
-  if (!mutateOpts?.skipApplyReminder) {
-    logger.info(
-      `Run \`monoceros apply ${opts.name}\` to rebuild the dev-container and pick up the change.`,
-    );
-  }
+  if (!mutateOpts?.skipApplyReminder) logger.info(applyReminder(opts.name));
   return { status: 'updated', changedPaths: [ymlPath] };
+}
+
+function applyReminder(name: string): string {
+  return `Run \`monoceros apply ${name}\` to rebuild the dev-container and pick up the change.`;
 }
 
 function defaultLogger(): ModifyLogger {

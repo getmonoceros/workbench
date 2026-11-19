@@ -56,6 +56,11 @@ import { renderWorkbenchTemplate } from './templates.js';
 import { replacementFor, retiredNotice } from '../util/retired-features.js';
 import { noAgentHint, rolesWithoutAgent } from '../create/agent-roles.js';
 import {
+  DOCS_MCP_NAME,
+  FEATURE as DISCOVERY_FEATURE,
+} from '../create/discovery-atlassian.js';
+import { matchMonocerosFeature } from '../util/ref.js';
+import {
   collectEnvPromptCandidates,
   collectMcpEnvPromptCandidates,
   promptAndWriteEnvValues,
@@ -321,13 +326,33 @@ export async function runInit(opts: RunInitOptions): Promise<RunInitResult> {
     .filter((sel) => catalog.has(sel))
     .filter((sel) => !explicitFeatures.includes(sel));
 
+  // The discovery's technical brief reads the catalog from the docs MCP
+  // server, so it comes along with the feature (ADR 0068). A template takes
+  // the --with-* entries through `add-feature`, which does the same.
+  const mcpServers = [...(opts.mcpServers ?? [])];
+  const docsAdded =
+    !opts.template &&
+    explicitFeatures.some(
+      (f) =>
+        f.split('/')[0] === DISCOVERY_FEATURE ||
+        matchMonocerosFeature(f)?.name === DISCOVERY_FEATURE,
+    ) &&
+    !mcpServers.includes(DOCS_MCP_NAME) &&
+    findMcpConnector(descriptors, DOCS_MCP_NAME) !== undefined;
+  if (docsAdded) mcpServers.push(DOCS_MCP_NAME);
+
   const composed = resolveComposedInit(catalog, descriptors, {
     languages: opts.languages ?? [],
     features: [...explicitFeatures, ...repoFeatures],
     services: opts.services ?? [],
     aptPackages: opts.aptPackages ?? [],
-    mcpServers: opts.mcpServers ?? [],
+    mcpServers,
   });
+  if (docsAdded) {
+    logger.info(
+      `Also registered the ${DOCS_MCP_NAME} MCP server: the discovery's technical brief reads the component catalog from it.`,
+    );
+  }
   // Always lean: name + runtimeVersion, plus only the sections the
   // builder actually asked for (--with-* entries, repos, ports). No
   // commented-out catalog dump; `monoceros list-components` +

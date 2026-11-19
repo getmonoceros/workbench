@@ -71,7 +71,11 @@ skills do, and each agent asks its own way.
 **What the discovery needs and does not have is named, not enforced.** Apply
 prints the command for each missing piece and carries on: a coding agent,
 `atlassian` with `twg`, and the `monoceros-docs` MCP server the technical
-brief reads the catalog from (matched by name or by its URL). A workbench
+brief reads the catalog from (matched by name or by its URL). The docs server
+is the one exception at add time: it needs no credentials and the technical
+brief cannot work without it, so `add-feature` and `init --with-features`
+write it into the yml along with `discovery-atlassian` when it is missing. The
+apply hint stays for a yml edited by hand. A workbench
 that still has the old plugin is told to switch over; one that has both is
 told that Claude Code now sees every skill twice and which entry to delete.
 

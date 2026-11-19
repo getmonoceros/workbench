@@ -528,6 +528,35 @@ describe('runInit', () => {
     expect(text).toContain('forge: false');
   });
 
+  it('discovery-atlassian brings the monoceros-docs MCP server along (real catalog, ADR 0068)', async () => {
+    const infos: string[] = [];
+    const result = await runInit({
+      name: 'sandbox',
+      features: ['claude', 'discovery-atlassian'],
+      workbenchRoot: repoRoot,
+      monocerosHome,
+      logger: { ...silentLogger, info: (m: string) => infos.push(m) },
+    });
+    const parsed = parseConfig(await readFile(result.configPath, 'utf8'));
+    expect(parsed.config.mcpServers).toEqual([{ name: 'monoceros-docs' }]);
+    expect(infos.join('\n')).toContain(
+      'Also registered the monoceros-docs MCP server',
+    );
+  });
+
+  it('discovery-atlassian does not add monoceros-docs twice (real catalog)', async () => {
+    const result = await runInit({
+      name: 'sandbox',
+      features: ['discovery-atlassian'],
+      mcpServers: ['monoceros-docs'],
+      workbenchRoot: repoRoot,
+      monocerosHome,
+      logger: silentLogger,
+    });
+    const parsed = parseConfig(await readFile(result.configPath, 'utf8'));
+    expect(parsed.config.mcpServers).toEqual([{ name: 'monoceros-docs' }]);
+  });
+
   it('claude ships a commented plugins example, ready to uncomment (real catalog)', async () => {
     const result = await runInit({
       name: 'sandbox',

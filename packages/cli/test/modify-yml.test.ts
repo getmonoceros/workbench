@@ -110,6 +110,46 @@ describe('add-*/remove-* against the yml', () => {
     expect(env).toContain('CONTEXT7_API_KEY=');
   });
 
+  it('runAddFeature discovery-atlassian brings the monoceros-docs MCP server along', async () => {
+    await writeYml('disco', 'schemaVersion: 1\nname: disco\n');
+    const infos: string[] = [];
+    await runAddFeature({
+      ...baseOpts,
+      logger: { ...silentLogger, info: (m: string) => infos.push(m) },
+      name: 'disco',
+      ref: 'discovery-atlassian',
+      monocerosHome: home,
+    });
+    const parsed = parseConfig(await ymlOf('disco'));
+    expect(parsed.config.mcpServers).toEqual([{ name: 'monoceros-docs' }]);
+    expect(infos.join('\n')).toContain(
+      'Also registered the monoceros-docs MCP server',
+    );
+  });
+
+  it('runAddFeature discovery-atlassian keeps a docs server registered by URL', async () => {
+    await writeYml(
+      'disco',
+      [
+        'schemaVersion: 1',
+        'name: disco',
+        'mcpServers:',
+        '  - name: docs',
+        '    transport: http',
+        '    url: https://mcp.getmonoceros.build/mcp',
+        '',
+      ].join('\n'),
+    );
+    await runAddFeature({
+      ...baseOpts,
+      name: 'disco',
+      ref: 'discovery-atlassian',
+      monocerosHome: home,
+    });
+    const parsed = parseConfig(await ymlOf('disco'));
+    expect(parsed.config.mcpServers?.map((s) => s.name)).toEqual(['docs']);
+  });
+
   it('runAddMcpServer keeps the builder’s notes and is idempotent', async () => {
     await writeYml('mcpd', '# my notes\nschemaVersion: 1\nname: mcpd\n');
     await runAddMcpServer({
