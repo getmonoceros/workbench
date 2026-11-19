@@ -785,9 +785,12 @@ export function addMcpToDoc(
   if (Object.keys(options).length > 0) entry.set('options', options);
   if (opts.header && opts.header.length > 0) {
     // Same placement as a feature's header: on the sequence ITEM, so the
-    // prose renders above the dash rather than inside it.
+    // prose renders above the dash rather than inside it. The blank line
+    // separates it from the entry above; the first entry has none, and
+    // yaml-lib would render the blank line under `mcpServers:` as an
+    // indented, whitespace-only line.
     (entry as { commentBefore?: string }).commentBefore = opts.header;
-    (entry as { spaceBefore?: boolean }).spaceBefore = true;
+    (entry as { spaceBefore?: boolean }).spaceBefore = seq.items.length > 0;
   }
   seq.add(entry);
   return true;

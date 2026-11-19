@@ -110,6 +110,24 @@ describe('add-*/remove-* against the yml', () => {
     expect(env).toContain('CONTEXT7_API_KEY=');
   });
 
+  it('runAddMcpServer separates entries with a blank line, never a whitespace-only one', async () => {
+    await writeYml('mcpd', 'schemaVersion: 1\nname: mcpd\n');
+    for (const connector of ['context7', 'monoceros-docs']) {
+      await runAddMcpServer({
+        ...baseOpts,
+        name: 'mcpd',
+        connector,
+        monocerosHome: home,
+      });
+    }
+    const yml = await ymlOf('mcpd');
+    expect(yml).not.toMatch(/^[ \t]+$/m);
+    expect(yml).toMatch(/^mcpServers:\n {2}#/m);
+    expect(yml).toMatch(
+      /\n\n {2}# .*\n(?: {2}#.*\n)* {2}- name: monoceros-docs/,
+    );
+  });
+
   it('runAddFeature discovery-atlassian brings the monoceros-docs MCP server along', async () => {
     await writeYml('disco', 'schemaVersion: 1\nname: disco\n');
     const infos: string[] = [];
